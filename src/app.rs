@@ -167,7 +167,7 @@ impl App {
                     .size(self.font_size as f32)
                     .line_height(LineHeight::Relative(self.line_spacing))
                     .width(Length::Fill)
-                    .align_x(self.justification.as_alignment())
+                    .align_x(self.justification.alignment_hint())
                     .font(self.current_font()),
             )
             .padding(self.margin as u16),
@@ -218,6 +218,16 @@ pub enum FontFamily {
     Sans,
     Serif,
     Monospace,
+    Lexend,
+    FiraCode,
+    AtkinsonHyperlegible,
+    AtkinsonHyperlegibleNext,
+    LexicaUltralegible,
+    Courier,
+    FrankGothic,
+    Hermit,
+    Hasklug,
+    NotoSans,
 }
 
 impl std::fmt::Display for FontFamily {
@@ -226,12 +236,36 @@ impl std::fmt::Display for FontFamily {
             FontFamily::Sans => write!(f, "Sans"),
             FontFamily::Serif => write!(f, "Serif"),
             FontFamily::Monospace => write!(f, "Monospace"),
+            FontFamily::Lexend => write!(f, "Lexend"),
+            FontFamily::FiraCode => write!(f, "Fira Code"),
+            FontFamily::AtkinsonHyperlegible => write!(f, "Atkinson Hyperlegible"),
+            FontFamily::AtkinsonHyperlegibleNext => write!(f, "Atkinson Hyperlegible Next"),
+            FontFamily::LexicaUltralegible => write!(f, "Lexica Ultralegible"),
+            FontFamily::Courier => write!(f, "Courier"),
+            FontFamily::FrankGothic => write!(f, "Frank Gothic"),
+            FontFamily::Hermit => write!(f, "Hermit"),
+            FontFamily::Hasklug => write!(f, "Hasklug"),
+            FontFamily::NotoSans => write!(f, "Noto Sans"),
         }
     }
 }
 
 impl FontFamily {
-    const ALL: [FontFamily; 3] = [FontFamily::Sans, FontFamily::Serif, FontFamily::Monospace];
+    const ALL: [FontFamily; 13] = [
+        FontFamily::Sans,
+        FontFamily::Serif,
+        FontFamily::Monospace,
+        FontFamily::Lexend,
+        FontFamily::FiraCode,
+        FontFamily::AtkinsonHyperlegible,
+        FontFamily::AtkinsonHyperlegibleNext,
+        FontFamily::LexicaUltralegible,
+        FontFamily::Courier,
+        FontFamily::FrankGothic,
+        FontFamily::Hermit,
+        FontFamily::Hasklug,
+        FontFamily::NotoSans,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -268,6 +302,7 @@ pub enum Justification {
     Left,
     Center,
     Right,
+    Justified,
 }
 
 impl std::fmt::Display for Justification {
@@ -276,19 +311,25 @@ impl std::fmt::Display for Justification {
             Justification::Left => write!(f, "Left"),
             Justification::Center => write!(f, "Center"),
             Justification::Right => write!(f, "Right"),
+            Justification::Justified => write!(f, "Justified"),
         }
     }
 }
 
 impl Justification {
-    const ALL: [Justification; 3] =
-        [Justification::Left, Justification::Center, Justification::Right];
+    const ALL: [Justification; 4] = [
+        Justification::Left,
+        Justification::Center,
+        Justification::Right,
+        Justification::Justified,
+    ];
 
-    fn as_alignment(self) -> Horizontal {
+    fn alignment_hint(self) -> Horizontal {
         match self {
             Justification::Left => Horizontal::Left,
             Justification::Center => Horizontal::Center,
             Justification::Right => Horizontal::Right,
+            Justification::Justified => Horizontal::Left,
         }
     }
 }
@@ -299,6 +340,16 @@ impl App {
             FontFamily::Sans => Family::SansSerif,
             FontFamily::Serif => Family::Serif,
             FontFamily::Monospace => Family::Monospace,
+            FontFamily::Lexend => Family::Name("Lexend"),
+            FontFamily::FiraCode => Family::Name("Fira Code"),
+            FontFamily::AtkinsonHyperlegible => Family::Name("Atkinson Hyperlegible"),
+            FontFamily::AtkinsonHyperlegibleNext => Family::Name("Atkinson Hyperlegible Next"),
+            FontFamily::LexicaUltralegible => Family::Name("Lexica Ultralegible"),
+            FontFamily::Courier => Family::Name("Courier"),
+            FontFamily::FrankGothic => Family::Name("Frank Gothic"),
+            FontFamily::Hermit => Family::Name("Hermit"),
+            FontFamily::Hasklug => Family::Name("Hasklug"),
+            FontFamily::NotoSans => Family::Name("Noto Sans"),
         };
 
         Font {
@@ -315,16 +366,22 @@ impl App {
             .map(String::as_str)
             .unwrap_or("");
 
+        let justified = if self.justification == Justification::Justified {
+            justify_text(base, self.font_size)
+        } else {
+            base.to_string()
+        };
+
         if self.word_spacing == 0 && self.letter_spacing == 0 {
-            return base.to_string();
+            return justified;
         }
 
         let word_gap = " ".repeat((self.word_spacing as usize).saturating_add(1));
         let letter_gap = " ".repeat(self.letter_spacing as usize);
 
-        let mut output = String::with_capacity(base.len() + 16);
+        let mut output = String::with_capacity(justified.len() + 16);
 
-        for ch in base.chars() {
+        for ch in justified.chars() {
             match ch {
                 ' ' => output.push_str(&word_gap),
                 '\n' => output.push('\n'),
@@ -352,7 +409,8 @@ impl App {
             0.8..=2.5,
             self.line_spacing,
             Message::LineSpacingChanged,
-        );
+        )
+        .step(0.05);
 
         let margin_slider = slider(
             0.0..=MAX_MARGIN as f32,
@@ -395,4 +453,88 @@ impl App {
 
         container(panel).padding(12).into()
     }
+}
+
+/// Attempt to justify text by distributing spaces between words to hit a target line width.
+fn justify_text(content: &str, font_size: u32) -> String {
+    let target_width = approximate_chars_per_line(font_size).max(20);
+    let mut output = String::new();
+
+    for (pi, paragraph) in content.split("\n\n").enumerate() {
+        if pi > 0 {
+            output.push_str("\n\n");
+        }
+
+        let words: Vec<&str> = paragraph.split_whitespace().collect();
+        if words.is_empty() {
+            continue;
+        }
+
+        let mut line_words: Vec<&str> = Vec::new();
+        let mut line_len = 0usize;
+
+        for word in words {
+            let additional = if line_words.is_empty() {
+                word.len()
+            } else {
+                line_len + 1 + word.len()
+            };
+
+            if !line_words.is_empty() && additional > target_width {
+                output.push_str(&justify_line(&line_words, target_width));
+                output.push('\n');
+                line_words.clear();
+                line_len = 0;
+            }
+
+            if line_words.is_empty() {
+                line_len = word.len();
+            } else {
+                line_len += 1 + word.len();
+            }
+            line_words.push(word);
+        }
+
+        if !line_words.is_empty() {
+            // Last line of paragraph: leave ragged-right.
+            output.push_str(&line_words.join(" "));
+        }
+    }
+
+    output
+}
+
+fn justify_line(words: &[&str], target_width: usize) -> String {
+    if words.len() <= 1 {
+        return words.join(" ");
+    }
+
+    let total_chars: usize = words.iter().map(|w| w.len()).sum();
+    let gaps = words.len() - 1;
+    let base_spaces = 1;
+    let mut extra_spaces = target_width.saturating_sub(total_chars + gaps * base_spaces);
+
+    let mut result = String::new();
+
+    for (i, word) in words.iter().enumerate() {
+        result.push_str(word);
+        if i < gaps {
+            let mut spaces = base_spaces;
+            if extra_spaces > 0 {
+                let add = (extra_spaces + gaps - i - 1) / (gaps - i);
+                spaces += add;
+                extra_spaces = extra_spaces.saturating_sub(add);
+            }
+            result.push_str(&" ".repeat(spaces));
+        }
+    }
+
+    result
+}
+
+fn approximate_chars_per_line(font_size: u32) -> usize {
+    let normalized = font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE) as f32;
+    (80.0 * (16.0 / normalized))
+        .round()
+        .clamp(30.0, 120.0) as usize
 }

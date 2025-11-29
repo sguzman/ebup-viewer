@@ -18,21 +18,19 @@ pub fn load_epub_text(path: &Path) -> Result<String> {
 
     loop {
         match doc.get_current_str() {
-            Ok(Some(chapter)) => {
+            Some((chapter, _mime)) => {
                 if !combined.is_empty() {
                     combined.push_str("\n\n");
                 }
-                // Use a lightweight HTML-to-text pass to remove most markup.
-                let plain = html2text::from_read(chapter.as_bytes(), 80);
+                // Use a lightweight HTML-to-text pass to remove most markup; fall back to raw chapter on errors.
+                let plain = html2text::from_read(chapter.as_bytes(), 80)
+                    .unwrap_or_else(|_| chapter);
                 combined.push_str(&plain);
             }
-            Ok(None) => break,
-            Err(err) => {
-                return Err(anyhow::Error::new(err)).context("Failed to read EPUB chapter");
-            }
+            None => break,
         }
 
-        if doc.go_next().is_err() {
+        if !doc.go_next() {
             break;
         }
     }

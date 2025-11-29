@@ -32,7 +32,8 @@ pub enum Message {
     FontFamilyChanged(FontFamily),
     FontWeightChanged(FontWeight),
     LineSpacingChanged(f32),
-    MarginChanged(u16),
+    MarginHorizontalChanged(u16),
+    MarginVerticalChanged(u16),
     JustificationChanged(Justification),
     WordSpacingChanged(u32),
     LetterSpacingChanged(u32),
@@ -49,7 +50,8 @@ pub struct App {
     font_family: FontFamily,
     font_weight: FontWeight,
     line_spacing: f32,
-    margin: u16,
+    margin_horizontal: u16,
+    margin_vertical: u16,
     justification: Justification,
     word_spacing: u32,
     letter_spacing: u32,
@@ -101,8 +103,11 @@ impl App {
             Message::LineSpacingChanged(spacing) => {
                 self.line_spacing = spacing.clamp(0.8, 2.5);
             }
-            Message::MarginChanged(margin) => {
-                self.margin = margin.min(MAX_MARGIN);
+            Message::MarginHorizontalChanged(margin) => {
+                self.margin_horizontal = margin.min(MAX_MARGIN);
+            }
+            Message::MarginVerticalChanged(margin) => {
+                self.margin_vertical = margin.min(MAX_MARGIN);
             }
             Message::JustificationChanged(justification) => {
                 self.justification = justification;
@@ -170,7 +175,7 @@ impl App {
                     .align_x(self.justification.alignment_hint())
                     .font(self.current_font()),
             )
-            .padding(self.margin as u16),
+            .padding([self.margin_vertical, self.margin_horizontal]),
         )
         .height(Length::Fill);
 
@@ -203,10 +208,11 @@ pub fn run_app(text: String) -> iced::Result {
                 font_family: FontFamily::Sans,
                 font_weight: FontWeight::Normal,
                 line_spacing: DEFAULT_LINE_SPACING,
-                margin: DEFAULT_MARGIN,
                 justification: Justification::Left,
                 word_spacing: 0,
                 letter_spacing: 0,
+                margin_horizontal: DEFAULT_MARGIN,
+                margin_vertical: DEFAULT_MARGIN,
             };
             app.repaginate();
             (app, Task::none())
@@ -414,8 +420,14 @@ impl App {
 
         let margin_slider = slider(
             0.0..=MAX_MARGIN as f32,
-            self.margin as f32,
-            |value| Message::MarginChanged(value.round() as u16),
+            self.margin_horizontal as f32,
+            |value| Message::MarginHorizontalChanged(value.round() as u16),
+        );
+
+        let margin_vertical_slider = slider(
+            0.0..=MAX_MARGIN as f32,
+            self.margin_vertical as f32,
+            |value| Message::MarginVerticalChanged(value.round() as u16),
         );
 
         let word_spacing_slider = slider(
@@ -435,7 +447,10 @@ impl App {
             row![text("Font family"), family_picker].spacing(8).align_y(Vertical::Center),
             row![text("Font weight"), weight_picker].spacing(8).align_y(Vertical::Center),
             row![text("Line spacing"), line_spacing_slider].spacing(8).align_y(Vertical::Center),
-            row![text(format!("Margins: {} px", self.margin)), margin_slider]
+            row![text(format!("Horizontal margin: {} px", self.margin_horizontal)), margin_slider]
+                .spacing(8)
+                .align_y(Vertical::Center),
+            row![text(format!("Vertical margin: {} px", self.margin_vertical)), margin_vertical_slider]
                 .spacing(8)
                 .align_y(Vertical::Center),
             row![text("Justification"), justification_picker]

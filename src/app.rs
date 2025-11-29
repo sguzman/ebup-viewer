@@ -208,6 +208,7 @@ impl App {
                     .align_x(self.justification_alignment())
                     .font(self.current_font()),
             )
+            .width(Length::Fill)
             .padding([self.margin_vertical, self.margin_horizontal]),
         )
         .height(Length::Fill);
@@ -302,7 +303,7 @@ impl App {
             .unwrap_or("");
 
         let justified = if self.justification == Justification::Justified {
-            justify_text(base, self.font_size)
+            justify_text(base, self.font_size, self.margin_horizontal)
         } else {
             base.to_string()
         };
@@ -404,8 +405,11 @@ impl App {
 }
 
 /// Attempt to justify text by distributing spaces between words to hit a target line width.
-fn justify_text(content: &str, font_size: u32) -> String {
-    let target_width = approximate_chars_per_line(font_size).max(20);
+fn justify_text(content: &str, font_size: u32, horizontal_margin: u16) -> String {
+    let mut target_width = approximate_chars_per_line(font_size).max(20);
+    // Shrink width a bit based on margins to better approximate the visible area.
+    target_width = target_width.saturating_sub((horizontal_margin / 2) as usize);
+    target_width = target_width.max(20);
     let mut output = String::new();
 
     for (pi, paragraph) in content.split("\n\n").enumerate() {

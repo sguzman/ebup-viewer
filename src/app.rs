@@ -10,7 +10,7 @@ use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{
     button, column, container, pick_list, row, scrollable, slider, text, Column, Row,
 };
-use iced::widget::text::LineHeight;
+use iced::widget::text::{LineHeight, Wrapping};
 use iced::{Element, Font, Length, Task, Theme};
 use iced::font::{Family, Weight};
 
@@ -205,6 +205,7 @@ impl App {
                     .size(self.font_size as f32)
                     .line_height(LineHeight::Relative(self.line_spacing))
                     .width(Length::Fill)
+                    .wrapping(Wrapping::WordOrGlyph)
                     .align_x(self.justification_alignment())
                     .font(self.current_font()),
             )
@@ -217,7 +218,8 @@ impl App {
             .padding(16)
             .spacing(12);
 
-        let mut layout: Row<'_, Message> = row![content].spacing(16);
+        let mut layout: Row<'_, Message> =
+            row![container(content).width(Length::Fill)].spacing(16);
 
         if self.settings_open {
             layout = layout.push(self.settings_panel());

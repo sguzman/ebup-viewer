@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use hound::WavSpec;
 use once_cell::sync::Lazy;
 use piper1_rs::{Piper, PiperSynthesisOptions};
+use rodio::source::Zero;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
@@ -60,15 +61,27 @@ impl TtsEngine {
     }
 
     /// Play a list of audio files sequentially; returns a sink to control playback.
-    pub fn play_files(&self, files: &[PathBuf]) -> Result<TtsPlayback> {
+    pub fn play_files(
+        &self,
+        files: &[PathBuf],
+        pause_after: std::time::Duration,
+    ) -> Result<TtsPlayback> {
         let (_stream, handle) = OutputStream::try_default().context("Opening audio output")?;
         let sink = Sink::try_new(&handle).context("Creating sink")?;
 
-        info!(count = files.len(), "Starting TTS playback");
+        info!(
+            count = files.len(),
+            pause_ms = pause_after.as_millis(),
+            "Starting TTS playback"
+        );
         for file in files {
             let reader = BufReader::new(File::open(file)?);
             let source = Decoder::new(reader)?;
             sink.append(source);
+            if pause_after > std::time::Duration::ZERO {
+                let silence = Zero::<f32>::new(1, 48_000).take_duration(pause_after);
+                sink.append(silence);
+            }
         }
 
         sink.play();

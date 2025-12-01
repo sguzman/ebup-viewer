@@ -338,9 +338,10 @@ impl App {
                 }
                 self.stop_playback();
                 if let Some(engine) = &self.tts_engine {
-                    if let Ok(playback) =
-                        engine.play_files(&files.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>())
-                    {
+                    if let Ok(playback) = engine.play_files(
+                        &files.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>(),
+                        Duration::from_secs_f32(self.pause_after_sentence),
+                    ) {
                         self.tts_playback = Some(playback);
                         self.tts_track = files.clone();
                         self.current_sentence_idx =

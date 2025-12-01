@@ -32,6 +32,7 @@ const MAX_WORD_SPACING: u32 = 5;
 const MAX_LETTER_SPACING: u32 = 3;
 const MIN_TTS_SPEED: f32 = 0.1;
 const MAX_TTS_SPEED: f32 = 2.0;
+const HIGHLIGHT_LEAD_MS: u64 = 30;
 const FONT_FAMILIES: [FontFamily; 13] = [
     FontFamily::Sans,
     FontFamily::Serif,
@@ -289,7 +290,9 @@ impl App {
                             if next_idx < self.last_sentences.len() {
                                 self.current_sentence_idx = Some(next_idx);
                                 if let Some((_, dur)) = self.tts_track.get(next_idx) {
-                                    self.tts_deadline = Some(Instant::now() + *dur);
+                                    let lead = Duration::from_millis(HIGHLIGHT_LEAD_MS);
+                                    let next_deadline = Instant::now() + dur.saturating_sub(lead);
+                                    self.tts_deadline = Some(next_deadline);
                                 } else {
                                     self.tts_running = false;
                                     self.tts_deadline = None;
@@ -439,7 +442,7 @@ impl App {
 
     fn subscription(app: &App) -> Subscription<Message> {
         if app.tts_running {
-            time::every(Duration::from_millis(200)).map(Message::Tick)
+            time::every(Duration::from_millis(50)).map(Message::Tick)
         } else {
             Subscription::none()
         }
@@ -722,7 +725,9 @@ impl App {
             self.tts_track = track;
             self.current_sentence_idx = Some(sentence_idx.min(self.last_sentences.len().saturating_sub(1)));
             if let Some((_, dur)) = self.tts_track.first() {
-                self.tts_deadline = Some(Instant::now() + *dur);
+                let lead = Duration::from_millis(HIGHLIGHT_LEAD_MS);
+                let next_deadline = Instant::now() + dur.saturating_sub(lead);
+                self.tts_deadline = Some(next_deadline);
                 self.tts_running = true;
             }
         }

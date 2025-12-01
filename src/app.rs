@@ -792,7 +792,6 @@ pub fn run_app(
                 tts_model_path: config.tts_model_path,
                 tts_espeak_path: config.tts_espeak_path,
                 log_level: config.log_level,
-                lines_per_page,
             };
             app.repaginate();
             if let Some(last) = last_page {

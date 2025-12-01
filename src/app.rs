@@ -1036,7 +1036,7 @@ impl App {
     }
 
     fn start_playback_from(&mut self, page: usize, sentence_idx: usize) -> Task<Message> {
-        let Some(engine) = &self.tts_engine else {
+        let Some(engine) = self.tts_engine.clone() else {
             return Task::none();
         };
 
@@ -1060,7 +1060,6 @@ impl App {
         let speed = self.tts_speed;
         let threads = self.tts_threads.max(1);
         let page_id = page;
-        let engine = engine.clone();
         self.tts_request_id = self.tts_request_id.wrapping_add(1);
         let request_id = self.tts_request_id;
         self.save_epub_config();

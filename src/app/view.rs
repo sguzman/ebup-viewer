@@ -6,7 +6,7 @@ use crate::text_utils::split_sentences;
 use iced::alignment::Vertical;
 use iced::widget::text::{LineHeight, Wrapping};
 use iced::widget::{
-    Column, Row, button, column, container, pick_list, row, scrollable, slider, text,
+    Column, Row, button, checkbox, column, container, pick_list, row, scrollable, slider, text,
 };
 use iced::{Element, Length};
 
@@ -248,6 +248,16 @@ impl App {
             ]
             .spacing(8)
             .align_y(Vertical::Center),
+            checkbox(
+                "Auto-scroll to spoken sentence",
+                self.auto_scroll_tts,
+                Message::AutoScrollTtsChanged
+            ),
+            checkbox(
+                "Center tracked sentence while auto-scrolling",
+                self.center_spoken_sentence,
+                Message::CenterSpokenSentenceChanged
+            ),
             row![
                 text(format!("Lines per page: {}", self.lines_per_page)),
                 lines_per_page_slider

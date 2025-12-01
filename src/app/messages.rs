@@ -24,6 +24,8 @@ pub enum Message {
     PauseAfterSentenceChanged(f32),
     DayHighlightChanged(Component, f32),
     NightHighlightChanged(Component, f32),
+    AutoScrollTtsChanged(bool),
+    CenterSpokenSentenceChanged(bool),
     Play,
     Pause,
     PlayFromPageStart,

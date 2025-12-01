@@ -54,6 +54,10 @@ pub struct AppConfig {
     pub lines_per_page: usize,
     #[serde(default = "default_pause_after_sentence")]
     pub pause_after_sentence: f32,
+    #[serde(default = "default_auto_scroll_tts")]
+    pub auto_scroll_tts: bool,
+    #[serde(default = "default_center_spoken_sentence")]
+    pub center_spoken_sentence: bool,
 }
 
 impl Default for AppConfig {
@@ -80,6 +84,8 @@ impl Default for AppConfig {
             log_level: default_log_level(),
             lines_per_page: default_lines_per_page(),
             pause_after_sentence: default_pause_after_sentence(),
+            auto_scroll_tts: default_auto_scroll_tts(),
+            center_spoken_sentence: default_center_spoken_sentence(),
         }
     }
 }
@@ -300,6 +306,14 @@ fn default_lines_per_page() -> usize {
 
 fn default_pause_after_sentence() -> f32 {
     0.2
+}
+
+fn default_auto_scroll_tts() -> bool {
+    false
+}
+
+fn default_center_spoken_sentence() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]

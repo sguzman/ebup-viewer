@@ -31,6 +31,7 @@ impl App {
                     page_changed = true;
                     info!(page = self.current_page + 1, "Navigated to next page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
+                    self.queue_auto_scroll(&mut tasks);
                 }
             }
             Message::PreviousPage => {
@@ -39,6 +40,7 @@ impl App {
                     page_changed = true;
                     info!(page = self.current_page + 1, "Navigated to previous page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
+                    self.queue_auto_scroll(&mut tasks);
                 }
             }
             Message::FontSizeChanged(size) => {
@@ -150,6 +152,7 @@ impl App {
                     if self.tts_playback.is_some() {
                         let idx = self.current_sentence_idx.unwrap_or(0);
                         tasks.push(self.start_playback_from(self.current_page, idx));
+                        self.queue_auto_scroll(&mut tasks);
                     }
                 }
             }
@@ -157,6 +160,26 @@ impl App {
                 self.night_highlight = apply_component(self.night_highlight, component, value);
                 debug!(?component, value, "Night highlight updated");
                 self.save_epub_config();
+            }
+            Message::AutoScrollTtsChanged(enabled) => {
+                if self.auto_scroll_tts != enabled {
+                    self.auto_scroll_tts = enabled;
+                    info!(enabled, "Updated auto-scroll to spoken sentence");
+                    self.save_epub_config();
+                    if enabled {
+                        self.queue_auto_scroll(&mut tasks);
+                    }
+                }
+            }
+            Message::CenterSpokenSentenceChanged(centered) => {
+                if self.center_spoken_sentence != centered {
+                    self.center_spoken_sentence = centered;
+                    info!(centered, "Updated centered tracking preference");
+                    self.save_epub_config();
+                    if self.auto_scroll_tts {
+                        self.queue_auto_scroll(&mut tasks);
+                    }
+                }
             }
             Message::ToggleTtsControls => {
                 debug!("Toggled TTS controls");
@@ -170,6 +193,7 @@ impl App {
                 if self.tts_playback.is_some() {
                     let idx = self.current_sentence_idx.unwrap_or(0);
                     tasks.push(self.start_playback_from(self.current_page, idx));
+                    self.queue_auto_scroll(&mut tasks);
                 }
                 self.save_epub_config();
             }
@@ -182,37 +206,32 @@ impl App {
                 } else {
                     info!("Starting TTS playback from current page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
+                    self.queue_auto_scroll(&mut tasks);
                 }
             }
             Message::PlayFromPageStart => {
                 info!("Playing page from start");
                 tasks.push(self.start_playback_from(self.current_page, 0));
+                self.queue_auto_scroll(&mut tasks);
             }
             Message::PlayFromCursor(idx) => {
                 info!(idx, "Playing from cursor");
                 tasks.push(self.start_playback_from(self.current_page, idx));
+                self.queue_auto_scroll(&mut tasks);
             }
             Message::JumpToCurrentAudio => {
                 if let Some(idx) = self.current_sentence_idx {
                     let total = self.last_sentences.len();
-                    if total > 0 {
-                        let fraction = if total > 1 {
-                            (idx as f32 / (total.saturating_sub(1)) as f32).clamp(0.0, 1.0)
-                        } else {
-                            0.0
-                        };
+                    if let Some(offset) = self.scroll_offset_for_sentence(idx, total) {
                         info!(
                             idx,
-                            fraction, "Jumping to current audio sentence (scroll only)"
+                            fraction = offset.y,
+                            "Jumping to current audio sentence (scroll only)"
                         );
-                        let task: Task<Message> = iced::widget::scrollable::snap_to(
+                        tasks.push(iced::widget::scrollable::snap_to(
                             TEXT_SCROLL_ID.clone(),
-                            iced::widget::scrollable::RelativeOffset {
-                                x: 0.0,
-                                y: fraction,
-                            },
-                        );
-                        tasks.push(task);
+                            offset,
+                        ));
                     }
                 }
             }
@@ -231,12 +250,14 @@ impl App {
                 if next_idx < self.last_sentences.len() {
                     info!(next_idx, "Seeking forward within page");
                     tasks.push(self.start_playback_from(self.current_page, next_idx));
+                    self.queue_auto_scroll(&mut tasks);
                 } else if self.current_page + 1 < self.pages.len() {
                     self.current_page += 1;
                     info!("Seeking forward into next page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
                     page_changed = true;
                     self.save_epub_config();
+                    self.queue_auto_scroll(&mut tasks);
                 }
             }
             Message::SeekBackward => {
@@ -247,6 +268,7 @@ impl App {
                         "Seeking backward within page"
                     );
                     tasks.push(self.start_playback_from(self.current_page, current_idx - 1));
+                    self.queue_auto_scroll(&mut tasks);
                 } else if self.current_page > 0 {
                     self.current_page -= 1;
                     let last_idx = split_sentences(
@@ -262,6 +284,7 @@ impl App {
                     tasks.push(self.start_playback_from(self.current_page, last_idx));
                     page_changed = true;
                     self.save_epub_config();
+                    self.queue_auto_scroll(&mut tasks);
                 }
             }
             Message::Tick(now) => {
@@ -296,6 +319,7 @@ impl App {
                         let clamped = idx.min(self.last_sentences.len().saturating_sub(1));
                         if Some(clamped) != self.current_sentence_idx {
                             self.current_sentence_idx = Some(clamped);
+                            self.queue_auto_scroll(&mut tasks);
                         }
                     } else {
                         self.stop_playback();
@@ -303,6 +327,7 @@ impl App {
                             self.current_page += 1;
                             info!("Playback finished page, advancing");
                             tasks.push(self.start_playback_from(self.current_page, 0));
+                            self.queue_auto_scroll(&mut tasks);
                         } else {
                             info!("Playback finished at end of book");
                         }
@@ -357,6 +382,7 @@ impl App {
                         self.tts_elapsed = Duration::ZERO;
                         self.tts_started_at = Some(Instant::now());
                         self.tts_running = true;
+                        self.queue_auto_scroll(&mut tasks);
                         debug!(
                             offset = self.tts_sentence_offset,
                             "Started TTS playback and highlighting"
@@ -444,5 +470,48 @@ impl App {
             },
             |msg| msg,
         )
+    }
+
+    fn scroll_offset_for_sentence(
+        &self,
+        sentence_idx: usize,
+        total_sentences: usize,
+    ) -> Option<iced::widget::scrollable::RelativeOffset> {
+        if total_sentences == 0 {
+            return None;
+        }
+
+        let base = if total_sentences > 1 {
+            sentence_idx.min(total_sentences.saturating_sub(1)) as f32
+                / total_sentences.saturating_sub(1) as f32
+        } else {
+            0.0
+        };
+
+        let y = if self.center_spoken_sentence {
+            let half_step = 0.5 / total_sentences as f32;
+            (base - half_step).clamp(0.0, 1.0)
+        } else {
+            base
+        };
+
+        Some(iced::widget::scrollable::RelativeOffset { x: 0.0, y })
+    }
+
+    fn queue_auto_scroll(&self, tasks: &mut Vec<Task<Message>>) {
+        if !self.auto_scroll_tts {
+            return;
+        }
+
+        let Some(idx) = self.current_sentence_idx else {
+            return;
+        };
+
+        if let Some(offset) = self.scroll_offset_for_sentence(idx, self.last_sentences.len()) {
+            tasks.push(iced::widget::scrollable::snap_to(
+                TEXT_SCROLL_ID.clone(),
+                offset,
+            ));
+        }
     }
 }

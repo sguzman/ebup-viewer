@@ -84,6 +84,8 @@ pub struct App {
     pub(super) log_level: LogLevel,
     pub(super) tts_request_id: u64,
     pub(super) pause_after_sentence: f32,
+    pub(super) auto_scroll_tts: bool,
+    pub(super) center_spoken_sentence: bool,
 }
 
 impl App {
@@ -220,6 +222,8 @@ impl App {
             night_highlight: self.night_highlight,
             log_level: self.log_level,
             pause_after_sentence: self.pause_after_sentence,
+            auto_scroll_tts: self.auto_scroll_tts,
+            center_spoken_sentence: self.center_spoken_sentence,
         };
 
         save_epub_config(&self.epub_path, &config);
@@ -282,6 +286,8 @@ impl App {
             log_level: config.log_level,
             tts_request_id: 0,
             pause_after_sentence,
+            auto_scroll_tts: config.auto_scroll_tts,
+            center_spoken_sentence: config.center_spoken_sentence,
         };
 
         app.repaginate();

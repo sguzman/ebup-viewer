@@ -1019,7 +1019,7 @@ impl App {
         let play_from_start = button("Play Page").on_press(Message::PlayFromPageStart);
         let jump_disabled = self.current_sentence_idx.is_none();
         let jump_button = if jump_disabled {
-            button("Jump to Audio").style(iced::theme::Button::Secondary)
+            button("Jump to Audio")
         } else {
             button("Jump to Audio").on_press(Message::JumpToCurrentAudio)
         };

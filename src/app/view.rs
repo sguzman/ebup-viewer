@@ -319,6 +319,11 @@ impl App {
         } else {
             button("Jump to Audio").on_press(Message::JumpToCurrentAudio)
         };
+        let play_from_cursor = if let Some(idx) = self.current_sentence_idx {
+            button("Play From Highlight").on_press(Message::PlayFromCursor(idx))
+        } else {
+            button("Play From Highlight")
+        };
 
         let speed_slider = slider(
             MIN_TTS_SPEED..=super::state::MAX_TTS_SPEED,
@@ -332,6 +337,7 @@ impl App {
             play_button,
             button("⏭").on_press(Message::SeekForward),
             play_from_start,
+            play_from_cursor,
             jump_button,
             text(format!("Speed: {:.2}x", self.tts_speed)),
             speed_slider,

@@ -36,30 +36,6 @@ impl TtsEngine {
         })
     }
 
-    /// Ensure audio for a sentence exists, returning the cached path.
-    pub fn ensure_audio(&self, cache_root: &Path, sentence: &str, speed: f32) -> Result<PathBuf> {
-        let path = cache_path(cache_root, &self.model_path, sentence, speed);
-        if path.exists() {
-            debug!(path = %path.display(), "TTS cache hit");
-            return Ok(path);
-        }
-        debug!(path = %path.display(), "TTS cache miss; generating audio");
-
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let mut piper = Piper::new(
-            self.model_path.to_string_lossy().to_string(),
-            None::<String>,
-            self.espeak_path.to_string_lossy().to_string(),
-        )
-        .context("Loading Piper model")?;
-        synth_with_piper(&mut piper, &path, sentence, speed)?;
-
-        Ok(path)
-    }
-
     /// Play a list of audio files sequentially; returns a sink to control playback.
     pub fn play_files(
         &self,
@@ -155,10 +131,6 @@ impl TtsPlayback {
 
     pub fn is_paused(&self) -> bool {
         self.sink.is_paused()
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.sink.empty()
     }
 
     pub fn stop(self) {

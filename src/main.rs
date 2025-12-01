@@ -11,31 +11,45 @@ mod cache;
 mod config;
 mod epub_loader;
 mod pagination;
-mod tts;
 mod text_utils;
+mod tts;
 
 use crate::app::run_app;
+use crate::cache::{load_epub_config, load_last_page};
 use crate::config::load_config;
-use crate::cache::{load_last_page, load_epub_config};
 use crate::epub_loader::load_epub_text;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::env;
 use std::path::{Path, PathBuf};
+use tracing::{error, info, warn};
+use tracing_subscriber::EnvFilter;
 
 fn main() {
+    init_tracing();
     if let Err(err) = run() {
-        eprintln!("Error: {err}");
+        error!("{err:?}");
         std::process::exit(1);
     }
 }
 
 fn run() -> Result<()> {
     let epub_path = parse_args()?;
+    info!(path = %epub_path.display(), "Starting EPUB viewer");
     let mut config = load_config(Path::new("conf/config.toml"));
     if let Some(overrides) = load_epub_config(&epub_path) {
+        info!("Loaded per-epub overrides from cache");
         config = overrides;
     }
+    info!(
+        model = %config.tts_model_path,
+        espeak = %config.tts_espeak_path,
+        threads = config.tts_threads,
+        "Active TTS configuration"
+    );
     let last_page = load_last_page(&epub_path);
+    if let Some(page) = last_page {
+        info!(page, "Resuming from cached page");
+    }
     let text = load_epub_text(&epub_path)?;
     run_app(text, config, epub_path, last_page).context("Failed to start the GUI")?;
     Ok(())
@@ -49,10 +63,19 @@ fn parse_args() -> Result<PathBuf> {
 
     let path = PathBuf::from(path);
     if !path.exists() {
-        return Err(anyhow!(
-            "File not found: {}",
-            path.as_path().display()
-        ));
+        return Err(anyhow!("File not found: {}", path.as_path().display()));
     }
+    info!(path = %path.display(), "Opening EPUB");
     Ok(path)
+}
+
+fn init_tracing() {
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(true)
+        .with_file(true)
+        .with_line_number(true)
+        .init();
+    warn!("Logging initialized; override level with RUST_LOG");
 }

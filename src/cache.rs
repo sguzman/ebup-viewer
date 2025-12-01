@@ -9,14 +9,25 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use tracing::{debug, warn};
 
 pub const CACHE_DIR: &str = ".cache";
 
 /// Load the cached page for a given EPUB path, if present.
 pub fn load_last_page(epub_path: &Path) -> Option<usize> {
     let path = bookmark_path(epub_path);
-    let data = fs::read_to_string(path).ok()?;
+    let data = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(err) => {
+            debug!(
+                path = %path.display(),
+                "No cached last page found or unreadable: {err}"
+            );
+            return None;
+        }
+    };
     let value: CacheEntry = toml::from_str(&data).ok()?;
+    debug!(page = value.page, "Loaded last page bookmark");
     Some(value.page)
 }
 
@@ -30,7 +41,11 @@ pub fn save_last_page(epub_path: &Path, page: usize) {
     let entry = CacheEntry { page };
     if let Ok(contents) = toml::to_string(&entry) {
         if let Ok(mut file) = fs::File::create(path) {
-            let _ = file.write_all(contents.as_bytes());
+            if let Err(err) = file.write_all(contents.as_bytes()) {
+                warn!("Failed to persist last page: {err}");
+            } else {
+                debug!(page, "Saved last page bookmark");
+            }
         }
     }
 }
@@ -57,8 +72,26 @@ pub fn tts_dir(epub_path: &Path) -> PathBuf {
 
 pub fn load_epub_config(epub_path: &Path) -> Option<AppConfig> {
     let path = hash_dir(epub_path).join("config.toml");
-    let data = fs::read_to_string(path).ok()?;
-    toml::from_str(&data).ok()
+    let data = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(err) => {
+            debug!(
+                path = %path.display(),
+                "No cached EPUB config found or unreadable: {err}"
+            );
+            return None;
+        }
+    };
+    match toml::from_str(&data) {
+        Ok(cfg) => {
+            debug!("Loaded cached EPUB config");
+            Some(cfg)
+        }
+        Err(err) => {
+            warn!("Cached EPUB config invalid: {err}");
+            None
+        }
+    }
 }
 
 pub fn save_epub_config(epub_path: &Path, config: &AppConfig) {
@@ -68,6 +101,10 @@ pub fn save_epub_config(epub_path: &Path, config: &AppConfig) {
         let _ = fs::create_dir_all(parent);
     }
     if let Ok(contents) = toml::to_string(config) {
-        let _ = fs::write(path, contents);
+        if let Err(err) = fs::write(&path, contents) {
+            warn!(path = %path.display(), "Failed to save EPUB config: {err}");
+        } else {
+            debug!(path = %path.display(), "Persisted EPUB config");
+        }
     }
 }

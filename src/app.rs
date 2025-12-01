@@ -5,24 +5,23 @@
 //! `pagination` to break that text into pages based on the current font size.
 
 use crate::cache::save_last_page;
-use crate::config::{
-    AppConfig, FontFamily, FontWeight, HighlightColor, Justification, ThemeMode,
-};
+use crate::config::{AppConfig, FontFamily, FontWeight, HighlightColor, Justification, ThemeMode};
+use crate::pagination::{MAX_FONT_SIZE, MIN_FONT_SIZE, paginate};
 use crate::text_utils::split_sentences;
 use crate::tts::{TtsEngine, TtsPlayback};
-use crate::pagination::{paginate, MAX_FONT_SIZE, MIN_FONT_SIZE};
 use iced::Color;
-use iced::alignment::{Horizontal, Vertical};
-use iced::time;
 use iced::Subscription;
-use iced::widget::{
-    button, column, container, pick_list, row, scrollable, slider, text, Column, Row,
-};
-use iced::widget::text::{LineHeight, Wrapping};
-use iced::{Element, Font, Length, Task, Theme};
+use iced::alignment::{Horizontal, Vertical};
 use iced::font::{Family, Weight};
-use std::time::{Duration, Instant};
+use iced::time;
+use iced::widget::text::{LineHeight, Wrapping};
+use iced::widget::{
+    Column, Row, button, column, container, pick_list, row, scrollable, slider, text,
+};
+use iced::{Element, Font, Length, Task, Theme};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
+use tracing::{debug, info, warn};
 
 /// Limits and defaults for reader controls.
 const MAX_MARGIN: u16 = 48;
@@ -46,11 +45,7 @@ const FONT_FAMILIES: [FontFamily; 13] = [
     FontFamily::Hasklug,
     FontFamily::NotoSans,
 ];
-const FONT_WEIGHTS: [FontWeight; 3] = [
-    FontWeight::Light,
-    FontWeight::Normal,
-    FontWeight::Bold,
-];
+const FONT_WEIGHTS: [FontWeight; 3] = [FontWeight::Light, FontWeight::Normal, FontWeight::Bold];
 const JUSTIFICATIONS: [Justification; 4] = [
     Justification::Left,
     Justification::Center,
@@ -140,11 +135,17 @@ impl App {
     fn repaginate(&mut self) {
         self.pages = paginate(&self.full_text, self.font_size);
         if self.pages.is_empty() {
-            self.pages.push(String::from("This EPUB appears to contain no text."));
+            self.pages
+                .push(String::from("This EPUB appears to contain no text."));
         }
         if self.current_page >= self.pages.len() {
             self.current_page = self.pages.len() - 1;
         }
+        debug!(
+            pages = self.pages.len(),
+            font_size = self.font_size,
+            "Repaginated content"
+        );
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -156,7 +157,12 @@ impl App {
                 if self.current_page + 1 < self.pages.len() {
                     self.current_page += 1;
                     page_changed = true;
-                    let playing = self.tts_playback.as_ref().map(|p| !p.is_paused()).unwrap_or(false);
+                    info!(page = self.current_page + 1, "Navigated to next page");
+                    let playing = self
+                        .tts_playback
+                        .as_ref()
+                        .map(|p| !p.is_paused())
+                        .unwrap_or(false);
                     if playing {
                         tasks.push(self.start_playback_from(self.current_page, 0));
                     } else {
@@ -170,7 +176,12 @@ impl App {
                 if self.current_page > 0 {
                     self.current_page -= 1;
                     page_changed = true;
-                    let playing = self.tts_playback.as_ref().map(|p| !p.is_paused()).unwrap_or(false);
+                    info!(page = self.current_page + 1, "Navigated to previous page");
+                    let playing = self
+                        .tts_playback
+                        .as_ref()
+                        .map(|p| !p.is_paused())
+                        .unwrap_or(false);
                     if playing {
                         tasks.push(self.start_playback_from(self.current_page, 0));
                     } else {
@@ -183,65 +194,89 @@ impl App {
             Message::FontSizeChanged(size) => {
                 let clamped = size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
                 if clamped != self.font_size {
+                    debug!(old = self.font_size, new = clamped, "Font size changed");
                     self.font_size = clamped;
                     self.repaginate();
                 }
             }
             Message::ToggleTheme => {
+                info!(night_mode = !self.night_mode, "Toggled theme");
                 self.night_mode = !self.night_mode;
                 self.save_epub_config();
             }
             Message::ToggleSettings => {
+                debug!("Toggled settings panel");
                 self.settings_open = !self.settings_open;
                 self.save_epub_config();
             }
             Message::FontFamilyChanged(family) => {
+                debug!(?family, "Font family changed");
                 self.font_family = family;
                 self.save_epub_config();
             }
             Message::FontWeightChanged(weight) => {
+                debug!(?weight, "Font weight changed");
                 self.font_weight = weight;
                 self.save_epub_config();
             }
             Message::LineSpacingChanged(spacing) => {
                 self.line_spacing = spacing.clamp(0.8, 2.5);
+                debug!(line_spacing = self.line_spacing, "Line spacing changed");
                 self.save_epub_config();
             }
             Message::MarginHorizontalChanged(margin) => {
                 self.margin_horizontal = margin.min(MAX_MARGIN);
+                debug!(
+                    margin_horizontal = self.margin_horizontal,
+                    "Horizontal margin changed"
+                );
                 self.save_epub_config();
             }
             Message::MarginVerticalChanged(margin) => {
                 self.margin_vertical = margin.min(MAX_MARGIN);
+                debug!(
+                    margin_vertical = self.margin_vertical,
+                    "Vertical margin changed"
+                );
                 self.save_epub_config();
             }
             Message::JustificationChanged(justification) => {
+                debug!(?justification, "Text justification changed");
                 self.justification = justification;
                 self.save_epub_config();
             }
             Message::WordSpacingChanged(spacing) => {
                 self.word_spacing = spacing.min(MAX_WORD_SPACING);
+                debug!(word_spacing = self.word_spacing, "Word spacing changed");
                 self.save_epub_config();
             }
             Message::LetterSpacingChanged(spacing) => {
                 self.letter_spacing = spacing.min(MAX_LETTER_SPACING);
+                debug!(
+                    letter_spacing = self.letter_spacing,
+                    "Letter spacing changed"
+                );
                 self.save_epub_config();
             }
             Message::DayHighlightChanged(component, value) => {
                 self.day_highlight = apply_component(self.day_highlight, component, value);
+                debug!(?component, value, "Day highlight updated");
                 self.save_epub_config();
             }
             Message::NightHighlightChanged(component, value) => {
                 self.night_highlight = apply_component(self.night_highlight, component, value);
+                debug!(?component, value, "Night highlight updated");
                 self.save_epub_config();
             }
             Message::ToggleTtsControls => {
+                debug!("Toggled TTS controls");
                 self.tts_open = !self.tts_open;
                 self.save_epub_config();
             }
             Message::SetTtsSpeed(speed) => {
                 let clamped = speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED);
                 self.tts_speed = clamped;
+                info!(speed = self.tts_speed, "Adjusted TTS speed");
                 // Restart playback at current position with new synthesis speed to preserve pitch
                 if self.tts_playback.is_some() {
                     let idx = self.current_sentence_idx.unwrap_or(0);
@@ -251,19 +286,24 @@ impl App {
             }
             Message::Play => {
                 if let Some(playback) = &self.tts_playback {
+                    info!("Resuming TTS playback");
                     playback.play();
                 } else {
+                    info!("Starting TTS playback from current page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
                 }
             }
             Message::PlayFromPageStart => {
+                info!("Playing page from start");
                 tasks.push(self.start_playback_from(self.current_page, 0));
             }
             Message::PlayFromCursor(idx) => {
+                info!(idx, "Playing from cursor");
                 tasks.push(self.start_playback_from(self.current_page, idx));
             }
             Message::Pause => {
                 if let Some(playback) = &self.tts_playback {
+                    info!("Pausing TTS playback");
                     playback.pause();
                 }
                 self.tts_running = false;
@@ -272,9 +312,11 @@ impl App {
             Message::SeekForward => {
                 let next_idx = self.current_sentence_idx.unwrap_or(0) + 1;
                 if next_idx < self.last_sentences.len() {
+                    info!(next_idx, "Seeking forward within page");
                     tasks.push(self.start_playback_from(self.current_page, next_idx));
                 } else if self.current_page + 1 < self.pages.len() {
                     self.current_page += 1;
+                    info!("Seeking forward into next page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
                     page_changed = true;
                     self.save_epub_config();
@@ -283,6 +325,10 @@ impl App {
             Message::SeekBackward => {
                 let current_idx = self.current_sentence_idx.unwrap_or(0);
                 if current_idx > 0 {
+                    info!(
+                        previous_idx = current_idx.saturating_sub(1),
+                        "Seeking backward within page"
+                    );
                     tasks.push(self.start_playback_from(self.current_page, current_idx - 1));
                 } else if self.current_page > 0 {
                     self.current_page -= 1;
@@ -295,6 +341,7 @@ impl App {
                     )
                     .len()
                     .saturating_sub(1);
+                    info!("Seeking backward into previous page");
                     tasks.push(self.start_playback_from(self.current_page, last_idx));
                     page_changed = true;
                     self.save_epub_config();
@@ -321,8 +368,10 @@ impl App {
                     {
                         if self.current_page + 1 < self.pages.len() {
                             self.current_page += 1;
+                            info!("Playback finished page, advancing");
                             tasks.push(self.start_playback_from(self.current_page, 0));
                         } else {
+                            info!("Playback finished at end of book");
                             self.tts_running = false;
                             self.tts_deadline = None;
                         }
@@ -344,8 +393,10 @@ impl App {
                                 }
                             } else if self.current_page + 1 < self.pages.len() {
                                 self.current_page += 1;
+                                info!("Reached end of page during Tick, advancing");
                                 tasks.push(self.start_playback_from(self.current_page, 0));
                             } else {
+                                info!("Reached end of playback during Tick");
                                 self.tts_running = false;
                                 self.tts_deadline = None;
                             }
@@ -353,28 +404,50 @@ impl App {
                     }
                 }
             }
-            Message::TtsPrepared { page, start_idx, files } => {
+            Message::TtsPrepared {
+                page,
+                start_idx,
+                files,
+            } => {
+                info!(
+                    page,
+                    start_idx,
+                    file_count = files.len(),
+                    "Received prepared TTS batch"
+                );
                 if page != self.current_page {
                     // Stale result; ignore.
+                    debug!(
+                        page,
+                        current = self.current_page,
+                        "Ignoring stale TTS batch"
+                    );
                     return Task::none();
                 }
                 if files.is_empty() {
+                    warn!("TTS batch was empty; stopping playback");
                     self.tts_running = false;
                     self.tts_deadline = None;
                     self.current_sentence_idx = None;
                     return Task::none();
                 }
                 if let Some(engine) = &self.tts_engine {
-                    if let Ok(playback) = engine.play_files(&files.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()) {
+                    if let Ok(playback) =
+                        engine.play_files(&files.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>())
+                    {
                         self.tts_playback = Some(playback);
                         self.tts_track = files.clone();
-                        self.current_sentence_idx = Some(start_idx.min(files.len().saturating_sub(1)));
+                        self.current_sentence_idx =
+                            Some(start_idx.min(files.len().saturating_sub(1)));
                         if let Some((_, dur)) = self.tts_track.first() {
                             let lead = Duration::from_millis(HIGHLIGHT_LEAD_MS);
                             let next_deadline = Instant::now() + dur.saturating_sub(lead);
                             self.tts_deadline = Some(next_deadline);
                             self.tts_running = true;
+                            debug!(deadline = ?next_deadline, "Started TTS playback and highlighting");
                         }
+                    } else {
+                        warn!("Failed to start playback from prepared files");
                     }
                 }
             }
@@ -395,12 +468,24 @@ impl App {
         let total_pages = self.pages.len().max(1);
         let page_label = format!("Page {} of {}", self.current_page + 1, total_pages);
 
-        let theme_label = if self.night_mode { "Day Mode" } else { "Night Mode" };
+        let theme_label = if self.night_mode {
+            "Day Mode"
+        } else {
+            "Night Mode"
+        };
         let theme_toggle = button(theme_label).on_press(Message::ToggleTheme);
-        let settings_toggle = button(if self.settings_open { "Hide Settings" } else { "Show Settings" })
-            .on_press(Message::ToggleSettings);
-        let tts_toggle = button(if self.tts_open { "Hide TTS" } else { "Show TTS" })
-            .on_press(Message::ToggleTtsControls);
+        let settings_toggle = button(if self.settings_open {
+            "Hide Settings"
+        } else {
+            "Show Settings"
+        })
+        .on_press(Message::ToggleSettings);
+        let tts_toggle = button(if self.tts_open {
+            "Hide TTS"
+        } else {
+            "Show TTS"
+        })
+        .on_press(Message::ToggleTtsControls);
 
         let prev_button = if self.current_page > 0 {
             button("Previous").on_press(Message::PreviousPage)
@@ -438,65 +523,63 @@ impl App {
 
         let page_content = self.formatted_page_content();
 
-        let text_view_content: Element<'_, Message> = if self.tts_playback.is_some()
-            && !self.last_sentences.is_empty()
-        {
-            // Inline spans keep natural text flow while allowing highlight of the active sentence.
-            let sentences = split_sentences(page_content.clone());
-            if sentences.is_empty() {
-                return text(page_content)
+        let text_view_content: Element<'_, Message> =
+            if self.tts_playback.is_some() && !self.last_sentences.is_empty() {
+                // Inline spans keep natural text flow while allowing highlight of the active sentence.
+                let sentences = split_sentences(page_content.clone());
+                if sentences.is_empty() {
+                    return text(page_content)
+                        .size(self.font_size as f32)
+                        .line_height(LineHeight::Relative(self.line_spacing))
+                        .width(Length::Fill)
+                        .wrapping(Wrapping::WordOrGlyph)
+                        .align_x(self.justification_alignment())
+                        .font(self.current_font())
+                        .into();
+                }
+                let highlight_idx = self
+                    .current_sentence_idx
+                    .unwrap_or(0)
+                    .min(sentences.len().saturating_sub(1));
+                let highlight = self.highlight_color();
+
+                let spans: Vec<iced::widget::text::Span<'_, Message>> = sentences
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, sentence)| {
+                        let mut span: iced::widget::text::Span<'_, Message> =
+                            iced::widget::text::Span::new(format!("{sentence} "))
+                                .font(self.current_font())
+                                .size(self.font_size as f32)
+                                .line_height(LineHeight::Relative(self.line_spacing));
+
+                        if idx == highlight_idx {
+                            span = span
+                                .background(iced::Background::Color(highlight))
+                                .padding(iced::Padding::from(2u16));
+                        }
+
+                        span
+                    })
+                    .collect();
+
+                let rich: iced::widget::text::Rich<'_, Message> =
+                    iced::widget::text::Rich::with_spans(spans);
+
+                rich.width(Length::Fill)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .align_x(self.justification_alignment())
+                    .into()
+            } else {
+                text(page_content)
                     .size(self.font_size as f32)
                     .line_height(LineHeight::Relative(self.line_spacing))
                     .width(Length::Fill)
                     .wrapping(Wrapping::WordOrGlyph)
                     .align_x(self.justification_alignment())
                     .font(self.current_font())
-                    .into();
-            }
-            let highlight_idx = self
-                .current_sentence_idx
-                .unwrap_or(0)
-                .min(sentences.len().saturating_sub(1));
-            let highlight = self.highlight_color();
-
-            let spans: Vec<iced::widget::text::Span<'_, Message>> = sentences
-                .into_iter()
-                .enumerate()
-                .map(|(idx, sentence)| {
-                    let mut span: iced::widget::text::Span<'_, Message> =
-                        iced::widget::text::Span::new(format!("{sentence} "))
-                            .font(self.current_font())
-                            .size(self.font_size as f32)
-                            .line_height(LineHeight::Relative(self.line_spacing));
-
-                    if idx == highlight_idx {
-                        span = span
-                            .background(iced::Background::Color(highlight))
-                            .padding(iced::Padding::from(2u16));
-                    }
-
-                    span
-                })
-                .collect();
-
-            let rich: iced::widget::text::Rich<'_, Message> =
-                iced::widget::text::Rich::with_spans(spans);
-
-            rich
-                .width(Length::Fill)
-                .wrapping(Wrapping::WordOrGlyph)
-                .align_x(self.justification_alignment())
-                .into()
-        } else {
-            text(page_content)
-                .size(self.font_size as f32)
-                .line_height(LineHeight::Relative(self.line_spacing))
-                .width(Length::Fill)
-                .wrapping(Wrapping::WordOrGlyph)
-                .align_x(self.justification_alignment())
-                .font(self.current_font())
-                .into()
-        };
+                    .into()
+            };
 
         let text_view = scrollable(
             container(text_view_content)
@@ -513,8 +596,7 @@ impl App {
             content = content.push(self.tts_controls());
         }
 
-        let mut layout: Row<'_, Message> =
-            row![container(content).width(Length::Fill)].spacing(16);
+        let mut layout: Row<'_, Message> = row![container(content).width(Length::Fill)].spacing(16);
 
         if self.settings_open {
             layout = layout.push(self.settings_panel());
@@ -618,7 +700,13 @@ pub fn run_app(
 ) -> iced::Result {
     iced::application("EPUB Viewer", App::update, App::view)
         .subscription(App::subscription)
-        .theme(|app: &App| if app.night_mode { Theme::Dark } else { Theme::Light })
+        .theme(|app: &App| {
+            if app.night_mode {
+                Theme::Dark
+            } else {
+                Theme::Light
+            }
+        })
         .run_with(move || {
             let font_size = config.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
             let line_spacing = config.line_spacing.clamp(0.8, 2.5);
@@ -643,29 +731,38 @@ pub fn run_app(
                 margin_horizontal,
                 margin_vertical,
                 epub_path,
-            tts_engine: TtsEngine::new(
-                config.tts_model_path.clone().into(),
-                config.tts_espeak_path.clone().into(),
-            )
+                tts_engine: TtsEngine::new(
+                    config.tts_model_path.clone().into(),
+                    config.tts_espeak_path.clone().into(),
+                )
                 .ok(),
-            tts_playback: None,
-            tts_open: config.show_tts,
-            tts_speed: config.tts_speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED),
-            tts_threads: config.tts_threads.max(1),
-            last_sentences: Vec::new(),
-            current_sentence_idx: None,
-            tts_track: Vec::new(),
-            tts_deadline: None,
-            tts_running: false,
-            day_highlight: config.day_highlight,
-            night_highlight: config.night_highlight,
-            tts_model_path: config.tts_model_path,
-            tts_espeak_path: config.tts_espeak_path,
-        };
+                tts_playback: None,
+                tts_open: config.show_tts,
+                tts_speed: config.tts_speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED),
+                tts_threads: config.tts_threads.max(1),
+                last_sentences: Vec::new(),
+                current_sentence_idx: None,
+                tts_track: Vec::new(),
+                tts_deadline: None,
+                tts_running: false,
+                day_highlight: config.day_highlight,
+                night_highlight: config.night_highlight,
+                tts_model_path: config.tts_model_path,
+                tts_espeak_path: config.tts_espeak_path,
+            };
             app.repaginate();
             if let Some(last) = last_page {
                 app.current_page = last.min(app.pages.len().saturating_sub(1));
+                info!(page = app.current_page + 1, "Restored last page from cache");
+            } else {
+                info!("Starting from first page");
             }
+            info!(
+                font_size = app.font_size,
+                night_mode = app.night_mode,
+                justification = ?app.justification,
+                "Initialized app state"
+            );
             (app, Task::none())
         })
 }
@@ -739,23 +836,24 @@ impl App {
     }
 
     fn settings_panel(&self) -> Element<'_, Message> {
-        let family_picker =
-            pick_list(FONT_FAMILIES, Some(self.font_family), Message::FontFamilyChanged);
-        let weight_picker =
-            pick_list(FONT_WEIGHTS, Some(self.font_weight), Message::FontWeightChanged);
-        let justification_picker =
-            pick_list(
-                JUSTIFICATIONS,
-                Some(self.justification),
-                Message::JustificationChanged,
-            );
+        let family_picker = pick_list(
+            FONT_FAMILIES,
+            Some(self.font_family),
+            Message::FontFamilyChanged,
+        );
+        let weight_picker = pick_list(
+            FONT_WEIGHTS,
+            Some(self.font_weight),
+            Message::FontWeightChanged,
+        );
+        let justification_picker = pick_list(
+            JUSTIFICATIONS,
+            Some(self.justification),
+            Message::JustificationChanged,
+        );
 
-        let line_spacing_slider = slider(
-            0.8..=2.5,
-            self.line_spacing,
-            Message::LineSpacingChanged,
-        )
-        .step(0.05);
+        let line_spacing_slider =
+            slider(0.8..=2.5, self.line_spacing, Message::LineSpacingChanged).step(0.05);
 
         let margin_slider = slider(
             0.0..=MAX_MARGIN as f32,
@@ -783,35 +881,49 @@ impl App {
 
         let panel = column![
             text("Reader Settings").size(20.0),
-            row![text("Font family"), family_picker].spacing(8).align_y(Vertical::Center),
-            row![text("Font weight"), weight_picker].spacing(8).align_y(Vertical::Center),
-            row![text("Line spacing"), line_spacing_slider].spacing(8).align_y(Vertical::Center),
-            row![text(format!("Horizontal margin: {} px", self.margin_horizontal)), margin_slider]
+            row![text("Font family"), family_picker]
                 .spacing(8)
                 .align_y(Vertical::Center),
-            row![text(format!("Vertical margin: {} px", self.margin_vertical)), margin_vertical_slider]
+            row![text("Font weight"), weight_picker]
                 .spacing(8)
                 .align_y(Vertical::Center),
+            row![text("Line spacing"), line_spacing_slider]
+                .spacing(8)
+                .align_y(Vertical::Center),
+            row![
+                text(format!("Horizontal margin: {} px", self.margin_horizontal)),
+                margin_slider
+            ]
+            .spacing(8)
+            .align_y(Vertical::Center),
+            row![
+                text(format!("Vertical margin: {} px", self.margin_vertical)),
+                margin_vertical_slider
+            ]
+            .spacing(8)
+            .align_y(Vertical::Center),
             row![text("Justification"), justification_picker]
                 .spacing(8)
                 .align_y(Vertical::Center),
-            row![text(format!("Word spacing: {}", self.word_spacing)), word_spacing_slider]
-                .spacing(8)
-                .align_y(Vertical::Center),
-            row![text(format!("Letter spacing: {}", self.letter_spacing)), letter_spacing_slider]
-                .spacing(8)
-                .align_y(Vertical::Center),
+            row![
+                text(format!("Word spacing: {}", self.word_spacing)),
+                word_spacing_slider
+            ]
+            .spacing(8)
+            .align_y(Vertical::Center),
+            row![
+                text(format!("Letter spacing: {}", self.letter_spacing)),
+                letter_spacing_slider
+            ]
+            .spacing(8)
+            .align_y(Vertical::Center),
             text("Highlight Colors").size(18.0),
-            color_row(
-                "Day highlight",
-                self.day_highlight,
-                |c, v| Message::DayHighlightChanged(c, v),
-            ),
-            color_row(
-                "Night highlight",
-                self.night_highlight,
-                |c, v| Message::NightHighlightChanged(c, v),
-            ),
+            color_row("Day highlight", self.day_highlight, |c, v| {
+                Message::DayHighlightChanged(c, v)
+            },),
+            color_row("Night highlight", self.night_highlight, |c, v| {
+                Message::NightHighlightChanged(c, v)
+            },),
         ]
         .spacing(12)
         .width(Length::Fixed(280.0));
@@ -886,6 +998,10 @@ impl App {
         let page_id = page;
         let engine = engine.clone();
         self.save_epub_config();
+        info!(
+            page = page + 1,
+            sentence_idx, speed, threads, "Preparing playback task"
+        );
 
         Task::perform(
             async move {

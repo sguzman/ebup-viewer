@@ -7,6 +7,7 @@
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
+use tracing::{debug, info, warn};
 
 /// High-level app configuration; deserializable from TOML.
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
@@ -201,11 +202,29 @@ impl std::fmt::Display for Justification {
 /// Load configuration from the given path, falling back to defaults on error.
 pub fn load_config(path: &Path) -> AppConfig {
     let contents = match fs::read_to_string(path) {
-        Ok(data) => data,
-        Err(_) => return AppConfig::default(),
+        Ok(data) => {
+            info!(path = %path.display(), "Loaded base config");
+            data
+        }
+        Err(err) => {
+            warn!(
+                path = %path.display(),
+                "Falling back to default config: {err}"
+            );
+            return AppConfig::default();
+        }
     };
 
-    toml::from_str::<AppConfig>(&contents).unwrap_or_default()
+    match toml::from_str::<AppConfig>(&contents) {
+        Ok(cfg) => {
+            debug!("Parsed configuration from disk");
+            cfg
+        }
+        Err(err) => {
+            warn!(path = %path.display(), "Invalid config TOML: {err}");
+            AppConfig::default()
+        }
+    }
 }
 
 fn default_font_size() -> u32 {

@@ -8,23 +8,37 @@
 use anyhow::{Context, Result};
 use epub::doc::EpubDoc;
 use std::path::Path;
+use tracing::{debug, info, warn};
 
 /// Load an EPUB from disk and return its text content as a single string.
 pub fn load_epub_text(path: &Path) -> Result<String> {
-    let mut doc = EpubDoc::new(path)
-        .with_context(|| format!("Failed to open EPUB at {}", path.display()))?;
+    info!(path = %path.display(), "Loading EPUB content");
+    let mut doc =
+        EpubDoc::new(path).with_context(|| format!("Failed to open EPUB at {}", path.display()))?;
 
     let mut combined = String::new();
+    let mut chapters = 0usize;
 
     loop {
         match doc.get_current_str() {
             Some((chapter, _mime)) => {
+                chapters += 1;
                 if !combined.is_empty() {
                     combined.push_str("\n\n");
                 }
                 // Use a lightweight HTML-to-text pass to remove most markup; fall back to raw chapter on errors.
-                let plain = html2text::from_read(chapter.as_bytes(), 80)
-                    .unwrap_or_else(|_| chapter);
+                let plain = match html2text::from_read(chapter.as_bytes(), 80) {
+                    Ok(clean) => clean,
+                    Err(err) => {
+                        warn!(chapter = chapters, "html2text failed: {err}");
+                        chapter
+                    }
+                };
+                debug!(
+                    chapter = chapters,
+                    added_chars = plain.len(),
+                    "Parsed chapter"
+                );
                 combined.push_str(&plain);
             }
             None => break,
@@ -39,5 +53,10 @@ pub fn load_epub_text(path: &Path) -> Result<String> {
         combined.push_str("No textual content found in this EPUB.");
     }
 
+    info!(
+        chapters,
+        total_chars = combined.len(),
+        "Finished loading EPUB content"
+    );
     Ok(combined)
 }

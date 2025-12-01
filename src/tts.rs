@@ -6,11 +6,12 @@ use hound::WavSpec;
 use piper1_rs::{Piper, PiperSynthesisOptions};
 use rodio::{Decoder, OutputStream, Sink, Source};
 use sha2::{Digest, Sha256};
-use threadpool::ThreadPool;
-use std::sync::mpsc;
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use threadpool::ThreadPool;
+use tracing::{debug, info, warn};
 
 #[derive(Clone)]
 pub struct TtsEngine {
@@ -21,15 +22,25 @@ pub struct TtsEngine {
 impl TtsEngine {
     pub fn new(model_path: PathBuf, espeak_path: PathBuf) -> Result<Self> {
         let espeak_path = sanitize_espeak_root(espeak_path);
-        Ok(Self { model_path, espeak_path })
+        info!(
+            model = %model_path.display(),
+            espeak_root = %espeak_path.display(),
+            "Initializing TTS engine"
+        );
+        Ok(Self {
+            model_path,
+            espeak_path,
+        })
     }
 
     /// Ensure audio for a sentence exists, returning the cached path.
     pub fn ensure_audio(&self, cache_root: &Path, sentence: &str, speed: f32) -> Result<PathBuf> {
         let path = cache_path(cache_root, &self.model_path, sentence, speed);
         if path.exists() {
+            debug!(path = %path.display(), "TTS cache hit");
             return Ok(path);
         }
+        debug!(path = %path.display(), "TTS cache miss; generating audio");
 
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -51,6 +62,7 @@ impl TtsEngine {
         let (_stream, handle) = OutputStream::try_default().context("Opening audio output")?;
         let sink = Sink::try_new(&handle).context("Creating sink")?;
 
+        info!(count = files.len(), "Starting TTS playback");
         for file in files {
             let reader = BufReader::new(File::open(file)?);
             let source = Decoder::new(reader)?;
@@ -73,6 +85,10 @@ impl TtsEngine {
         let pool = ThreadPool::new(threads.max(1));
         let (tx, rx) = mpsc::channel();
         let engine = self.clone();
+        info!(
+            sentence_count = sentences.len(),
+            start_idx, speed, threads, "Preparing TTS batch"
+        );
         pool.execute(move || {
             let mut piper = match Piper::new(
                 engine.model_path.to_string_lossy().to_string(),
@@ -81,6 +97,7 @@ impl TtsEngine {
             ) {
                 Ok(p) => p,
                 Err(err) => {
+                    warn!("Failed to load Piper model in worker: {err}");
                     let _ = tx.send(Err(anyhow::Error::new(err).context("Loading Piper model")));
                     return;
                 }
@@ -91,14 +108,17 @@ impl TtsEngine {
                 let path = cache_path(&cache_root, &engine.model_path, &sentence, speed);
 
                 if !path.exists() {
+                    debug!(path = %path.display(), "Synthesizing new sentence");
                     if let Some(parent) = path.parent() {
                         if let Err(err) = fs::create_dir_all(parent) {
+                            warn!("Failed to create TTS cache dir: {err}");
                             let _ = tx.send(Err(err.into()));
                             return;
                         }
                     }
 
                     if let Err(err) = synth_with_piper(&mut piper, &path, &sentence, speed) {
+                        warn!("Failed to synthesize sentence: {err}");
                         let _ = tx.send(Err(err));
                         return;
                     }
@@ -107,6 +127,7 @@ impl TtsEngine {
                 let dur = sentence_duration(&path);
                 collected.push((path, dur));
             }
+            debug!(count = collected.len(), "Prepared TTS batch");
             let _ = tx.send(Ok(collected));
         });
 
@@ -125,10 +146,12 @@ pub struct TtsPlayback {
 
 impl TtsPlayback {
     pub fn pause(&self) {
+        debug!("Pausing playback");
         self.sink.pause();
     }
 
     pub fn play(&self) {
+        debug!("Resuming playback");
         self.sink.play();
     }
 
@@ -160,6 +183,11 @@ fn sanitize_espeak_root(path: PathBuf) -> PathBuf {
         .unwrap_or(false)
     {
         if let Some(parent) = path.parent() {
+            debug!(
+                original = %path.display(),
+                sanitized = %parent.display(),
+                "Trimming espeak-ng-data suffix"
+            );
             return parent.to_path_buf();
         }
     }
@@ -179,6 +207,12 @@ fn write_wav(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<()> {
         writer.write_sample(clamped)?;
     }
     writer.finalize()?;
+    debug!(
+        path = %path.display(),
+        samples = samples.len(),
+        sample_rate,
+        "Wrote synthesized WAV"
+    );
     Ok(())
 }
 
@@ -194,12 +228,13 @@ fn sentence_duration(path: &Path) -> std::time::Duration {
         .unwrap_or(std::time::Duration::from_secs(1))
 }
 
-fn synth_with_piper(
-    piper: &mut Piper,
-    path: &Path,
-    sentence: &str,
-    speed: f32,
-) -> Result<()> {
+fn synth_with_piper(piper: &mut Piper, path: &Path, sentence: &str, speed: f32) -> Result<()> {
+    debug!(
+        path = %path.display(),
+        speed,
+        chars = sentence.len(),
+        "Synthesizing sentence with Piper"
+    );
     let mut options: PiperSynthesisOptions = piper.get_default_synthesis_options();
     let length_scale = (1.0 / speed).clamp(0.25, 4.0);
     options.set_length_scale(length_scale);

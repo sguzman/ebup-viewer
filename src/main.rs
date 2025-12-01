@@ -80,12 +80,12 @@ fn init_tracing() -> ReloadHandle {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
     let (filter_layer, handle) = reload::Layer::new(env_filter);
     tracing_subscriber::registry()
-        .with(filter_layer)
         .with(
             fmt::layer()
                 .with_target(true)
                 .with_file(true)
-                .with_line_number(true),
+                .with_line_number(true)
+                .with_filter(filter_layer),
         )
         .init();
     warn!("Logging initialized; override level with config.log_level or RUST_LOG");
@@ -93,7 +93,10 @@ fn init_tracing() -> ReloadHandle {
 }
 
 fn set_log_level(handle: &ReloadHandle, level: &str) {
-    if let Err(err) = handle.modify(|filter| *filter = EnvFilter::new(level)) {
+    let parsed = EnvFilter::builder()
+        .parse(level)
+        .unwrap_or_else(|_| EnvFilter::new("debug"));
+    if let Err(err) = handle.modify(|filter| *filter = parsed.clone()) {
         warn!(%level, "Failed to update log level from config: {err}");
     } else {
         info!(%level, "Applied log level from config");

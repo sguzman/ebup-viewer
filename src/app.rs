@@ -547,7 +547,8 @@ impl App {
             text(page_label)
         ]
         .spacing(10)
-        .align_y(Vertical::Center);
+        .align_y(Vertical::Center)
+        .width(Length::Fill);
 
         let font_label = text(format!("Font size: {}", self.font_size));
         let font_slider = slider(
@@ -625,11 +626,12 @@ impl App {
                 .width(Length::Fill)
                 .padding([self.margin_vertical, self.margin_horizontal]),
         )
-        .height(Length::Fill);
+        .height(Length::FillPortion(1));
 
         let mut content: Column<'_, Message> = column![controls, font_controls, text_view]
             .padding(16)
-            .spacing(12);
+            .spacing(12)
+            .height(Length::Fill);
 
         if self.tts_open {
             content = content.push(self.tts_controls());

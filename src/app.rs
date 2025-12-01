@@ -11,12 +11,19 @@ use crate::tts::{TtsEngine, TtsPlayback};
 use crate::pagination::{paginate, MAX_FONT_SIZE, MIN_FONT_SIZE};
 use iced::Color;
 use iced::alignment::{Horizontal, Vertical};
+use iced::time;
+use iced::Subscription;
 use iced::widget::{
     button, column, container, pick_list, row, scrollable, slider, text, Column, Row,
 };
 use iced::widget::text::{LineHeight, Wrapping};
 use iced::{Element, Font, Length, Task, Theme};
 use iced::font::{Family, Weight};
+use std::time::{Duration, Instant};
+use std::path::PathBuf;
+use std::fs::File;
+use std::io::BufReader;
+use rodio::{Decoder, Source};
 use iced::widget::container::Style;
 
 /// Limits and defaults for reader controls.
@@ -76,6 +83,7 @@ pub enum Message {
     SetTtsSpeed(f32),
     SeekForward,
     SeekBackward,
+    Tick(Instant),
 }
 
 /// Core application state.
@@ -102,6 +110,9 @@ pub struct App {
     tts_speed: f32,
     last_sentences: Vec<String>,
     current_sentence_idx: Option<usize>,
+    tts_track: Vec<(PathBuf, Duration)>,
+    tts_deadline: Option<Instant>,
+    tts_running: bool,
 }
 
 impl App {
@@ -219,6 +230,27 @@ impl App {
                     self.current_page -= 1;
                     self.start_playback_from(self.current_page, 0);
                     page_changed = true;
+                }
+            }
+            Message::Tick(now) => {
+                if self.tts_running {
+                    if let Some(deadline) = self.tts_deadline {
+                        if now >= deadline {
+                            let next_idx = self.current_sentence_idx.unwrap_or(0) + 1;
+                            if next_idx < self.last_sentences.len() {
+                                self.current_sentence_idx = Some(next_idx);
+                                if let Some((_, dur)) = self.tts_track.get(next_idx) {
+                                    self.tts_deadline = Some(Instant::now() + *dur);
+                                } else {
+                                    self.tts_running = false;
+                                    self.tts_deadline = None;
+                                }
+                            } else {
+                                self.tts_running = false;
+                                self.tts_deadline = None;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -352,6 +384,14 @@ impl App {
 
         layout.into()
     }
+
+    fn subscription(app: &App) -> Subscription<Message> {
+        if app.tts_running {
+            time::every(Duration::from_millis(200)).map(Message::Tick)
+        } else {
+            Subscription::none()
+        }
+    }
 }
 
 /// Helper to launch the app with the provided text.
@@ -362,6 +402,7 @@ pub fn run_app(
     last_page: Option<usize>,
 ) -> iced::Result {
     iced::application("EPUB Viewer", App::update, App::view)
+        .subscription(App::subscription)
         .theme(|app: &App| if app.night_mode { Theme::Dark } else { Theme::Light })
         .run_with(move || {
             let font_size = config.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
@@ -398,6 +439,9 @@ pub fn run_app(
                 tts_speed: config.tts_speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED),
                 last_sentences: Vec::new(),
                 current_sentence_idx: None,
+                tts_track: Vec::new(),
+                tts_deadline: None,
+                tts_running: false,
             };
             app.repaginate();
             if let Some(last) = last_page {
@@ -612,8 +656,11 @@ impl App {
 
         let sentence_idx = sentence_idx.min(sentences.len().saturating_sub(1));
         let mut files = Vec::new();
-        for sent in sentences.iter().skip(sentence_idx) {
+        let mut track = Vec::new();
+        for (_i, sent) in sentences.iter().enumerate().skip(sentence_idx) {
             if let Ok(path) = engine.ensure_audio(sent) {
+                let dur = sentence_duration(&path, self.tts_speed);
+                track.push((path.clone(), dur));
                 files.push(path);
             }
         }
@@ -621,7 +668,31 @@ impl App {
         if let Ok(playback) = engine.play_files(&files) {
             playback.set_speed(self.tts_speed);
             self.tts_playback = Some(playback);
+            self.tts_track = track;
+            self.current_sentence_idx = Some(sentence_idx.min(self.last_sentences.len().saturating_sub(1)));
+            if let Some((_, dur)) = self.tts_track.first() {
+                self.tts_deadline = Some(Instant::now() + *dur);
+                self.tts_running = true;
+            }
         }
+    }
+}
+
+fn sentence_duration(path: &PathBuf, speed: f32) -> Duration {
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return Duration::from_secs(1),
+    };
+    let reader = BufReader::new(file);
+    let dur = Decoder::new(reader)
+        .ok()
+        .and_then(|d| d.total_duration())
+        .unwrap_or(Duration::from_secs(1));
+
+    if speed > 0.0 {
+        dur.mul_f64((1.0 / speed) as f64)
+    } else {
+        dur
     }
 }
 

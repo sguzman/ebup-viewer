@@ -18,7 +18,7 @@ use iced::Subscription;
 use iced::alignment::{Horizontal, Vertical};
 use iced::font::{Family, Weight};
 use iced::time;
-use iced::widget::scrollable::{self, Id as ScrollId, RelativeOffset};
+use iced::widget::scrollable::{Id as ScrollId, RelativeOffset};
 use iced::widget::text::{LineHeight, Wrapping};
 use iced::widget::{
     Column, Row, button, column, container, pick_list, row, scrollable, slider, text,
@@ -349,10 +349,14 @@ impl App {
                             idx,
                             fraction, "Jumping to current audio sentence (scroll only)"
                         );
-                        tasks.push(scrollable::snap_to(
+                        let task: Task<Message> = scrollable::snap_to(
                             TEXT_SCROLL_ID.clone(),
-                            RelativeOffset::new(0.0, fraction),
-                        ));
+                            RelativeOffset {
+                                x: 0.0,
+                                y: fraction,
+                            },
+                        );
+                        tasks.push(task);
                     }
                 }
             }

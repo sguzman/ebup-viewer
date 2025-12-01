@@ -277,6 +277,9 @@ impl App {
                                     self.tts_running = false;
                                     self.tts_deadline = None;
                                 }
+                            } else if self.current_page + 1 < self.pages.len() {
+                                self.current_page += 1;
+                                self.start_playback_from(self.current_page, 0);
                             } else {
                                 self.tts_running = false;
                                 self.tts_deadline = None;

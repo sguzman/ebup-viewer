@@ -41,24 +41,7 @@ impl TtsEngine {
             self.espeak_path.to_string_lossy().to_string(),
         )
         .context("Loading Piper model")?;
-        let mut options: PiperSynthesisOptions = piper.get_default_synthesis_options();
-
-        // Piper length_scale is roughly inverse speed.
-        let length_scale = (1.0 / speed).clamp(0.25, 4.0);
-        options.set_length_scale(length_scale);
-
-        let mut handle = piper
-            .start_synthesis(sentence.to_string(), &options)
-            .context("Synthesizing audio")?;
-
-        let mut samples: Vec<f32> = Vec::new();
-        let mut sample_rate = 22050u32;
-        while let Some(chunk) = handle.get_next_chunk()? {
-            sample_rate = chunk.sample_rate();
-            samples.extend_from_slice(chunk.samples());
-        }
-
-        write_wav(&path, sample_rate, &samples)?;
+        synth_with_piper(&mut piper, &path, sentence, speed)?;
 
         Ok(path)
     }
@@ -91,20 +74,38 @@ impl TtsEngine {
         let (tx, rx) = mpsc::channel();
         let engine = self.clone();
         pool.execute(move || {
+            let mut piper = match Piper::new(
+                engine.model_path.to_string_lossy().to_string(),
+                None::<String>,
+                engine.espeak_path.to_string_lossy().to_string(),
+            ) {
+                Ok(p) => p,
+                Err(err) => {
+                    let _ = tx.send(Err(anyhow::Error::new(err).context("Loading Piper model")));
+                    return;
+                }
+            };
+
             let mut collected = Vec::new();
             for sentence in sentences.into_iter().skip(start_idx) {
-                match engine
-                    .ensure_audio(&cache_root, &sentence, speed)
-                    .and_then(|path| {
-                        let dur = sentence_duration(&path);
-                        Ok((path, dur))
-                    }) {
-                    Ok(pair) => collected.push(pair),
-                    Err(err) => {
+                let path = cache_path(&cache_root, &engine.model_path, &sentence, speed);
+
+                if !path.exists() {
+                    if let Some(parent) = path.parent() {
+                        if let Err(err) = fs::create_dir_all(parent) {
+                            let _ = tx.send(Err(err.into()));
+                            return;
+                        }
+                    }
+
+                    if let Err(err) = synth_with_piper(&mut piper, &path, &sentence, speed) {
                         let _ = tx.send(Err(err));
                         return;
                     }
                 }
+
+                let dur = sentence_duration(&path);
+                collected.push((path, dur));
             }
             let _ = tx.send(Ok(collected));
         });
@@ -191,4 +192,29 @@ fn sentence_duration(path: &Path) -> std::time::Duration {
         .ok()
         .and_then(|d| d.total_duration())
         .unwrap_or(std::time::Duration::from_secs(1))
+}
+
+fn synth_with_piper(
+    piper: &mut Piper,
+    path: &Path,
+    sentence: &str,
+    speed: f32,
+) -> Result<()> {
+    let mut options: PiperSynthesisOptions = piper.get_default_synthesis_options();
+    let length_scale = (1.0 / speed).clamp(0.25, 4.0);
+    options.set_length_scale(length_scale);
+
+    let mut handle = piper
+        .start_synthesis(sentence.to_string(), &options)
+        .context("Synthesizing audio")?;
+
+    let mut samples: Vec<f32> = Vec::new();
+    let mut sample_rate = 22050u32;
+    while let Some(chunk) = handle.get_next_chunk()? {
+        sample_rate = chunk.sample_rate();
+        samples.extend_from_slice(chunk.samples());
+    }
+
+    write_wav(path, sample_rate, &samples)?;
+    Ok(())
 }

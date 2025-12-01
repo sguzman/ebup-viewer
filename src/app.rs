@@ -358,6 +358,12 @@ impl App {
                     // Stale result; ignore.
                     return Task::none();
                 }
+                if files.is_empty() {
+                    self.tts_running = false;
+                    self.tts_deadline = None;
+                    self.current_sentence_idx = None;
+                    return Task::none();
+                }
                 if let Some(engine) = &self.tts_engine {
                     if let Ok(playback) = engine.play_files(&files.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>()) {
                         self.tts_playback = Some(playback);

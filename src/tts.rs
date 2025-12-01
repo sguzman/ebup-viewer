@@ -89,29 +89,31 @@ impl TtsEngine {
     ) -> Result<Vec<(PathBuf, std::time::Duration)>> {
         let pool = ThreadPool::new(threads.max(1));
         let (tx, rx) = mpsc::channel();
-
-        for sentence in sentences.into_iter().skip(start_idx) {
-            let engine = self.clone();
-            let cache_root = cache_root.clone();
-            let tx = tx.clone();
-            pool.execute(move || {
-                let result = engine
+        let engine = self.clone();
+        pool.execute(move || {
+            let mut collected = Vec::new();
+            for sentence in sentences.into_iter().skip(start_idx) {
+                match engine
                     .ensure_audio(&cache_root, &sentence, speed)
                     .and_then(|path| {
                         let dur = sentence_duration(&path);
                         Ok((path, dur))
-                    });
-                let _ = tx.send(result);
-            });
-        }
-        drop(tx);
+                    }) {
+                    Ok(pair) => collected.push(pair),
+                    Err(err) => {
+                        let _ = tx.send(Err(err));
+                        return;
+                    }
+                }
+            }
+            let _ = tx.send(Ok(collected));
+        });
 
-        let mut results = Vec::new();
-        for res in rx {
-            results.push(res?);
+        // Only one job is submitted; receive its result.
+        match rx.recv() {
+            Ok(res) => res,
+            Err(_) => Ok(Vec::new()),
         }
-
-        Ok(results)
     }
 }
 

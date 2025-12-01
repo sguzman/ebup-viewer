@@ -52,6 +52,8 @@ pub struct AppConfig {
     pub log_level: LogLevel,
     #[serde(default = "default_lines_per_page")]
     pub lines_per_page: usize,
+    #[serde(default = "default_pause_after_sentence")]
+    pub pause_after_sentence: f32,
 }
 
 impl Default for AppConfig {
@@ -77,6 +79,7 @@ impl Default for AppConfig {
             night_highlight: default_night_highlight(),
             log_level: default_log_level(),
             lines_per_page: default_lines_per_page(),
+            pause_after_sentence: default_pause_after_sentence(),
         }
     }
 }
@@ -293,6 +296,10 @@ fn default_log_level() -> LogLevel {
 
 fn default_lines_per_page() -> usize {
     28
+}
+
+fn default_pause_after_sentence() -> f32 {
+    0.2
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]

@@ -21,6 +21,7 @@ pub enum Message {
     LinesPerPageChanged(u32),
     ToggleTtsControls,
     JumpToCurrentAudio,
+    PauseAfterSentenceChanged(f32),
     DayHighlightChanged(Component, f32),
     NightHighlightChanged(Component, f32),
     Play,

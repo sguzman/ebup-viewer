@@ -235,6 +235,20 @@ impl App {
                 .spacing(8)
                 .align_y(Vertical::Center),
             row![
+                text(format!(
+                    "Pause after sentence: {:.1} s",
+                    self.pause_after_sentence
+                )),
+                slider(
+                    0.0..=2.0,
+                    self.pause_after_sentence,
+                    Message::PauseAfterSentenceChanged
+                )
+                .step(0.1)
+            ]
+            .spacing(8)
+            .align_y(Vertical::Center),
+            row![
                 text(format!("Lines per page: {}", self.lines_per_page)),
                 lines_per_page_slider
             ]

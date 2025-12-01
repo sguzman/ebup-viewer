@@ -82,6 +82,7 @@ pub struct App {
     pub(super) tts_espeak_path: String,
     pub(super) log_level: LogLevel,
     pub(super) tts_request_id: u64,
+    pub(super) pause_after_sentence: f32,
 }
 
 impl App {
@@ -217,6 +218,7 @@ impl App {
             day_highlight: self.day_highlight,
             night_highlight: self.night_highlight,
             log_level: self.log_level,
+            pause_after_sentence: self.pause_after_sentence,
         };
 
         save_epub_config(&self.epub_path, &config);
@@ -237,6 +239,7 @@ impl App {
         let lines_per_page = config
             .lines_per_page
             .clamp(MIN_LINES_PER_PAGE, MAX_LINES_PER_PAGE);
+        let pause_after_sentence = config.pause_after_sentence.clamp(0.0, 2.0);
 
         let mut app = App {
             pages: Vec::new(),
@@ -276,6 +279,7 @@ impl App {
             tts_espeak_path: config.tts_espeak_path,
             log_level: config.log_level,
             tts_request_id: 0,
+            pause_after_sentence,
         };
 
         app.repaginate();

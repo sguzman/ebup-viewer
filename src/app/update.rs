@@ -141,6 +141,14 @@ impl App {
                 debug!(?component, value, "Day highlight updated");
                 self.save_epub_config();
             }
+            Message::PauseAfterSentenceChanged(pause) => {
+                let clamped = pause.clamp(0.0, 2.0);
+                if (clamped - self.pause_after_sentence).abs() > f32::EPSILON {
+                    self.pause_after_sentence = clamped;
+                    info!(pause_secs = clamped, "Updated pause after sentence");
+                    self.save_epub_config();
+                }
+            }
             Message::NightHighlightChanged(component, value) => {
                 self.night_highlight = apply_component(self.night_highlight, component, value);
                 debug!(?component, value, "Night highlight updated");

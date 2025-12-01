@@ -25,7 +25,7 @@ impl TtsEngine {
             None::<String>,
             espeak_path.to_string_lossy().to_string(),
         )
-            .context("Loading Piper model")?;
+        .context("Loading Piper model")?;
         Ok(Self {
             model_path,
             espeak_path,
@@ -34,12 +34,7 @@ impl TtsEngine {
     }
 
     /// Ensure audio for a sentence exists, returning the cached path.
-    pub fn ensure_audio(
-        &self,
-        cache_root: &Path,
-        sentence: &str,
-        speed: f32,
-    ) -> Result<PathBuf> {
+    pub fn ensure_audio(&self, cache_root: &Path, sentence: &str, speed: f32) -> Result<PathBuf> {
         let path = cache_path(cache_root, &self.model_path, sentence, speed);
         if path.exists() {
             return Ok(path);
@@ -129,9 +124,7 @@ fn write_wav(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<()> {
     };
     let mut writer = hound::WavWriter::create(path, spec)?;
     for &s in samples {
-        let clamped = (s * i16::MAX as f32)
-            .clamp(i16::MIN as f32, i16::MAX as f32)
-            as i16;
+        let clamped = (s * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         writer.write_sample(clamped)?;
     }
     writer.finalize()?;

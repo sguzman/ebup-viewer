@@ -12,9 +12,19 @@ use iced::{Subscription, Task};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
+/// Describes work that must be performed outside the pure reducer.
+pub enum Effect {
+    SaveConfig,
+    SaveBookmark,
+    StartTts { page: usize, sentence_idx: usize },
+    StopTts,
+    ScrollTo(RelativeOffset),
+    AutoScrollToCurrent,
+}
+
 impl App {
     pub fn subscription(app: &App) -> Subscription<Message> {
-        if app.tts_running {
+        if app.tts.running {
             time::every(Duration::from_millis(50)).map(Message::Tick)
         } else {
             Subscription::none()
@@ -22,272 +32,291 @@ impl App {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
-        let mut page_changed = false;
-        let mut location_dirty = false;
-        let mut tasks: Vec<Task<Message>> = Vec::new();
+        let effects = self.reduce(message);
+        if effects.is_empty() {
+            Task::none()
+        } else {
+            Task::batch(effects.into_iter().map(|effect| self.run_effect(effect)))
+        }
+    }
+
+    fn reduce(&mut self, message: Message) -> Vec<Effect> {
+        let mut effects = Vec::new();
 
         match message {
             Message::NextPage => {
-                if self.current_page + 1 < self.pages.len() {
-                    self.current_page += 1;
-                    page_changed = true;
-                    location_dirty = true;
-                    self.last_scroll_offset = RelativeOffset::START;
-                    info!(page = self.current_page + 1, "Navigated to next page");
-                    tasks.push(self.start_playback_from(self.current_page, 0));
-                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
-                }
+                effects.extend(self.go_to_page(self.reader.current_page + 1));
             }
             Message::PreviousPage => {
-                if self.current_page > 0 {
-                    self.current_page -= 1;
-                    page_changed = true;
-                    location_dirty = true;
-                    self.last_scroll_offset = RelativeOffset::START;
-                    info!(page = self.current_page + 1, "Navigated to previous page");
-                    tasks.push(self.start_playback_from(self.current_page, 0));
-                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                if self.reader.current_page > 0 {
+                    effects.extend(self.go_to_page(self.reader.current_page - 1));
                 }
             }
             Message::FontSizeChanged(size) => {
                 let clamped = size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
-                if clamped != self.font_size {
-                    debug!(old = self.font_size, new = clamped, "Font size changed");
-                    self.font_size = clamped;
+                if clamped != self.config.font_size {
+                    debug!(old = self.config.font_size, new = clamped, "Font size changed");
+                    self.config.font_size = clamped;
                     self.repaginate();
                 }
             }
             Message::ToggleTheme => {
-                info!(night_mode = !self.night_mode, "Toggled theme");
-                self.night_mode = !self.night_mode;
-                self.save_epub_config();
+                let next = match self.config.theme {
+                    crate::config::ThemeMode::Night => crate::config::ThemeMode::Day,
+                    crate::config::ThemeMode::Day => crate::config::ThemeMode::Night,
+                };
+                info!(night_mode = matches!(next, crate::config::ThemeMode::Night), "Toggled theme");
+                self.config.theme = next;
+                effects.push(Effect::SaveConfig);
             }
             Message::ToggleSettings => {
                 debug!("Toggled settings panel");
-                self.settings_open = !self.settings_open;
-                self.save_epub_config();
+                self.config.show_settings = !self.config.show_settings;
+                effects.push(Effect::SaveConfig);
             }
             Message::FontFamilyChanged(family) => {
                 debug!(?family, "Font family changed");
-                self.font_family = family;
-                self.save_epub_config();
+                self.config.font_family = family;
+                effects.push(Effect::SaveConfig);
             }
             Message::FontWeightChanged(weight) => {
                 debug!(?weight, "Font weight changed");
-                self.font_weight = weight;
-                self.save_epub_config();
+                self.config.font_weight = weight;
+                effects.push(Effect::SaveConfig);
             }
             Message::LineSpacingChanged(spacing) => {
-                self.line_spacing = spacing.clamp(0.8, 2.5);
-                debug!(line_spacing = self.line_spacing, "Line spacing changed");
-                self.save_epub_config();
+                self.config.line_spacing = spacing.clamp(0.8, 2.5);
+                debug!(line_spacing = self.config.line_spacing, "Line spacing changed");
+                effects.push(Effect::SaveConfig);
             }
             Message::MarginHorizontalChanged(margin) => {
-                self.margin_horizontal = margin.min(MAX_MARGIN);
+                self.config.margin_horizontal = margin.min(MAX_MARGIN);
                 debug!(
-                    margin_horizontal = self.margin_horizontal,
+                    margin_horizontal = self.config.margin_horizontal,
                     "Horizontal margin changed"
                 );
-                self.save_epub_config();
+                effects.push(Effect::SaveConfig);
             }
             Message::MarginVerticalChanged(margin) => {
-                self.margin_vertical = margin.min(MAX_MARGIN);
+                self.config.margin_vertical = margin.min(MAX_MARGIN);
                 debug!(
-                    margin_vertical = self.margin_vertical,
+                    margin_vertical = self.config.margin_vertical,
                     "Vertical margin changed"
                 );
-                self.save_epub_config();
+                effects.push(Effect::SaveConfig);
             }
             Message::WordSpacingChanged(spacing) => {
-                self.word_spacing = spacing.min(MAX_WORD_SPACING);
-                debug!(word_spacing = self.word_spacing, "Word spacing changed");
-                self.save_epub_config();
+                self.config.word_spacing = spacing.min(MAX_WORD_SPACING);
+                debug!(word_spacing = self.config.word_spacing, "Word spacing changed");
+                effects.push(Effect::SaveConfig);
             }
             Message::LetterSpacingChanged(spacing) => {
-                self.letter_spacing = spacing.min(MAX_LETTER_SPACING);
+                self.config.letter_spacing = spacing.min(MAX_LETTER_SPACING);
                 debug!(
-                    letter_spacing = self.letter_spacing,
+                    letter_spacing = self.config.letter_spacing,
                     "Letter spacing changed"
                 );
-                self.save_epub_config();
+                effects.push(Effect::SaveConfig);
             }
             Message::LinesPerPageChanged(lines) => {
                 let clamped =
                     lines.clamp(MIN_LINES_PER_PAGE as u32, MAX_LINES_PER_PAGE as u32) as usize;
-                if clamped != self.lines_per_page {
+                if clamped != self.config.lines_per_page {
                     let anchor = self
+                        .reader
                         .pages
-                        .get(self.current_page)
+                        .get(self.reader.current_page)
                         .and_then(|p| split_sentences(p.clone()).into_iter().next());
-                    let before = self.current_page;
-                    self.lines_per_page = clamped;
+                    let before = self.reader.current_page;
+                    self.config.lines_per_page = clamped;
                     self.repaginate();
                     if let Some(sentence) = anchor {
                         if let Some(idx) =
-                            self.pages.iter().position(|page| page.contains(&sentence))
+                            self.reader.pages.iter().position(|page| page.contains(&sentence))
                         {
-                            self.current_page = idx;
+                            self.reader.current_page = idx;
                         }
                     }
-                    if self.current_page != before {
-                        page_changed = true;
-                        location_dirty = true;
-                        self.last_scroll_offset = RelativeOffset::START;
+                    if self.reader.current_page != before {
+                        self.bookmark.last_scroll_offset = RelativeOffset::START;
+                        effects.push(Effect::SaveBookmark);
                     }
                     debug!(
-                        lines_per_page = self.lines_per_page,
+                        lines_per_page = self.config.lines_per_page,
                         "Lines per page changed"
                     );
-                    self.save_epub_config();
+                    effects.push(Effect::SaveConfig);
                 }
             }
             Message::DayHighlightChanged(component, value) => {
-                self.day_highlight = apply_component(self.day_highlight, component, value);
+                self.config.day_highlight = apply_component(self.config.day_highlight, component, value);
                 debug!(?component, value, "Day highlight updated");
-                self.save_epub_config();
+                effects.push(Effect::SaveConfig);
             }
             Message::PauseAfterSentenceChanged(pause) => {
                 let clamped = pause.clamp(0.0, 2.0);
-                if (clamped - self.pause_after_sentence).abs() > f32::EPSILON {
-                    self.pause_after_sentence = clamped;
+                if (clamped - self.config.pause_after_sentence).abs() > f32::EPSILON {
+                    self.config.pause_after_sentence = clamped;
                     info!(pause_secs = clamped, "Updated pause after sentence");
-                    self.save_epub_config();
-                    if self.tts_playback.is_some() {
-                        let idx = self.current_sentence_idx.unwrap_or(0);
-                        tasks.push(self.start_playback_from(self.current_page, idx));
-                        location_dirty = true;
-                        self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                    effects.push(Effect::SaveConfig);
+                    if self.tts.playback.is_some() {
+                        let idx = self.tts.current_sentence_idx.unwrap_or(0);
+                        effects.push(Effect::StartTts {
+                            page: self.reader.current_page,
+                            sentence_idx: idx,
+                        });
+                        effects.push(Effect::AutoScrollToCurrent);
+                        effects.push(Effect::SaveBookmark);
                     }
                 }
             }
             Message::NightHighlightChanged(component, value) => {
-                self.night_highlight = apply_component(self.night_highlight, component, value);
+                self.config.night_highlight = apply_component(self.config.night_highlight, component, value);
                 debug!(?component, value, "Night highlight updated");
-                self.save_epub_config();
+                effects.push(Effect::SaveConfig);
             }
             Message::AutoScrollTtsChanged(enabled) => {
-                if self.auto_scroll_tts != enabled {
-                    self.auto_scroll_tts = enabled;
+                if self.config.auto_scroll_tts != enabled {
+                    self.config.auto_scroll_tts = enabled;
                     info!(enabled, "Updated auto-scroll to spoken sentence");
-                    self.save_epub_config();
+                    effects.push(Effect::SaveConfig);
                     if enabled {
-                        self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                        effects.push(Effect::AutoScrollToCurrent);
+                        effects.push(Effect::SaveBookmark);
                     }
                 }
             }
             Message::CenterSpokenSentenceChanged(centered) => {
-                if self.center_spoken_sentence != centered {
-                    self.center_spoken_sentence = centered;
+                if self.config.center_spoken_sentence != centered {
+                    self.config.center_spoken_sentence = centered;
                     info!(centered, "Updated centered tracking preference");
-                    self.save_epub_config();
-                    if self.auto_scroll_tts {
-                        self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                    effects.push(Effect::SaveConfig);
+                    if self.config.auto_scroll_tts {
+                        effects.push(Effect::AutoScrollToCurrent);
+                        effects.push(Effect::SaveBookmark);
                     }
                 }
             }
             Message::ToggleTtsControls => {
                 debug!("Toggled TTS controls");
-                self.tts_open = !self.tts_open;
-                self.save_epub_config();
+                self.config.show_tts = !self.config.show_tts;
+                effects.push(Effect::SaveConfig);
             }
             Message::SetTtsSpeed(speed) => {
                 let clamped = speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED);
-                self.tts_speed = clamped;
-                info!(speed = self.tts_speed, "Adjusted TTS speed");
-                if self.tts_playback.is_some() {
-                    let idx = self.current_sentence_idx.unwrap_or(0);
-                    tasks.push(self.start_playback_from(self.current_page, idx));
-                    location_dirty = true;
-                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                self.config.tts_speed = clamped;
+                info!(speed = self.config.tts_speed, "Adjusted TTS speed");
+                if self.tts.playback.is_some() {
+                    let idx = self.tts.current_sentence_idx.unwrap_or(0);
+                    effects.push(Effect::StartTts {
+                        page: self.reader.current_page,
+                        sentence_idx: idx,
+                    });
+                    effects.push(Effect::AutoScrollToCurrent);
+                    effects.push(Effect::SaveBookmark);
                 }
-                self.save_epub_config();
+                effects.push(Effect::SaveConfig);
             }
             Message::Play => {
-                if let Some(playback) = &self.tts_playback {
+                if let Some(playback) = &self.tts.playback {
                     info!("Resuming TTS playback");
                     playback.play();
-                    self.tts_running = true;
-                    self.tts_started_at = Some(Instant::now());
+                    self.tts.running = true;
+                    self.tts.started_at = Some(Instant::now());
                 } else {
                     info!("Starting TTS playback from current page");
-                    tasks.push(self.start_playback_from(self.current_page, 0));
-                    location_dirty = true;
-                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                    effects.push(Effect::StartTts {
+                        page: self.reader.current_page,
+                        sentence_idx: 0,
+                    });
+                    effects.push(Effect::AutoScrollToCurrent);
+                    effects.push(Effect::SaveBookmark);
                 }
             }
             Message::PlayFromPageStart => {
                 info!("Playing page from start");
-                tasks.push(self.start_playback_from(self.current_page, 0));
-                location_dirty = true;
-                self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                effects.push(Effect::StartTts {
+                    page: self.reader.current_page,
+                    sentence_idx: 0,
+                });
+                effects.push(Effect::AutoScrollToCurrent);
+                effects.push(Effect::SaveBookmark);
             }
             Message::PlayFromCursor(idx) => {
                 info!(idx, "Playing from cursor");
-                tasks.push(self.start_playback_from(self.current_page, idx));
-                location_dirty = true;
-                self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                effects.push(Effect::StartTts {
+                    page: self.reader.current_page,
+                    sentence_idx: idx,
+                });
+                effects.push(Effect::AutoScrollToCurrent);
+                effects.push(Effect::SaveBookmark);
             }
             Message::JumpToCurrentAudio => {
-                if let Some(idx) = self.current_sentence_idx {
-                    let total = self.last_sentences.len();
+                if let Some(idx) = self.tts.current_sentence_idx {
+                    let total = self.tts.last_sentences.len();
                     if let Some(offset) = self.scroll_offset_for_sentence(idx, total) {
                         info!(
                             idx,
                             fraction = offset.y,
                             "Jumping to current audio sentence (scroll only)"
                         );
-                        self.last_scroll_offset = offset;
-                        location_dirty = true;
-                        tasks.push(iced::widget::scrollable::snap_to(
-                            TEXT_SCROLL_ID.clone(),
-                            offset,
-                        ));
+                        effects.push(Effect::ScrollTo(offset));
+                        effects.push(Effect::SaveBookmark);
                     }
                 }
             }
             Message::Pause => {
-                if let Some(playback) = &self.tts_playback {
+                if let Some(playback) = &self.tts.playback {
                     info!("Pausing TTS playback");
                     playback.pause();
                 }
-                self.tts_running = false;
-                if let Some(started) = self.tts_started_at.take() {
-                    self.tts_elapsed += Instant::now().saturating_duration_since(started);
+                self.tts.running = false;
+                if let Some(started) = self.tts.started_at.take() {
+                    self.tts.elapsed += Instant::now().saturating_duration_since(started);
                 }
             }
             Message::SeekForward => {
-                let next_idx = self.current_sentence_idx.unwrap_or(0) + 1;
-                if next_idx < self.last_sentences.len() {
+                let next_idx = self.tts.current_sentence_idx.unwrap_or(0) + 1;
+                if next_idx < self.tts.last_sentences.len() {
                     info!(next_idx, "Seeking forward within page");
-                    tasks.push(self.start_playback_from(self.current_page, next_idx));
-                    location_dirty = true;
-                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
-                } else if self.current_page + 1 < self.pages.len() {
-                    self.current_page += 1;
+                    effects.push(Effect::StartTts {
+                        page: self.reader.current_page,
+                        sentence_idx: next_idx,
+                    });
+                    effects.push(Effect::AutoScrollToCurrent);
+                    effects.push(Effect::SaveBookmark);
+                } else if self.reader.current_page + 1 < self.reader.pages.len() {
+                    self.reader.current_page += 1;
                     info!("Seeking forward into next page");
-                    tasks.push(self.start_playback_from(self.current_page, 0));
-                    page_changed = true;
-                    location_dirty = true;
-                    self.last_scroll_offset = RelativeOffset::START;
-                    self.save_epub_config();
-                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                    effects.push(Effect::StartTts {
+                        page: self.reader.current_page,
+                        sentence_idx: 0,
+                    });
+                    self.bookmark.last_scroll_offset = RelativeOffset::START;
+                    effects.push(Effect::SaveConfig);
+                    effects.push(Effect::AutoScrollToCurrent);
+                    effects.push(Effect::SaveBookmark);
                 }
             }
             Message::SeekBackward => {
-                let current_idx = self.current_sentence_idx.unwrap_or(0);
+                let current_idx = self.tts.current_sentence_idx.unwrap_or(0);
                 if current_idx > 0 {
                     info!(
                         previous_idx = current_idx.saturating_sub(1),
                         "Seeking backward within page"
                     );
-                    tasks.push(self.start_playback_from(self.current_page, current_idx - 1));
-                    location_dirty = true;
-                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
-                } else if self.current_page > 0 {
-                    self.current_page -= 1;
+                    effects.push(Effect::StartTts {
+                        page: self.reader.current_page,
+                        sentence_idx: current_idx - 1,
+                    });
+                    effects.push(Effect::AutoScrollToCurrent);
+                    effects.push(Effect::SaveBookmark);
+                } else if self.reader.current_page > 0 {
+                    self.reader.current_page -= 1;
                     let last_idx = split_sentences(
-                        self.pages
-                            .get(self.current_page)
+                        self.reader
+                            .pages
+                            .get(self.reader.current_page)
                             .map(String::as_str)
                             .unwrap_or("")
                             .to_string(),
@@ -295,42 +324,45 @@ impl App {
                     .len()
                     .saturating_sub(1);
                     info!("Seeking backward into previous page");
-                    tasks.push(self.start_playback_from(self.current_page, last_idx));
-                    page_changed = true;
-                    location_dirty = true;
-                    self.last_scroll_offset = RelativeOffset::START;
-                    self.save_epub_config();
-                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                    effects.push(Effect::StartTts {
+                        page: self.reader.current_page,
+                        sentence_idx: last_idx,
+                    });
+                    self.bookmark.last_scroll_offset = RelativeOffset::START;
+                    effects.push(Effect::SaveConfig);
+                    effects.push(Effect::AutoScrollToCurrent);
+                    effects.push(Effect::SaveBookmark);
                 }
             }
             Message::Scrolled(offset) => {
                 let sanitized = Self::sanitize_offset(offset);
-                if sanitized != self.last_scroll_offset {
-                    self.last_scroll_offset = sanitized;
-                    location_dirty = true;
+                if sanitized != self.bookmark.last_scroll_offset {
+                    self.bookmark.last_scroll_offset = sanitized;
+                    effects.push(Effect::SaveBookmark);
                 }
             }
             Message::Tick(now) => {
-                if self.tts_running {
+                if self.tts.running {
                     if self
-                        .tts_playback
+                        .tts
+                        .playback
                         .as_ref()
                         .map(|p| p.is_paused())
                         .unwrap_or(false)
                     {
-                        return Task::none();
+                        return Vec::new();
                     }
 
-                    let Some(started) = self.tts_started_at else {
-                        return Task::none();
+                    let Some(started) = self.tts.started_at else {
+                        return Vec::new();
                     };
-                    let elapsed = self.tts_elapsed + now.saturating_duration_since(started);
+                    let elapsed = self.tts.elapsed + now.saturating_duration_since(started);
 
                     let mut acc = Duration::ZERO;
                     let mut target_idx = None;
-                    let offset = self.tts_sentence_offset;
-                    let pause = Duration::from_secs_f32(self.pause_after_sentence);
-                    for (i, (_, dur)) in self.tts_track.iter().enumerate() {
+                    let offset = self.tts.sentence_offset;
+                    let pause = Duration::from_secs_f32(self.config.pause_after_sentence);
+                    for (i, (_, dur)) in self.tts.track.iter().enumerate() {
                         acc += *dur + pause;
                         if elapsed <= acc {
                             target_idx = Some(offset + i);
@@ -339,22 +371,24 @@ impl App {
                     }
 
                     if let Some(idx) = target_idx {
-                        let clamped = idx.min(self.last_sentences.len().saturating_sub(1));
-                        if Some(clamped) != self.current_sentence_idx {
-                            self.current_sentence_idx = Some(clamped);
-                            location_dirty = true;
-                            self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                        let clamped = idx.min(self.tts.last_sentences.len().saturating_sub(1));
+                        if Some(clamped) != self.tts.current_sentence_idx {
+                            self.tts.current_sentence_idx = Some(clamped);
+                            effects.push(Effect::AutoScrollToCurrent);
+                            effects.push(Effect::SaveBookmark);
                         }
                     } else {
-                        self.stop_playback();
-                        if self.current_page + 1 < self.pages.len() {
-                            self.current_page += 1;
-                            self.last_scroll_offset = RelativeOffset::START;
+                        effects.push(Effect::StopTts);
+                        if self.reader.current_page + 1 < self.reader.pages.len() {
+                            self.reader.current_page += 1;
+                            self.bookmark.last_scroll_offset = RelativeOffset::START;
                             info!("Playback finished page, advancing");
-                            tasks.push(self.start_playback_from(self.current_page, 0));
-                            page_changed = true;
-                            location_dirty = true;
-                            self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                            effects.push(Effect::StartTts {
+                                page: self.reader.current_page,
+                                sentence_idx: 0,
+                            });
+                            effects.push(Effect::AutoScrollToCurrent);
+                            effects.push(Effect::SaveBookmark);
                         } else {
                             info!("Playback finished at end of book");
                         }
@@ -367,13 +401,13 @@ impl App {
                 request_id,
                 files,
             } => {
-                if request_id != self.tts_request_id {
+                if request_id != self.tts.request_id {
                     debug!(
                         request_id,
-                        current = self.tts_request_id,
+                        current = self.tts.request_id,
                         "Ignoring stale TTS request"
                     );
-                    return Task::none();
+                    return Vec::new();
                 }
                 info!(
                     page,
@@ -381,38 +415,37 @@ impl App {
                     file_count = files.len(),
                     "Received prepared TTS batch"
                 );
-                if page != self.current_page {
+                if page != self.reader.current_page {
                     debug!(
                         page,
-                        current = self.current_page,
+                        current = self.reader.current_page,
                         "Ignoring stale TTS batch"
                     );
-                    return Task::none();
+                    return Vec::new();
                 }
                 if files.is_empty() {
                     warn!("TTS batch was empty; stopping playback");
                     self.stop_playback();
-                    self.current_sentence_idx = None;
-                    return Task::none();
+                    self.tts.current_sentence_idx = None;
+                    return Vec::new();
                 }
                 self.stop_playback();
-                if let Some(engine) = &self.tts_engine {
+                if let Some(engine) = &self.tts.engine {
                     if let Ok(playback) = engine.play_files(
                         &files.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>(),
-                        Duration::from_secs_f32(self.pause_after_sentence),
+                        Duration::from_secs_f32(self.config.pause_after_sentence),
                     ) {
-                        self.tts_playback = Some(playback);
-                        self.tts_track = files.clone();
-                        self.tts_sentence_offset =
-                            start_idx.min(self.last_sentences.len().saturating_sub(1));
-                        self.current_sentence_idx = Some(self.tts_sentence_offset);
-                        self.tts_elapsed = Duration::ZERO;
-                        self.tts_started_at = Some(Instant::now());
-                        self.tts_running = true;
-                        location_dirty = true;
-                        self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                        self.tts.playback = Some(playback);
+                        self.tts.track = files.clone();
+                        self.tts.sentence_offset =
+                            start_idx.min(self.tts.last_sentences.len().saturating_sub(1));
+                        self.tts.current_sentence_idx = Some(self.tts.sentence_offset);
+                        self.tts.elapsed = Duration::ZERO;
+                        self.tts.started_at = Some(Instant::now());
+                        self.tts.running = true;
+                        effects.push(Effect::AutoScrollToCurrent);
                         debug!(
-                            offset = self.tts_sentence_offset,
+                            offset = self.tts.sentence_offset,
                             "Started TTS playback and highlighting"
                         );
                     } else {
@@ -422,20 +455,62 @@ impl App {
             }
         }
 
-        if page_changed {
-            self.last_scroll_offset = RelativeOffset::START;
-            location_dirty = true;
-        }
+        effects
+    }
 
-        if location_dirty {
-            self.persist_bookmark();
+    fn run_effect(&mut self, effect: Effect) -> Task<Message> {
+        match effect {
+            Effect::SaveConfig => {
+                self.save_epub_config();
+                Task::none()
+            }
+            Effect::SaveBookmark => {
+                self.persist_bookmark();
+                Task::none()
+            }
+            Effect::StartTts { page, sentence_idx } => self.start_playback_from(page, sentence_idx),
+            Effect::StopTts => {
+                self.stop_playback();
+                Task::none()
+            }
+            Effect::ScrollTo(offset) => {
+                self.bookmark.last_scroll_offset = offset;
+                iced::widget::scrollable::snap_to(TEXT_SCROLL_ID.clone(), offset)
+            }
+            Effect::AutoScrollToCurrent => {
+                if !self.config.auto_scroll_tts {
+                    return Task::none();
+                }
+                if let Some(idx) = self.tts.current_sentence_idx {
+                    if let Some(offset) =
+                        self.scroll_offset_for_sentence(idx, self.tts.last_sentences.len())
+                    {
+                        self.bookmark.last_scroll_offset = offset;
+                        return iced::widget::scrollable::snap_to(
+                            TEXT_SCROLL_ID.clone(),
+                            offset,
+                        );
+                    }
+                }
+                Task::none()
+            }
         }
+    }
 
-        if tasks.is_empty() {
-            Task::none()
-        } else {
-            Task::batch(tasks)
+    fn go_to_page(&mut self, new_page: usize) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        if new_page < self.reader.pages.len() {
+            self.reader.current_page = new_page;
+            self.bookmark.last_scroll_offset = RelativeOffset::START;
+            info!(page = self.reader.current_page + 1, "Navigated to page");
+            effects.push(Effect::StartTts {
+                page: self.reader.current_page,
+                sentence_idx: 0,
+            });
+            effects.push(Effect::AutoScrollToCurrent);
+            effects.push(Effect::SaveBookmark);
         }
+        effects
     }
 
     pub(super) fn start_playback_from(
@@ -443,41 +518,42 @@ impl App {
         page: usize,
         sentence_idx: usize,
     ) -> Task<Message> {
-        let Some(engine) = self.tts_engine.clone() else {
+        let Some(engine) = self.tts.engine.clone() else {
             return Task::none();
         };
 
         self.stop_playback();
-        self.tts_track.clear();
-        self.tts_elapsed = Duration::ZERO;
-        self.tts_started_at = None;
+        self.tts.track.clear();
+        self.tts.elapsed = Duration::ZERO;
+        self.tts.started_at = None;
 
         let sentences = split_sentences(
-            self.pages
+            self.reader
+                .pages
                 .get(page)
                 .map(String::as_str)
                 .unwrap_or("")
                 .to_string(),
         );
-        self.last_sentences = sentences.clone();
+        self.tts.last_sentences = sentences.clone();
         if sentences.is_empty() {
-            self.current_sentence_idx = None;
-            self.tts_sentence_offset = 0;
+            self.tts.current_sentence_idx = None;
+            self.tts.sentence_offset = 0;
             return Task::none();
         }
 
         let sentence_idx = sentence_idx.min(sentences.len().saturating_sub(1));
-        self.tts_sentence_offset = sentence_idx;
-        self.current_sentence_idx = Some(sentence_idx);
+        self.tts.sentence_offset = sentence_idx;
+        self.tts.current_sentence_idx = Some(sentence_idx);
 
         let cache_root = crate::cache::tts_dir(&self.epub_path);
-        let speed = self.tts_speed;
-        let threads = self.tts_threads.max(1);
+        let speed = self.config.tts_speed;
+        let threads = self.config.tts_threads.max(1);
         let page_id = page;
-        self.tts_started_at = None;
-        self.tts_elapsed = Duration::ZERO;
-        self.tts_request_id = self.tts_request_id.wrapping_add(1);
-        let request_id = self.tts_request_id;
+        self.tts.started_at = None;
+        self.tts.elapsed = Duration::ZERO;
+        self.tts.request_id = self.tts.request_id.wrapping_add(1);
+        let request_id = self.tts.request_id;
         self.save_epub_config();
         info!(
             page = page + 1,
@@ -509,22 +585,23 @@ impl App {
         let sentences = self.current_sentences();
 
         let sentence_idx = self
+            .tts
             .current_sentence_idx
             .filter(|idx| *idx < sentences.len())
             .or_else(|| {
                 if sentences.is_empty() {
                     None
                 } else {
-                    let frac = Self::sanitize_offset(self.last_scroll_offset).y;
+                    let frac = Self::sanitize_offset(self.bookmark.last_scroll_offset).y;
                     let idx = (frac * (sentences.len().saturating_sub(1) as f32)).round() as usize;
                     Some(idx.min(sentences.len().saturating_sub(1)))
                 }
             });
         let sentence_text = sentence_idx.and_then(|idx| sentences.get(idx).cloned());
-        let scroll_y = Self::sanitize_offset(self.last_scroll_offset).y;
+        let scroll_y = Self::sanitize_offset(self.bookmark.last_scroll_offset).y;
 
         let bookmark = Bookmark {
-            page: self.current_page,
+            page: self.reader.current_page,
             sentence_idx,
             sentence_text,
             scroll_y,
@@ -549,8 +626,9 @@ impl App {
 
     fn current_sentences(&self) -> Vec<String> {
         split_sentences(
-            self.pages
-                .get(self.current_page)
+            self.reader
+                .pages
+                .get(self.reader.current_page)
                 .map(String::as_str)
                 .unwrap_or("")
                 .to_string(),
@@ -570,31 +648,12 @@ impl App {
         let denom = total_sentences.saturating_sub(1).max(1) as f32;
         let step = 1.0 / denom;
         let base = (clamped_idx / denom).clamp(0.0, 1.0);
-        let y = if self.center_spoken_sentence {
+        let y = if self.config.center_spoken_sentence {
             (base - 0.5 * step).clamp(0.0, 1.0)
         } else {
             base
         };
 
         Some(iced::widget::scrollable::RelativeOffset { x: 0.0, y })
-    }
-
-    fn queue_auto_scroll(&mut self, tasks: &mut Vec<Task<Message>>, location_dirty: &mut bool) {
-        if !self.auto_scroll_tts {
-            return;
-        }
-
-        let Some(idx) = self.current_sentence_idx else {
-            return;
-        };
-
-        if let Some(offset) = self.scroll_offset_for_sentence(idx, self.last_sentences.len()) {
-            self.last_scroll_offset = offset;
-            *location_dirty = true;
-            tasks.push(iced::widget::scrollable::snap_to(
-                TEXT_SCROLL_ID.clone(),
-                offset,
-            ));
-        }
     }
 }

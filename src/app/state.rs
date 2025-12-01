@@ -1,8 +1,6 @@
 use crate::cache::{Bookmark, save_epub_config};
-use crate::config::{AppConfig, FontFamily, FontWeight, HighlightColor, LogLevel, ThemeMode};
-use crate::pagination::{
-    MAX_FONT_SIZE, MAX_LINES_PER_PAGE, MIN_FONT_SIZE, MIN_LINES_PER_PAGE, paginate,
-};
+use crate::config::{AppConfig, FontFamily, FontWeight, HighlightColor, ThemeMode};
+use crate::pagination::{MAX_LINES_PER_PAGE, MIN_LINES_PER_PAGE, paginate};
 use crate::text_utils::split_sentences;
 use crate::tts::{TtsEngine, TtsPlayback};
 use iced::font::{Family, Weight};
@@ -39,76 +37,75 @@ pub(crate) const FONT_FAMILIES: [FontFamily; 13] = [
 pub(crate) const FONT_WEIGHTS: [FontWeight; 3] =
     [FontWeight::Light, FontWeight::Normal, FontWeight::Bold];
 
-/// Core application state.
-pub struct App {
+/// Reader-related model.
+pub struct ReaderState {
     pub(super) full_text: String,
     pub(super) pages: Vec<String>,
     pub(super) current_page: usize,
-    pub(super) font_size: u32,
-    pub(super) night_mode: bool,
-    pub(super) settings_open: bool,
-    pub(super) font_family: FontFamily,
-    pub(super) font_weight: FontWeight,
-    pub(super) line_spacing: f32,
-    pub(super) margin_horizontal: u16,
-    pub(super) margin_vertical: u16,
-    pub(super) word_spacing: u32,
-    pub(super) letter_spacing: u32,
-    pub(super) lines_per_page: usize,
-    pub(super) epub_path: PathBuf,
-    pub(super) tts_engine: Option<TtsEngine>,
-    pub(super) tts_playback: Option<TtsPlayback>,
-    pub(super) tts_open: bool,
-    pub(super) tts_speed: f32,
-    pub(super) tts_threads: usize,
+}
+
+/// Runtime TTS model (configuration lives in `AppConfig`).
+pub struct TtsState {
+    pub(super) engine: Option<TtsEngine>,
+    pub(super) playback: Option<TtsPlayback>,
     pub(super) last_sentences: Vec<String>,
     pub(super) current_sentence_idx: Option<usize>,
-    pub(super) tts_sentence_offset: usize,
-    pub(super) tts_track: Vec<(PathBuf, Duration)>,
-    pub(super) tts_started_at: Option<Instant>,
-    pub(super) tts_elapsed: Duration,
-    pub(super) tts_running: bool,
-    pub(super) day_highlight: HighlightColor,
-    pub(super) night_highlight: HighlightColor,
-    pub(super) tts_model_path: String,
-    pub(super) tts_espeak_path: String,
-    pub(super) log_level: LogLevel,
-    pub(super) tts_request_id: u64,
-    pub(super) pause_after_sentence: f32,
-    pub(super) auto_scroll_tts: bool,
-    pub(super) center_spoken_sentence: bool,
+    pub(super) sentence_offset: usize,
+    pub(super) track: Vec<(PathBuf, Duration)>,
+    pub(super) started_at: Option<Instant>,
+    pub(super) elapsed: Duration,
+    pub(super) running: bool,
+    pub(super) request_id: u64,
+}
+
+/// Bookmark and scroll tracking model.
+pub struct BookmarkState {
     pub(super) last_scroll_offset: RelativeOffset,
+}
+
+/// Core application state composed of sub-models.
+pub struct App {
+    pub(super) reader: ReaderState,
+    pub(super) tts: TtsState,
+    pub(super) bookmark: BookmarkState,
+    pub(super) config: AppConfig,
+    pub(super) epub_path: PathBuf,
 }
 
 impl App {
     /// Re-run pagination after a state change (e.g., font size).
     pub(super) fn repaginate(&mut self) {
-        self.pages = paginate(&self.full_text, self.font_size, self.lines_per_page);
-        if self.pages.is_empty() {
-            self.pages
+        self.reader.pages = paginate(
+            &self.reader.full_text,
+            self.config.font_size,
+            self.config.lines_per_page,
+        );
+        if self.reader.pages.is_empty() {
+            self.reader
+                .pages
                 .push(String::from("This EPUB appears to contain no text."));
         }
-        if self.current_page >= self.pages.len() {
-            self.current_page = self.pages.len() - 1;
+        if self.reader.current_page >= self.reader.pages.len() {
+            self.reader.current_page = self.reader.pages.len() - 1;
         }
         tracing::debug!(
-            pages = self.pages.len(),
-            font_size = self.font_size,
-            lines_per_page = self.lines_per_page,
+            pages = self.reader.pages.len(),
+            font_size = self.config.font_size,
+            lines_per_page = self.config.lines_per_page,
             "Repaginated content"
         );
     }
 
     pub(super) fn stop_playback(&mut self) {
-        if let Some(playback) = self.tts_playback.take() {
+        if let Some(playback) = self.tts.playback.take() {
             playback.stop();
         }
-        self.tts_running = false;
-        self.tts_started_at = None;
+        self.tts.running = false;
+        self.tts.started_at = None;
     }
 
     pub(super) fn current_font(&self) -> Font {
-        let family = match self.font_family {
+        let family = match self.config.font_family {
             FontFamily::Sans => Family::SansSerif,
             FontFamily::Serif => Family::Serif,
             FontFamily::Monospace => Family::Monospace,
@@ -126,25 +123,27 @@ impl App {
 
         Font {
             family,
-            weight: self.font_weight.to_weight(),
+            weight: self.config.font_weight.to_weight(),
             ..Font::DEFAULT
         }
     }
 
     pub(super) fn formatted_page_content(&self) -> String {
         let base = self
+            .reader
             .pages
-            .get(self.current_page)
+            .get(self.reader.current_page)
             .map(String::as_str)
             .unwrap_or("")
             .to_string();
 
-        if self.word_spacing == 0 && self.letter_spacing == 0 {
+        if self.config.word_spacing == 0 && self.config.letter_spacing == 0 {
             return base;
         }
 
-        let word_gap = " ".repeat((self.word_spacing as usize).saturating_add(1));
-        let letter_gap = " ".repeat(self.letter_spacing as usize);
+        let word_gap = " "
+            .repeat((self.config.word_spacing as usize).saturating_add(1));
+        let letter_gap = " ".repeat(self.config.letter_spacing as usize);
 
         let mut output = String::with_capacity(base.len() + 16);
 
@@ -165,10 +164,10 @@ impl App {
     }
 
     pub(super) fn highlight_color(&self) -> Color {
-        let base = if self.night_mode {
-            self.night_highlight
+        let base = if matches!(self.config.theme, ThemeMode::Night) {
+            self.config.night_highlight
         } else {
-            self.day_highlight
+            self.config.day_highlight
         };
         Color {
             r: base.r,
@@ -179,144 +178,94 @@ impl App {
     }
 
     pub(super) fn save_epub_config(&self) {
-        let config = AppConfig {
-            theme: if self.night_mode {
-                ThemeMode::Night
-            } else {
-                ThemeMode::Day
-            },
-            font_size: self.font_size,
-            line_spacing: self.line_spacing,
-            margin_horizontal: self.margin_horizontal,
-            margin_vertical: self.margin_vertical,
-            font_family: self.font_family,
-            font_weight: self.font_weight,
-            word_spacing: self.word_spacing,
-            letter_spacing: self.letter_spacing,
-            lines_per_page: self.lines_per_page,
-            tts_model_path: self.tts_model_path.clone(),
-            tts_speed: self.tts_speed,
-            tts_espeak_path: self.tts_espeak_path.clone(),
-            tts_threads: self.tts_threads,
-            show_tts: self.tts_open,
-            show_settings: self.settings_open,
-            day_highlight: self.day_highlight,
-            night_highlight: self.night_highlight,
-            log_level: self.log_level,
-            pause_after_sentence: self.pause_after_sentence,
-            auto_scroll_tts: self.auto_scroll_tts,
-            center_spoken_sentence: self.center_spoken_sentence,
-        };
-
-        save_epub_config(&self.epub_path, &config);
+        save_epub_config(&self.epub_path, &self.config);
     }
 
     pub(super) fn bootstrap(
         text: String,
-        config: AppConfig,
+        mut config: AppConfig,
         epub_path: PathBuf,
         bookmark: Option<Bookmark>,
     ) -> (App, Task<Message>) {
-        let font_size = config.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
-        let line_spacing = config.line_spacing.clamp(0.8, 2.5);
-        let margin_horizontal = config.margin_horizontal.min(MAX_MARGIN);
-        let margin_vertical = config.margin_vertical.min(MAX_MARGIN);
-        let word_spacing = config.word_spacing.min(MAX_WORD_SPACING);
-        let letter_spacing = config.letter_spacing.min(MAX_LETTER_SPACING);
-        let lines_per_page = config
-            .lines_per_page
-            .clamp(MIN_LINES_PER_PAGE, MAX_LINES_PER_PAGE);
-        let pause_after_sentence = config.pause_after_sentence.clamp(0.0, 2.0);
-
+        clamp_config(&mut config);
         let mut app = App {
-            pages: Vec::new(),
-            full_text: text,
-            current_page: 0,
-            font_size,
-            night_mode: matches!(config.theme, ThemeMode::Night),
-            settings_open: config.show_settings,
-            font_family: config.font_family,
-            font_weight: config.font_weight,
-            line_spacing,
-            word_spacing,
-            letter_spacing,
-            lines_per_page,
-            margin_horizontal,
-            margin_vertical,
+            reader: ReaderState {
+                pages: Vec::new(),
+                full_text: text,
+                current_page: 0,
+            },
+            bookmark: BookmarkState {
+                last_scroll_offset: RelativeOffset::START,
+            },
             epub_path,
-            tts_engine: TtsEngine::new(
-                config.tts_model_path.clone().into(),
-                config.tts_espeak_path.clone().into(),
-            )
-            .ok(),
-            tts_playback: None,
-            tts_open: config.show_tts,
-            tts_speed: config.tts_speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED),
-            tts_threads: config.tts_threads.max(1),
-            last_sentences: Vec::new(),
-            current_sentence_idx: None,
-            tts_sentence_offset: 0,
-            tts_track: Vec::new(),
-            tts_started_at: None,
-            tts_elapsed: Duration::ZERO,
-            tts_running: false,
-            day_highlight: config.day_highlight,
-            night_highlight: config.night_highlight,
-            tts_model_path: config.tts_model_path,
-            tts_espeak_path: config.tts_espeak_path,
-            log_level: config.log_level,
-            tts_request_id: 0,
-            pause_after_sentence,
-            auto_scroll_tts: config.auto_scroll_tts,
-            center_spoken_sentence: config.center_spoken_sentence,
-            last_scroll_offset: RelativeOffset::START,
+            tts: TtsState {
+                engine: TtsEngine::new(
+                    config.tts_model_path.clone().into(),
+                    config.tts_espeak_path.clone().into(),
+                )
+                .ok(),
+                playback: None,
+                last_sentences: Vec::new(),
+                current_sentence_idx: None,
+                sentence_offset: 0,
+                track: Vec::new(),
+                started_at: None,
+                elapsed: Duration::ZERO,
+                running: false,
+                request_id: 0,
+            },
+            config,
         };
 
         app.repaginate();
         let mut init_task = Task::none();
         match bookmark {
             Some(bookmark) => {
-                let capped_page = bookmark.page.min(app.pages.len().saturating_sub(1));
-                app.current_page = capped_page;
+                let capped_page = bookmark
+                    .page
+                    .min(app.reader.pages.len().saturating_sub(1));
+                app.reader.current_page = capped_page;
                 let scroll_y = if bookmark.scroll_y.is_finite() {
                     bookmark.scroll_y.clamp(0.0, 1.0)
                 } else {
                     0.0
                 };
-                app.last_scroll_offset = RelativeOffset {
+                app.bookmark.last_scroll_offset = RelativeOffset {
                     x: 0.0,
                     y: scroll_y,
                 };
 
-                if let Some(page) = app.pages.get(app.current_page) {
-                    app.last_sentences = split_sentences(page.clone());
+                if let Some(page) = app.reader.pages.get(app.reader.current_page) {
+                    app.tts.last_sentences = split_sentences(page.clone());
                     let restored_idx = bookmark
                         .sentence_text
                         .as_ref()
-                        .and_then(|target| app.last_sentences.iter().position(|s| s == target))
+                        .and_then(|target| {
+                            app.tts.last_sentences.iter().position(|s| s == target)
+                        })
                         .or(bookmark.sentence_idx)
-                        .map(|idx| idx.min(app.last_sentences.len().saturating_sub(1)));
-                    app.current_sentence_idx = restored_idx;
+                        .map(|idx| idx.min(app.tts.last_sentences.len().saturating_sub(1)));
+                    app.tts.current_sentence_idx = restored_idx;
                 }
 
-                if app.last_scroll_offset.y > 0.0 {
+                if app.bookmark.last_scroll_offset.y > 0.0 {
                     init_task = iced::widget::scrollable::snap_to(
                         TEXT_SCROLL_ID.clone(),
-                        app.last_scroll_offset,
+                        app.bookmark.last_scroll_offset,
                     );
-                } else if let Some(idx) = app.current_sentence_idx {
+                } else if let Some(idx) = app.tts.current_sentence_idx {
                     if let Some(offset) =
-                        app.scroll_offset_for_sentence(idx, app.last_sentences.len())
+                        app.scroll_offset_for_sentence(idx, app.tts.last_sentences.len())
                     {
-                        app.last_scroll_offset = offset;
+                        app.bookmark.last_scroll_offset = offset;
                         init_task =
                             iced::widget::scrollable::snap_to(TEXT_SCROLL_ID.clone(), offset);
                     }
                 }
                 tracing::info!(
-                    page = app.current_page + 1,
-                    sentence_idx = ?app.current_sentence_idx,
-                    scroll = app.last_scroll_offset.y,
+                    page = app.reader.current_page + 1,
+                    sentence_idx = ?app.tts.current_sentence_idx,
+                    scroll = app.bookmark.last_scroll_offset.y,
                     "Restored bookmark from cache"
                 );
             }
@@ -325,8 +274,8 @@ impl App {
             }
         };
         tracing::info!(
-            font_size = app.font_size,
-            night_mode = app.night_mode,
+            font_size = app.config.font_size,
+            night_mode = matches!(app.config.theme, ThemeMode::Night),
             "Initialized app state"
         );
 
@@ -357,4 +306,20 @@ pub(crate) fn apply_component(
         Component::A => color.a = clamped,
     }
     color
+}
+
+fn clamp_config(config: &mut AppConfig) {
+    use crate::pagination::{MAX_FONT_SIZE, MIN_FONT_SIZE};
+    config.font_size = config.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+    config.line_spacing = config.line_spacing.clamp(0.8, 2.5);
+    config.margin_horizontal = config.margin_horizontal.min(MAX_MARGIN);
+    config.margin_vertical = config.margin_vertical.min(MAX_MARGIN);
+    config.word_spacing = config.word_spacing.min(MAX_WORD_SPACING);
+    config.letter_spacing = config.letter_spacing.min(MAX_LETTER_SPACING);
+    config.lines_per_page = config
+        .lines_per_page
+        .clamp(MIN_LINES_PER_PAGE, MAX_LINES_PER_PAGE);
+    config.pause_after_sentence = config.pause_after_sentence.clamp(0.0, 2.0);
+    config.tts_speed = config.tts_speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED);
+    config.tts_threads = config.tts_threads.max(1);
 }

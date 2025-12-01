@@ -19,7 +19,7 @@ pub fn run_app(
     iced::application("EPUB Viewer", App::update, App::view)
         .subscription(App::subscription)
         .theme(|app: &App| {
-            if app.night_mode {
+            if matches!(app.config.theme, crate::config::ThemeMode::Night) {
                 Theme::Dark
             } else {
                 Theme::Light

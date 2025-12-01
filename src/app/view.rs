@@ -13,35 +13,35 @@ use iced::{Element, Length};
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
-        let total_pages = self.pages.len().max(1);
-        let page_label = format!("Page {} of {}", self.current_page + 1, total_pages);
+        let total_pages = self.reader.pages.len().max(1);
+        let page_label = format!("Page {} of {}", self.reader.current_page + 1, total_pages);
 
-        let theme_label = if self.night_mode {
+        let theme_label = if matches!(self.config.theme, crate::config::ThemeMode::Night) {
             "Day Mode"
         } else {
             "Night Mode"
         };
         let theme_toggle = button(theme_label).on_press(Message::ToggleTheme);
-        let settings_toggle = button(if self.settings_open {
+        let settings_toggle = button(if self.config.show_settings {
             "Hide Settings"
         } else {
             "Show Settings"
         })
         .on_press(Message::ToggleSettings);
-        let tts_toggle = button(if self.tts_open {
+        let tts_toggle = button(if self.config.show_tts {
             "Hide TTS"
         } else {
             "Show TTS"
         })
         .on_press(Message::ToggleTtsControls);
 
-        let prev_button = if self.current_page > 0 {
+        let prev_button = if self.reader.current_page > 0 {
             button("Previous").on_press(Message::PreviousPage)
         } else {
             button("Previous")
         };
 
-        let next_button = if self.current_page + 1 < total_pages {
+        let next_button = if self.reader.current_page + 1 < total_pages {
             button("Next").on_press(Message::NextPage)
         } else {
             button("Next")
@@ -59,10 +59,10 @@ impl App {
         .align_y(Vertical::Center)
         .width(Length::Fill);
 
-        let font_label = text(format!("Font size: {}", self.font_size));
+        let font_label = text(format!("Font size: {}", self.config.font_size));
         let font_slider = slider(
             MIN_FONT_SIZE as f32..=MAX_FONT_SIZE as f32,
-            self.font_size as f32,
+            self.config.font_size as f32,
             |value| Message::FontSizeChanged(value.round() as u32),
         );
 
@@ -73,12 +73,12 @@ impl App {
         let page_content = self.formatted_page_content();
 
         let text_view_content: Element<'_, Message> =
-            if self.tts_playback.is_some() && !self.last_sentences.is_empty() {
+            if self.tts.playback.is_some() && !self.tts.last_sentences.is_empty() {
                 let sentences = split_sentences(page_content.clone());
                 if sentences.is_empty() {
                     return text(page_content)
-                        .size(self.font_size as f32)
-                        .line_height(LineHeight::Relative(self.line_spacing))
+                        .size(self.config.font_size as f32)
+                        .line_height(LineHeight::Relative(self.config.line_spacing))
                         .width(Length::Fill)
                         .wrapping(Wrapping::WordOrGlyph)
                         .align_x(Horizontal::Left)
@@ -86,6 +86,7 @@ impl App {
                         .into();
                 }
                 let highlight_idx = self
+                    .tts
                     .current_sentence_idx
                     .unwrap_or(0)
                     .min(sentences.len().saturating_sub(1));
@@ -98,8 +99,8 @@ impl App {
                         let mut span: iced::widget::text::Span<'_, Message> =
                             iced::widget::text::Span::new(sentence)
                                 .font(self.current_font())
-                                .size(self.font_size as f32)
-                                .line_height(LineHeight::Relative(self.line_spacing));
+                                .size(self.config.font_size as f32)
+                                .line_height(LineHeight::Relative(self.config.line_spacing));
 
                         if idx == highlight_idx {
                             span = span
@@ -120,8 +121,8 @@ impl App {
                     .into()
             } else {
                 text(page_content)
-                    .size(self.font_size as f32)
-                    .line_height(LineHeight::Relative(self.line_spacing))
+                    .size(self.config.font_size as f32)
+                    .line_height(LineHeight::Relative(self.config.line_spacing))
                     .width(Length::Fill)
                     .wrapping(Wrapping::WordOrGlyph)
                     .align_x(Horizontal::Left)
@@ -132,7 +133,10 @@ impl App {
         let text_view = scrollable(
             container(text_view_content)
                 .width(Length::Fill)
-                .padding([self.margin_vertical, self.margin_horizontal]),
+                .padding([
+                    self.config.margin_vertical,
+                    self.config.margin_horizontal,
+                ]),
         )
         .on_scroll(|viewport| Message::Scrolled(viewport.relative_offset()))
         .id(super::state::TEXT_SCROLL_ID.clone())
@@ -143,13 +147,13 @@ impl App {
             .spacing(12)
             .height(Length::Fill);
 
-        if self.tts_open {
+        if self.config.show_tts {
             content = content.push(self.tts_controls());
         }
 
         let mut layout: Row<'_, Message> = row![container(content).width(Length::Fill)].spacing(16);
 
-        if self.settings_open {
+        if self.config.show_settings {
             layout = layout.push(self.settings_panel());
         }
 
@@ -178,45 +182,49 @@ impl App {
     pub(super) fn settings_panel(&self) -> Element<'_, Message> {
         let family_picker = pick_list(
             super::state::FONT_FAMILIES,
-            Some(self.font_family),
+            Some(self.config.font_family),
             Message::FontFamilyChanged,
         );
         let weight_picker = pick_list(
             super::state::FONT_WEIGHTS,
-            Some(self.font_weight),
+            Some(self.config.font_weight),
             Message::FontWeightChanged,
         );
 
-        let line_spacing_slider =
-            slider(0.8..=2.5, self.line_spacing, Message::LineSpacingChanged).step(0.05);
+        let line_spacing_slider = slider(
+            0.8..=2.5,
+            self.config.line_spacing,
+            Message::LineSpacingChanged,
+        )
+        .step(0.05);
         let lines_per_page_slider = slider(
             MIN_LINES_PER_PAGE as f32..=MAX_LINES_PER_PAGE as f32,
-            self.lines_per_page as f32,
+            self.config.lines_per_page as f32,
             |value| Message::LinesPerPageChanged(value.round() as u32),
         )
         .step(1.0);
 
         let margin_slider = slider(
             0.0..=MAX_MARGIN as f32,
-            self.margin_horizontal as f32,
+            self.config.margin_horizontal as f32,
             |value| Message::MarginHorizontalChanged(value.round() as u16),
         );
 
         let margin_vertical_slider = slider(
             0.0..=MAX_MARGIN as f32,
-            self.margin_vertical as f32,
+            self.config.margin_vertical as f32,
             |value| Message::MarginVerticalChanged(value.round() as u16),
         );
 
         let word_spacing_slider = slider(
             0.0..=MAX_WORD_SPACING as f32,
-            self.word_spacing as f32,
+            self.config.word_spacing as f32,
             |value| Message::WordSpacingChanged(value.round() as u32),
         );
 
         let letter_spacing_slider = slider(
             0.0..=MAX_LETTER_SPACING as f32,
-            self.letter_spacing as f32,
+            self.config.letter_spacing as f32,
             |value| Message::LetterSpacingChanged(value.round() as u32),
         );
 
@@ -234,61 +242,66 @@ impl App {
             row![
                 text(format!(
                     "Pause after sentence: {:.1} s",
-                    self.pause_after_sentence
+                    self.config.pause_after_sentence
                 )),
                 slider(
                     0.0..=2.0,
-                    self.pause_after_sentence,
+                    self.config.pause_after_sentence,
                     Message::PauseAfterSentenceChanged
                 )
                 .step(0.1)
             ]
             .spacing(8)
             .align_y(Vertical::Center),
-            checkbox("Auto-scroll to spoken sentence", self.auto_scroll_tts)
-                .on_toggle(Message::AutoScrollTtsChanged),
+            checkbox(
+                "Auto-scroll to spoken sentence",
+                self.config.auto_scroll_tts
+            )
+            .on_toggle(Message::AutoScrollTtsChanged),
             checkbox(
                 "Center tracked sentence while auto-scrolling",
-                self.center_spoken_sentence
+                self.config.center_spoken_sentence
             )
             .on_toggle(Message::CenterSpokenSentenceChanged),
             row![
-                text(format!("Lines per page: {}", self.lines_per_page)),
+                text(format!("Lines per page: {}", self.config.lines_per_page)),
                 lines_per_page_slider
             ]
             .spacing(8)
             .align_y(Vertical::Center),
             row![
-                text(format!("Horizontal margin: {} px", self.margin_horizontal)),
+                text(format!("Horizontal margin: {} px", self.config.margin_horizontal)),
                 margin_slider
             ]
             .spacing(8)
             .align_y(Vertical::Center),
             row![
-                text(format!("Vertical margin: {} px", self.margin_vertical)),
+                text(format!("Vertical margin: {} px", self.config.margin_vertical)),
                 margin_vertical_slider
             ]
             .spacing(8)
             .align_y(Vertical::Center),
             row![
-                text(format!("Word spacing: {}", self.word_spacing)),
+                text(format!("Word spacing: {}", self.config.word_spacing)),
                 word_spacing_slider
             ]
             .spacing(8)
             .align_y(Vertical::Center),
             row![
-                text(format!("Letter spacing: {}", self.letter_spacing)),
+                text(format!("Letter spacing: {}", self.config.letter_spacing)),
                 letter_spacing_slider
             ]
             .spacing(8)
             .align_y(Vertical::Center),
             text("Highlight Colors").size(18.0),
-            self.color_row("Day highlight", self.day_highlight, |c, v| {
+            self.color_row("Day highlight", self.config.day_highlight, |c, v| {
                 Message::DayHighlightChanged(c, v)
             }),
-            self.color_row("Night highlight", self.night_highlight, |c, v| {
-                Message::NightHighlightChanged(c, v)
-            }),
+            self.color_row(
+                "Night highlight",
+                self.config.night_highlight,
+                |c, v| { Message::NightHighlightChanged(c, v) }
+            ),
         ]
         .spacing(12)
         .width(Length::Fixed(280.0));
@@ -298,7 +311,8 @@ impl App {
 
     pub(super) fn tts_controls(&self) -> Element<'_, Message> {
         let play_label = if self
-            .tts_playback
+            .tts
+            .playback
             .as_ref()
             .map(|p| p.is_paused())
             .unwrap_or(true)
@@ -314,13 +328,13 @@ impl App {
             button(play_label).on_press(Message::Pause)
         };
         let play_from_start = button("Play Page").on_press(Message::PlayFromPageStart);
-        let jump_disabled = self.current_sentence_idx.is_none();
+        let jump_disabled = self.tts.current_sentence_idx.is_none();
         let jump_button = if jump_disabled {
             button("Jump to Audio")
         } else {
             button("Jump to Audio").on_press(Message::JumpToCurrentAudio)
         };
-        let play_from_cursor = if let Some(idx) = self.current_sentence_idx {
+        let play_from_cursor = if let Some(idx) = self.tts.current_sentence_idx {
             button("Play From Highlight").on_press(Message::PlayFromCursor(idx))
         } else {
             button("Play From Highlight")
@@ -328,7 +342,7 @@ impl App {
 
         let speed_slider = slider(
             MIN_TTS_SPEED..=super::state::MAX_TTS_SPEED,
-            self.tts_speed,
+            self.config.tts_speed,
             Message::SetTtsSpeed,
         )
         .step(0.05);
@@ -340,7 +354,7 @@ impl App {
             play_from_start,
             play_from_cursor,
             jump_button,
-            text(format!("Speed: {:.2}x", self.tts_speed)),
+            text(format!("Speed: {:.2}x", self.config.tts_speed)),
             speed_slider,
         ]
         .spacing(10)

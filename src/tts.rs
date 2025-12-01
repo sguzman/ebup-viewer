@@ -105,6 +105,10 @@ impl TtsPlayback {
     pub fn is_paused(&self) -> bool {
         self.sink.is_paused()
     }
+
+    pub fn is_finished(&self) -> bool {
+        self.sink.empty()
+    }
 }
 
 fn cache_path(base: &Path, model_path: &Path, sentence: &str, speed: f32) -> PathBuf {

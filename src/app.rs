@@ -266,6 +266,23 @@ impl App {
             }
             Message::Tick(now) => {
                 if self.tts_running {
+                    // If the sink finished early, advance to next page or stop.
+                    if self
+                        .tts_playback
+                        .as_ref()
+                        .map(|p| p.is_paused() || p.is_finished())
+                        .unwrap_or(true)
+                    {
+                        if self.current_page + 1 < self.pages.len() {
+                            self.current_page += 1;
+                            self.start_playback_from(self.current_page, 0);
+                        } else {
+                            self.tts_running = false;
+                            self.tts_deadline = None;
+                        }
+                        return Task::none();
+                    }
+
                     if let Some(deadline) = self.tts_deadline {
                         if now >= deadline {
                             let next_idx = self.current_sentence_idx.unwrap_or(0) + 1;

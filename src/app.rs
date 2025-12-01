@@ -186,13 +186,17 @@ impl App {
                 }
             }
             Message::Play => {
-                self.start_playback_from(self.current_page, 0);
+                if let Some(playback) = &self.tts_playback {
+                    playback.play();
+                } else {
+                    self.start_playback_from(self.current_page, 0);
+                }
             }
             Message::PlayFromPageStart => {
                 self.start_playback_from(self.current_page, 0);
             }
-            Message::PlayFromCursor(sentence_idx) => {
-                self.start_playback_from(self.current_page, sentence_idx);
+            Message::PlayFromCursor(idx) => {
+                self.start_playback_from(self.current_page, idx);
             }
             Message::Pause => {
                 if let Some(playback) = &self.tts_playback {
@@ -231,6 +235,8 @@ impl App {
         let theme_toggle = button(theme_label).on_press(Message::ToggleTheme);
         let settings_toggle = button(if self.settings_open { "Hide Settings" } else { "Show Settings" })
             .on_press(Message::ToggleSettings);
+        let tts_toggle = button(if self.tts_open { "Hide TTS" } else { "Show TTS" })
+            .on_press(Message::ToggleTtsControls);
 
         let prev_button = if self.current_page > 0 {
             button("Previous").on_press(Message::PreviousPage)
@@ -249,6 +255,7 @@ impl App {
             next_button,
             theme_toggle,
             settings_toggle,
+            tts_toggle,
             text(page_label)
         ]
         .spacing(10)
@@ -513,6 +520,7 @@ impl App {
         } else {
             button(play_label).on_press(Message::Pause)
         };
+        let play_from_start = button("Play Page").on_press(Message::PlayFromPageStart);
 
         let speed_slider = slider(
             MIN_TTS_SPEED..=MAX_TTS_SPEED,
@@ -525,6 +533,7 @@ impl App {
             button("⏮").on_press(Message::SeekBackward),
             play_button,
             button("⏭").on_press(Message::SeekForward),
+            play_from_start,
             text(format!("Speed: {:.2}x", self.tts_speed)),
             speed_slider,
         ]

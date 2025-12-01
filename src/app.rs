@@ -211,8 +211,10 @@ impl App {
             Message::SetTtsSpeed(speed) => {
                 let clamped = speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED);
                 self.tts_speed = clamped;
-                if let Some(playback) = &self.tts_playback {
-                    playback.set_speed(clamped);
+                // Restart playback at current position with new synthesis speed to preserve pitch
+                if self.tts_playback.is_some() {
+                    let idx = self.current_sentence_idx.unwrap_or(0);
+                    self.start_playback_from(self.current_page, idx);
                 }
             }
             Message::Play => {
@@ -234,19 +236,9 @@ impl App {
                 }
             }
             Message::SeekForward => {
-                let sentences = split_sentences(
-                    self.pages
-                        .get(self.current_page)
-                        .map(String::as_str)
-                        .unwrap_or("")
-                        .to_string(),
-                );
-                if sentences.is_empty() {
-                    return Task::none();
-                }
-                let current_idx = self.current_sentence_idx.unwrap_or(0);
-                if current_idx + 1 < sentences.len() {
-                    self.start_playback_from(self.current_page, current_idx + 1);
+                let next_idx = self.current_sentence_idx.unwrap_or(0) + 1;
+                if next_idx < self.last_sentences.len() {
+                    self.start_playback_from(self.current_page, next_idx);
                 } else if self.current_page + 1 < self.pages.len() {
                     self.current_page += 1;
                     self.start_playback_from(self.current_page, 0);
@@ -254,26 +246,20 @@ impl App {
                 }
             }
             Message::SeekBackward => {
-                let sentences = split_sentences(
-                    self.pages
-                        .get(self.current_page)
-                        .map(String::as_str)
-                        .unwrap_or("")
-                        .to_string(),
-                );
                 let current_idx = self.current_sentence_idx.unwrap_or(0);
                 if current_idx > 0 {
                     self.start_playback_from(self.current_page, current_idx - 1);
                 } else if self.current_page > 0 {
                     self.current_page -= 1;
-                    let prev_sentences = split_sentences(
+                    let last_idx = split_sentences(
                         self.pages
                             .get(self.current_page)
                             .map(String::as_str)
                             .unwrap_or("")
                             .to_string(),
-                    );
-                    let last_idx = prev_sentences.len().saturating_sub(1);
+                    )
+                    .len()
+                    .saturating_sub(1);
                     self.start_playback_from(self.current_page, last_idx);
                     page_changed = true;
                 }
@@ -477,7 +463,6 @@ pub fn run_app(
                 tts_engine: TtsEngine::new(
                     config.tts_model_path.clone().into(),
                     config.tts_espeak_path.clone().into(),
-                    config.tts_speed,
                 )
                     .ok(),
                 tts_playback: None,
@@ -703,8 +688,9 @@ impl App {
         let sentence_idx = sentence_idx.min(sentences.len().saturating_sub(1));
         let mut files = Vec::new();
         let mut track = Vec::new();
+        let cache_root = crate::cache::tts_dir(&self.epub_path);
         for (_i, sent) in sentences.iter().enumerate().skip(sentence_idx) {
-            if let Ok(path) = engine.ensure_audio(sent) {
+            if let Ok(path) = engine.ensure_audio(&cache_root, sent, self.tts_speed) {
                 let dur = sentence_duration(&path, self.tts_speed);
                 track.push((path.clone(), dur));
                 files.push(path);
@@ -712,7 +698,6 @@ impl App {
         }
 
         if let Ok(playback) = engine.play_files(&files) {
-            playback.set_speed(self.tts_speed);
             self.tts_playback = Some(playback);
             self.tts_track = track;
             self.current_sentence_idx = Some(sentence_idx.min(self.last_sentences.len().saturating_sub(1)));
@@ -724,7 +709,7 @@ impl App {
     }
 }
 
-fn sentence_duration(path: &PathBuf, speed: f32) -> Duration {
+fn sentence_duration(path: &PathBuf, _speed: f32) -> Duration {
     let file = match File::open(path) {
         Ok(f) => f,
         Err(_) => return Duration::from_secs(1),
@@ -735,11 +720,7 @@ fn sentence_duration(path: &PathBuf, speed: f32) -> Duration {
         .and_then(|d| d.total_duration())
         .unwrap_or(Duration::from_secs(1));
 
-    if speed > 0.0 {
-        dur.mul_f64((1.0 / speed) as f64)
-    } else {
-        dur
-    }
+    dur
 }
 
 /// Attempt to justify text by distributing spaces between words to hit a target line width.

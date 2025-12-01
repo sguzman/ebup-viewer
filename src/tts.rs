@@ -1,7 +1,6 @@
 //! Text-to-speech support using `piper1-rs` with caching in `.cache`.
 //! Audio is generated per sentence and stored as WAV for reuse.
 
-use crate::cache::CACHE_DIR;
 use anyhow::{Context, Result};
 use hound::WavSpec;
 use piper1_rs::{Piper, PiperSynthesisOptions};
@@ -16,12 +15,11 @@ use std::sync::{Arc, Mutex};
 pub struct TtsEngine {
     model_path: PathBuf,
     espeak_path: PathBuf,
-    speed: f32,
     inner: Arc<Mutex<Piper>>,
 }
 
 impl TtsEngine {
-    pub fn new(model_path: PathBuf, espeak_path: PathBuf, speed: f32) -> Result<Self> {
+    pub fn new(model_path: PathBuf, espeak_path: PathBuf) -> Result<Self> {
         let piper = Piper::new(
             model_path.to_string_lossy().to_string(),
             None::<String>,
@@ -31,14 +29,18 @@ impl TtsEngine {
         Ok(Self {
             model_path,
             espeak_path,
-            speed,
             inner: Arc::new(Mutex::new(piper)),
         })
     }
 
     /// Ensure audio for a sentence exists, returning the cached path.
-    pub fn ensure_audio(&self, sentence: &str) -> Result<PathBuf> {
-        let path = cache_path(&self.model_path, sentence);
+    pub fn ensure_audio(
+        &self,
+        cache_root: &Path,
+        sentence: &str,
+        speed: f32,
+    ) -> Result<PathBuf> {
+        let path = cache_path(cache_root, &self.model_path, sentence, speed);
         if path.exists() {
             return Ok(path);
         }
@@ -51,7 +53,7 @@ impl TtsEngine {
         let mut options: PiperSynthesisOptions = piper.get_default_synthesis_options();
 
         // Piper length_scale is roughly inverse speed.
-        let length_scale = (1.0 / self.speed).clamp(0.25, 4.0);
+        let length_scale = (1.0 / speed).clamp(0.25, 4.0);
         options.set_length_scale(length_scale);
 
         let mut handle = piper
@@ -100,27 +102,18 @@ impl TtsPlayback {
         self.sink.play();
     }
 
-    pub fn stop(self) {}
-
     pub fn is_paused(&self) -> bool {
         self.sink.is_paused()
     }
-
-    pub fn set_speed(&self, speed: f32) {
-        self.sink.set_speed(speed);
-    }
-
-    pub fn empty(&self) -> bool {
-        self.sink.empty()
-    }
 }
 
-fn cache_path(model_path: &Path, sentence: &str) -> PathBuf {
+fn cache_path(base: &Path, model_path: &Path, sentence: &str, speed: f32) -> PathBuf {
     let mut hasher = Sha256::new();
     hasher.update(model_path.as_os_str().to_string_lossy().as_bytes());
     hasher.update(sentence.as_bytes());
+    hasher.update(speed.to_le_bytes());
     let hash = format!("{:x}", hasher.finalize());
-    Path::new(CACHE_DIR).join(format!("tts-{hash}.wav"))
+    base.join(format!("tts-{hash}.wav"))
 }
 
 fn write_wav(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<()> {

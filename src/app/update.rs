@@ -282,18 +282,20 @@ impl App {
 
                     let mut acc = Duration::ZERO;
                     let mut target_idx = None;
+                    let offset = self.tts_sentence_offset;
                     let pause = Duration::from_secs_f32(self.pause_after_sentence);
                     for (i, (_, dur)) in self.tts_track.iter().enumerate() {
                         acc += *dur + pause;
                         if elapsed <= acc {
-                            target_idx = Some(i);
+                            target_idx = Some(offset + i);
                             break;
                         }
                     }
 
                     if let Some(idx) = target_idx {
-                        if Some(idx) != self.current_sentence_idx {
-                            self.current_sentence_idx = Some(idx);
+                        let clamped = idx.min(self.last_sentences.len().saturating_sub(1));
+                        if Some(clamped) != self.current_sentence_idx {
+                            self.current_sentence_idx = Some(clamped);
                         }
                     } else {
                         self.stop_playback();
@@ -349,19 +351,14 @@ impl App {
                     ) {
                         self.tts_playback = Some(playback);
                         self.tts_track = files.clone();
-                        self.current_sentence_idx =
-                            Some(start_idx.min(files.len().saturating_sub(1)));
-                        let pause = Duration::from_secs_f32(self.pause_after_sentence);
-                        let base = self
-                            .tts_track
-                            .iter()
-                            .take(start_idx)
-                            .fold(Duration::ZERO, |acc, (_, d)| acc + *d + pause);
-                        self.tts_elapsed = base;
+                        self.tts_sentence_offset =
+                            start_idx.min(self.last_sentences.len().saturating_sub(1));
+                        self.current_sentence_idx = Some(self.tts_sentence_offset);
+                        self.tts_elapsed = Duration::ZERO;
                         self.tts_started_at = Some(Instant::now());
                         self.tts_running = true;
                         debug!(
-                            base_ms = base.as_millis(),
+                            offset = self.tts_sentence_offset,
                             "Started TTS playback and highlighting"
                         );
                     } else {
@@ -404,9 +401,16 @@ impl App {
                 .to_string(),
         );
         self.last_sentences = sentences.clone();
-        self.current_sentence_idx = Some(sentence_idx.min(sentences.len().saturating_sub(1)));
+        if sentences.is_empty() {
+            self.current_sentence_idx = None;
+            self.tts_sentence_offset = 0;
+            return Task::none();
+        }
 
         let sentence_idx = sentence_idx.min(sentences.len().saturating_sub(1));
+        self.tts_sentence_offset = sentence_idx;
+        self.current_sentence_idx = Some(sentence_idx);
+
         let cache_root = crate::cache::tts_dir(&self.epub_path);
         let speed = self.tts_speed;
         let threads = self.tts_threads.max(1);

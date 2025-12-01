@@ -27,7 +27,8 @@ pub fn load_epub_text(path: &Path) -> Result<String> {
                     combined.push_str("\n\n");
                 }
                 // Use a lightweight HTML-to-text pass to remove most markup; fall back to raw chapter on errors.
-                let plain = match html2text::from_read(chapter.as_bytes(), 80) {
+                // Use a very large width so we do not bake in hard line breaks—let the UI handle wrapping.
+                let plain = match html2text::from_read(chapter.as_bytes(), 10_000) {
                     Ok(clean) => clean,
                     Err(err) => {
                         warn!(chapter = chapters, "html2text failed: {err}");

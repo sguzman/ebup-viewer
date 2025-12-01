@@ -134,6 +134,7 @@ impl App {
                 .width(Length::Fill)
                 .padding([self.margin_vertical, self.margin_horizontal]),
         )
+        .on_scroll(|viewport| Message::Scrolled(viewport.relative_offset()))
         .id(super::state::TEXT_SCROLL_ID.clone())
         .height(Length::FillPortion(1));
 

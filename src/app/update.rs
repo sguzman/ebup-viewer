@@ -3,10 +3,11 @@ use super::state::{
     App, MAX_LETTER_SPACING, MAX_MARGIN, MAX_TTS_SPEED, MAX_WORD_SPACING, MIN_TTS_SPEED,
     TEXT_SCROLL_ID, apply_component,
 };
-use crate::cache::save_last_page;
+use crate::cache::{Bookmark, save_bookmark};
 use crate::pagination::{MAX_FONT_SIZE, MAX_LINES_PER_PAGE, MIN_FONT_SIZE, MIN_LINES_PER_PAGE};
 use crate::text_utils::split_sentences;
 use iced::time;
+use iced::widget::scrollable::RelativeOffset;
 use iced::{Subscription, Task};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
@@ -22,6 +23,7 @@ impl App {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         let mut page_changed = false;
+        let mut location_dirty = false;
         let mut tasks: Vec<Task<Message>> = Vec::new();
 
         match message {
@@ -29,18 +31,22 @@ impl App {
                 if self.current_page + 1 < self.pages.len() {
                     self.current_page += 1;
                     page_changed = true;
+                    location_dirty = true;
+                    self.last_scroll_offset = RelativeOffset::START;
                     info!(page = self.current_page + 1, "Navigated to next page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
-                    self.queue_auto_scroll(&mut tasks);
+                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                 }
             }
             Message::PreviousPage => {
                 if self.current_page > 0 {
                     self.current_page -= 1;
                     page_changed = true;
+                    location_dirty = true;
+                    self.last_scroll_offset = RelativeOffset::START;
                     info!(page = self.current_page + 1, "Navigated to previous page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
-                    self.queue_auto_scroll(&mut tasks);
+                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                 }
             }
             Message::FontSizeChanged(size) => {
@@ -125,6 +131,8 @@ impl App {
                     }
                     if self.current_page != before {
                         page_changed = true;
+                        location_dirty = true;
+                        self.last_scroll_offset = RelativeOffset::START;
                     }
                     debug!(
                         lines_per_page = self.lines_per_page,
@@ -147,7 +155,8 @@ impl App {
                     if self.tts_playback.is_some() {
                         let idx = self.current_sentence_idx.unwrap_or(0);
                         tasks.push(self.start_playback_from(self.current_page, idx));
-                        self.queue_auto_scroll(&mut tasks);
+                        location_dirty = true;
+                        self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                     }
                 }
             }
@@ -162,7 +171,7 @@ impl App {
                     info!(enabled, "Updated auto-scroll to spoken sentence");
                     self.save_epub_config();
                     if enabled {
-                        self.queue_auto_scroll(&mut tasks);
+                        self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                     }
                 }
             }
@@ -172,7 +181,7 @@ impl App {
                     info!(centered, "Updated centered tracking preference");
                     self.save_epub_config();
                     if self.auto_scroll_tts {
-                        self.queue_auto_scroll(&mut tasks);
+                        self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                     }
                 }
             }
@@ -188,7 +197,8 @@ impl App {
                 if self.tts_playback.is_some() {
                     let idx = self.current_sentence_idx.unwrap_or(0);
                     tasks.push(self.start_playback_from(self.current_page, idx));
-                    self.queue_auto_scroll(&mut tasks);
+                    location_dirty = true;
+                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                 }
                 self.save_epub_config();
             }
@@ -201,18 +211,21 @@ impl App {
                 } else {
                     info!("Starting TTS playback from current page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
-                    self.queue_auto_scroll(&mut tasks);
+                    location_dirty = true;
+                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                 }
             }
             Message::PlayFromPageStart => {
                 info!("Playing page from start");
                 tasks.push(self.start_playback_from(self.current_page, 0));
-                self.queue_auto_scroll(&mut tasks);
+                location_dirty = true;
+                self.queue_auto_scroll(&mut tasks, &mut location_dirty);
             }
             Message::PlayFromCursor(idx) => {
                 info!(idx, "Playing from cursor");
                 tasks.push(self.start_playback_from(self.current_page, idx));
-                self.queue_auto_scroll(&mut tasks);
+                location_dirty = true;
+                self.queue_auto_scroll(&mut tasks, &mut location_dirty);
             }
             Message::JumpToCurrentAudio => {
                 if let Some(idx) = self.current_sentence_idx {
@@ -223,6 +236,8 @@ impl App {
                             fraction = offset.y,
                             "Jumping to current audio sentence (scroll only)"
                         );
+                        self.last_scroll_offset = offset;
+                        location_dirty = true;
                         tasks.push(iced::widget::scrollable::snap_to(
                             TEXT_SCROLL_ID.clone(),
                             offset,
@@ -245,14 +260,17 @@ impl App {
                 if next_idx < self.last_sentences.len() {
                     info!(next_idx, "Seeking forward within page");
                     tasks.push(self.start_playback_from(self.current_page, next_idx));
-                    self.queue_auto_scroll(&mut tasks);
+                    location_dirty = true;
+                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                 } else if self.current_page + 1 < self.pages.len() {
                     self.current_page += 1;
                     info!("Seeking forward into next page");
                     tasks.push(self.start_playback_from(self.current_page, 0));
                     page_changed = true;
+                    location_dirty = true;
+                    self.last_scroll_offset = RelativeOffset::START;
                     self.save_epub_config();
-                    self.queue_auto_scroll(&mut tasks);
+                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                 }
             }
             Message::SeekBackward => {
@@ -263,7 +281,8 @@ impl App {
                         "Seeking backward within page"
                     );
                     tasks.push(self.start_playback_from(self.current_page, current_idx - 1));
-                    self.queue_auto_scroll(&mut tasks);
+                    location_dirty = true;
+                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                 } else if self.current_page > 0 {
                     self.current_page -= 1;
                     let last_idx = split_sentences(
@@ -278,8 +297,17 @@ impl App {
                     info!("Seeking backward into previous page");
                     tasks.push(self.start_playback_from(self.current_page, last_idx));
                     page_changed = true;
+                    location_dirty = true;
+                    self.last_scroll_offset = RelativeOffset::START;
                     self.save_epub_config();
-                    self.queue_auto_scroll(&mut tasks);
+                    self.queue_auto_scroll(&mut tasks, &mut location_dirty);
+                }
+            }
+            Message::Scrolled(offset) => {
+                let sanitized = Self::sanitize_offset(offset);
+                if sanitized != self.last_scroll_offset {
+                    self.last_scroll_offset = sanitized;
+                    location_dirty = true;
                 }
             }
             Message::Tick(now) => {
@@ -314,15 +342,19 @@ impl App {
                         let clamped = idx.min(self.last_sentences.len().saturating_sub(1));
                         if Some(clamped) != self.current_sentence_idx {
                             self.current_sentence_idx = Some(clamped);
-                            self.queue_auto_scroll(&mut tasks);
+                            location_dirty = true;
+                            self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                         }
                     } else {
                         self.stop_playback();
                         if self.current_page + 1 < self.pages.len() {
                             self.current_page += 1;
+                            self.last_scroll_offset = RelativeOffset::START;
                             info!("Playback finished page, advancing");
                             tasks.push(self.start_playback_from(self.current_page, 0));
-                            self.queue_auto_scroll(&mut tasks);
+                            page_changed = true;
+                            location_dirty = true;
+                            self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                         } else {
                             info!("Playback finished at end of book");
                         }
@@ -377,7 +409,8 @@ impl App {
                         self.tts_elapsed = Duration::ZERO;
                         self.tts_started_at = Some(Instant::now());
                         self.tts_running = true;
-                        self.queue_auto_scroll(&mut tasks);
+                        location_dirty = true;
+                        self.queue_auto_scroll(&mut tasks, &mut location_dirty);
                         debug!(
                             offset = self.tts_sentence_offset,
                             "Started TTS playback and highlighting"
@@ -390,7 +423,12 @@ impl App {
         }
 
         if page_changed {
-            save_last_page(&self.epub_path, self.current_page);
+            self.last_scroll_offset = RelativeOffset::START;
+            location_dirty = true;
+        }
+
+        if location_dirty {
+            self.persist_bookmark();
         }
 
         if tasks.is_empty() {
@@ -467,7 +505,50 @@ impl App {
         )
     }
 
-    fn scroll_offset_for_sentence(
+    fn persist_bookmark(&self) {
+        let sentences = if self.last_sentences.is_empty() {
+            split_sentences(
+                self.pages
+                    .get(self.current_page)
+                    .map(String::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+            )
+        } else {
+            self.last_sentences.clone()
+        };
+
+        let sentence_idx = self
+            .current_sentence_idx
+            .filter(|idx| *idx < sentences.len());
+        let sentence_text = sentence_idx.and_then(|idx| sentences.get(idx).cloned());
+        let scroll_y = Self::sanitize_offset(self.last_scroll_offset).y;
+
+        let bookmark = Bookmark {
+            page: self.current_page,
+            sentence_idx,
+            sentence_text,
+            scroll_y,
+        };
+
+        save_bookmark(&self.epub_path, &bookmark);
+    }
+
+    fn sanitize_offset(offset: RelativeOffset) -> RelativeOffset {
+        let clamp = |v: f32| {
+            if v.is_finite() {
+                v.clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        RelativeOffset {
+            x: clamp(offset.x),
+            y: clamp(offset.y),
+        }
+    }
+
+    pub(super) fn scroll_offset_for_sentence(
         &self,
         sentence_idx: usize,
         total_sentences: usize,
@@ -489,7 +570,7 @@ impl App {
         Some(iced::widget::scrollable::RelativeOffset { x: 0.0, y })
     }
 
-    fn queue_auto_scroll(&self, tasks: &mut Vec<Task<Message>>) {
+    fn queue_auto_scroll(&mut self, tasks: &mut Vec<Task<Message>>, location_dirty: &mut bool) {
         if !self.auto_scroll_tts {
             return;
         }
@@ -499,6 +580,8 @@ impl App {
         };
 
         if let Some(offset) = self.scroll_offset_for_sentence(idx, self.last_sentences.len()) {
+            self.last_scroll_offset = offset;
+            *location_dirty = true;
             tasks.push(iced::widget::scrollable::snap_to(
                 TEXT_SCROLL_ID.clone(),
                 offset,

@@ -5,6 +5,7 @@ mod view;
 
 pub use state::App;
 
+use crate::cache::Bookmark;
 use crate::config::AppConfig;
 use iced::Theme;
 
@@ -13,7 +14,7 @@ pub fn run_app(
     text: String,
     config: AppConfig,
     epub_path: std::path::PathBuf,
-    last_page: Option<usize>,
+    bookmark: Option<Bookmark>,
 ) -> iced::Result {
     iced::application("EPUB Viewer", App::update, App::view)
         .subscription(App::subscription)
@@ -24,5 +25,5 @@ pub fn run_app(
                 Theme::Light
             }
         })
-        .run_with(move || App::bootstrap(text, config, epub_path, last_page))
+        .run_with(move || App::bootstrap(text, config, epub_path, bookmark))
 }

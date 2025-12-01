@@ -15,7 +15,7 @@ mod text_utils;
 mod tts;
 
 use crate::app::run_app;
-use crate::cache::{load_epub_config, load_last_page};
+use crate::cache::{load_bookmark, load_epub_config};
 use crate::config::load_config;
 use crate::epub_loader::load_epub_text;
 use anyhow::{Context, Result, anyhow};
@@ -57,12 +57,12 @@ fn run(reload_handle: &ReloadHandle) -> Result<()> {
         threads = config.tts_threads,
         "Active TTS configuration"
     );
-    let last_page = load_last_page(&epub_path);
-    if let Some(page) = last_page {
-        info!(page, "Resuming from cached page");
+    let bookmark = load_bookmark(&epub_path);
+    if let Some(bm) = &bookmark {
+        info!(page = bm.page, "Resuming from cached page");
     }
     let text = load_epub_text(&epub_path)?;
-    run_app(text, config, epub_path, last_page).context("Failed to start the GUI")?;
+    run_app(text, config, epub_path, bookmark).context("Failed to start the GUI")?;
     Ok(())
 }
 

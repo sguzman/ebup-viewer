@@ -1,11 +1,12 @@
-use crate::cache::save_epub_config;
+use crate::cache::{Bookmark, save_epub_config};
 use crate::config::{AppConfig, FontFamily, FontWeight, HighlightColor, LogLevel, ThemeMode};
 use crate::pagination::{
     MAX_FONT_SIZE, MAX_LINES_PER_PAGE, MIN_FONT_SIZE, MIN_LINES_PER_PAGE, paginate,
 };
+use crate::text_utils::split_sentences;
 use crate::tts::{TtsEngine, TtsPlayback};
 use iced::font::{Family, Weight};
-use iced::widget::scrollable::Id as ScrollId;
+use iced::widget::scrollable::{Id as ScrollId, RelativeOffset};
 use iced::{Color, Font, Task};
 use once_cell::sync::Lazy;
 use std::path::PathBuf;
@@ -76,6 +77,7 @@ pub struct App {
     pub(super) pause_after_sentence: f32,
     pub(super) auto_scroll_tts: bool,
     pub(super) center_spoken_sentence: bool,
+    pub(super) last_scroll_offset: RelativeOffset,
 }
 
 impl App {
@@ -213,7 +215,7 @@ impl App {
         text: String,
         config: AppConfig,
         epub_path: PathBuf,
-        last_page: Option<usize>,
+        bookmark: Option<Bookmark>,
     ) -> (App, Task<Message>) {
         let font_size = config.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         let line_spacing = config.line_spacing.clamp(0.8, 2.5);
@@ -267,22 +269,68 @@ impl App {
             pause_after_sentence,
             auto_scroll_tts: config.auto_scroll_tts,
             center_spoken_sentence: config.center_spoken_sentence,
+            last_scroll_offset: RelativeOffset::START,
         };
 
         app.repaginate();
-        if let Some(last) = last_page {
-            app.current_page = last.min(app.pages.len().saturating_sub(1));
-            tracing::info!(page = app.current_page + 1, "Restored last page from cache");
-        } else {
-            tracing::info!("Starting from first page");
-        }
+        let mut init_task = Task::none();
+        match bookmark {
+            Some(bookmark) => {
+                let capped_page = bookmark.page.min(app.pages.len().saturating_sub(1));
+                app.current_page = capped_page;
+                let scroll_y = if bookmark.scroll_y.is_finite() {
+                    bookmark.scroll_y.clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                app.last_scroll_offset = RelativeOffset {
+                    x: 0.0,
+                    y: scroll_y,
+                };
+
+                if let Some(page) = app.pages.get(app.current_page) {
+                    app.last_sentences = split_sentences(page.clone());
+                    let restored_idx = bookmark
+                        .sentence_text
+                        .as_ref()
+                        .and_then(|target| app.last_sentences.iter().position(|s| s == target))
+                        .or(bookmark.sentence_idx)
+                        .map(|idx| idx.min(app.last_sentences.len().saturating_sub(1)));
+                    app.current_sentence_idx = restored_idx;
+                }
+
+                if app.last_scroll_offset.y > 0.0 {
+                    init_task = iced::widget::scrollable::snap_to(
+                        TEXT_SCROLL_ID.clone(),
+                        app.last_scroll_offset,
+                    );
+                } else if let Some(idx) = app.current_sentence_idx {
+                    if let Some(offset) =
+                        app.scroll_offset_for_sentence(idx, app.last_sentences.len())
+                    {
+                        app.last_scroll_offset = offset;
+                        init_task =
+                            iced::widget::scrollable::snap_to(TEXT_SCROLL_ID.clone(), offset);
+                    }
+                }
+                tracing::info!(
+                    page = app.current_page + 1,
+                    sentence_idx = ?app.current_sentence_idx,
+                    scroll = app.last_scroll_offset.y,
+                    "Restored bookmark from cache"
+                );
+            }
+            None => {
+                tracing::info!("Starting from first page");
+            }
+        };
         tracing::info!(
             font_size = app.font_size,
             night_mode = app.night_mode,
             "Initialized app state"
         );
 
-        (app, Task::none())
+        (app, init_task)
     }
 }
 

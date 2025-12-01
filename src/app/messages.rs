@@ -1,4 +1,5 @@
 use crate::config::{FontFamily, FontWeight};
+use iced::widget::scrollable::RelativeOffset;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -32,6 +33,7 @@ pub enum Message {
     SetTtsSpeed(f32),
     SeekForward,
     SeekBackward,
+    Scrolled(RelativeOffset),
     TtsPrepared {
         page: usize,
         start_idx: usize,

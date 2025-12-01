@@ -1,8 +1,10 @@
-//! Simple cache to remember the last opened page per EPUB file.
+//! Simple cache to remember the last opened page per EPUB file, along with
+//! finer-grained resume data (sentence + scroll position).
 //!
 //! Files are stored under `.cache/` using a hash of the EPUB path as the
 //! filename to avoid filesystem issues. The format is a tiny TOML file with a
-//! single `page` field.
+//! `page` field plus optional `sentence_idx`, `sentence_text`, and `scroll_y`
+//! for resuming inside the page.
 
 use crate::config::AppConfig;
 use sha2::{Digest, Sha256};
@@ -13,8 +15,23 @@ use tracing::{debug, warn};
 
 pub const CACHE_DIR: &str = ".cache";
 
-/// Load the cached page for a given EPUB path, if present.
-pub fn load_last_page(epub_path: &Path) -> Option<usize> {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Bookmark {
+    pub page: usize,
+    #[serde(default)]
+    pub sentence_idx: Option<usize>,
+    #[serde(default)]
+    pub sentence_text: Option<String>,
+    #[serde(default = "default_scroll")]
+    pub scroll_y: f32,
+}
+
+fn default_scroll() -> f32 {
+    0.0
+}
+
+/// Load the cached bookmark for a given EPUB path, if present.
+pub fn load_bookmark(epub_path: &Path) -> Option<Bookmark> {
     let path = bookmark_path(epub_path);
     let data = match fs::read_to_string(&path) {
         Ok(contents) => contents,
@@ -28,23 +45,33 @@ pub fn load_last_page(epub_path: &Path) -> Option<usize> {
     };
     let value: CacheEntry = toml::from_str(&data).ok()?;
     debug!(page = value.page, "Loaded last page bookmark");
-    Some(value.page)
+    Some(Bookmark {
+        page: value.page,
+        sentence_idx: value.sentence_idx,
+        sentence_text: value.sentence_text,
+        scroll_y: value.scroll_y.unwrap_or_else(default_scroll),
+    })
 }
 
-/// Persist the current page for a given EPUB path. Errors are ignored to keep
-/// the UI responsive.
-pub fn save_last_page(epub_path: &Path, page: usize) {
+/// Persist the current bookmark for a given EPUB path. Errors are ignored to
+/// keep the UI responsive.
+pub fn save_bookmark(epub_path: &Path, bookmark: &Bookmark) {
     let path = bookmark_path(epub_path);
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let entry = CacheEntry { page };
+    let entry = CacheEntry {
+        page: bookmark.page,
+        sentence_idx: bookmark.sentence_idx,
+        sentence_text: bookmark.sentence_text.clone(),
+        scroll_y: Some(bookmark.scroll_y),
+    };
     if let Ok(contents) = toml::to_string(&entry) {
         if let Ok(mut file) = fs::File::create(path) {
             if let Err(err) = file.write_all(contents.as_bytes()) {
                 warn!("Failed to persist last page: {err}");
             } else {
-                debug!(page, "Saved last page bookmark");
+                debug!(page = bookmark.page, "Saved last page bookmark");
             }
         }
     }
@@ -53,6 +80,12 @@ pub fn save_last_page(epub_path: &Path, page: usize) {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct CacheEntry {
     page: usize,
+    #[serde(default)]
+    sentence_idx: Option<usize>,
+    #[serde(default)]
+    sentence_text: Option<String>,
+    #[serde(default)]
+    scroll_y: Option<f32>,
 }
 
 pub fn hash_dir(epub_path: &Path) -> PathBuf {

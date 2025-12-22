@@ -1,0 +1,379 @@
+use super::Effect;
+use super::super::state::{App, MAX_TTS_SPEED, MIN_TTS_SPEED};
+use crate::text_utils::split_sentences;
+use iced::widget::scrollable::RelativeOffset;
+use iced::Task;
+use std::time::{Duration, Instant};
+use tracing::{debug, info, warn};
+
+impl App {
+    pub(super) fn handle_toggle_tts_controls(&mut self, effects: &mut Vec<Effect>) {
+        debug!("Toggled TTS controls");
+        self.config.show_tts = !self.config.show_tts;
+        effects.push(Effect::SaveConfig);
+    }
+
+    pub(super) fn handle_pause_after_sentence_changed(
+        &mut self,
+        pause: f32,
+        effects: &mut Vec<Effect>,
+    ) {
+        let clamped = pause.clamp(0.0, 2.0);
+        if (clamped - self.config.pause_after_sentence).abs() > f32::EPSILON {
+            self.config.pause_after_sentence = clamped;
+            info!(pause_secs = clamped, "Updated pause after sentence");
+            effects.push(Effect::SaveConfig);
+            if self.tts.playback.is_some() {
+                let idx = self.tts.current_sentence_idx.unwrap_or(0);
+                effects.push(Effect::StartTts {
+                    page: self.reader.current_page,
+                    sentence_idx: idx,
+                });
+                effects.push(Effect::AutoScrollToCurrent);
+                effects.push(Effect::SaveBookmark);
+            }
+        }
+    }
+
+    pub(super) fn handle_auto_scroll_tts_changed(
+        &mut self,
+        enabled: bool,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.config.auto_scroll_tts != enabled {
+            self.config.auto_scroll_tts = enabled;
+            info!(enabled, "Updated auto-scroll to spoken sentence");
+            effects.push(Effect::SaveConfig);
+            if enabled {
+                effects.push(Effect::AutoScrollToCurrent);
+                effects.push(Effect::SaveBookmark);
+            }
+        }
+    }
+
+    pub(super) fn handle_center_spoken_sentence_changed(
+        &mut self,
+        centered: bool,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.config.center_spoken_sentence != centered {
+            self.config.center_spoken_sentence = centered;
+            info!(centered, "Updated centered tracking preference");
+            effects.push(Effect::SaveConfig);
+            if self.config.auto_scroll_tts {
+                effects.push(Effect::AutoScrollToCurrent);
+                effects.push(Effect::SaveBookmark);
+            }
+        }
+    }
+
+    pub(super) fn handle_set_tts_speed(&mut self, speed: f32, effects: &mut Vec<Effect>) {
+        let clamped = speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED);
+        self.config.tts_speed = clamped;
+        info!(speed = self.config.tts_speed, "Adjusted TTS speed");
+        if self.tts.playback.is_some() {
+            let idx = self.tts.current_sentence_idx.unwrap_or(0);
+            effects.push(Effect::StartTts {
+                page: self.reader.current_page,
+                sentence_idx: idx,
+            });
+            effects.push(Effect::AutoScrollToCurrent);
+            effects.push(Effect::SaveBookmark);
+        }
+        effects.push(Effect::SaveConfig);
+    }
+
+    pub(super) fn handle_play(&mut self, effects: &mut Vec<Effect>) {
+        if let Some(playback) = &self.tts.playback {
+            info!("Resuming TTS playback");
+            playback.play();
+            self.tts.running = true;
+            self.tts.started_at = Some(Instant::now());
+        } else {
+            info!("Starting TTS playback from current page");
+            effects.push(Effect::StartTts {
+                page: self.reader.current_page,
+                sentence_idx: 0,
+            });
+            effects.push(Effect::AutoScrollToCurrent);
+            effects.push(Effect::SaveBookmark);
+        }
+    }
+
+    pub(super) fn handle_play_from_page_start(&mut self, effects: &mut Vec<Effect>) {
+        info!("Playing page from start");
+        effects.push(Effect::StartTts {
+            page: self.reader.current_page,
+            sentence_idx: 0,
+        });
+        effects.push(Effect::AutoScrollToCurrent);
+        effects.push(Effect::SaveBookmark);
+    }
+
+    pub(super) fn handle_play_from_cursor(&mut self, idx: usize, effects: &mut Vec<Effect>) {
+        info!(idx, "Playing from cursor");
+        effects.push(Effect::StartTts {
+            page: self.reader.current_page,
+            sentence_idx: idx,
+        });
+        effects.push(Effect::AutoScrollToCurrent);
+        effects.push(Effect::SaveBookmark);
+    }
+
+    pub(super) fn handle_pause(&mut self, _effects: &mut Vec<Effect>) {
+        if let Some(playback) = &self.tts.playback {
+            info!("Pausing TTS playback");
+            playback.pause();
+        }
+        self.tts.running = false;
+        if let Some(started) = self.tts.started_at.take() {
+            self.tts.elapsed += Instant::now().saturating_duration_since(started);
+        }
+    }
+
+    pub(super) fn handle_seek_forward(&mut self, effects: &mut Vec<Effect>) {
+        let next_idx = self.tts.current_sentence_idx.unwrap_or(0) + 1;
+        if next_idx < self.tts.last_sentences.len() {
+            info!(next_idx, "Seeking forward within page");
+            effects.push(Effect::StartTts {
+                page: self.reader.current_page,
+                sentence_idx: next_idx,
+            });
+            effects.push(Effect::AutoScrollToCurrent);
+            effects.push(Effect::SaveBookmark);
+        } else if self.reader.current_page + 1 < self.reader.pages.len() {
+            self.reader.current_page += 1;
+            info!("Seeking forward into next page");
+            effects.push(Effect::StartTts {
+                page: self.reader.current_page,
+                sentence_idx: 0,
+            });
+            self.bookmark.last_scroll_offset = RelativeOffset::START;
+            effects.push(Effect::SaveConfig);
+            effects.push(Effect::AutoScrollToCurrent);
+            effects.push(Effect::SaveBookmark);
+        }
+    }
+
+    pub(super) fn handle_seek_backward(&mut self, effects: &mut Vec<Effect>) {
+        let current_idx = self.tts.current_sentence_idx.unwrap_or(0);
+        if current_idx > 0 {
+            info!(
+                previous_idx = current_idx.saturating_sub(1),
+                "Seeking backward within page"
+            );
+            effects.push(Effect::StartTts {
+                page: self.reader.current_page,
+                sentence_idx: current_idx - 1,
+            });
+            effects.push(Effect::AutoScrollToCurrent);
+            effects.push(Effect::SaveBookmark);
+        } else if self.reader.current_page > 0 {
+            self.reader.current_page -= 1;
+            let last_idx = split_sentences(
+                self.reader
+                    .pages
+                    .get(self.reader.current_page)
+                    .map(String::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+            )
+            .len()
+            .saturating_sub(1);
+            info!("Seeking backward into previous page");
+            effects.push(Effect::StartTts {
+                page: self.reader.current_page,
+                sentence_idx: last_idx,
+            });
+            self.bookmark.last_scroll_offset = RelativeOffset::START;
+            effects.push(Effect::SaveConfig);
+            effects.push(Effect::AutoScrollToCurrent);
+            effects.push(Effect::SaveBookmark);
+        }
+    }
+
+    pub(super) fn handle_tick(&mut self, now: Instant, effects: &mut Vec<Effect>) {
+        if !self.tts.running {
+            return;
+        }
+        if self
+            .tts
+            .playback
+            .as_ref()
+            .map(|p| p.is_paused())
+            .unwrap_or(false)
+        {
+            return;
+        }
+
+        let Some(started) = self.tts.started_at else {
+            return;
+        };
+        let elapsed = self.tts.elapsed + now.saturating_duration_since(started);
+
+        let mut acc = Duration::ZERO;
+        let mut target_idx = None;
+        let offset = self.tts.sentence_offset;
+        let pause = Duration::from_secs_f32(self.config.pause_after_sentence);
+        for (i, (_, dur)) in self.tts.track.iter().enumerate() {
+            acc += *dur + pause;
+            if elapsed <= acc {
+                target_idx = Some(offset + i);
+                break;
+            }
+        }
+
+        if let Some(idx) = target_idx {
+            let clamped = idx.min(self.tts.last_sentences.len().saturating_sub(1));
+            if Some(clamped) != self.tts.current_sentence_idx {
+                self.tts.current_sentence_idx = Some(clamped);
+                effects.push(Effect::AutoScrollToCurrent);
+                effects.push(Effect::SaveBookmark);
+            }
+        } else {
+            effects.push(Effect::StopTts);
+            if self.reader.current_page + 1 < self.reader.pages.len() {
+                self.reader.current_page += 1;
+                self.bookmark.last_scroll_offset = RelativeOffset::START;
+                info!("Playback finished page, advancing");
+                effects.push(Effect::StartTts {
+                    page: self.reader.current_page,
+                    sentence_idx: 0,
+                });
+                effects.push(Effect::AutoScrollToCurrent);
+                effects.push(Effect::SaveBookmark);
+            } else {
+                info!("Playback finished at end of book");
+            }
+        }
+    }
+
+    pub(super) fn handle_tts_prepared(
+        &mut self,
+        page: usize,
+        start_idx: usize,
+        request_id: u64,
+        files: Vec<(std::path::PathBuf, Duration)>,
+        effects: &mut Vec<Effect>,
+    ) {
+        if request_id != self.tts.request_id {
+            debug!(
+                request_id,
+                current = self.tts.request_id,
+                "Ignoring stale TTS request"
+            );
+            return;
+        }
+        info!(
+            page,
+            start_idx,
+            file_count = files.len(),
+            "Received prepared TTS batch"
+        );
+        if page != self.reader.current_page {
+            debug!(
+                page,
+                current = self.reader.current_page,
+                "Ignoring stale TTS batch"
+            );
+            return;
+        }
+        if files.is_empty() {
+            warn!("TTS batch was empty; stopping playback");
+            self.stop_playback();
+            self.tts.current_sentence_idx = None;
+            return;
+        }
+        self.stop_playback();
+        if let Some(engine) = &self.tts.engine {
+            if let Ok(playback) = engine.play_files(
+                &files.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>(),
+                Duration::from_secs_f32(self.config.pause_after_sentence),
+            ) {
+                self.tts.playback = Some(playback);
+                self.tts.track = files.clone();
+                self.tts.sentence_offset =
+                    start_idx.min(self.tts.last_sentences.len().saturating_sub(1));
+                self.tts.current_sentence_idx = Some(self.tts.sentence_offset);
+                self.tts.elapsed = Duration::ZERO;
+                self.tts.started_at = Some(Instant::now());
+                self.tts.running = true;
+                effects.push(Effect::AutoScrollToCurrent);
+                debug!(
+                    offset = self.tts.sentence_offset,
+                    "Started TTS playback and highlighting"
+                );
+            } else {
+                warn!("Failed to start playback from prepared files");
+            }
+        }
+    }
+
+    pub(super) fn start_playback_from(
+        &mut self,
+        page: usize,
+        sentence_idx: usize,
+    ) -> Task<super::super::messages::Message> {
+        let Some(engine) = self.tts.engine.clone() else {
+            return Task::none();
+        };
+
+        self.stop_playback();
+        self.tts.track.clear();
+        self.tts.elapsed = Duration::ZERO;
+        self.tts.started_at = None;
+
+        let sentences = split_sentences(
+            self.reader
+                .pages
+                .get(page)
+                .map(String::as_str)
+                .unwrap_or("")
+                .to_string(),
+        );
+        self.tts.last_sentences = sentences.clone();
+        if sentences.is_empty() {
+            self.tts.current_sentence_idx = None;
+            self.tts.sentence_offset = 0;
+            return Task::none();
+        }
+
+        let sentence_idx = sentence_idx.min(sentences.len().saturating_sub(1));
+        self.tts.sentence_offset = sentence_idx;
+        self.tts.current_sentence_idx = Some(sentence_idx);
+
+        let cache_root = crate::cache::tts_dir(&self.epub_path);
+        let speed = self.config.tts_speed;
+        let threads = self.config.tts_threads.max(1);
+        let page_id = page;
+        self.tts.started_at = None;
+        self.tts.elapsed = Duration::ZERO;
+        self.tts.request_id = self.tts.request_id.wrapping_add(1);
+        let request_id = self.tts.request_id;
+        self.save_epub_config();
+        info!(
+            page = page + 1,
+            sentence_idx, speed, threads, "Preparing playback task"
+        );
+
+        Task::perform(
+            async move {
+                engine
+                    .prepare_batch(cache_root, sentences, sentence_idx, speed, threads)
+                    .map(|files| super::super::messages::Message::TtsPrepared {
+                        page: page_id,
+                        start_idx: sentence_idx,
+                        request_id,
+                        files,
+                    })
+                    .unwrap_or_else(|_| super::super::messages::Message::TtsPrepared {
+                        page: page_id,
+                        start_idx: sentence_idx,
+                        request_id,
+                        files: Vec::new(),
+                    })
+            },
+            |msg| msg,
+        )
+    }
+}

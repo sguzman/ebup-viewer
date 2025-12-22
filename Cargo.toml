@@ -11,9 +11,8 @@ iced = { version = "0.13.1", default-features = false, features = ["wgpu", "toki
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 sha2 = "0.10"
-piper1_rs = { package = "piper1-rs", version = "0.1.0" }
+piper-rs = "0.1.9"
 rodio = { version = "0.18", features = ["vorbis", "flac"] }
-hound = "3.5"
 threadpool = "1.8"
 once_cell = "1.19"
 tracing = "0.1"

@@ -1,13 +1,14 @@
-//! Text-to-speech support using `piper1-rs` with caching in `.cache`.
+//! Text-to-speech support using `piper-rs` with caching in `.cache`.
 //! Audio is generated per sentence and stored as WAV for reuse.
 
 use anyhow::{Context, Result};
-use hound::WavSpec;
 use once_cell::sync::Lazy;
-use piper1_rs::{Piper, PiperSynthesisOptions};
+use piper_rs::synth::{AudioOutputConfig, PiperSpeechSynthesizer};
+use piper_rs::from_config_path;
 use rodio::source::Zero;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use sha2::{Digest, Sha256};
+use std::env;
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -19,12 +20,17 @@ static PIPER_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 #[derive(Clone)]
 pub struct TtsEngine {
     model_path: PathBuf,
-    espeak_path: PathBuf,
 }
 
 impl TtsEngine {
     pub fn new(model_path: PathBuf, espeak_path: PathBuf) -> Result<Self> {
         let espeak_path = sanitize_espeak_root(espeak_path);
+        if env::var_os("PIPER_ESPEAKNG_DATA_DIRECTORY").is_none() {
+            // Safe because we set a deterministic value early in process startup.
+            unsafe {
+                env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", &espeak_path);
+            }
+        }
         info!(
             model = %model_path.display(),
             espeak_root = %espeak_path.display(),
@@ -32,7 +38,6 @@ impl TtsEngine {
         );
         Ok(Self {
             model_path,
-            espeak_path,
         })
     }
 
@@ -74,12 +79,16 @@ impl TtsEngine {
         threads: usize,
     ) -> Result<Vec<(PathBuf, std::time::Duration)>> {
         let _lock = PIPER_GUARD.lock().unwrap();
-        let mut piper = Piper::new(
-            self.model_path.to_string_lossy().to_string(),
-            None::<String>,
-            self.espeak_path.to_string_lossy().to_string(),
-        )
-        .context("Loading Piper model")?;
+        let config_path = resolve_piper_config(&self.model_path);
+        if !config_path.exists() {
+            anyhow::bail!(
+                "Piper config not found at {} (expected from {})",
+                config_path.display(),
+                self.model_path.display()
+            );
+        }
+        let model = from_config_path(&config_path).context("Loading Piper model")?;
+        let piper = PiperSpeechSynthesizer::new(model).context("Preparing Piper synthesizer")?;
 
         info!(
             sentence_count = sentences.len(),
@@ -99,7 +108,7 @@ impl TtsEngine {
                     }
                 }
 
-                if let Err(err) = synth_with_piper(&mut piper, &path, &sentence, speed) {
+                if let Err(err) = synth_with_piper(&piper, &path, &sentence, speed) {
                     warn!("Failed to synthesize sentence: {err}");
                     return Err(err);
                 }
@@ -169,28 +178,6 @@ fn sanitize_espeak_root(path: PathBuf) -> PathBuf {
     path
 }
 
-fn write_wav(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<()> {
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut writer = hound::WavWriter::create(path, spec)?;
-    for &s in samples {
-        let clamped = (s * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-        writer.write_sample(clamped)?;
-    }
-    writer.finalize()?;
-    debug!(
-        path = %path.display(),
-        samples = samples.len(),
-        sample_rate,
-        "Wrote synthesized WAV"
-    );
-    Ok(())
-}
-
 fn sentence_duration(path: &Path) -> std::time::Duration {
     let file = match File::open(path) {
         Ok(f) => f,
@@ -203,28 +190,47 @@ fn sentence_duration(path: &Path) -> std::time::Duration {
         .unwrap_or(std::time::Duration::from_secs(1))
 }
 
-fn synth_with_piper(piper: &mut Piper, path: &Path, sentence: &str, speed: f32) -> Result<()> {
+fn synth_with_piper(
+    piper: &PiperSpeechSynthesizer,
+    path: &Path,
+    sentence: &str,
+    speed: f32,
+) -> Result<()> {
     debug!(
         path = %path.display(),
         speed,
         chars = sentence.len(),
         "Synthesizing sentence with Piper"
     );
-    let mut options: PiperSynthesisOptions = piper.get_default_synthesis_options();
-    let length_scale = (1.0 / speed).clamp(0.25, 4.0);
-    options.set_length_scale(length_scale);
-
-    let mut handle = piper
-        .start_synthesis(sentence.to_string(), &options)
+    let output_config = if (speed - 1.0).abs() <= f32::EPSILON {
+        None
+    } else {
+        Some(AudioOutputConfig {
+            rate: Some(speed_to_rate_percent(speed)),
+            volume: None,
+            pitch: None,
+            appended_silence_ms: None,
+        })
+    };
+    piper
+        .synthesize_to_file(path, sentence.to_string(), output_config)
         .context("Synthesizing audio")?;
-
-    let mut samples: Vec<f32> = Vec::new();
-    let mut sample_rate = 22050u32;
-    while let Some(chunk) = handle.get_next_chunk()? {
-        sample_rate = chunk.sample_rate();
-        samples.extend_from_slice(chunk.samples());
-    }
-
-    write_wav(path, sample_rate, &samples)?;
     Ok(())
+}
+
+fn resolve_piper_config(model_path: &Path) -> PathBuf {
+    if model_path
+        .extension()
+        .map(|ext| ext == "onnx")
+        .unwrap_or(false)
+    {
+        return model_path.with_extension("onnx.json");
+    }
+    model_path.to_path_buf()
+}
+
+fn speed_to_rate_percent(speed: f32) -> u8 {
+    let clamped = speed.clamp(0.5, 5.5);
+    let percent = ((clamped - 0.5) / 5.0) * 100.0;
+    percent.round().clamp(0.0, 100.0) as u8
 }

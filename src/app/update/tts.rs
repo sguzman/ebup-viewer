@@ -289,6 +289,7 @@ impl App {
             if let Ok(playback) = engine.play_files(
                 &files.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>(),
                 Duration::from_secs_f32(self.config.pause_after_sentence),
+                self.config.tts_speed,
             ) {
                 self.tts.playback = Some(playback);
                 self.tts.track = files.clone();

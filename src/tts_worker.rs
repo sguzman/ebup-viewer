@@ -1,5 +1,5 @@
 use hound::WavSpec;
-use piper_rs::synth::{AudioOutputConfig, PiperSpeechSynthesizer};
+use piper_rs::synth::PiperSpeechSynthesizer;
 use piper_rs::from_config_path;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 struct WorkerRequest {
     text: Option<String>,
     path: Option<String>,
-    speed: Option<f32>,
     shutdown: Option<bool>,
 }
 
@@ -93,10 +92,10 @@ fn run_worker() -> anyhow::Result<()> {
             break;
         }
 
-        let result = match (req.text, req.path, req.speed) {
-            (Some(text), Some(path), Some(speed)) => {
+        let result = match (req.text, req.path) {
+            (Some(text), Some(path)) => {
                 let path = PathBuf::from(path);
-                synthesize_to_file_serial(&piper, &path, &text, speed)
+                synthesize_to_file_serial(&piper, &path, &text)
             }
             _ => Err(anyhow::anyhow!("Invalid request payload")),
         };
@@ -135,19 +134,8 @@ fn synthesize_to_file_serial(
     piper: &PiperSpeechSynthesizer,
     path: &Path,
     sentence: &str,
-    speed: f32,
 ) -> anyhow::Result<()> {
-    let output_config = if (speed - 1.0).abs() <= f32::EPSILON {
-        None
-    } else {
-        Some(AudioOutputConfig {
-            rate: Some(speed_to_rate_percent(speed)),
-            volume: None,
-            pitch: None,
-            appended_silence_ms: None,
-        })
-    };
-
+    let output_config = None;
     let mut samples: Vec<f32> = Vec::new();
     let mut sample_rate: Option<u32> = None;
     let mut channels: Option<u16> = None;
@@ -172,12 +160,6 @@ fn synthesize_to_file_serial(
     )?;
 
     Ok(())
-}
-
-fn speed_to_rate_percent(speed: f32) -> u8 {
-    let clamped = speed.clamp(0.5, 5.5);
-    let percent = ((clamped - 0.5) / 5.0) * 100.0;
-    percent.round().clamp(0.0, 100.0) as u8
 }
 
 fn write_wav(path: &Path, sample_rate: u32, channels: u16, samples: &[f32]) -> anyhow::Result<()> {

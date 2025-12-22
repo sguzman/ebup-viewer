@@ -52,6 +52,7 @@ impl TtsEngine {
         &self,
         files: &[PathBuf],
         pause_after: std::time::Duration,
+        speed: f32,
     ) -> Result<TtsPlayback> {
         let (_stream, handle) = OutputStream::try_default().context("Opening audio output")?;
         let sink = Sink::try_new(&handle).context("Creating sink")?;
@@ -59,11 +60,12 @@ impl TtsEngine {
         info!(
             count = files.len(),
             pause_ms = pause_after.as_millis(),
+            speed,
             "Starting TTS playback"
         );
         for file in files {
             let reader = BufReader::new(File::open(file)?);
-            let source = Decoder::new(reader)?;
+            let source = Decoder::new(reader)?.speed(speed);
             sink.append(source);
             if pause_after > std::time::Duration::ZERO {
                 let silence = Zero::<f32>::new(1, 48_000).take_duration(pause_after);
@@ -94,11 +96,13 @@ impl TtsEngine {
         let total = sentences.len().saturating_sub(start_idx);
         let mut collected: Vec<Option<(PathBuf, std::time::Duration)>> = vec![None; total];
         let mut pending: Vec<(usize, PathBuf, mpsc::Receiver<Result<()>>)> = Vec::new();
+        let speed = if speed <= f32::EPSILON { 1.0 } else { speed };
+        let duration_scale = 1.0 / speed;
 
         for (offset, sentence) in sentences.into_iter().skip(start_idx).enumerate() {
-            let path = cache_path(&cache_root, &self.model_path, &sentence, speed);
+            let path = cache_path(&cache_root, &self.model_path, &sentence);
             if path.exists() {
-                let dur = sentence_duration(&path);
+                let dur = sentence_duration(&path).mul_f32(duration_scale);
                 collected[offset] = Some((path, dur));
                 continue;
             }
@@ -111,14 +115,14 @@ impl TtsEngine {
             }
 
             let (result_tx, result_rx) = mpsc::channel();
-            pool.dispatch(sentence, path.clone(), speed, result_tx)?;
+            pool.dispatch(sentence, path.clone(), result_tx)?;
             pending.push((offset, path, result_rx));
         }
 
         for (offset, path, result_rx) in pending {
             match result_rx.recv() {
                 Ok(Ok(())) => {
-                    let dur = sentence_duration(&path);
+                    let dur = sentence_duration(&path).mul_f32(duration_scale);
                     collected[offset] = Some((path, dur));
                 }
                 Ok(Err(err)) => {
@@ -182,11 +186,10 @@ impl TtsPlayback {
     }
 }
 
-fn cache_path(base: &Path, model_path: &Path, sentence: &str, speed: f32) -> PathBuf {
+fn cache_path(base: &Path, model_path: &Path, sentence: &str) -> PathBuf {
     let mut hasher = Sha256::new();
     hasher.update(model_path.as_os_str().to_string_lossy().as_bytes());
     hasher.update(sentence.as_bytes());
-    hasher.update(speed.to_le_bytes());
     let hash = format!("{:x}", hasher.finalize());
     base.join(format!("tts-{hash}.wav"))
 }
@@ -228,7 +231,6 @@ fn sentence_duration(path: &Path) -> std::time::Duration {
 struct WorkerRequest {
     text: String,
     path: String,
-    speed: f32,
 }
 
 #[derive(Serialize)]
@@ -260,7 +262,6 @@ enum Job {
     Synthesize {
         sentence: String,
         path: PathBuf,
-        speed: f32,
         result_tx: mpsc::Sender<Result<()>>,
     },
     Shutdown,
@@ -286,7 +287,6 @@ impl WorkerPool {
         &self,
         sentence: String,
         path: PathBuf,
-        speed: f32,
         result_tx: mpsc::Sender<Result<()>>,
     ) -> Result<()> {
         let idx = self.next.fetch_add(1, Ordering::Relaxed) % self.workers.len();
@@ -295,7 +295,6 @@ impl WorkerPool {
             .send(Job::Synthesize {
                 sentence,
                 path,
-                speed,
                 result_tx,
             })
             .map_err(|err| anyhow::anyhow!("TTS worker channel closed: {err}"))
@@ -335,13 +334,11 @@ fn worker_loop(rx: mpsc::Receiver<Job>, model_path: PathBuf, espeak_root: PathBu
             Job::Synthesize {
                 sentence,
                 path,
-                speed,
                 result_tx,
             } => {
                 let request = WorkerRequest {
                     text: sentence,
                     path: path.to_string_lossy().to_string(),
-                    speed,
                 };
                 if let Err(err) = send_request(&mut stdin, &request) {
                     let _ = result_tx.send(Err(err));

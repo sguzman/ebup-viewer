@@ -46,6 +46,8 @@ fn run(reload_handle: &ReloadHandle) -> Result<()> {
         info!("Loaded per-epub overrides from cache");
         // Always honor the base config's log level so user changes take effect.
         overrides.log_level = base_config.log_level;
+        // Always honor base TTS worker count to avoid stale cached values.
+        overrides.tts_threads = base_config.tts_threads;
         config = overrides;
     }
     set_log_level(reload_handle, config.log_level.as_filter_str());

@@ -13,6 +13,7 @@ mod epub_loader;
 mod pagination;
 mod text_utils;
 mod tts;
+mod tts_worker;
 
 use crate::app::run_app;
 use crate::cache::{load_bookmark, load_epub_config};
@@ -27,6 +28,9 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*, reload};
 type ReloadHandle = reload::Handle<EnvFilter, tracing_subscriber::Registry>;
 
 fn main() {
+    if tts_worker::maybe_run_worker() {
+        return;
+    }
     let reload_handle = init_tracing();
     if let Err(err) = run(&reload_handle) {
         error!("{err:?}");

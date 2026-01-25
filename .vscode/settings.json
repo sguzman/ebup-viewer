@@ -3,6 +3,7 @@
         "cargo check": true,
         "cargo build": true,
         "cargo doc": true,
-        "cargo tree": true
+        "cargo tree": true,
+        "git checkout": true
     }
 }

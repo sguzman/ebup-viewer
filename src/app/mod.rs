@@ -8,7 +8,6 @@ pub use state::App;
 use crate::cache::Bookmark;
 use crate::config::AppConfig;
 use crate::theme;
-use iced::Theme;
 
 /// Helper to launch the app with the provided text.
 pub fn run_app(
@@ -21,7 +20,7 @@ pub fn run_app(
         .subscription(App::subscription)
         .theme(|app: &App| {
             let custom_theme = theme::Theme::from(app.config.theme);
-            Theme::from(custom_theme)
+            iced::Theme::from(custom_theme)
         })
         .run_with(move || App::bootstrap(text, config, epub_path, bookmark))
 }

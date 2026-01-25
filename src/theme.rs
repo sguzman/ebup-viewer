@@ -1,4 +1,4 @@
-//! Custom theme with light, transparent button styling for the EPUB viewer.
+//! Custom theme for the EPUB viewer.
 
 use iced::Theme as IcedTheme;
 

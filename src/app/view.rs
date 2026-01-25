@@ -9,7 +9,7 @@ use iced::widget::text::{LineHeight, Wrapping};
 use iced::widget::{
     button, checkbox, column, container, pick_list, row, scrollable, slider, text, Column, Row,
 };
-use iced::{Element, Length};
+use iced::{Color, Element, Length};
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
@@ -104,17 +104,13 @@ impl App {
                         .width(Length::Fill)
                         .wrapping(Wrapping::WordOrGlyph);
 
-                    let padding_val = if idx == highlight_idx { 2u16 } else { 0u16 };
+                    // Build clickable button with extra padding if it's the highlighted sentence
+                    let button_widget = button(sentence_text)
+                        .on_press(Message::PlayFromCursor(idx))
+                        .padding(if idx == highlight_idx { 4u16 } else { 0u16 })
+                        .width(Length::Fill);
 
-                    // Create a clickable text element - using text button style for minimal appearance
-                    let sentence_element = container(
-                        button(sentence_text)
-                            .on_press(Message::PlayFromCursor(idx))
-                            .padding(padding_val)
-                            .width(Length::Fill),
-                    );
-
-                    text_column = text_column.push(sentence_element);
+                    text_column = text_column.push(button_widget);
                 }
 
                 text_column.width(Length::Fill).into()

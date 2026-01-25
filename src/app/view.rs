@@ -92,28 +92,35 @@ impl App {
                     .current_sentence_idx
                     .unwrap_or(0)
                     .min(sentences.len().saturating_sub(1));
-                let _highlight = self.highlight_color();
+                let highlight = self.highlight_color();
 
-                let mut text_column = column![];
+                let spans: Vec<iced::widget::text::Span<'_, Message>> = sentences
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, sentence)| {
+                        let mut span: iced::widget::text::Span<'_, Message> =
+                            iced::widget::text::Span::new(sentence)
+                                .font(self.current_font())
+                                .size(self.config.font_size as f32)
+                                .line_height(LineHeight::Relative(self.config.line_spacing));
 
-                for (idx, sentence) in sentences.into_iter().enumerate() {
-                    let sentence_text = text(sentence)
-                        .font(self.current_font())
-                        .size(self.config.font_size as f32)
-                        .line_height(LineHeight::Relative(self.config.line_spacing))
-                        .width(Length::Fill)
-                        .wrapping(Wrapping::WordOrGlyph);
+                        if idx == highlight_idx {
+                            span = span
+                                .background(iced::Background::Color(highlight))
+                                .padding(iced::Padding::from(2u16));
+                        }
 
-                    // Build clickable button with extra padding if it's the highlighted sentence
-                    let button_widget = button(sentence_text)
-                        .on_press(Message::PlayFromCursor(idx))
-                        .padding(if idx == highlight_idx { 4u16 } else { 0u16 })
-                        .width(Length::Fill);
+                        span
+                    })
+                    .collect();
 
-                    text_column = text_column.push(button_widget);
-                }
+                let rich: iced::widget::text::Rich<'_, Message> =
+                    iced::widget::text::Rich::with_spans(spans);
 
-                text_column.width(Length::Fill).into()
+                rich.width(Length::Fill)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .align_x(Horizontal::Left)
+                    .into()
             } else {
                 text(page_content)
                     .size(self.config.font_size as f32)

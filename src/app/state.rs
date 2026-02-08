@@ -1,6 +1,6 @@
-use crate::cache::{Bookmark, save_epub_config};
+use crate::cache::{save_epub_config, Bookmark};
 use crate::config::{AppConfig, FontFamily, FontWeight, HighlightColor, ThemeMode};
-use crate::pagination::{MAX_LINES_PER_PAGE, MIN_LINES_PER_PAGE, paginate};
+use crate::pagination::{paginate, MAX_LINES_PER_PAGE, MIN_LINES_PER_PAGE};
 use crate::text_utils::split_sentences;
 use crate::tts::{TtsEngine, TtsPlayback};
 use iced::font::{Family, Weight};
@@ -142,8 +142,7 @@ impl App {
             return base;
         }
 
-        let word_gap = " "
-            .repeat((self.config.word_spacing as usize).saturating_add(1));
+        let word_gap = " ".repeat((self.config.word_spacing as usize).saturating_add(1));
         let letter_gap = " ".repeat(self.config.letter_spacing as usize);
 
         let mut output = String::with_capacity(base.len() + 16);
@@ -223,9 +222,7 @@ impl App {
         let mut init_task = Task::none();
         match bookmark {
             Some(bookmark) => {
-                let capped_page = bookmark
-                    .page
-                    .min(app.reader.pages.len().saturating_sub(1));
+                let capped_page = bookmark.page.min(app.reader.pages.len().saturating_sub(1));
                 app.reader.current_page = capped_page;
                 let scroll_y = if bookmark.scroll_y.is_finite() {
                     bookmark.scroll_y.clamp(0.0, 1.0)
@@ -242,9 +239,7 @@ impl App {
                     let restored_idx = bookmark
                         .sentence_text
                         .as_ref()
-                        .and_then(|target| {
-                            app.tts.last_sentences.iter().position(|s| s == target)
-                        })
+                        .and_then(|target| app.tts.last_sentences.iter().position(|s| s == target))
                         .or(bookmark.sentence_idx)
                         .map(|idx| idx.min(app.tts.last_sentences.len().saturating_sub(1)));
                     app.tts.current_sentence_idx = restored_idx;

@@ -92,16 +92,75 @@ impl App {
             return None;
         }
 
-        let clamped_idx = sentence_idx.min(total_sentences.saturating_sub(1)) as f32;
-        let denom = total_sentences.saturating_sub(1).max(1) as f32;
-        let step = 1.0 / denom;
-        let base = (clamped_idx / denom).clamp(0.0, 1.0);
+        let base = self
+            .sentence_progress_for_page(sentence_idx, total_sentences)
+            .unwrap_or_else(|| {
+                let clamped_idx = sentence_idx.min(total_sentences.saturating_sub(1)) as f32;
+                let denom = total_sentences.saturating_sub(1).max(1) as f32;
+                (clamped_idx / denom).clamp(0.0, 1.0)
+            });
+
+        let viewport_fraction = self.estimated_viewport_fraction();
         let y = if self.config.center_spoken_sentence {
-            (base - 0.5 * step).clamp(0.0, 1.0)
+            // Shift by about half a viewport to keep the active sentence near center.
+            (base - 0.5 * viewport_fraction).clamp(0.0, 1.0)
         } else {
             base
         };
 
         Some(RelativeOffset { x: 0.0, y })
+    }
+
+    pub(crate) fn should_scroll_to_target(&self, target: RelativeOffset) -> bool {
+        let current = Self::sanitize_offset(self.bookmark.last_scroll_offset);
+        let viewport_fraction = self.estimated_viewport_fraction();
+        let dead_zone = (viewport_fraction * 0.25).clamp(0.03, 0.12);
+        (target.y - current.y).abs() > dead_zone
+    }
+
+    fn sentence_progress_for_page(
+        &self,
+        sentence_idx: usize,
+        total_sentences: usize,
+    ) -> Option<f32> {
+        let page = self
+            .reader
+            .pages
+            .get(self.reader.current_page)
+            .map(String::as_str)?;
+        let sentences = split_sentences(page.to_string());
+        if sentences.is_empty() || sentences.len() != total_sentences {
+            return None;
+        }
+
+        let idx = sentence_idx.min(sentences.len().saturating_sub(1));
+        let sentence_lengths: Vec<usize> = sentences
+            .iter()
+            .map(|s| s.chars().filter(|ch| !ch.is_whitespace()).count().max(1))
+            .collect();
+        let total_weight: usize = sentence_lengths.iter().sum();
+        if total_weight == 0 {
+            return None;
+        }
+
+        let before_weight: usize = sentence_lengths.iter().take(idx).sum();
+        let anchor_weight = before_weight + sentence_lengths[idx] / 2;
+        Some((anchor_weight as f32 / total_weight as f32).clamp(0.0, 1.0))
+    }
+
+    fn estimated_viewport_fraction(&self) -> f32 {
+        let page_chars = self
+            .reader
+            .pages
+            .get(self.reader.current_page)
+            .map(|page| page.chars().count())
+            .unwrap_or(1)
+            .max(1);
+        let estimated_visible_chars = self
+            .config
+            .lines_per_page
+            .saturating_mul(60)
+            .max(1);
+        (estimated_visible_chars as f32 / page_chars as f32).clamp(0.08, 0.9)
     }
 }

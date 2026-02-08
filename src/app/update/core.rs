@@ -120,6 +120,9 @@ impl App {
                     if let Some(offset) =
                         self.scroll_offset_for_sentence(idx, self.tts.last_sentences.len())
                     {
+                        if !self.should_scroll_to_target(offset) {
+                            return Task::none();
+                        }
                         self.bookmark.last_scroll_offset = offset;
                         return iced::widget::scrollable::snap_to(
                             TEXT_SCROLL_ID.clone(),

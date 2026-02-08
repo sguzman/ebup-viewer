@@ -72,65 +72,58 @@ impl App {
             .spacing(10)
             .align_y(Vertical::Center);
 
-        let page_content = self.formatted_page_content();
+        let fallback_page_content = self.formatted_page_content();
+        let display_sentences = self.display_sentences_for_current_page();
+        let raw_sentences = self.raw_sentences_for_page(self.reader.current_page);
 
-        let text_view_content: Element<'_, Message> =
-            if self.tts.playback.is_some() && !self.tts.last_sentences.is_empty() {
-                let sentences = split_sentences(page_content.clone());
-                if sentences.is_empty() {
-                    return text(page_content)
-                        .size(self.config.font_size as f32)
-                        .line_height(LineHeight::Relative(self.config.line_spacing))
-                        .width(Length::Fill)
-                        .wrapping(Wrapping::WordOrGlyph)
-                        .align_x(Horizontal::Left)
-                        .font(self.current_font())
-                        .into();
-                }
-                let highlight_idx = self
-                    .tts
-                    .current_sentence_idx
-                    .unwrap_or(0)
-                    .min(sentences.len().saturating_sub(1));
-                let highlight = self.highlight_color();
+        let text_view_content: Element<'_, Message> = if display_sentences.is_empty() {
+            text(fallback_page_content)
+                .size(self.config.font_size as f32)
+                .line_height(LineHeight::Relative(self.config.line_spacing))
+                .width(Length::Fill)
+                .wrapping(Wrapping::WordOrGlyph)
+                .align_x(Horizontal::Left)
+                .font(self.current_font())
+                .into()
+        } else {
+            let highlight_idx = self
+                .tts
+                .current_sentence_idx
+                .filter(|idx| *idx < display_sentences.len());
+            let highlight = self.highlight_color();
 
-                let spans: Vec<iced::widget::text::Span<'_, Message>> = sentences
-                    .into_iter()
-                    .enumerate()
-                    .map(|(idx, sentence)| {
-                        let mut span: iced::widget::text::Span<'_, Message> =
-                            iced::widget::text::Span::new(sentence)
-                                .font(self.current_font())
-                                .size(self.config.font_size as f32)
-                                .line_height(LineHeight::Relative(self.config.line_spacing));
+            let spans: Vec<iced::widget::text::Span<'_, Message>> = display_sentences
+                .into_iter()
+                .enumerate()
+                .map(|(idx, sentence)| {
+                    let mut span: iced::widget::text::Span<'_, Message> =
+                        iced::widget::text::Span::new(sentence)
+                            .font(self.current_font())
+                            .size(self.config.font_size as f32)
+                            .line_height(LineHeight::Relative(self.config.line_spacing));
 
-                        if idx == highlight_idx {
-                            span = span
-                                .background(iced::Background::Color(highlight))
-                                .padding(iced::Padding::from(2u16));
-                        }
+                    if idx < raw_sentences.len() {
+                        span = span.link(Message::SentenceClicked(idx));
+                    }
 
-                        span
-                    })
-                    .collect();
+                    if Some(idx) == highlight_idx {
+                        span = span
+                            .background(iced::Background::Color(highlight))
+                            .padding(iced::Padding::from(2u16));
+                    }
 
-                let rich: iced::widget::text::Rich<'_, Message> =
-                    iced::widget::text::Rich::with_spans(spans);
+                    span
+                })
+                .collect();
 
-                rich.width(Length::Fill)
-                    .wrapping(Wrapping::WordOrGlyph)
-                    .align_x(Horizontal::Left)
-                    .into()
-            } else {
-                text(page_content)
-                    .size(self.config.font_size as f32)
-                    .line_height(LineHeight::Relative(self.config.line_spacing))
-                    .width(Length::Fill)
-                    .wrapping(Wrapping::WordOrGlyph)
-                    .align_x(Horizontal::Left)
-                    .font(self.current_font())
-                    .into()
-            };
+            let rich: iced::widget::text::Rich<'_, Message> =
+                iced::widget::text::Rich::with_spans(spans);
+
+            rich.width(Length::Fill)
+                .wrapping(Wrapping::WordOrGlyph)
+                .align_x(Horizontal::Left)
+                .into()
+        };
 
         let text_view = scrollable(
             container(text_view_content)

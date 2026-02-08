@@ -170,6 +170,21 @@ impl App {
         output
     }
 
+    pub(super) fn raw_sentences_for_page(&self, page: usize) -> Vec<String> {
+        split_sentences(
+            self.reader
+                .pages
+                .get(page)
+                .map(String::as_str)
+                .unwrap_or("")
+                .to_string(),
+        )
+    }
+
+    pub(super) fn display_sentences_for_current_page(&self) -> Vec<String> {
+        split_sentences(self.formatted_page_content())
+    }
+
     pub(super) fn highlight_color(&self) -> Color {
         let base = if matches!(self.config.theme, ThemeMode::Night) {
             self.config.night_highlight

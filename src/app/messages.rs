@@ -33,6 +33,7 @@ pub enum Message {
     SetTtsSpeed(f32),
     SeekForward,
     SeekBackward,
+    SentenceClicked(usize),
     Scrolled {
         offset: RelativeOffset,
         viewport_width: f32,

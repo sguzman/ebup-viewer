@@ -111,13 +111,11 @@ impl App {
     }
 
     pub(super) fn handle_play_from_cursor(&mut self, idx: usize, effects: &mut Vec<Effect>) {
-        info!(idx, "Playing from cursor");
-        effects.push(Effect::StartTts {
-            page: self.reader.current_page,
-            sentence_idx: idx,
-        });
-        effects.push(Effect::AutoScrollToCurrent);
-        effects.push(Effect::SaveBookmark);
+        self.begin_play_from_sentence(idx, effects, "Playing from cursor");
+    }
+
+    pub(super) fn handle_sentence_clicked(&mut self, idx: usize, effects: &mut Vec<Effect>) {
+        self.begin_play_from_sentence(idx, effects, "Sentence clicked; playing from sentence");
     }
 
     pub(super) fn handle_pause(&mut self, _effects: &mut Vec<Effect>) {
@@ -406,5 +404,28 @@ impl App {
             },
             |msg| msg,
         )
+    }
+
+    fn begin_play_from_sentence(
+        &mut self,
+        idx: usize,
+        effects: &mut Vec<Effect>,
+        log_message: &str,
+    ) {
+        let sentences = self.raw_sentences_for_page(self.reader.current_page);
+        if sentences.is_empty() {
+            return;
+        }
+        let clamped = idx.min(sentences.len().saturating_sub(1));
+        self.tts.last_sentences = sentences;
+        self.tts.current_sentence_idx = Some(clamped);
+        self.tts.sentence_offset = clamped;
+        info!(idx = clamped, "{log_message}");
+        effects.push(Effect::StartTts {
+            page: self.reader.current_page,
+            sentence_idx: clamped,
+        });
+        effects.push(Effect::AutoScrollToCurrent);
+        effects.push(Effect::SaveBookmark);
     }
 }

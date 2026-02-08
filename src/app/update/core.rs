@@ -80,6 +80,7 @@ impl App {
             Message::SetTtsSpeed(speed) => self.handle_set_tts_speed(speed, &mut effects),
             Message::SeekForward => self.handle_seek_forward(&mut effects),
             Message::SeekBackward => self.handle_seek_backward(&mut effects),
+            Message::SentenceClicked(idx) => self.handle_sentence_clicked(idx, &mut effects),
             Message::Scrolled {
                 offset,
                 viewport_width,

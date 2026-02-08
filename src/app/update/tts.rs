@@ -286,13 +286,22 @@ impl App {
         }
         self.stop_playback();
         if let Some(engine) = &self.tts.engine {
+            let file_paths: Vec<_> = files.iter().map(|(p, _)| p.clone()).collect();
             if let Ok(playback) = engine.play_files(
-                &files.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>(),
+                &file_paths,
                 Duration::from_secs_f32(self.config.pause_after_sentence),
                 self.config.tts_speed,
             ) {
+                let played = playback.sentence_durations();
+                self.tts.track = if played.len() == file_paths.len() {
+                    file_paths
+                        .into_iter()
+                        .zip(played.iter().copied())
+                        .collect()
+                } else {
+                    files.clone()
+                };
                 self.tts.playback = Some(playback);
-                self.tts.track = files.clone();
                 self.tts.sentence_offset =
                     start_idx.min(self.tts.last_sentences.len().saturating_sub(1));
                 self.tts.current_sentence_idx = Some(self.tts.sentence_offset);
@@ -360,7 +369,7 @@ impl App {
         Task::perform(
             async move {
                 engine
-                    .prepare_batch(cache_root, sentences, sentence_idx, speed, threads)
+                    .prepare_batch(cache_root, sentences, sentence_idx, threads)
                     .map(|files| super::super::messages::Message::TtsPrepared {
                         page: page_id,
                         start_idx: sentence_idx,

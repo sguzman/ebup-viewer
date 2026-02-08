@@ -65,10 +65,15 @@ impl TtsEngine {
             speed,
             "Starting TTS playback"
         );
+        let mut sentence_durations = Vec::with_capacity(files.len());
         for file in files {
             let reader = BufReader::new(File::open(file)?);
             let source = Decoder::new(reader)?;
             if (speed - 1.0).abs() <= f32::EPSILON {
+                let dur = source
+                    .total_duration()
+                    .unwrap_or_else(|| sentence_duration(file));
+                sentence_durations.push(dur);
                 sink.append(source);
             } else {
                 let channels = source.channels() as u16;
@@ -76,6 +81,10 @@ impl TtsEngine {
                 let samples: Vec<f32> = source.convert_samples().collect();
                 let stretched = time_stretch(&samples, sample_rate, channels, speed)
                     .context("Time-stretching audio")?;
+                let dur = std::time::Duration::from_secs_f64(
+                    stretched.len() as f64 / (sample_rate as f64 * channels as f64),
+                );
+                sentence_durations.push(dur);
                 let buffer = SamplesBuffer::new(channels, sample_rate, stretched);
                 sink.append(buffer);
             }
@@ -86,7 +95,11 @@ impl TtsEngine {
         }
 
         sink.play();
-        Ok(TtsPlayback { _stream, sink })
+        Ok(TtsPlayback {
+            _stream,
+            sink,
+            sentence_durations,
+        })
     }
 
     /// Prepare a batch of sentences concurrently using a thread pool.
@@ -95,12 +108,11 @@ impl TtsEngine {
         cache_root: PathBuf,
         sentences: Vec<String>,
         start_idx: usize,
-        speed: f32,
         threads: usize,
     ) -> Result<Vec<(PathBuf, std::time::Duration)>> {
         info!(
             sentence_count = sentences.len(),
-            start_idx, speed, threads, "Preparing TTS batch"
+            start_idx, threads, "Preparing TTS batch"
         );
 
         let threads = threads.max(1);
@@ -108,13 +120,11 @@ impl TtsEngine {
         let total = sentences.len().saturating_sub(start_idx);
         let mut collected: Vec<Option<(PathBuf, std::time::Duration)>> = vec![None; total];
         let mut pending: Vec<(usize, PathBuf, mpsc::Receiver<Result<()>>)> = Vec::new();
-        let speed = if speed <= f32::EPSILON { 1.0 } else { speed };
-        let duration_scale = 1.0 / speed;
 
         for (offset, sentence) in sentences.into_iter().skip(start_idx).enumerate() {
             let path = cache_path(&cache_root, &self.model_path, &sentence);
             if path.exists() {
-                let dur = sentence_duration(&path).mul_f32(duration_scale);
+                let dur = sentence_duration(&path);
                 collected[offset] = Some((path, dur));
                 continue;
             }
@@ -134,7 +144,7 @@ impl TtsEngine {
         for (offset, path, result_rx) in pending {
             match result_rx.recv() {
                 Ok(Ok(())) => {
-                    let dur = sentence_duration(&path).mul_f32(duration_scale);
+                    let dur = sentence_duration(&path);
                     collected[offset] = Some((path, dur));
                 }
                 Ok(Err(err)) => {
@@ -175,6 +185,7 @@ impl TtsEngine {
 pub struct TtsPlayback {
     _stream: OutputStream,
     sink: Sink,
+    sentence_durations: Vec<std::time::Duration>,
 }
 
 impl TtsPlayback {
@@ -195,6 +206,10 @@ impl TtsPlayback {
     pub fn stop(self) {
         self.sink.stop();
         // stream dropped automatically
+    }
+
+    pub fn sentence_durations(&self) -> &[std::time::Duration] {
+        &self.sentence_durations
     }
 }
 

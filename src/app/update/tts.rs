@@ -206,20 +206,34 @@ impl App {
             return;
         }
 
-        let Some(started) = self.tts.started_at else {
-            return;
-        };
-        let elapsed = self.tts.elapsed + now.saturating_duration_since(started);
-
-        let mut acc = Duration::ZERO;
+        let _ = now;
         let mut target_idx = None;
         let offset = self.tts.sentence_offset;
-        let pause = Duration::from_secs_f32(self.config.pause_after_sentence);
-        for (i, (_, dur)) in self.tts.track.iter().enumerate() {
-            acc += *dur + pause;
-            if elapsed <= acc {
-                target_idx = Some(offset + i);
-                break;
+        if let Some(playback) = &self.tts.playback {
+            let total_sources = self.tts.total_sources;
+            let remaining = playback.queued_sources();
+            let consumed = total_sources.saturating_sub(remaining);
+            let per_sentence = self.tts.sources_per_sentence.max(1);
+            let sentence_progress = consumed / per_sentence;
+            if sentence_progress < self.tts.track.len() {
+                target_idx = Some(offset + sentence_progress);
+            }
+        }
+
+        // Fallback for edge cases where source queue info is unavailable.
+        if target_idx.is_none() {
+            let Some(started) = self.tts.started_at else {
+                return;
+            };
+            let elapsed = self.tts.elapsed + Instant::now().saturating_duration_since(started);
+            let mut acc = Duration::ZERO;
+            let pause = Duration::from_secs_f32(self.config.pause_after_sentence);
+            for (i, (_, dur)) in self.tts.track.iter().enumerate() {
+                acc += *dur + pause;
+                if elapsed <= acc {
+                    target_idx = Some(offset + i);
+                    break;
+                }
             }
         }
 
@@ -305,6 +319,13 @@ impl App {
                 self.tts.sentence_offset =
                     start_idx.min(self.tts.last_sentences.len().saturating_sub(1));
                 self.tts.current_sentence_idx = Some(self.tts.sentence_offset);
+                self.tts.sources_per_sentence =
+                    if self.config.pause_after_sentence > f32::EPSILON {
+                        2
+                    } else {
+                        1
+                    };
+                self.tts.total_sources = self.tts.track.len() * self.tts.sources_per_sentence;
                 self.tts.elapsed = Duration::ZERO;
                 self.tts.started_at = Some(Instant::now());
                 self.tts.running = true;

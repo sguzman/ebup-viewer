@@ -56,6 +56,8 @@ pub struct TtsState {
     pub(super) elapsed: Duration,
     pub(super) running: bool,
     pub(super) request_id: u64,
+    pub(super) sources_per_sentence: usize,
+    pub(super) total_sources: usize,
 }
 
 /// Bookmark and scroll tracking model.
@@ -107,6 +109,7 @@ impl App {
         }
         self.tts.running = false;
         self.tts.started_at = None;
+        self.tts.total_sources = 0;
     }
 
     pub(super) fn current_font(&self) -> Font {
@@ -222,6 +225,8 @@ impl App {
                 elapsed: Duration::ZERO,
                 running: false,
                 request_id: 0,
+                sources_per_sentence: 1,
+                total_sources: 0,
             },
             config,
         };

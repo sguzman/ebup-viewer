@@ -211,6 +211,10 @@ impl TtsPlayback {
     pub fn sentence_durations(&self) -> &[std::time::Duration] {
         &self.sentence_durations
     }
+
+    pub fn queued_sources(&self) -> usize {
+        self.sink.len()
+    }
 }
 
 fn cache_path(base: &Path, model_path: &Path, sentence: &str) -> PathBuf {

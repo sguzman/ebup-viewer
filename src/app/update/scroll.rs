@@ -1,6 +1,7 @@
-use super::Effect;
 use super::super::state::App;
+use super::Effect;
 use crate::cache::{Bookmark, save_bookmark};
+use crate::config::FontFamily;
 use crate::text_utils::split_sentences;
 use iced::widget::scrollable::RelativeOffset;
 use tracing::info;
@@ -9,11 +10,33 @@ impl App {
     pub(super) fn handle_scrolled(
         &mut self,
         offset: RelativeOffset,
+        viewport_width: f32,
         viewport_height: f32,
+        content_width: f32,
         content_height: f32,
         effects: &mut Vec<Effect>,
     ) {
         let sanitized = Self::sanitize_offset(offset);
+        self.bookmark.viewport_width = if viewport_width.is_finite() {
+            viewport_width.max(0.0)
+        } else {
+            0.0
+        };
+        self.bookmark.viewport_height = if viewport_height.is_finite() {
+            viewport_height.max(0.0)
+        } else {
+            0.0
+        };
+        self.bookmark.content_width = if content_width.is_finite() {
+            content_width.max(0.0)
+        } else {
+            0.0
+        };
+        self.bookmark.content_height = if content_height.is_finite() {
+            content_height.max(0.0)
+        } else {
+            0.0
+        };
         self.bookmark.viewport_fraction = if viewport_height.is_finite()
             && content_height.is_finite()
             && content_height > 0.0
@@ -22,6 +45,7 @@ impl App {
         } else {
             0.25
         };
+
         if sanitized != self.bookmark.last_scroll_offset {
             self.bookmark.last_scroll_offset = sanitized;
             effects.push(Effect::SaveBookmark);
@@ -115,14 +139,22 @@ impl App {
             });
 
         let viewport_fraction = self.estimated_viewport_fraction();
-        let y = if self.config.center_spoken_sentence {
+        if viewport_fraction >= 0.999 {
+            return Some(RelativeOffset::START);
+        }
+
+        let desired_top = if self.config.center_spoken_sentence {
             // Center mode keeps the active sentence near middle of the viewport.
-            (base - 0.5 * viewport_fraction).clamp(0.0, 1.0)
+            base - 0.5 * viewport_fraction
         } else {
-            // Track mode follows the sentence without trying to center it.
-            // Keep a small lead so the highlight does not sit on the very top edge.
-            (base - 0.15 * viewport_fraction).clamp(0.0, 1.0)
+            // Track mode follows the sentence while keeping it comfortably in view.
+            base - 0.2 * viewport_fraction
         };
+
+        // `snap_to` expects offset over the scrollable range (content - viewport),
+        // not over full content height.
+        let scrollable_fraction = (1.0 - viewport_fraction).max(0.000_1);
+        let y = (desired_top / scrollable_fraction).clamp(0.0, 1.0);
 
         Some(RelativeOffset { x: 0.0, y })
     }
@@ -149,24 +181,106 @@ impl App {
         }
 
         let idx = sentence_idx.min(sentences.len().saturating_sub(1));
-        let sentence_lengths: Vec<usize> = sentences
-            .iter()
-            .map(|s| s.chars().count().max(1))
-            .collect();
-        let total_weight: usize = sentence_lengths.iter().sum();
-        if total_weight == 0 {
+        let sentence_weights = self.estimate_sentence_line_weights(&sentences);
+        let total_weight: f32 = sentence_weights.iter().sum();
+        if total_weight <= f32::EPSILON {
             return None;
         }
 
-        let before_weight: usize = sentence_lengths.iter().take(idx).sum();
-        let anchor_weight = before_weight + sentence_lengths[idx] / 2;
-        Some((anchor_weight as f32 / total_weight as f32).clamp(0.0, 1.0))
+        let before_weight: f32 = sentence_weights.iter().take(idx).sum();
+        let anchor_weight = before_weight + sentence_weights[idx] * 0.5;
+        Some((anchor_weight / total_weight).clamp(0.0, 1.0))
+    }
+
+    fn estimate_sentence_line_weights(&self, sentences: &[String]) -> Vec<f32> {
+        let available_width = self.estimated_text_width();
+        if available_width <= f32::EPSILON {
+            return sentences.iter().map(|_| 1.0).collect();
+        }
+
+        let glyph_width = self.estimated_glyph_width_px().max(1.0);
+        let max_units_per_line = (available_width / glyph_width).max(8.0);
+
+        sentences
+            .iter()
+            .map(|sentence| {
+                let mut lines = 1.0f32;
+                let mut line_units = 0.0f32;
+
+                for ch in sentence.chars() {
+                    if ch == '\n' {
+                        lines += 1.0;
+                        line_units = 0.0;
+                        continue;
+                    }
+
+                    let units = if ch.is_whitespace() {
+                        0.45 + self.config.word_spacing as f32 * 0.45
+                    } else if ch.is_ascii_punctuation() {
+                        0.55 + self.config.letter_spacing as f32 * 0.10
+                    } else if ch.is_ascii() {
+                        1.0 + self.config.letter_spacing as f32 * 0.35
+                    } else {
+                        1.8 + self.config.letter_spacing as f32 * 0.20
+                    };
+
+                    if line_units + units > max_units_per_line {
+                        lines += 1.0;
+                        line_units = units;
+                    } else {
+                        line_units += units;
+                    }
+                }
+
+                lines * self.config.line_spacing.max(0.8)
+            })
+            .collect()
     }
 
     fn estimated_viewport_fraction(&self) -> f32 {
+        if self.bookmark.viewport_height > 0.0
+            && self.bookmark.content_height > self.bookmark.viewport_height
+        {
+            return (self.bookmark.viewport_height / self.bookmark.content_height).clamp(0.05, 0.95);
+        }
         if self.bookmark.viewport_fraction.is_finite() && self.bookmark.viewport_fraction > 0.0 {
-            return self.bookmark.viewport_fraction.clamp(0.08, 0.45);
+            return self.bookmark.viewport_fraction.clamp(0.05, 0.95);
         }
         0.25
+    }
+
+    fn estimated_text_width(&self) -> f32 {
+        let base_width = match (
+            self.bookmark.viewport_width > 0.0,
+            self.bookmark.content_width > 0.0,
+        ) {
+            (true, true) => self.bookmark.viewport_width.min(self.bookmark.content_width),
+            (true, false) => self.bookmark.viewport_width,
+            (false, true) => self.bookmark.content_width,
+            (false, false) => 1.0,
+        };
+
+        let margin_total = (self.config.margin_horizontal as f32 * 2.0).min(base_width * 0.9);
+        (base_width - margin_total).max(1.0)
+    }
+
+    fn estimated_glyph_width_px(&self) -> f32 {
+        let font_size = self.config.font_size.max(1) as f32;
+        let family_scale = match self.config.font_family {
+            FontFamily::Monospace | FontFamily::Courier | FontFamily::FiraCode => 0.64,
+            FontFamily::Serif => 0.56,
+            FontFamily::Lexend | FontFamily::NotoSans => 0.54,
+            FontFamily::AtkinsonHyperlegible
+            | FontFamily::AtkinsonHyperlegibleNext
+            | FontFamily::LexicaUltralegible => 0.57,
+            _ => 0.55,
+        };
+        let weight_scale = match self.config.font_weight {
+            crate::config::FontWeight::Light => 0.98,
+            crate::config::FontWeight::Normal => 1.0,
+            crate::config::FontWeight::Bold => 1.03,
+        };
+
+        font_size * family_scale * weight_scale
     }
 }

@@ -82,9 +82,18 @@ impl App {
             Message::SeekBackward => self.handle_seek_backward(&mut effects),
             Message::Scrolled {
                 offset,
+                viewport_width,
                 viewport_height,
+                content_width,
                 content_height,
-            } => self.handle_scrolled(offset, viewport_height, content_height, &mut effects),
+            } => self.handle_scrolled(
+                offset,
+                viewport_width,
+                viewport_height,
+                content_width,
+                content_height,
+                &mut effects,
+            ),
             Message::TtsPrepared {
                 page,
                 start_idx,

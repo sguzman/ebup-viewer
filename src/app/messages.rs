@@ -35,7 +35,9 @@ pub enum Message {
     SeekBackward,
     Scrolled {
         offset: RelativeOffset,
+        viewport_width: f32,
         viewport_height: f32,
+        content_width: f32,
         content_height: f32,
     },
     TtsPrepared {

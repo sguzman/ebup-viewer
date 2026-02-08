@@ -142,7 +142,9 @@ impl App {
         )
         .on_scroll(|viewport| Message::Scrolled {
             offset: viewport.relative_offset(),
+            viewport_width: viewport.bounds().width,
             viewport_height: viewport.bounds().height,
+            content_width: viewport.content_bounds().width,
             content_height: viewport.content_bounds().height,
         })
         .id(super::state::TEXT_SCROLL_ID.clone())

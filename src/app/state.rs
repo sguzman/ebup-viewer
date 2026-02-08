@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use super::messages::{Component, Message};
 
 /// Limits and defaults for reader controls.
-pub(crate) const MAX_MARGIN: u16 = 48;
+pub(crate) const MAX_MARGIN: u16 = 100;
 pub(crate) const MAX_WORD_SPACING: u32 = 5;
 pub(crate) const MAX_LETTER_SPACING: u32 = 3;
 pub(crate) const MIN_TTS_SPEED: f32 = 0.1;

@@ -49,8 +49,7 @@ impl App {
         }
 
         if let Some(idx) = self.bookmark.pending_sentence_snap.take() {
-            let total = self.sentence_count_for_page(self.reader.current_page);
-            if let Some(offset) = self.scroll_offset_for_sentence(idx, total) {
+            if let Some(offset) = self.scroll_offset_for_sentence(idx) {
                 let offset = Self::sanitize_offset(offset);
                 if offset != self.bookmark.last_scroll_offset {
                     self.bookmark.last_scroll_offset = offset;
@@ -63,8 +62,7 @@ impl App {
 
     pub(super) fn handle_jump_to_current_audio(&mut self, effects: &mut Vec<Effect>) {
         if let Some(idx) = self.tts.current_sentence_idx {
-            let total = self.sentence_count_for_page(self.reader.current_page);
-            if let Some(offset) = self.scroll_offset_for_sentence(idx, total) {
+            if let Some(offset) = self.scroll_offset_for_sentence(idx) {
                 info!(
                     idx,
                     fraction = offset.y,
@@ -123,26 +121,20 @@ impl App {
         self.raw_sentences_for_page(self.reader.current_page)
     }
 
-    pub(crate) fn scroll_offset_for_sentence(
-        &self,
-        sentence_idx: usize,
-        total_sentences: usize,
-    ) -> Option<RelativeOffset> {
-        if total_sentences == 0 {
-            return None;
-        }
+    pub(crate) fn scroll_offset_for_sentence(&self, sentence_idx: usize) -> Option<RelativeOffset> {
+        let model = self.scroll_target_model(sentence_idx)?;
 
-        let progress = self
-            .sentence_progress_for_page(sentence_idx, total_sentences)
-            .unwrap_or_else(|| {
-                let clamped_idx = sentence_idx.min(total_sentences.saturating_sub(1)) as f32;
-                let denom = total_sentences.saturating_sub(1).max(1) as f32;
-                let ratio = (clamped_idx / denom).clamp(0.0, 1.0);
-                SentenceProgress {
-                    start: ratio,
-                    middle: ratio,
-                }
-            });
+        let progress = self.sentence_progress_for_model(&model).unwrap_or_else(|| {
+            let clamped_idx = model
+                .target_idx
+                .min(model.sentences.len().saturating_sub(1)) as f32;
+            let denom = model.sentences.len().saturating_sub(1).max(1) as f32;
+            let ratio = (clamped_idx / denom).clamp(0.0, 1.0);
+            SentenceProgress {
+                start: ratio,
+                middle: ratio,
+            }
+        });
 
         let viewport_fraction = self.estimated_viewport_fraction();
         if viewport_fraction >= 0.999 {
@@ -150,13 +142,11 @@ impl App {
         }
 
         let desired_top = if self.config.center_spoken_sentence {
-            // Center around the spoken sentence while keeping the sentence start visible.
-            let centered = progress.middle - 0.5 * viewport_fraction;
-            let keep_start_visible = progress.start - 0.08 * viewport_fraction;
-            centered.min(keep_start_visible)
+            // Center mode: keep the active sentence around viewport center.
+            progress.middle - 0.5 * viewport_fraction
         } else {
-            // Tracking mode keeps the sentence in the upper section of the viewport.
-            progress.start - 0.20 * viewport_fraction
+            // Tracking mode: keep the sentence near the upper third for better forward context.
+            progress.start - 0.30 * viewport_fraction
         };
 
         // `snap_to` expects offset over the scrollable range (content - viewport),
@@ -167,19 +157,16 @@ impl App {
         Some(RelativeOffset { x: 0.0, y })
     }
 
-    fn sentence_progress_for_page(
-        &self,
-        sentence_idx: usize,
-        _total_sentences: usize,
-    ) -> Option<SentenceProgress> {
-        self.reader.pages.get(self.reader.current_page)?;
-        let sentences = self.reader.page_sentences.get(self.reader.current_page)?;
-        if sentences.is_empty() {
+    fn sentence_progress_for_model(&self, model: &ScrollTargetModel) -> Option<SentenceProgress> {
+        if model.sentences.is_empty() {
             return None;
         }
 
-        let sentence_weights = self.estimate_sentence_line_weights(sentences);
-        let idx = sentence_idx.min(sentence_weights.len().saturating_sub(1));
+        let sentence_weights =
+            self.estimate_sentence_line_weights(&model.sentences, model.extra_gap_lines);
+        let idx = model
+            .target_idx
+            .min(sentence_weights.len().saturating_sub(1));
         let total_weight: f32 = sentence_weights.iter().sum();
         if total_weight <= f32::EPSILON {
             return None;
@@ -192,7 +179,70 @@ impl App {
         Some(SentenceProgress { start, middle })
     }
 
-    fn estimate_sentence_line_weights(&self, sentences: &[String]) -> Vec<f32> {
+    fn scroll_target_model(&self, display_sentence_idx: usize) -> Option<ScrollTargetModel> {
+        if self.text_only_mode {
+            let preview = self.text_only_preview_for_current_page()?;
+            if preview.audio_sentences.is_empty() {
+                return None;
+            }
+            let target_idx = Self::map_display_to_audio_index(
+                display_sentence_idx,
+                &preview.display_to_audio,
+                preview.audio_sentences.len(),
+            )?;
+            return Some(ScrollTargetModel {
+                sentences: preview.audio_sentences.clone(),
+                target_idx,
+                // Text-only renders each sentence separated by a blank line.
+                extra_gap_lines: 1.0,
+            });
+        }
+
+        let sentences = self.display_sentences_for_current_page();
+        if sentences.is_empty() {
+            return None;
+        }
+        let target_idx = display_sentence_idx.min(sentences.len().saturating_sub(1));
+        Some(ScrollTargetModel {
+            sentences,
+            target_idx,
+            extra_gap_lines: 0.0,
+        })
+    }
+
+    fn map_display_to_audio_index(
+        display_sentence_idx: usize,
+        display_to_audio: &[Option<usize>],
+        audio_len: usize,
+    ) -> Option<usize> {
+        if audio_len == 0 {
+            return None;
+        }
+        if display_to_audio.is_empty() {
+            return Some(display_sentence_idx.min(audio_len.saturating_sub(1)));
+        }
+
+        let clamped = display_sentence_idx.min(display_to_audio.len().saturating_sub(1));
+        display_to_audio
+            .iter()
+            .skip(clamped)
+            .find_map(|mapped| *mapped)
+            .or_else(|| {
+                display_to_audio
+                    .iter()
+                    .take(clamped + 1)
+                    .rev()
+                    .find_map(|mapped| *mapped)
+            })
+            .or(Some(0))
+            .map(|idx| idx.min(audio_len.saturating_sub(1)))
+    }
+
+    fn estimate_sentence_line_weights(
+        &self,
+        sentences: &[String],
+        extra_gap_lines: f32,
+    ) -> Vec<f32> {
         let available_width = self.estimated_text_width();
         if available_width <= f32::EPSILON {
             return sentences.iter().map(|_| 1.0).collect();
@@ -200,10 +250,12 @@ impl App {
 
         let glyph_width = self.estimated_glyph_width_px().max(1.0);
         let max_units_per_line = (available_width / glyph_width).max(8.0);
+        let line_height_weight = self.config.line_spacing.max(0.8);
 
         sentences
             .iter()
-            .map(|sentence| {
+            .enumerate()
+            .map(|(idx, sentence)| {
                 let mut lines = 1.0f32;
                 let mut line_units = 0.0f32;
 
@@ -232,7 +284,11 @@ impl App {
                     }
                 }
 
-                lines * self.config.line_spacing.max(0.8)
+                let mut weight = lines * line_height_weight;
+                if extra_gap_lines > 0.0 && idx + 1 < sentences.len() {
+                    weight += extra_gap_lines * line_height_weight;
+                }
+                weight
             })
             .collect()
     }
@@ -293,6 +349,12 @@ impl App {
 
         font_size * family_scale * weight_scale
     }
+}
+
+struct ScrollTargetModel {
+    sentences: Vec<String>,
+    target_idx: usize,
+    extra_gap_lines: f32,
 }
 
 #[derive(Clone, Copy)]

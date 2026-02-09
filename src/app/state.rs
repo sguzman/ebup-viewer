@@ -423,10 +423,7 @@ impl App {
                             TEXT_SCROLL_ID.clone(),
                             app.bookmark.last_scroll_offset,
                         );
-                    } else if let Some(offset) = app.scroll_offset_for_sentence(
-                        idx,
-                        app.sentence_count_for_page(app.reader.current_page),
-                    ) {
+                    } else if let Some(offset) = app.scroll_offset_for_sentence(idx) {
                         app.bookmark.last_scroll_offset = offset;
                         init_task =
                             iced::widget::scrollable::snap_to(TEXT_SCROLL_ID.clone(), offset);

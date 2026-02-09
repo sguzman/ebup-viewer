@@ -159,8 +159,7 @@ impl App {
                     return Task::none();
                 }
                 if let Some(idx) = self.tts.current_sentence_idx {
-                    let total = self.sentence_count_for_page(self.reader.current_page);
-                    if let Some(offset) = self.scroll_offset_for_sentence(idx, total) {
+                    if let Some(offset) = self.scroll_offset_for_sentence(idx) {
                         self.bookmark.last_scroll_offset = offset;
                         return iced::widget::scrollable::snap_to(TEXT_SCROLL_ID.clone(), offset);
                     }

@@ -19,6 +19,8 @@ use tracing::{debug, info, warn};
 
 static RE_MARKDOWN_IMAGE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").expect("valid markdown image regex"));
+const PANDOC_FILTER_REL_PATH: &str = "conf/pandoc/strip-nontext.lua";
+const PANDOC_PIPELINE_REV: &str = "pandoc-clean-v1";
 
 #[derive(Debug, Clone)]
 pub struct BookImage {
@@ -179,6 +181,7 @@ fn load_with_pandoc(path: &Path) -> Result<String> {
         return Ok(cached);
     }
 
+    let filter_path = pandoc_filter_path()?;
     let output = Command::new("pandoc")
         .arg(path)
         .arg("--to")
@@ -187,6 +190,8 @@ fn load_with_pandoc(path: &Path) -> Result<String> {
         .arg("--columns=100000")
         .arg("--strip-comments")
         .arg("--eol=lf")
+        .arg("--lua-filter")
+        .arg(&filter_path)
         .output()
         .with_context(|| format!("Failed to start pandoc for {}", path.display()))?;
 
@@ -395,6 +400,10 @@ fn short_hash(bytes: &[u8]) -> String {
 struct PandocCacheMeta {
     source_len: u64,
     source_modified_unix_secs: Option<u64>,
+    #[serde(default)]
+    pipeline_rev: String,
+    #[serde(default)]
+    filter_sha256: String,
 }
 
 fn source_signature(path: &Path) -> Result<PandocCacheMeta> {
@@ -407,9 +416,15 @@ fn source_signature(path: &Path) -> Result<PandocCacheMeta> {
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_secs());
 
+    let filter_path = pandoc_filter_path()?;
+    let filter_sha256 = hash_file(&filter_path)
+        .with_context(|| format!("Failed to hash pandoc filter at {}", filter_path.display()))?;
+
     Ok(PandocCacheMeta {
         source_len: meta.len(),
         source_modified_unix_secs: modified,
+        pipeline_rev: PANDOC_PIPELINE_REV.to_string(),
+        filter_sha256,
     })
 }
 
@@ -436,6 +451,8 @@ fn try_read_pandoc_cache(path: &Path, signature: &PandocCacheMeta) -> Result<Opt
 
     if cached_meta.source_len != signature.source_len
         || cached_meta.source_modified_unix_secs != signature.source_modified_unix_secs
+        || cached_meta.pipeline_rev != signature.pipeline_rev
+        || cached_meta.filter_sha256 != signature.filter_sha256
     {
         return Ok(None);
     }
@@ -473,4 +490,30 @@ fn write_pandoc_cache(path: &Path, signature: &PandocCacheMeta, text: &str) -> R
     })?;
 
     Ok(())
+}
+
+fn hash_file(path: &Path) -> Result<String> {
+    let bytes = fs::read(path)
+        .with_context(|| format!("Failed to read file for hashing: {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn pandoc_filter_path() -> Result<PathBuf> {
+    let relative = PathBuf::from(PANDOC_FILTER_REL_PATH);
+    if relative.exists() {
+        return Ok(relative);
+    }
+
+    let rooted = Path::new(env!("CARGO_MANIFEST_DIR")).join(PANDOC_FILTER_REL_PATH);
+    if rooted.exists() {
+        return Ok(rooted);
+    }
+
+    anyhow::bail!(
+        "pandoc Lua filter not found at {} or {}",
+        relative.display(),
+        rooted.display()
+    );
 }

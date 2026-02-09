@@ -12,7 +12,7 @@ pub const MAX_FONT_SIZE: u32 = 36;
 /// Minimum lines per page.
 pub const MIN_LINES_PER_PAGE: usize = 8;
 /// Maximum lines per page.
-pub const MAX_LINES_PER_PAGE: usize = 120;
+pub const MAX_LINES_PER_PAGE: usize = 1000;
 
 /// Split the provided text into page-sized chunks.
 pub fn paginate(text: &str, font_size: u32, lines_per_page: usize) -> Vec<String> {

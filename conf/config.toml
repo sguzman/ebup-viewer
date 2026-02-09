@@ -34,4 +34,6 @@ tts_espeak_path = "/usr/share"
 tts_speed = 2.5
 tts_volume = 1.0
 # Number of parallel synthesis worker processes (1 = single-process).
-tts_threads = 16
+tts_threads = 4
+# Progress log cadence while generating a batch of uncached TTS audio.
+tts_progress_log_interval_secs = 5.0

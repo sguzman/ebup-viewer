@@ -38,6 +38,10 @@ pub(crate) fn default_tts_threads() -> usize {
     16
 }
 
+pub(crate) fn default_tts_progress_log_interval_secs() -> f32 {
+    5.0
+}
+
 pub(crate) fn default_show_tts() -> bool {
     true
 }

@@ -109,17 +109,31 @@ impl TtsEngine {
         sentences: Vec<String>,
         start_idx: usize,
         threads: usize,
+        progress_log_interval: std::time::Duration,
     ) -> Result<Vec<(PathBuf, std::time::Duration)>> {
+        let progress_log_interval =
+            progress_log_interval.max(std::time::Duration::from_millis(100));
         info!(
             sentence_count = sentences.len(),
-            start_idx, threads, "Preparing TTS batch"
+            start_idx,
+            threads,
+            progress_log_interval_secs = progress_log_interval.as_secs_f32(),
+            "Preparing TTS batch"
         );
+
+        struct PendingJob {
+            offset: usize,
+            path: PathBuf,
+            result_rx: mpsc::Receiver<Result<()>>,
+        }
 
         let threads = threads.max(1);
         let pool = self.ensure_worker_pool(threads)?;
+        let started_at = std::time::Instant::now();
         let total = sentences.len().saturating_sub(start_idx);
         let mut collected: Vec<Option<(PathBuf, std::time::Duration)>> = vec![None; total];
-        let mut pending: Vec<(usize, PathBuf, mpsc::Receiver<Result<()>>)> = Vec::new();
+        let mut pending: Vec<PendingJob> = Vec::new();
+        let mut cached_hits = 0usize;
 
         for (offset, sentence) in sentences.into_iter().skip(start_idx).enumerate() {
             let normalized = normalize_sentence(&sentence);
@@ -127,6 +141,7 @@ impl TtsEngine {
             if path.exists() {
                 let dur = sentence_duration(&path);
                 collected[offset] = Some((path, dur));
+                cached_hits += 1;
                 continue;
             }
 
@@ -139,28 +154,93 @@ impl TtsEngine {
 
             let (result_tx, result_rx) = mpsc::channel();
             pool.dispatch(normalized, path.clone(), result_tx)?;
-            pending.push((offset, path, result_rx));
+            pending.push(PendingJob {
+                offset,
+                path,
+                result_rx,
+            });
         }
 
-        for (offset, path, result_rx) in pending {
-            match result_rx.recv() {
-                Ok(Ok(())) => {
-                    let dur = sentence_duration(&path);
-                    collected[offset] = Some((path, dur));
+        let pending_total = pending.len();
+        let mut next_progress_log = started_at + progress_log_interval;
+        while !pending.is_empty() {
+            let mut made_progress = false;
+            let mut idx = 0usize;
+            while idx < pending.len() {
+                match pending[idx].result_rx.try_recv() {
+                    Ok(Ok(())) => {
+                        let job = pending.swap_remove(idx);
+                        let dur = sentence_duration(&job.path);
+                        collected[job.offset] = Some((job.path, dur));
+                        made_progress = true;
+                        continue;
+                    }
+                    Ok(Err(err)) => {
+                        warn!("Failed to synthesize sentence: {err}");
+                        return Err(err);
+                    }
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        let path = pending[idx].path.clone();
+                        return Err(anyhow::anyhow!(
+                            "TTS worker channel closed before finishing: {}",
+                            path.display()
+                        ));
+                    }
+                    Err(mpsc::TryRecvError::Empty) => {}
                 }
-                Ok(Err(err)) => {
-                    warn!("Failed to synthesize sentence: {err}");
-                    return Err(err);
-                }
-                Err(err) => {
-                    return Err(anyhow::anyhow!("TTS worker channel closed: {err}"));
-                }
+                idx += 1;
+            }
+
+            if pending.is_empty() {
+                break;
+            }
+
+            let now = std::time::Instant::now();
+            if now >= next_progress_log {
+                let synthesized_done = pending_total.saturating_sub(pending.len());
+                let completed = cached_hits + synthesized_done;
+                info!(
+                    completed,
+                    total,
+                    cached_hits,
+                    synthesized_done,
+                    remaining = total.saturating_sub(completed),
+                    "TTS batch progress"
+                );
+                next_progress_log = now + progress_log_interval;
+            }
+
+            if !made_progress {
+                let until_log =
+                    next_progress_log.saturating_duration_since(std::time::Instant::now());
+                let sleep_for = until_log.min(std::time::Duration::from_millis(50));
+                thread::sleep(if sleep_for.is_zero() {
+                    std::time::Duration::from_millis(10)
+                } else {
+                    sleep_for
+                });
             }
         }
 
         let collected: Vec<(PathBuf, std::time::Duration)> =
             collected.into_iter().flatten().collect();
-        debug!(count = collected.len(), "Prepared TTS batch");
+        info!(
+            completed = collected.len(),
+            total,
+            cached_hits,
+            synthesized = pending_total,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "Prepared TTS batch"
+        );
+        if collected.len() != total {
+            warn!(
+                expected = total,
+                actual = collected.len(),
+                "Prepared batch size does not match requested sentence range"
+            );
+        } else {
+            debug!(count = collected.len(), "Prepared TTS batch");
+        }
         Ok(collected)
     }
 

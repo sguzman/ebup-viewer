@@ -403,6 +403,7 @@ impl App {
         let cache_root = crate::cache::tts_dir(&self.epub_path);
         let speed = self.config.tts_speed;
         let threads = self.config.tts_threads.max(1);
+        let progress_log_interval_secs = self.config.tts_progress_log_interval_secs;
         let page_id = page;
         self.tts.started_at = None;
         self.tts.elapsed = Duration::ZERO;
@@ -415,6 +416,7 @@ impl App {
             audio_start_idx,
             speed,
             threads,
+            progress_log_interval_secs,
             "Preparing playback task"
         );
 
@@ -422,7 +424,13 @@ impl App {
         Task::perform(
             async move {
                 engine
-                    .prepare_batch(cache_root, audio_sentences, audio_start_idx, threads)
+                    .prepare_batch(
+                        cache_root,
+                        audio_sentences,
+                        audio_start_idx,
+                        threads,
+                        Duration::from_secs_f32(progress_log_interval_secs),
+                    )
                     .map(|files| super::super::messages::Message::TtsPrepared {
                         page: page_id,
                         start_idx: audio_start_idx,

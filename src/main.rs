@@ -49,6 +49,8 @@ fn run(reload_handle: &ReloadHandle) -> Result<()> {
         overrides.log_level = base_config.log_level;
         // Always honor base TTS worker count to avoid stale cached values.
         overrides.tts_threads = base_config.tts_threads;
+        // Always honor base progress logging cadence for batch generation.
+        overrides.tts_progress_log_interval_secs = base_config.tts_progress_log_interval_secs;
         config = overrides;
     }
     set_log_level(reload_handle, config.log_level.as_filter_str());
@@ -62,6 +64,7 @@ fn run(reload_handle: &ReloadHandle) -> Result<()> {
         model = %config.tts_model_path,
         espeak = %config.tts_espeak_path,
         threads = config.tts_threads,
+        progress_log_interval_secs = config.tts_progress_log_interval_secs,
         "Active TTS configuration"
     );
     let bookmark = load_bookmark(&epub_path);

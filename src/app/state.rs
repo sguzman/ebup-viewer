@@ -473,4 +473,5 @@ fn clamp_config(config: &mut AppConfig) {
     config.tts_speed = config.tts_speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED);
     config.tts_volume = config.tts_volume.clamp(MIN_TTS_VOLUME, MAX_TTS_VOLUME);
     config.tts_threads = config.tts_threads.max(1);
+    config.tts_progress_log_interval_secs = config.tts_progress_log_interval_secs.clamp(0.1, 60.0);
 }

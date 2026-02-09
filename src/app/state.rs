@@ -89,6 +89,7 @@ pub struct App {
     pub(super) epub_path: PathBuf,
     pub(super) normalizer: TextNormalizer,
     pub(super) text_only_mode: bool,
+    pub(super) text_only_preview: Option<(usize, String)>,
 }
 
 impl App {
@@ -99,6 +100,7 @@ impl App {
             self.config.font_size,
             self.config.lines_per_page,
         );
+        self.text_only_preview = None;
         if self.reader.pages.is_empty() {
             self.reader
                 .pages
@@ -232,16 +234,35 @@ impl App {
         split_sentences(&self.formatted_page_content())
     }
 
-    pub(super) fn text_only_preview_for_current_page(&self) -> String {
-        let display_sentences = self.raw_sentences_for_page(self.reader.current_page);
-        if display_sentences.is_empty() {
-            return "No textual content on this page.".to_string();
+    pub(super) fn text_only_preview_for_current_page(&self) -> &str {
+        if let Some((page, preview)) = &self.text_only_preview {
+            if *page == self.reader.current_page {
+                return preview.as_str();
+            }
         }
-        let plan = self.normalizer.plan_page(&display_sentences);
-        if plan.audio_sentences.is_empty() {
-            return "No speakable text remains on this page after normalization.".to_string();
+        "Preparing normalized text preview..."
+    }
+
+    pub(super) fn ensure_text_only_preview_for_page(&mut self, page: usize) {
+        if let Some((cached_page, _)) = &self.text_only_preview {
+            if *cached_page == page {
+                return;
+            }
         }
-        plan.audio_sentences.join("\n\n")
+        let display_sentences = self.raw_sentences_for_page(page);
+        let preview = if display_sentences.is_empty() {
+            "No textual content on this page.".to_string()
+        } else {
+            let plan = self
+                .normalizer
+                .plan_page_cached(&self.epub_path, page, &display_sentences);
+            if plan.audio_sentences.is_empty() {
+                "No speakable text remains on this page after normalization.".to_string()
+            } else {
+                plan.audio_sentences.join("\n\n")
+            }
+        };
+        self.text_only_preview = Some((page, preview));
     }
 
     pub(super) fn image_assigned_page(&self, image_idx: usize) -> usize {
@@ -335,6 +356,7 @@ impl App {
             config,
             normalizer: TextNormalizer::load_default(),
             text_only_mode: false,
+            text_only_preview: None,
         };
 
         app.repaginate();
@@ -400,6 +422,8 @@ impl App {
             night_mode = matches!(app.config.theme, ThemeMode::Night),
             "Initialized app state"
         );
+
+        app.ensure_text_only_preview_for_page(app.reader.current_page);
 
         (app, init_task)
     }

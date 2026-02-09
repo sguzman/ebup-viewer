@@ -128,6 +128,10 @@ impl App {
             Message::Tick(now) => self.handle_tick(now, &mut effects),
         }
 
+        if self.text_only_mode {
+            self.ensure_text_only_preview_for_page(self.reader.current_page);
+        }
+
         effects
     }
 

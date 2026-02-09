@@ -58,19 +58,29 @@ impl App {
             button("Next")
         };
 
-        let controls = row![
+        let available_width = self.estimated_controls_width();
+        let show_page_label = available_width >= 760.0;
+        let show_tts_progress_label = available_width >= 920.0;
+
+        let mut controls = row![
             prev_button,
             next_button,
             theme_toggle,
             settings_toggle,
             tts_toggle,
             text_only_toggle,
-            text(page_label),
-            text(tts_progress_label)
+            horizontal_space(),
         ]
         .spacing(10)
         .align_y(Vertical::Center)
         .width(Length::Fill);
+
+        if show_page_label {
+            controls = controls.push(text(page_label).width(Length::Shrink));
+        }
+        if show_tts_progress_label {
+            controls = controls.push(text(tts_progress_label).width(Length::Shrink));
+        }
 
         let font_controls = row![
             column![

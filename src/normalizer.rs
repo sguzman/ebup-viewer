@@ -763,14 +763,8 @@ mod tests {
         let cache_root = normalized_dir(&epub_path);
         let _ = fs::remove_dir_all(&cache_root);
 
-        let page_a = vec![
-            "Alpha sentence.".to_string(),
-            "Beta sentence.".to_string(),
-        ];
-        let page_b = vec![
-            "Beta sentence.".to_string(),
-            "Gamma sentence.".to_string(),
-        ];
+        let page_a = vec!["Alpha sentence.".to_string(), "Beta sentence.".to_string()];
+        let page_b = vec!["Beta sentence.".to_string(), "Gamma sentence.".to_string()];
 
         let _ = normalizer.plan_page_cached(&epub_path, 0, &page_a);
         let files_after_first: Vec<String> = fs::read_dir(&cache_root)

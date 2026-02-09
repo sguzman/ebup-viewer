@@ -80,6 +80,12 @@ pub struct BookmarkState {
     pub(super) pending_sentence_snap: Option<usize>,
 }
 
+pub struct TextOnlyPreview {
+    pub(super) page: usize,
+    pub(super) audio_sentences: Vec<String>,
+    pub(super) display_to_audio: Vec<Option<usize>>,
+}
+
 /// Core application state composed of sub-models.
 pub struct App {
     pub(super) reader: ReaderState,
@@ -89,7 +95,7 @@ pub struct App {
     pub(super) epub_path: PathBuf,
     pub(super) normalizer: TextNormalizer,
     pub(super) text_only_mode: bool,
-    pub(super) text_only_preview: Option<(usize, String)>,
+    pub(super) text_only_preview: Option<TextOnlyPreview>,
 }
 
 impl App {
@@ -234,35 +240,59 @@ impl App {
         split_sentences(&self.formatted_page_content())
     }
 
-    pub(super) fn text_only_preview_for_current_page(&self) -> &str {
-        if let Some((page, preview)) = &self.text_only_preview {
-            if *page == self.reader.current_page {
-                return preview.as_str();
-            }
-        }
-        "Preparing normalized text preview..."
+    pub(super) fn text_only_preview_for_current_page(&self) -> Option<&TextOnlyPreview> {
+        self.text_only_preview
+            .as_ref()
+            .filter(|preview| preview.page == self.reader.current_page)
+    }
+
+    pub(super) fn text_only_highlight_audio_idx_for_current_page(&self) -> Option<usize> {
+        let display_idx = self.tts.current_sentence_idx?;
+        let preview = self.text_only_preview_for_current_page()?;
+        preview
+            .display_to_audio
+            .get(display_idx)
+            .and_then(|mapped| *mapped)
     }
 
     pub(super) fn ensure_text_only_preview_for_page(&mut self, page: usize) {
-        if let Some((cached_page, _)) = &self.text_only_preview {
-            if *cached_page == page {
-                return;
-            }
+        if self
+            .text_only_preview
+            .as_ref()
+            .map(|preview| preview.page == page)
+            .unwrap_or(false)
+        {
+            return;
         }
+
         let display_sentences = self.raw_sentences_for_page(page);
         let preview = if display_sentences.is_empty() {
-            "No textual content on this page.".to_string()
+            TextOnlyPreview {
+                page,
+                audio_sentences: vec!["No textual content on this page.".to_string()],
+                display_to_audio: Vec::new(),
+            }
         } else {
             let plan = self
                 .normalizer
                 .plan_page_cached(&self.epub_path, page, &display_sentences);
             if plan.audio_sentences.is_empty() {
-                "No speakable text remains on this page after normalization.".to_string()
+                TextOnlyPreview {
+                    page,
+                    audio_sentences: vec![
+                        "No speakable text remains on this page after normalization.".to_string(),
+                    ],
+                    display_to_audio: plan.display_to_audio,
+                }
             } else {
-                plan.audio_sentences.join("\n\n")
+                TextOnlyPreview {
+                    page,
+                    audio_sentences: plan.audio_sentences,
+                    display_to_audio: plan.display_to_audio,
+                }
             }
         };
-        self.text_only_preview = Some((page, preview));
+        self.text_only_preview = Some(preview);
     }
 
     pub(super) fn image_assigned_page(&self, image_idx: usize) -> usize {
@@ -393,9 +423,10 @@ impl App {
                             TEXT_SCROLL_ID.clone(),
                             app.bookmark.last_scroll_offset,
                         );
-                    } else if let Some(offset) =
-                        app.scroll_offset_for_sentence(idx, app.tts.last_sentences.len())
-                    {
+                    } else if let Some(offset) = app.scroll_offset_for_sentence(
+                        idx,
+                        app.sentence_count_for_page(app.reader.current_page),
+                    ) {
                         app.bookmark.last_scroll_offset = offset;
                         init_task =
                             iced::widget::scrollable::snap_to(TEXT_SCROLL_ID.clone(), offset);

@@ -49,9 +49,8 @@ impl App {
         }
 
         if let Some(idx) = self.bookmark.pending_sentence_snap.take() {
-            if let Some(offset) =
-                self.scroll_offset_for_sentence(idx, self.tts.last_sentences.len())
-            {
+            let total = self.sentence_count_for_page(self.reader.current_page);
+            if let Some(offset) = self.scroll_offset_for_sentence(idx, total) {
                 let offset = Self::sanitize_offset(offset);
                 if offset != self.bookmark.last_scroll_offset {
                     self.bookmark.last_scroll_offset = offset;
@@ -64,7 +63,7 @@ impl App {
 
     pub(super) fn handle_jump_to_current_audio(&mut self, effects: &mut Vec<Effect>) {
         if let Some(idx) = self.tts.current_sentence_idx {
-            let total = self.tts.last_sentences.len();
+            let total = self.sentence_count_for_page(self.reader.current_page);
             if let Some(offset) = self.scroll_offset_for_sentence(idx, total) {
                 info!(
                     idx,
@@ -133,12 +132,16 @@ impl App {
             return None;
         }
 
-        let base = self
+        let progress = self
             .sentence_progress_for_page(sentence_idx, total_sentences)
             .unwrap_or_else(|| {
                 let clamped_idx = sentence_idx.min(total_sentences.saturating_sub(1)) as f32;
                 let denom = total_sentences.saturating_sub(1).max(1) as f32;
-                (clamped_idx / denom).clamp(0.0, 1.0)
+                let ratio = (clamped_idx / denom).clamp(0.0, 1.0);
+                SentenceProgress {
+                    start: ratio,
+                    middle: ratio,
+                }
             });
 
         let viewport_fraction = self.estimated_viewport_fraction();
@@ -147,11 +150,13 @@ impl App {
         }
 
         let desired_top = if self.config.center_spoken_sentence {
-            // Center mode keeps the active sentence near middle of the viewport.
-            base - 0.5 * viewport_fraction
+            // Center around the spoken sentence while keeping the sentence start visible.
+            let centered = progress.middle - 0.5 * viewport_fraction;
+            let keep_start_visible = progress.start - 0.08 * viewport_fraction;
+            centered.min(keep_start_visible)
         } else {
-            // Track mode follows the sentence while keeping it comfortably in view.
-            base - 0.2 * viewport_fraction
+            // Tracking mode keeps the sentence in the upper section of the viewport.
+            progress.start - 0.20 * viewport_fraction
         };
 
         // `snap_to` expects offset over the scrollable range (content - viewport),
@@ -165,30 +170,26 @@ impl App {
     fn sentence_progress_for_page(
         &self,
         sentence_idx: usize,
-        total_sentences: usize,
-    ) -> Option<f32> {
+        _total_sentences: usize,
+    ) -> Option<SentenceProgress> {
         self.reader.pages.get(self.reader.current_page)?;
-        let sentences = if self.tts.last_sentences.len() == total_sentences
-            && !self.tts.last_sentences.is_empty()
-        {
-            self.tts.last_sentences.clone()
-        } else {
-            self.raw_sentences_for_page(self.reader.current_page)
-        };
+        let sentences = self.reader.page_sentences.get(self.reader.current_page)?;
         if sentences.is_empty() {
             return None;
         }
 
-        let idx = sentence_idx.min(sentences.len().saturating_sub(1));
-        let sentence_weights = self.estimate_sentence_line_weights(&sentences);
+        let sentence_weights = self.estimate_sentence_line_weights(sentences);
+        let idx = sentence_idx.min(sentence_weights.len().saturating_sub(1));
         let total_weight: f32 = sentence_weights.iter().sum();
         if total_weight <= f32::EPSILON {
             return None;
         }
 
         let before_weight: f32 = sentence_weights.iter().take(idx).sum();
-        let anchor_weight = before_weight + sentence_weights[idx] * 0.5;
-        Some((anchor_weight / total_weight).clamp(0.0, 1.0))
+        let sentence_weight = sentence_weights[idx].max(f32::EPSILON);
+        let start = (before_weight / total_weight).clamp(0.0, 1.0);
+        let middle = ((before_weight + sentence_weight * 0.5) / total_weight).clamp(0.0, 1.0);
+        Some(SentenceProgress { start, middle })
     }
 
     fn estimate_sentence_line_weights(&self, sentences: &[String]) -> Vec<f32> {
@@ -260,7 +261,13 @@ impl App {
                 .min(self.bookmark.content_width),
             (true, false) => self.bookmark.viewport_width,
             (false, true) => self.bookmark.content_width,
-            (false, false) => 1.0,
+            (false, false) => {
+                let mut fallback = self.config.window_width.max(1.0);
+                if self.config.show_settings {
+                    fallback = (fallback - 320.0).max(1.0);
+                }
+                (fallback - 48.0).max(1.0)
+            }
         };
 
         let margin_total = (self.config.margin_horizontal as f32 * 2.0).min(base_width * 0.9);
@@ -286,4 +293,10 @@ impl App {
 
         font_size * family_scale * weight_scale
     }
+}
+
+#[derive(Clone, Copy)]
+struct SentenceProgress {
+    start: f32,
+    middle: f32,
 }

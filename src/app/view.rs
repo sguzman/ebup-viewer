@@ -122,14 +122,52 @@ impl App {
 
         let raw_sentences = self.raw_sentences_for_page(self.reader.current_page);
         let text_view_content: Element<'_, Message> = if self.text_only_mode {
-            text(self.text_only_preview_for_current_page())
-                .size(self.config.font_size as f32)
-                .line_height(LineHeight::Relative(self.config.line_spacing))
-                .width(Length::Fill)
-                .wrapping(Wrapping::WordOrGlyph)
-                .align_x(Horizontal::Left)
-                .font(self.current_font())
-                .into()
+            if let Some(preview) = self.text_only_preview_for_current_page() {
+                let highlight_idx = self.text_only_highlight_audio_idx_for_current_page();
+                let highlight = self.highlight_color();
+                let mut spans: Vec<iced::widget::text::Span<'_, Message>> =
+                    Vec::with_capacity(preview.audio_sentences.len().saturating_mul(2));
+
+                for (idx, sentence) in preview.audio_sentences.iter().enumerate() {
+                    let mut span: iced::widget::text::Span<'_, Message> =
+                        iced::widget::text::Span::new(sentence.as_str())
+                            .font(self.current_font())
+                            .size(self.config.font_size as f32)
+                            .line_height(LineHeight::Relative(self.config.line_spacing));
+
+                    if Some(idx) == highlight_idx {
+                        span = span
+                            .background(iced::Background::Color(highlight))
+                            .padding(iced::Padding::from(2u16));
+                    }
+                    spans.push(span);
+
+                    if idx + 1 < preview.audio_sentences.len() {
+                        spans.push(
+                            iced::widget::text::Span::new("\n\n")
+                                .font(self.current_font())
+                                .size(self.config.font_size as f32)
+                                .line_height(LineHeight::Relative(self.config.line_spacing)),
+                        );
+                    }
+                }
+
+                let rich: iced::widget::text::Rich<'_, Message> =
+                    iced::widget::text::Rich::with_spans(spans);
+                rich.width(Length::Fill)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .align_x(Horizontal::Left)
+                    .into()
+            } else {
+                text("Preparing normalized text preview...")
+                    .size(self.config.font_size as f32)
+                    .line_height(LineHeight::Relative(self.config.line_spacing))
+                    .width(Length::Fill)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .align_x(Horizontal::Left)
+                    .font(self.current_font())
+                    .into()
+            }
         } else {
             let fallback_page_content = self.formatted_page_content();
             let display_sentences =

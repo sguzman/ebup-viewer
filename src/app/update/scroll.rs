@@ -143,15 +143,10 @@ impl App {
 
         let desired_top = if self.config.center_spoken_sentence {
             // Center mode: keep the active sentence around viewport center.
-            let center_target = if model.is_text_only { 0.50 } else { 0.50 };
-            progress.middle - center_target * viewport_fraction
+            progress.middle - 0.50 * viewport_fraction
         } else {
-            // Tracking mode: keep the sentence near the upper third for better forward context.
-            if model.is_text_only {
-                progress.middle - 0.35 * viewport_fraction
-            } else {
-                progress.start - 0.42 * viewport_fraction
-            }
+            // Auto-scroll mode: keep the spoken sentence in view with forward context.
+            progress.start - 0.25 * viewport_fraction
         };
 
         // `snap_to` expects offset over the scrollable range (content - viewport),
@@ -179,17 +174,8 @@ impl App {
 
         let before_weight: f32 = sentence_weights.iter().take(idx).sum();
         let sentence_weight = sentence_weights[idx].max(f32::EPSILON);
-        let mut start = (before_weight / total_weight).clamp(0.0, 1.0);
-        let mut middle = ((before_weight + sentence_weight * 0.5) / total_weight).clamp(0.0, 1.0);
-
-        // Pretty-text tends to accumulate downward drift over long passages with pure
-        // weighted progress. Slightly compressing progress reduces that drift while
-        // preserving sentence-to-sentence movement and keeping margin/font sensitivity.
-        if !model.is_text_only {
-            const PRETTY_PROGRESS_GAMMA: f32 = 1.05;
-            start = start.powf(PRETTY_PROGRESS_GAMMA);
-            middle = middle.powf(PRETTY_PROGRESS_GAMMA);
-        }
+        let start = (before_weight / total_weight).clamp(0.0, 1.0);
+        let middle = ((before_weight + sentence_weight * 0.5) / total_weight).clamp(0.0, 1.0);
 
         Some(SentenceProgress { start, middle })
     }
@@ -210,7 +196,6 @@ impl App {
                 target_idx,
                 // Text-only renders each sentence separated by a blank line.
                 extra_gap_lines: 1.0,
-                is_text_only: true,
             });
         }
 
@@ -223,7 +208,6 @@ impl App {
             sentences,
             target_idx,
             extra_gap_lines: 0.0,
-            is_text_only: false,
         })
     }
 
@@ -324,37 +308,17 @@ impl App {
     }
 
     fn estimated_text_width(&self) -> f32 {
-        let viewport_or_fallback = match (
-            self.bookmark.viewport_width > 0.0,
-            self.bookmark.content_width > 0.0,
-        ) {
-            (true, _) => self.bookmark.viewport_width,
-            (false, true) => self.bookmark.content_width,
-            (false, false) => {
-                let mut fallback = self.config.window_width.max(1.0);
-                if self.config.show_settings {
-                    fallback = (fallback - 320.0).max(1.0);
-                }
-                (fallback - 48.0).max(1.0)
+        let mut width = if self.bookmark.viewport_width > 0.0 {
+            self.bookmark.viewport_width
+        } else {
+            let mut fallback = self.config.window_width.max(1.0);
+            if self.config.show_settings {
+                fallback = (fallback - 320.0).max(1.0);
             }
+            fallback
         };
-
-        let content_width = self.bookmark.content_width.max(0.0);
-        let mut width = viewport_or_fallback.max(1.0);
-        if content_width > 0.0 {
-            width = width.min(content_width.max(1.0));
-        }
-
-        // `content_width` may already include margin/padding effects depending on widget internals.
-        // Only subtract configured margins when content and viewport widths are effectively equal.
-        let should_subtract_margins = self.bookmark.viewport_width <= 0.0
-            || content_width <= 0.0
-            || (self.bookmark.viewport_width - content_width).abs() <= 24.0;
-        if should_subtract_margins {
-            let margin_total = (self.config.margin_horizontal as f32 * 2.0).min(width * 0.9);
-            width = (width - margin_total).max(1.0);
-        }
-
+        let margin_total = (self.config.margin_horizontal as f32 * 2.0).min(width * 0.9);
+        width = (width - margin_total).max(1.0);
         width
     }
 
@@ -383,7 +347,6 @@ struct ScrollTargetModel {
     sentences: Vec<String>,
     target_idx: usize,
     extra_gap_lines: f32,
-    is_text_only: bool,
 }
 
 #[derive(Clone, Copy)]

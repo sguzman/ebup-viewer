@@ -1,0 +1,32 @@
+[normalization]
+# Master switch for text cleaning before TTS generation.
+enabled = true
+
+# "page" keeps page-level processing and then maps each display sentence to
+# either cleaned speech text or silence.
+mode = "page"
+
+# Whitespace cleanup.
+collapse_whitespace = true
+remove_space_before_punctuation = true
+
+# Markdown cleanup.
+strip_inline_code = true
+strip_markdown_links = true
+
+# Citation / bracket elision.
+drop_numeric_bracket_citations = true
+drop_parenthetical_numeric_citations = true
+drop_square_bracket_text = true
+drop_curly_brace_text = true
+
+# Drop lines/sentences that are too short or punctuation-only after cleaning.
+min_sentence_chars = 2
+require_alphanumeric = true
+
+# Optional literal tokens to remove entirely.
+drop_tokens = []
+
+# Pronunciation / symbol cleanup. '#' defaults to silence (instead of "sharp").
+[normalization.replacements]
+"#" = " "

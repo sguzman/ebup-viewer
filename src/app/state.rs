@@ -1,5 +1,6 @@
 use crate::cache::{Bookmark, save_epub_config};
 use crate::config::{AppConfig, FontFamily, FontWeight, HighlightColor, ThemeMode};
+use crate::normalizer::TextNormalizer;
 use crate::pagination::{MAX_LINES_PER_PAGE, MIN_LINES_PER_PAGE, paginate};
 use crate::text_utils::split_sentences;
 use crate::tts::{TtsEngine, TtsPlayback};
@@ -62,6 +63,8 @@ pub struct TtsState {
     pub(super) request_id: u64,
     pub(super) sources_per_sentence: usize,
     pub(super) total_sources: usize,
+    pub(super) display_to_audio: Vec<Option<usize>>,
+    pub(super) audio_to_display: Vec<usize>,
 }
 
 /// Bookmark and scroll tracking model.
@@ -82,6 +85,7 @@ pub struct App {
     pub(super) bookmark: BookmarkState,
     pub(super) config: AppConfig,
     pub(super) epub_path: PathBuf,
+    pub(super) normalizer: TextNormalizer,
 }
 
 impl App {
@@ -191,6 +195,33 @@ impl App {
             .unwrap_or_default()
     }
 
+    pub(super) fn find_audio_start_for_display_sentence(
+        &self,
+        display_idx: usize,
+    ) -> Option<usize> {
+        if self.tts.display_to_audio.is_empty() {
+            return None;
+        }
+        let clamped = display_idx.min(self.tts.display_to_audio.len().saturating_sub(1));
+        self.tts
+            .display_to_audio
+            .iter()
+            .skip(clamped)
+            .find_map(|mapped| *mapped)
+            .or_else(|| {
+                self.tts
+                    .display_to_audio
+                    .iter()
+                    .take(clamped + 1)
+                    .rev()
+                    .find_map(|mapped| *mapped)
+            })
+    }
+
+    pub(super) fn display_index_for_audio_sentence(&self, audio_idx: usize) -> Option<usize> {
+        self.tts.audio_to_display.get(audio_idx).copied()
+    }
+
     pub(super) fn display_sentences_for_current_page(&self) -> Vec<String> {
         if self.config.word_spacing == 0 && self.config.letter_spacing == 0 {
             return self.raw_sentences_for_page(self.reader.current_page);
@@ -272,8 +303,11 @@ impl App {
                 request_id: 0,
                 sources_per_sentence: 1,
                 total_sources: 0,
+                display_to_audio: Vec::new(),
+                audio_to_display: Vec::new(),
             },
             config,
+            normalizer: TextNormalizer::load_default(),
         };
 
         app.repaginate();

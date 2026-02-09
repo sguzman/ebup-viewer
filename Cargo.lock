@@ -819,6 +819,7 @@ dependencies = [
  "iced",
  "once_cell",
  "piper-rs",
+ "regex",
  "rodio",
  "serde",
  "serde_json",

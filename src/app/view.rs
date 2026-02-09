@@ -443,14 +443,17 @@ impl App {
         if sentence_count == 0 {
             return Duration::ZERO;
         }
-        let current_idx = self
+        let current_display_idx = self
             .tts
             .current_sentence_idx
             .unwrap_or(0)
             .min(sentence_count.saturating_sub(1));
+        let current_audio_idx = self
+            .find_audio_start_for_display_sentence(current_display_idx)
+            .unwrap_or(self.tts.sentence_offset);
 
-        if !self.tts.track.is_empty() && current_idx >= self.tts.sentence_offset {
-            let start = current_idx - self.tts.sentence_offset;
+        if !self.tts.track.is_empty() && current_audio_idx >= self.tts.sentence_offset {
+            let start = current_audio_idx - self.tts.sentence_offset;
             if start < self.tts.track.len() {
                 let speech_remaining = self.tts.track[start..]
                     .iter()
@@ -464,7 +467,14 @@ impl App {
         }
 
         let avg_sentence = self.estimated_avg_sentence_duration();
-        let remaining = sentence_count.saturating_sub(current_idx);
+        let remaining = if !self.tts.audio_to_display.is_empty() {
+            self.tts
+                .audio_to_display
+                .len()
+                .saturating_sub(current_audio_idx)
+        } else {
+            sentence_count.saturating_sub(current_display_idx)
+        };
         Duration::from_secs_f64(avg_sentence.as_secs_f64() * remaining as f64)
     }
 

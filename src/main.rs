@@ -10,6 +10,7 @@ mod app;
 mod cache;
 mod config;
 mod epub_loader;
+mod normalizer;
 mod pagination;
 mod text_utils;
 mod tts;

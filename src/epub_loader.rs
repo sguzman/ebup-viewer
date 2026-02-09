@@ -9,14 +9,15 @@ use anyhow::{Context, Result};
 use epub::doc::EpubDoc;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 use tracing::{debug, info, warn};
 
 /// Load an EPUB from disk and return its text content as a single string.
 pub fn load_epub_text(path: &Path) -> Result<String> {
-    if is_plain_text(path) {
+    if is_text_file(path) {
         info!(path = %path.display(), "Loading plain text content");
         let data = fs::read_to_string(path)
-            .with_context(|| format!("Failed to read text file at {}", path.display()))?;
+            .with_context(|| format!("Failed to read {}", path.display()))?;
         let text = if data.trim().is_empty() {
             "No textual content found in this file.".to_string()
         } else {
@@ -27,6 +28,26 @@ pub fn load_epub_text(path: &Path) -> Result<String> {
             "Finished loading plain text content"
         );
         return Ok(text);
+    }
+
+    if is_markdown(path) {
+        match load_with_pandoc(path) {
+            Ok(text) => return Ok(text),
+            Err(err) => {
+                warn!(
+                    path = %path.display(),
+                    "Pandoc markdown conversion failed, falling back to raw markdown: {err}"
+                );
+                let data = fs::read_to_string(path).with_context(|| {
+                    format!("Failed to read markdown file at {}", path.display())
+                })?;
+                return Ok(data);
+            }
+        }
+    }
+
+    if !is_epub(path) {
+        return load_with_pandoc(path);
     }
 
     info!(path = %path.display(), "Loading EPUB content");
@@ -79,11 +100,65 @@ pub fn load_epub_text(path: &Path) -> Result<String> {
     Ok(combined)
 }
 
-fn is_plain_text(path: &Path) -> bool {
+fn is_text_file(path: &Path) -> bool {
     matches!(
         path.extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| ext.to_ascii_lowercase()),
-        Some(ext) if ext == "txt" || ext == "md" || ext == "markdown"
+        Some(ext) if ext == "txt"
     )
+}
+
+fn is_markdown(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase()),
+        Some(ext) if ext == "md" || ext == "markdown"
+    )
+}
+
+fn is_epub(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase()),
+        Some(ext) if ext == "epub"
+    )
+}
+
+fn load_with_pandoc(path: &Path) -> Result<String> {
+    info!(
+        path = %path.display(),
+        "Converting source to plain text with pandoc"
+    );
+    let output = Command::new("pandoc")
+        .arg(path)
+        .arg("--to")
+        .arg("plain")
+        .output()
+        .with_context(|| format!("Failed to start pandoc for {}", path.display()))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "pandoc conversion failed for {}: {}",
+            path.display(),
+            stderr.trim()
+        );
+    }
+
+    let text = String::from_utf8(output.stdout)
+        .with_context(|| format!("pandoc returned non-UTF8 text for {}", path.display()))?;
+    let text = if text.trim().is_empty() {
+        "No textual content found in this file.".to_string()
+    } else {
+        text
+    };
+    info!(
+        path = %path.display(),
+        total_chars = text.len(),
+        "Finished pandoc conversion"
+    );
+    Ok(text)
 }

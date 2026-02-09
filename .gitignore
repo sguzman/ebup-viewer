@@ -2,3 +2,4 @@
 .cache
 vendor/espeak-rs-sys/target
 *.epub
+tmp

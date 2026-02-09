@@ -1,10 +1,12 @@
+use crate::cache::normalized_dir;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const DEFAULT_NORMALIZER_PATH: &str = "conf/normalizer.toml";
 const SENTENCE_MARKER: &str = "\n<<__EBUP_SENTENCE_BOUNDARY__>>\n";
@@ -25,7 +27,7 @@ pub struct TextNormalizer {
     config: NormalizerConfig,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 struct NormalizerFile {
     normalization: NormalizerConfig,
@@ -39,7 +41,7 @@ impl Default for NormalizerFile {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 struct NormalizerConfig {
     enabled: bool,
@@ -86,7 +88,7 @@ impl Default for NormalizerConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 enum NormalizationMode {
     #[default]
@@ -94,7 +96,7 @@ enum NormalizationMode {
     Sentence,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 struct AcronymConfig {
     enabled: bool,
@@ -131,7 +133,7 @@ impl Default for AcronymConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 struct PronunciationConfig {
     year_mode: YearMode,
@@ -160,7 +162,7 @@ impl Default for PronunciationConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 enum YearMode {
     #[default]
@@ -168,7 +170,7 @@ enum YearMode {
     None,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PageNormalization {
     pub audio_sentences: Vec<String>,
     pub display_to_audio: Vec<Option<usize>>,
@@ -199,6 +201,54 @@ impl TextNormalizer {
                 Self::default()
             }
         }
+    }
+
+    pub fn plan_page_cached(
+        &self,
+        epub_path: &Path,
+        page_idx: usize,
+        display_sentences: &[String],
+    ) -> PageNormalization {
+        let source_hash = hash_sentences(display_sentences);
+        let config_hash = self.config_hash();
+        let cache_path =
+            self.normalized_cache_path(epub_path, page_idx, &source_hash, &config_hash);
+
+        if let Ok(contents) = fs::read_to_string(&cache_path) {
+            if let Ok(cached) = toml::from_str::<PageNormalization>(&contents) {
+                tracing::debug!(
+                    path = %cache_path.display(),
+                    page = page_idx + 1,
+                    "Loaded normalized page cache"
+                );
+                return cached;
+            }
+        }
+
+        let plan = self.plan_page(display_sentences);
+        if let Some(parent) = cache_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        match toml::to_string(&plan) {
+            Ok(serialized) => {
+                if let Err(err) = fs::write(&cache_path, serialized) {
+                    tracing::warn!(
+                        path = %cache_path.display(),
+                        "Failed to write normalized page cache: {err}"
+                    );
+                } else {
+                    tracing::debug!(
+                        path = %cache_path.display(),
+                        page = page_idx + 1,
+                        "Stored normalized page cache"
+                    );
+                }
+            }
+            Err(err) => {
+                tracing::warn!("Failed to serialize normalized page cache: {err}");
+            }
+        }
+        plan
     }
 
     pub fn plan_page(&self, display_sentences: &[String]) -> PageNormalization {
@@ -356,6 +406,24 @@ impl TextNormalizer {
 
         Some(trimmed.to_string())
     }
+
+    fn config_hash(&self) -> String {
+        let serialized = toml::to_string(&self.config).unwrap_or_default();
+        let mut hasher = Sha256::new();
+        hasher.update(serialized.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
+    fn normalized_cache_path(
+        &self,
+        epub_path: &Path,
+        page_idx: usize,
+        source_hash: &str,
+        config_hash: &str,
+    ) -> PathBuf {
+        let file_name = format!("p{}-{}-{}.toml", page_idx, source_hash, config_hash);
+        normalized_dir(epub_path).join(file_name)
+    }
 }
 
 impl Default for TextNormalizer {
@@ -368,8 +436,35 @@ impl Default for TextNormalizer {
 
 fn default_letter_sounds() -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
-    for ch in 'A'..='Z' {
-        map.insert(ch.to_string(), ch.to_string());
+    for (letter, sound) in [
+        ('A', "ay"),
+        ('B', "bee"),
+        ('C', "see"),
+        ('D', "dee"),
+        ('E', "ee"),
+        ('F', "eff"),
+        ('G', "jee"),
+        ('H', "aitch"),
+        ('I', "eye"),
+        ('J', "jay"),
+        ('K', "kay"),
+        ('L', "el"),
+        ('M', "em"),
+        ('N', "en"),
+        ('O', "oh"),
+        ('P', "pee"),
+        ('Q', "cue"),
+        ('R', "ar"),
+        ('S', "ess"),
+        ('T', "tee"),
+        ('U', "you"),
+        ('V', "vee"),
+        ('W', "double you"),
+        ('X', "ex"),
+        ('Y', "why"),
+        ('Z', "zee"),
+    ] {
+        map.insert(letter.to_string(), sound.to_string());
     }
     for (digit, word) in [
         ('0', "zero"),
@@ -532,4 +627,13 @@ fn apply_acronym_expansion(text: &str, cfg: &AcronymConfig) -> String {
     }
 
     out
+}
+
+fn hash_sentences(sentences: &[String]) -> String {
+    let mut hasher = Sha256::new();
+    for sentence in sentences {
+        hasher.update(sentence.as_bytes());
+        hasher.update([0u8]);
+    }
+    format!("{:x}", hasher.finalize())
 }

@@ -33,24 +33,27 @@ pub fn load_epub_text(path: &Path) -> Result<String> {
         return Ok(text);
     }
 
-    if is_markdown(path) {
-        match load_with_pandoc(path) {
-            Ok(text) => return Ok(text),
-            Err(err) => {
-                warn!(
-                    path = %path.display(),
-                    "Pandoc markdown conversion failed, falling back to raw markdown: {err}"
-                );
-                let data = fs::read_to_string(path).with_context(|| {
-                    format!("Failed to read markdown file at {}", path.display())
-                })?;
-                return Ok(data);
-            }
+    match load_with_pandoc(path) {
+        Ok(text) => return Ok(text),
+        Err(err) => {
+            warn!(
+                path = %path.display(),
+                "Pandoc conversion failed; attempting format-specific fallback: {err}"
+            );
         }
     }
 
+    if is_markdown(path) {
+        let data = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read markdown file at {}", path.display()))?;
+        return Ok(data);
+    }
+
     if !is_epub(path) {
-        return load_with_pandoc(path);
+        anyhow::bail!(
+            "Unsupported source format without successful pandoc conversion: {}",
+            path.display()
+        );
     }
 
     info!(path = %path.display(), "Loading EPUB content");

@@ -375,7 +375,9 @@ impl App {
             return Task::none();
         }
 
-        let plan = self.normalizer.plan_page(&display_sentences);
+        let plan = self
+            .normalizer
+            .plan_page_cached(&self.epub_path, page, &display_sentences);
         self.tts.display_to_audio = plan.display_to_audio;
         self.tts.audio_to_display = plan.audio_to_display;
 

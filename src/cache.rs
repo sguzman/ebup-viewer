@@ -103,6 +103,10 @@ pub fn tts_dir(epub_path: &Path) -> PathBuf {
     hash_dir(epub_path).join("tts")
 }
 
+pub fn normalized_dir(epub_path: &Path) -> PathBuf {
+    hash_dir(epub_path).join("normalized")
+}
+
 pub fn load_epub_config(epub_path: &Path) -> Option<AppConfig> {
     let path = hash_dir(epub_path).join("config.toml");
     let data = match fs::read_to_string(&path) {

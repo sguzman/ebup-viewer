@@ -37,6 +37,14 @@ impl App {
         effects.push(Effect::SaveConfig);
     }
 
+    pub(super) fn handle_toggle_text_only(&mut self, _effects: &mut Vec<Effect>) {
+        self.text_only_mode = !self.text_only_mode;
+        debug!(
+            enabled = self.text_only_mode,
+            "Toggled text-only preview mode"
+        );
+    }
+
     pub(super) fn handle_font_family_changed(
         &mut self,
         family: crate::config::FontFamily,

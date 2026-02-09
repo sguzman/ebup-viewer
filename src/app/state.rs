@@ -1,5 +1,6 @@
 use crate::cache::{Bookmark, save_epub_config};
 use crate::config::{AppConfig, FontFamily, FontWeight, HighlightColor, ThemeMode};
+use crate::epub_loader::{BookImage, LoadedBook};
 use crate::normalizer::TextNormalizer;
 use crate::pagination::{MAX_LINES_PER_PAGE, MIN_LINES_PER_PAGE, paginate};
 use crate::text_utils::split_sentences;
@@ -46,6 +47,7 @@ pub struct ReaderState {
     pub(super) pages: Vec<String>,
     pub(super) page_sentences: Vec<Vec<String>>,
     pub(super) page_sentence_counts: Vec<usize>,
+    pub(super) images: Vec<BookImage>,
     pub(super) current_page: usize,
 }
 
@@ -86,6 +88,7 @@ pub struct App {
     pub(super) config: AppConfig,
     pub(super) epub_path: PathBuf,
     pub(super) normalizer: TextNormalizer,
+    pub(super) text_only_mode: bool,
 }
 
 impl App {
@@ -229,6 +232,28 @@ impl App {
         split_sentences(&self.formatted_page_content())
     }
 
+    pub(super) fn text_only_preview_for_current_page(&self) -> String {
+        let display_sentences = self.raw_sentences_for_page(self.reader.current_page);
+        if display_sentences.is_empty() {
+            return "No textual content on this page.".to_string();
+        }
+        let plan = self.normalizer.plan_page(&display_sentences);
+        if plan.audio_sentences.is_empty() {
+            return "No speakable text remains on this page after normalization.".to_string();
+        }
+        plan.audio_sentences.join("\n\n")
+    }
+
+    pub(super) fn image_assigned_page(&self, image_idx: usize) -> usize {
+        if self.reader.pages.is_empty() || self.reader.images.is_empty() {
+            return 0;
+        }
+        let total_pages = self.reader.pages.len();
+        let image_count = self.reader.images.len();
+        let page = image_idx.saturating_mul(total_pages) / image_count;
+        page.min(total_pages.saturating_sub(1))
+    }
+
     pub(super) fn sentence_count_for_page(&self, page: usize) -> usize {
         self.reader
             .page_sentence_counts
@@ -262,7 +287,7 @@ impl App {
     }
 
     pub(super) fn bootstrap(
-        text: String,
+        book: LoadedBook,
         mut config: AppConfig,
         epub_path: PathBuf,
         bookmark: Option<Bookmark>,
@@ -273,7 +298,8 @@ impl App {
                 pages: Vec::new(),
                 page_sentences: Vec::new(),
                 page_sentence_counts: Vec::new(),
-                full_text: text,
+                full_text: book.text,
+                images: book.images,
                 current_page: 0,
             },
             bookmark: BookmarkState {
@@ -308,6 +334,7 @@ impl App {
             },
             config,
             normalizer: TextNormalizer::load_default(),
+            text_only_mode: false,
         };
 
         app.repaginate();

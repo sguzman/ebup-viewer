@@ -19,7 +19,7 @@ mod tts_worker;
 use crate::app::run_app;
 use crate::cache::{load_bookmark, load_epub_config};
 use crate::config::load_config;
-use crate::epub_loader::load_epub_text;
+use crate::epub_loader::load_book_content;
 use anyhow::{Context, Result, anyhow};
 use std::env;
 use std::path::{Path, PathBuf};
@@ -68,8 +68,8 @@ fn run(reload_handle: &ReloadHandle) -> Result<()> {
     if let Some(bm) = &bookmark {
         info!(page = bm.page, "Resuming from cached page");
     }
-    let text = load_epub_text(&epub_path)?;
-    run_app(text, config, epub_path, bookmark).context("Failed to start the GUI")?;
+    let book = load_book_content(&epub_path)?;
+    run_app(book, config, epub_path, bookmark).context("Failed to start the GUI")?;
     Ok(())
 }
 

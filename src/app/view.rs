@@ -9,10 +9,10 @@ use iced::alignment::Horizontal;
 use iced::alignment::Vertical;
 use iced::widget::text::{LineHeight, Wrapping};
 use iced::widget::{
-    Column, Row, button, checkbox, column, container, horizontal_space, pick_list, row, scrollable,
-    slider, text,
+    Column, Row, button, checkbox, column, container, horizontal_space, image, pick_list, row,
+    scrollable, slider, text,
 };
-use iced::{Element, Length};
+use iced::{ContentFit, Element, Length};
 use std::time::Duration;
 
 impl App {
@@ -39,6 +39,12 @@ impl App {
             "Show TTS"
         })
         .on_press(Message::ToggleTtsControls);
+        let text_only_toggle = button(if self.text_only_mode {
+            "Pretty Text"
+        } else {
+            "Text-Only"
+        })
+        .on_press(Message::ToggleTextOnly);
 
         let prev_button = if self.reader.current_page > 0 {
             button("Previous").on_press(Message::PreviousPage)
@@ -58,6 +64,7 @@ impl App {
             theme_toggle,
             settings_toggle,
             tts_toggle,
+            text_only_toggle,
             text(page_label),
             text(tts_progress_label)
         ]
@@ -103,17 +110,9 @@ impl App {
         .align_y(Vertical::Center)
         .width(Length::Fill);
 
-        let fallback_page_content = self.formatted_page_content();
         let raw_sentences = self.raw_sentences_for_page(self.reader.current_page);
-        let display_sentences = if self.config.word_spacing == 0 && self.config.letter_spacing == 0
-        {
-            raw_sentences.clone()
-        } else {
-            self.display_sentences_for_current_page()
-        };
-
-        let text_view_content: Element<'_, Message> = if display_sentences.is_empty() {
-            text(fallback_page_content)
+        let text_view_content: Element<'_, Message> = if self.text_only_mode {
+            text(self.text_only_preview_for_current_page())
                 .size(self.config.font_size as f32)
                 .line_height(LineHeight::Relative(self.config.line_spacing))
                 .width(Length::Fill)
@@ -122,47 +121,94 @@ impl App {
                 .font(self.current_font())
                 .into()
         } else {
-            let highlight_idx = self
-                .tts
-                .current_sentence_idx
-                .filter(|idx| *idx < display_sentences.len());
-            let highlight = self.highlight_color();
+            let fallback_page_content = self.formatted_page_content();
+            let display_sentences =
+                if self.config.word_spacing == 0 && self.config.letter_spacing == 0 {
+                    raw_sentences.clone()
+                } else {
+                    self.display_sentences_for_current_page()
+                };
 
-            let spans: Vec<iced::widget::text::Span<'_, Message>> = display_sentences
-                .into_iter()
-                .enumerate()
-                .map(|(idx, sentence)| {
-                    let mut span: iced::widget::text::Span<'_, Message> =
-                        iced::widget::text::Span::new(sentence)
-                            .font(self.current_font())
-                            .size(self.config.font_size as f32)
-                            .line_height(LineHeight::Relative(self.config.line_spacing));
+            if display_sentences.is_empty() {
+                text(fallback_page_content)
+                    .size(self.config.font_size as f32)
+                    .line_height(LineHeight::Relative(self.config.line_spacing))
+                    .width(Length::Fill)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .align_x(Horizontal::Left)
+                    .font(self.current_font())
+                    .into()
+            } else {
+                let highlight_idx = self
+                    .tts
+                    .current_sentence_idx
+                    .filter(|idx| *idx < display_sentences.len());
+                let highlight = self.highlight_color();
 
-                    if idx < raw_sentences.len() {
-                        span = span.link(Message::SentenceClicked(idx));
-                    }
+                let spans: Vec<iced::widget::text::Span<'_, Message>> = display_sentences
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, sentence)| {
+                        let mut span: iced::widget::text::Span<'_, Message> =
+                            iced::widget::text::Span::new(sentence)
+                                .font(self.current_font())
+                                .size(self.config.font_size as f32)
+                                .line_height(LineHeight::Relative(self.config.line_spacing));
 
-                    if Some(idx) == highlight_idx {
-                        span = span
-                            .background(iced::Background::Color(highlight))
-                            .padding(iced::Padding::from(2u16));
-                    }
+                        if idx < raw_sentences.len() {
+                            span = span.link(Message::SentenceClicked(idx));
+                        }
 
-                    span
-                })
-                .collect();
+                        if Some(idx) == highlight_idx {
+                            span = span
+                                .background(iced::Background::Color(highlight))
+                                .padding(iced::Padding::from(2u16));
+                        }
 
-            let rich: iced::widget::text::Rich<'_, Message> =
-                iced::widget::text::Rich::with_spans(spans);
+                        span
+                    })
+                    .collect();
 
-            rich.width(Length::Fill)
-                .wrapping(Wrapping::WordOrGlyph)
-                .align_x(Horizontal::Left)
-                .into()
+                let rich: iced::widget::text::Rich<'_, Message> =
+                    iced::widget::text::Rich::with_spans(spans);
+
+                rich.width(Length::Fill)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .align_x(Horizontal::Left)
+                    .into()
+            }
         };
 
+        let mut pane_content: Column<'_, Message> =
+            column![text_view_content].spacing(12).width(Length::Fill);
+
+        if !self.text_only_mode {
+            let mut image_count = 0usize;
+            for (idx, img) in self.reader.images.iter().enumerate() {
+                if self.image_assigned_page(idx) != self.reader.current_page {
+                    continue;
+                }
+                image_count += 1;
+                let image_block = column![
+                    text(format!("Image: {}", img.label)).size(14.0),
+                    image(img.path.clone())
+                        .width(Length::Fill)
+                        .height(Length::Fixed(240.0))
+                        .content_fit(ContentFit::Contain)
+                ]
+                .spacing(6)
+                .width(Length::Fill);
+                pane_content = pane_content.push(container(image_block).width(Length::Fill));
+            }
+            if image_count > 0 {
+                pane_content = pane_content.push(
+                    text(format!("Rendered {image_count} image(s) on this page.")).size(13.0),
+                );
+            }
+        }
+
         let text_view = scrollable(
-            container(text_view_content)
+            container(pane_content)
                 .width(Length::Fill)
                 .padding([self.config.margin_vertical, self.config.margin_horizontal]),
         )

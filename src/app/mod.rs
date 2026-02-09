@@ -7,11 +7,12 @@ pub use state::App;
 
 use crate::cache::Bookmark;
 use crate::config::AppConfig;
+use crate::epub_loader::LoadedBook;
 use iced::{Point, Size, Theme, window};
 
 /// Helper to launch the app with the provided text.
 pub fn run_app(
-    text: String,
+    book: LoadedBook,
     config: AppConfig,
     epub_path: std::path::PathBuf,
     bookmark: Option<Bookmark>,
@@ -37,5 +38,5 @@ pub fn run_app(
                 Theme::Light
             }
         })
-        .run_with(move || App::bootstrap(text, config, epub_path, bookmark))
+        .run_with(move || App::bootstrap(book, config, epub_path, bookmark))
 }

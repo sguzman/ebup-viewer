@@ -11,6 +11,7 @@ pub enum Message {
     FontSizeChanged(u32),
     ToggleTheme,
     ToggleSettings,
+    ToggleTextOnly,
     FontFamilyChanged(FontFamily),
     FontWeightChanged(FontWeight),
     LineSpacingChanged(f32),

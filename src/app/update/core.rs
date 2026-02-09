@@ -48,6 +48,7 @@ impl App {
             Message::FontSizeChanged(size) => self.handle_font_size_changed(size, &mut effects),
             Message::ToggleTheme => self.handle_toggle_theme(&mut effects),
             Message::ToggleSettings => self.handle_toggle_settings(&mut effects),
+            Message::ToggleTextOnly => self.handle_toggle_text_only(&mut effects),
             Message::FontFamilyChanged(family) => {
                 self.handle_font_family_changed(family, &mut effects);
             }

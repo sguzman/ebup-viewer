@@ -1,7 +1,9 @@
 use super::messages::{Component, Message};
 use super::state::{
-    App, MAX_LETTER_SPACING, MAX_MARGIN, MAX_TTS_VOLUME, MAX_WORD_SPACING, MIN_TTS_SPEED,
-    MIN_TTS_VOLUME,
+    App, IMAGE_BLOCK_SPACING_PX, IMAGE_FOOTER_FONT_SIZE_PX, IMAGE_FOOTER_LINE_HEIGHT,
+    IMAGE_LABEL_FONT_SIZE_PX, IMAGE_LABEL_LINE_HEIGHT, IMAGE_PREVIEW_HEIGHT_PX, MAX_LETTER_SPACING,
+    MAX_MARGIN, MAX_TTS_VOLUME, MAX_WORD_SPACING, MIN_TTS_SPEED, MIN_TTS_VOLUME,
+    PAGE_FLOW_SPACING_PX,
 };
 use crate::config::HighlightColor;
 use crate::pagination::{MAX_FONT_SIZE, MAX_LINES_PER_PAGE, MIN_FONT_SIZE, MIN_LINES_PER_PAGE};
@@ -59,8 +61,9 @@ impl App {
         };
 
         let available_width = self.estimated_controls_width();
-        let show_page_label = available_width >= 760.0;
-        let show_tts_progress_label = available_width >= 920.0;
+        let show_compact_status = !self.config.show_settings;
+        let show_page_label = show_compact_status && available_width >= 760.0;
+        let show_tts_progress_label = show_compact_status && available_width >= 920.0;
 
         let mut controls = row![
             prev_button,
@@ -227,8 +230,9 @@ impl App {
             }
         };
 
-        let mut pane_content: Column<'_, Message> =
-            column![text_view_content].spacing(12).width(Length::Fill);
+        let mut pane_content: Column<'_, Message> = column![text_view_content]
+            .spacing(PAGE_FLOW_SPACING_PX)
+            .width(Length::Fill);
 
         if !self.text_only_mode {
             let mut image_count = 0usize;
@@ -238,19 +242,23 @@ impl App {
                 }
                 image_count += 1;
                 let image_block = column![
-                    text(format!("Image: {}", img.label)).size(14.0),
+                    text(format!("Image: {}", img.label))
+                        .size(IMAGE_LABEL_FONT_SIZE_PX)
+                        .line_height(LineHeight::Relative(IMAGE_LABEL_LINE_HEIGHT)),
                     image(img.path.clone())
                         .width(Length::Fill)
-                        .height(Length::Fixed(240.0))
+                        .height(Length::Fixed(IMAGE_PREVIEW_HEIGHT_PX))
                         .content_fit(ContentFit::Contain)
                 ]
-                .spacing(6)
+                .spacing(IMAGE_BLOCK_SPACING_PX)
                 .width(Length::Fill);
                 pane_content = pane_content.push(container(image_block).width(Length::Fill));
             }
             if image_count > 0 {
                 pane_content = pane_content.push(
-                    text(format!("Rendered {image_count} image(s) on this page.")).size(13.0),
+                    text(format!("Rendered {image_count} image(s) on this page."))
+                        .size(IMAGE_FOOTER_FONT_SIZE_PX)
+                        .line_height(LineHeight::Relative(IMAGE_FOOTER_LINE_HEIGHT)),
                 );
             }
         }
@@ -375,6 +383,16 @@ impl App {
             self.config.letter_spacing as f32,
             |value| Message::LetterSpacingChanged(value.round() as u32),
         );
+        let total_pages = self.reader.pages.len().max(1);
+        let page_label = format!("Page {} of {}", self.reader.current_page + 1, total_pages);
+        let status_panel = column![
+            text("Reading Status").size(18.0),
+            text(page_label),
+            text(self.audio_progress_label()),
+            text(format!("Page remaining: {}", self.page_eta_label())),
+            text(format!("Book remaining: {}", self.book_eta_label())),
+        ]
+        .spacing(4);
 
         let panel = column![
             text("Reader Settings").size(20.0),
@@ -454,6 +472,7 @@ impl App {
             self.color_row("Night highlight", self.config.night_highlight, |c, v| {
                 Message::NightHighlightChanged(c, v)
             }),
+            status_panel,
         ]
         .spacing(12)
         .width(Length::Fixed(280.0));
@@ -504,7 +523,7 @@ impl App {
         .spacing(10)
         .align_y(Vertical::Center)
         .width(Length::Fill);
-        if available_width >= 920.0 {
+        if !self.config.show_settings && available_width >= 920.0 {
             controls = controls.push(self.eta_trackers_view(available_width));
         }
 

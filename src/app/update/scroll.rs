@@ -1,4 +1,8 @@
-use super::super::state::App;
+use super::super::state::{
+    App, IMAGE_BLOCK_SPACING_PX, IMAGE_FOOTER_FONT_SIZE_PX, IMAGE_FOOTER_LINE_HEIGHT,
+    IMAGE_LABEL_FONT_SIZE_PX, IMAGE_LABEL_LINE_HEIGHT, IMAGE_PREVIEW_HEIGHT_PX,
+    PAGE_FLOW_SPACING_PX,
+};
 use super::Effect;
 use crate::cache::{Bookmark, save_bookmark};
 use crate::config::FontFamily;
@@ -123,8 +127,7 @@ impl App {
 
     pub(crate) fn scroll_offset_for_sentence(&self, sentence_idx: usize) -> Option<RelativeOffset> {
         let model = self.scroll_target_model(sentence_idx)?;
-
-        let mut progress = self.sentence_progress_for_model(&model).unwrap_or_else(|| {
+        let progress = self.sentence_progress_for_model(&model).unwrap_or_else(|| {
             let clamped_idx = model
                 .target_idx
                 .min(model.sentences.len().saturating_sub(1)) as f32;
@@ -136,38 +139,26 @@ impl App {
             }
         });
 
-        if !self.text_only_mode && self.bookmark.content_height > 0.0 {
-            let image_count = self.current_page_image_count() as f32;
-            if image_count > 0.0 {
-                let extra_tail_px = image_count * Self::estimated_image_block_height_px()
-                    + Self::estimated_image_footer_height_px();
-                let text_fraction = ((self.bookmark.content_height - extra_tail_px)
-                    / self.bookmark.content_height)
-                    .clamp(0.10, 1.0);
-                progress.start *= text_fraction;
-                progress.middle *= text_fraction;
-            }
-        }
-
         let viewport_fraction = self.estimated_viewport_fraction();
         if viewport_fraction >= 0.999 {
             return Some(RelativeOffset::START);
         }
+        let content_height = self.bookmark.content_height.max(1.0);
+        let viewport_height = self.estimated_viewport_height_px(viewport_fraction);
+        let (text_top_px, text_height_px) = self.estimated_text_geometry_px(content_height);
 
-        let desired_top = if self.config.center_spoken_sentence {
-            // Center mode: keep the active sentence around viewport center.
-            let sentence_half_span = (progress.middle - progress.start).max(0.0);
-            let center_anchor = progress.start + sentence_half_span.min(0.02);
-            center_anchor - 0.50 * viewport_fraction
+        let sentence_start_px = text_top_px + progress.start * text_height_px;
+        let sentence_middle_px = text_top_px + progress.middle * text_height_px;
+
+        let desired_top_px = if self.config.center_spoken_sentence {
+            sentence_middle_px - 0.50 * viewport_height
         } else {
-            // Auto-scroll mode: keep the spoken sentence in view with forward context.
-            progress.start - 0.25 * viewport_fraction
+            sentence_start_px - 0.25 * viewport_height
         };
 
-        // `snap_to` expects offset over the scrollable range (content - viewport),
-        // not over full content height.
-        let scrollable_fraction = (1.0 - viewport_fraction).max(0.000_1);
-        let y = (desired_top / scrollable_fraction).clamp(0.0, 1.0);
+        // `snap_to` expects offset over the scrollable range (content - viewport).
+        let scrollable_px = (content_height - viewport_height).max(1.0);
+        let y = (desired_top_px / scrollable_px).clamp(0.0, 1.0);
 
         Some(RelativeOffset { x: 0.0, y })
     }
@@ -322,6 +313,27 @@ impl App {
         0.25
     }
 
+    fn estimated_viewport_height_px(&self, viewport_fraction: f32) -> f32 {
+        if self.bookmark.viewport_height > 0.0 {
+            return self.bookmark.viewport_height.max(1.0);
+        }
+        if self.bookmark.content_height > 0.0 {
+            return (self.bookmark.content_height * viewport_fraction).max(1.0);
+        }
+        1.0
+    }
+
+    fn estimated_text_geometry_px(&self, content_height: f32) -> (f32, f32) {
+        let text_container_height = if self.text_only_mode {
+            content_height
+        } else {
+            (content_height - self.estimated_non_text_tail_px()).max(1.0)
+        };
+        let top_padding = (self.config.margin_vertical as f32).min(text_container_height);
+        let text_height = (text_container_height - top_padding * 2.0).max(1.0);
+        (top_padding, text_height)
+    }
+
     fn estimated_text_width(&self) -> f32 {
         let mut width = if self.bookmark.viewport_width > 0.0 {
             self.bookmark.viewport_width
@@ -366,14 +378,19 @@ impl App {
             .count()
     }
 
-    fn estimated_image_block_height_px() -> f32 {
-        // Label text (~14px), image (240px), internal spacing (6px), external pane spacing (12px).
-        14.0 * 1.3 + 240.0 + 6.0 + 12.0
-    }
+    fn estimated_non_text_tail_px(&self) -> f32 {
+        let image_count = self.current_page_image_count() as f32;
+        if image_count <= 0.0 {
+            return 0.0;
+        }
 
-    fn estimated_image_footer_height_px() -> f32 {
-        // Footer text (~13px) plus one pane spacing step.
-        13.0 * 1.3 + 12.0
+        // Keep these values in sync with `view.rs` image layout.
+        let label_height = IMAGE_LABEL_FONT_SIZE_PX * IMAGE_LABEL_LINE_HEIGHT;
+        let footer_height = IMAGE_FOOTER_FONT_SIZE_PX * IMAGE_FOOTER_LINE_HEIGHT;
+        let image_block_height = label_height + IMAGE_BLOCK_SPACING_PX + IMAGE_PREVIEW_HEIGHT_PX;
+        let flow_spacing = PAGE_FLOW_SPACING_PX * (image_count + 1.0);
+
+        image_count * image_block_height + flow_spacing + footer_height
     }
 }
 

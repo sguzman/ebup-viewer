@@ -19,8 +19,6 @@ server_password = ""
 username = "admin"
 password = "admin"
 
-[calibre]
-
 # If true, fallback to local library path when no server target is reachable.
 allow_local_library_fallback = false
 

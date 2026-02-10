@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::warn;
 
 const DEFAULT_CALIBRE_CONFIG_PATH: &str = "conf/calibre.toml";
 const CALIBRE_CACHE_PATH: &str = ".cache/calibre-books.toml";
@@ -68,13 +69,15 @@ impl Default for CalibreConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 struct CalibreFile {
-    calibre: CalibreConfig,
+    calibre: Option<CalibreConfig>,
+    calibred: Option<CalibreConfig>,
 }
 
 impl Default for CalibreFile {
     fn default() -> Self {
         Self {
-            calibre: CalibreConfig::default(),
+            calibre: Some(CalibreConfig::default()),
+            calibred: None,
         }
     }
 }
@@ -114,9 +117,19 @@ impl CalibreConfig {
         let Ok(contents) = fs::read_to_string(&path) else {
             return Self::default();
         };
-        toml::from_str::<CalibreFile>(&contents)
-            .map(|file| file.calibre)
-            .unwrap_or_default()
+        match toml::from_str::<CalibreFile>(&contents) {
+            Ok(file) => file
+                .calibre
+                .or(file.calibred)
+                .unwrap_or_else(CalibreConfig::default),
+            Err(err) => {
+                warn!(
+                    path = %path.display(),
+                    "Invalid calibre config TOML; falling back to defaults: {err}"
+                );
+                CalibreConfig::default()
+            }
+        }
     }
 
     pub fn sanitized_extensions(&self) -> Vec<String> {

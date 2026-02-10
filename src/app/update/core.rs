@@ -1,7 +1,10 @@
 use super::super::messages::Message;
 use super::super::state::{App, TEXT_SCROLL_ID};
 use super::Effect;
+use crate::cache::{load_bookmark, load_epub_config, remember_source_path};
 use crate::calibre::{CalibreBook, CalibreColumn};
+use crate::config::load_config;
+use crate::epub_loader::load_book_content;
 use iced::Event;
 use iced::event;
 use iced::keyboard::{self, Key, Modifiers, key};
@@ -9,9 +12,9 @@ use iced::time;
 use iced::window;
 use iced::{Subscription, Task};
 use std::cmp::Ordering;
-use std::process::Command;
+use std::path::Path;
 use std::time::Duration;
-use tracing::warn;
+use tracing::{info, warn};
 
 impl App {
     pub fn subscription(app: &App) -> Subscription<Message> {
@@ -74,6 +77,13 @@ impl App {
                 path,
                 error,
             } => self.handle_calibre_book_resolved(book_id, path, error, &mut effects),
+            Message::BookLoaded {
+                path,
+                book,
+                config,
+                bookmark,
+            } => self.handle_book_loaded(path, book, config, bookmark, &mut effects),
+            Message::BookLoadFailed { path, error } => self.handle_book_load_failed(path, error),
             Message::ToggleTextOnly => self.handle_toggle_text_only(&mut effects),
             Message::FontFamilyChanged(family) => {
                 self.handle_font_family_changed(family, &mut effects);
@@ -235,26 +245,45 @@ impl App {
                 },
                 |message| message,
             ),
-            Effect::LaunchBook(path) => {
-                self.save_epub_config();
-                self.persist_bookmark();
-                self.stop_playback();
-
-                let exe = match std::env::current_exe() {
-                    Ok(exe) => exe,
-                    Err(err) => {
-                        warn!("Unable to determine current executable path: {err}");
-                        return Task::none();
-                    }
-                };
-
-                match Command::new(exe).arg(&path).spawn() {
-                    Ok(_) => iced::exit(),
-                    Err(err) => {
-                        warn!(path = %path.display(), "Failed to launch book: {err}");
-                        Task::none()
-                    }
-                }
+            Effect::LoadBook(path) => {
+                self.book_loading = true;
+                self.book_loading_error = None;
+                let requested_path = path.clone();
+                Task::perform(
+                    async move {
+                        let base_config = load_config(Path::new("conf/config.toml"));
+                        remember_source_path(&requested_path);
+                        let mut config = base_config.clone();
+                        if let Some(mut overrides) = load_epub_config(&requested_path) {
+                            overrides.log_level = base_config.log_level;
+                            overrides.tts_threads = base_config.tts_threads;
+                            overrides.tts_progress_log_interval_secs =
+                                base_config.tts_progress_log_interval_secs;
+                            overrides.key_toggle_play_pause =
+                                base_config.key_toggle_play_pause.clone();
+                            overrides.key_safe_quit = base_config.key_safe_quit.clone();
+                            overrides.key_next_sentence = base_config.key_next_sentence.clone();
+                            overrides.key_prev_sentence = base_config.key_prev_sentence.clone();
+                            overrides.key_repeat_sentence = base_config.key_repeat_sentence.clone();
+                            overrides.key_toggle_search = base_config.key_toggle_search.clone();
+                            config = overrides;
+                        }
+                        let bookmark = load_bookmark(&requested_path);
+                        match load_book_content(&requested_path) {
+                            Ok(book) => Message::BookLoaded {
+                                path: requested_path,
+                                book,
+                                config,
+                                bookmark,
+                            },
+                            Err(err) => Message::BookLoadFailed {
+                                path: requested_path,
+                                error: err.to_string(),
+                            },
+                        }
+                    },
+                    |message| message,
+                )
             }
             Effect::QuitSafely => {
                 self.save_epub_config();
@@ -407,7 +436,7 @@ impl App {
     }
 
     fn handle_open_recent_book(&mut self, path: std::path::PathBuf, effects: &mut Vec<Effect>) {
-        effects.push(Effect::LaunchBook(path));
+        effects.push(Effect::LoadBook(path));
     }
 
     fn handle_open_path_input_changed(&mut self, path: String) {
@@ -420,7 +449,7 @@ impl App {
             return;
         }
         if candidate.exists() {
-            effects.push(Effect::LaunchBook(candidate));
+            effects.push(Effect::LoadBook(candidate));
         }
     }
 
@@ -464,7 +493,7 @@ impl App {
         };
 
         if let Some(path) = book.path.clone().filter(|path| path.exists()) {
-            effects.push(Effect::LaunchBook(path));
+            effects.push(Effect::LoadBook(path));
         } else {
             self.calibre.error = None;
             effects.push(Effect::ResolveCalibreBook {
@@ -495,7 +524,31 @@ impl App {
             entry.path = Some(path.clone());
         }
         self.calibre.error = None;
-        effects.push(Effect::LaunchBook(path));
+        effects.push(Effect::LoadBook(path));
+    }
+
+    fn handle_book_loaded(
+        &mut self,
+        path: std::path::PathBuf,
+        book: crate::epub_loader::LoadedBook,
+        config: crate::config::AppConfig,
+        bookmark: Option<crate::cache::Bookmark>,
+        effects: &mut Vec<Effect>,
+    ) {
+        let initial_scroll = self.apply_loaded_book(book, config, path.clone(), bookmark);
+        self.refresh_recent_books();
+        if let Some(offset) = initial_scroll {
+            effects.push(Effect::ScrollTo(offset));
+        } else if self.tts.current_sentence_idx.is_some() {
+            effects.push(Effect::AutoScrollToCurrent);
+        }
+        info!(path = %path.display(), "Book loaded in-process");
+    }
+
+    fn handle_book_load_failed(&mut self, path: std::path::PathBuf, error: String) {
+        self.book_loading = false;
+        self.book_loading_error = Some(format!("Failed to open {}: {}", path.display(), error));
+        warn!(path = %path.display(), "Failed to load book in-process: {error}");
     }
 
     fn handle_sort_calibre_by(&mut self, column: CalibreColumn) {

@@ -314,8 +314,12 @@ impl App {
 
 impl App {
     fn starter_view(&self) -> Element<'_, Message> {
-        let open_button = button("Open Path").on_press(Message::OpenPathRequested);
-        let top = column![
+        let open_button = if self.book_loading {
+            button("Opening...")
+        } else {
+            button("Open Path").on_press(Message::OpenPathRequested)
+        };
+        let mut top = column![
             text("Welcome").size(28.0),
             text("Open a local file or choose a book from Calibre / Recent.").size(14.0),
             row![
@@ -346,6 +350,13 @@ impl App {
             .spacing(8),
         ]
         .spacing(12);
+
+        if self.book_loading {
+            top = top.push(text("Loading selected book...").size(13.0));
+        }
+        if let Some(err) = &self.book_loading_error {
+            top = top.push(text(err).size(13.0));
+        }
 
         let mut layout: Row<'_, Message> = row![container(top).padding(16).width(Length::Fill)];
         if self.recent.visible {
@@ -476,7 +487,11 @@ impl App {
                     ]
                     .spacing(2)
                     .width(Length::Fill),
-                    button("Open").on_press(Message::OpenRecentBook(book.source_path.clone()))
+                    if self.book_loading {
+                        button("Open")
+                    } else {
+                        button("Open").on_press(Message::OpenRecentBook(book.source_path.clone()))
+                    }
                 ]
                 .spacing(8)
                 .align_y(Vertical::Center);
@@ -670,8 +685,12 @@ impl App {
                         ),
                     };
                 }
-                let open_button = button(text("Open").size(row_font_size))
-                    .on_press(Message::OpenCalibreBook(book.id));
+                let open_button = if self.book_loading {
+                    button(text("Open").size(row_font_size))
+                } else {
+                    button(text("Open").size(row_font_size))
+                        .on_press(Message::OpenCalibreBook(book.id))
+                };
                 line = line.push(open_button.width(Length::Fixed(ACTION_COL_WIDTH)));
                 rows = rows.push(line);
             }

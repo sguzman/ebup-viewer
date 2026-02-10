@@ -25,6 +25,6 @@ pub(super) enum Effect {
         book: CalibreBook,
         config: CalibreConfig,
     },
-    LaunchBook(std::path::PathBuf),
+    LoadBook(std::path::PathBuf),
     QuitSafely,
 }

@@ -135,6 +135,8 @@ pub struct App {
     pub(super) recent: RecentState,
     pub(super) calibre: CalibreState,
     pub(super) open_path_input: String,
+    pub(super) book_loading: bool,
+    pub(super) book_loading_error: Option<String>,
 }
 
 impl App {
@@ -401,6 +403,115 @@ impl App {
         save_epub_config(&self.epub_path, &self.config);
     }
 
+    pub(super) fn apply_loaded_book(
+        &mut self,
+        book: LoadedBook,
+        mut config: AppConfig,
+        epub_path: PathBuf,
+        bookmark: Option<Bookmark>,
+    ) -> Option<RelativeOffset> {
+        clamp_config(&mut config);
+
+        self.stop_playback();
+        self.starter_mode = false;
+        self.book_loading = false;
+        self.book_loading_error = None;
+        self.text_only_mode = false;
+        self.text_only_preview = None;
+        self.open_path_input.clear();
+        self.search.visible = false;
+        self.search.query.clear();
+        self.search.error = None;
+        self.search.matches.clear();
+        self.search.selected_match = 0;
+        self.recent.visible = false;
+        self.calibre.visible = false;
+        self.calibre.error = None;
+        self.config = config;
+        self.epub_path = epub_path;
+        self.reader.full_text = book.text;
+        self.reader.images = book.images;
+        self.reader.current_page = 0;
+        self.bookmark.last_scroll_offset = RelativeOffset::START;
+        self.bookmark.viewport_fraction = 0.25;
+        self.bookmark.pending_sentence_snap = None;
+        self.tts = TtsState {
+            engine: TtsEngine::new(
+                self.config.tts_model_path.clone().into(),
+                self.config.tts_espeak_path.clone().into(),
+            )
+            .ok(),
+            playback: None,
+            last_sentences: Vec::new(),
+            current_sentence_idx: None,
+            sentence_offset: 0,
+            track: Vec::new(),
+            started_at: None,
+            elapsed: Duration::ZERO,
+            running: false,
+            request_id: 0,
+            sources_per_sentence: 1,
+            total_sources: 0,
+            display_to_audio: Vec::new(),
+            audio_to_display: Vec::new(),
+        };
+
+        self.repaginate();
+        let mut initial_scroll: Option<RelativeOffset> = None;
+        if let Some(bookmark) = bookmark {
+            let capped_page = bookmark.page.min(self.reader.pages.len().saturating_sub(1));
+            self.reader.current_page = capped_page;
+            let scroll_y = if bookmark.scroll_y.is_finite() {
+                bookmark.scroll_y.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            self.bookmark.last_scroll_offset = RelativeOffset {
+                x: 0.0,
+                y: scroll_y,
+            };
+
+            self.tts.last_sentences = self.raw_sentences_for_page(self.reader.current_page);
+            let restored_idx = bookmark
+                .sentence_text
+                .as_ref()
+                .and_then(|target| self.tts.last_sentences.iter().position(|s| s == target))
+                .or(bookmark.sentence_idx)
+                .map(|idx| idx.min(self.tts.last_sentences.len().saturating_sub(1)));
+            self.tts.current_sentence_idx = restored_idx;
+            self.bookmark.pending_sentence_snap = restored_idx;
+
+            if self.bookmark.last_scroll_offset.y > 0.0 {
+                initial_scroll = Some(self.bookmark.last_scroll_offset);
+            } else if let Some(idx) = restored_idx {
+                if let Some(offset) = self.scroll_offset_for_sentence(idx) {
+                    self.bookmark.last_scroll_offset = offset;
+                    initial_scroll = Some(offset);
+                }
+            }
+
+            tracing::info!(
+                page = self.reader.current_page + 1,
+                sentence_idx = ?self.tts.current_sentence_idx,
+                scroll = self.bookmark.last_scroll_offset.y,
+                "Restored bookmark from cache"
+            );
+        } else {
+            tracing::info!("Starting from first page");
+        }
+
+        tracing::info!(
+            path = %self.epub_path.display(),
+            font_size = self.config.font_size,
+            night_mode = matches!(self.config.theme, ThemeMode::Night),
+            "Loaded book into reader state"
+        );
+
+        self.ensure_text_only_preview_for_page(self.reader.current_page);
+        self.update_search_matches();
+        initial_scroll
+    }
+
     pub(super) fn update_search_matches(&mut self) {
         let query = self.search.query.trim();
         if query.is_empty() {
@@ -535,6 +646,8 @@ impl App {
                 sort_desc: false,
             },
             open_path_input: String::new(),
+            book_loading: false,
+            book_loading_error: None,
         };
 
         app.repaginate();
@@ -669,6 +782,8 @@ impl App {
                 sort_desc: false,
             },
             open_path_input: String::new(),
+            book_loading: false,
+            book_loading_error: None,
         };
 
         let init_task = if app.calibre.config.enabled {

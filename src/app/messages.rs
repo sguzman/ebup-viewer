@@ -1,5 +1,8 @@
+use crate::cache::Bookmark;
 use crate::calibre::{CalibreBook, CalibreColumn};
+use crate::config::AppConfig;
 use crate::config::{FontFamily, FontWeight};
+use crate::epub_loader::LoadedBook;
 use iced::keyboard::{Key, Modifiers};
 use iced::widget::scrollable::RelativeOffset;
 use std::path::PathBuf;
@@ -35,6 +38,16 @@ pub enum Message {
         book_id: u64,
         path: Option<PathBuf>,
         error: Option<String>,
+    },
+    BookLoaded {
+        path: PathBuf,
+        book: LoadedBook,
+        config: AppConfig,
+        bookmark: Option<Bookmark>,
+    },
+    BookLoadFailed {
+        path: PathBuf,
+        error: String,
     },
     ToggleTextOnly,
     FontFamilyChanged(FontFamily),

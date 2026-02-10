@@ -43,8 +43,15 @@ pub fn run_app(
 
 /// Helper to launch the app in starter mode (no book path yet).
 pub fn run_app_starter(config: AppConfig) -> iced::Result {
+    const STARTER_MIN_WIDTH: f32 = 1600.0;
+    const STARTER_MIN_HEIGHT: f32 = 780.0;
+
     let window_settings = window::Settings {
-        size: Size::new(config.window_width, config.window_height),
+        size: Size::new(
+            config.window_width.max(STARTER_MIN_WIDTH),
+            config.window_height.max(STARTER_MIN_HEIGHT),
+        ),
+        min_size: Some(Size::new(STARTER_MIN_WIDTH, STARTER_MIN_HEIGHT)),
         position: match (config.window_pos_x, config.window_pos_y) {
             (Some(x), Some(y)) if x.is_finite() && y.is_finite() => {
                 window::Position::Specific(Point::new(x, y))

@@ -5,7 +5,6 @@ use super::super::state::{
 };
 use super::Effect;
 use crate::cache::{Bookmark, save_bookmark};
-use crate::config::FontFamily;
 use iced::widget::scrollable::RelativeOffset;
 use tracing::info;
 
@@ -171,20 +170,30 @@ impl App {
             return None;
         }
 
-        let sentence_weights =
-            self.estimate_sentence_line_weights(&model.sentences, model.extra_gap_lines);
         let idx = model
             .target_idx
-            .min(sentence_weights.len().saturating_sub(1));
-        let total_weight: f32 = sentence_weights.iter().sum();
-        if total_weight <= f32::EPSILON {
+            .min(model.sentences.len().saturating_sub(1));
+        let sentence_units: Vec<f32> = model
+            .sentences
+            .iter()
+            .enumerate()
+            .map(|(i, sentence)| {
+                let mut units = sentence.chars().count().max(1) as f32;
+                if model.separator_chars > 0 && i + 1 < model.sentences.len() {
+                    units += model.separator_chars as f32;
+                }
+                units
+            })
+            .collect();
+        let total_units: f32 = sentence_units.iter().sum();
+        if total_units <= f32::EPSILON {
             return None;
         }
 
-        let before_weight: f32 = sentence_weights.iter().take(idx).sum();
-        let sentence_weight = sentence_weights[idx].max(f32::EPSILON);
-        let start = (before_weight / total_weight).clamp(0.0, 1.0);
-        let middle = ((before_weight + sentence_weight * 0.5) / total_weight).clamp(0.0, 1.0);
+        let before_units: f32 = sentence_units.iter().take(idx).sum();
+        let current_units = sentence_units[idx].max(f32::EPSILON);
+        let start = (before_units / total_units).clamp(0.0, 1.0);
+        let middle = ((before_units + current_units * 0.5) / total_units).clamp(0.0, 1.0);
 
         Some(SentenceProgress { start, middle })
     }
@@ -203,8 +212,8 @@ impl App {
             return Some(ScrollTargetModel {
                 sentences: preview.audio_sentences.clone(),
                 target_idx,
-                // Text-only renders each sentence separated by a blank line.
-                extra_gap_lines: 1.0,
+                // Text-only renders each sentence separated by "\n\n".
+                separator_chars: 2,
             });
         }
 
@@ -216,7 +225,7 @@ impl App {
         Some(ScrollTargetModel {
             sentences,
             target_idx,
-            extra_gap_lines: 0.0,
+            separator_chars: 0,
         })
     }
 
@@ -246,61 +255,6 @@ impl App {
             })
             .or(Some(0))
             .map(|idx| idx.min(audio_len.saturating_sub(1)))
-    }
-
-    fn estimate_sentence_line_weights(
-        &self,
-        sentences: &[String],
-        extra_gap_lines: f32,
-    ) -> Vec<f32> {
-        let available_width = self.estimated_text_width();
-        if available_width <= f32::EPSILON {
-            return sentences.iter().map(|_| 1.0).collect();
-        }
-
-        let glyph_width = self.estimated_glyph_width_px().max(1.0);
-        let max_units_per_line = (available_width / glyph_width).max(8.0);
-        let line_height_weight = self.config.line_spacing.max(0.8);
-
-        sentences
-            .iter()
-            .enumerate()
-            .map(|(idx, sentence)| {
-                let mut lines = 1.0f32;
-                let mut line_units = 0.0f32;
-
-                for ch in sentence.chars() {
-                    if ch == '\n' {
-                        lines += 1.0;
-                        line_units = 0.0;
-                        continue;
-                    }
-
-                    let units = if ch.is_whitespace() {
-                        0.45 + self.config.word_spacing as f32 * 0.45
-                    } else if ch.is_ascii_punctuation() {
-                        0.55 + self.config.letter_spacing as f32 * 0.10
-                    } else if ch.is_ascii() {
-                        1.0 + self.config.letter_spacing as f32 * 0.35
-                    } else {
-                        1.8 + self.config.letter_spacing as f32 * 0.20
-                    };
-
-                    if line_units + units > max_units_per_line {
-                        lines += 1.0;
-                        line_units = units;
-                    } else {
-                        line_units += units;
-                    }
-                }
-
-                let mut weight = lines * line_height_weight;
-                if extra_gap_lines > 0.0 && idx + 1 < sentences.len() {
-                    weight += extra_gap_lines * line_height_weight;
-                }
-                weight
-            })
-            .collect()
     }
 
     fn estimated_viewport_fraction(&self) -> f32 {
@@ -337,41 +291,6 @@ impl App {
         (top_padding, text_height)
     }
 
-    fn estimated_text_width(&self) -> f32 {
-        let mut width = if self.bookmark.viewport_width > 0.0 {
-            self.bookmark.viewport_width
-        } else {
-            let mut fallback = self.config.window_width.max(1.0);
-            if self.config.show_settings {
-                fallback = (fallback - 320.0).max(1.0);
-            }
-            fallback
-        };
-        let margin_total = (self.config.margin_horizontal as f32 * 2.0).min(width * 0.9);
-        width = (width - margin_total).max(1.0);
-        width
-    }
-
-    fn estimated_glyph_width_px(&self) -> f32 {
-        let font_size = self.config.font_size.max(1) as f32;
-        let family_scale = match self.config.font_family {
-            FontFamily::Monospace | FontFamily::Courier | FontFamily::FiraCode => 0.64,
-            FontFamily::Serif => 0.56,
-            FontFamily::Lexend | FontFamily::NotoSans => 0.54,
-            FontFamily::AtkinsonHyperlegible
-            | FontFamily::AtkinsonHyperlegibleNext
-            | FontFamily::LexicaUltralegible => 0.57,
-            _ => 0.55,
-        };
-        let weight_scale = match self.config.font_weight {
-            crate::config::FontWeight::Light => 0.98,
-            crate::config::FontWeight::Normal => 1.0,
-            crate::config::FontWeight::Bold => 1.03,
-        };
-
-        font_size * family_scale * weight_scale
-    }
-
     fn current_page_image_count(&self) -> usize {
         self.reader
             .images
@@ -400,7 +319,7 @@ impl App {
 struct ScrollTargetModel {
     sentences: Vec<String>,
     target_idx: usize,
-    extra_gap_lines: f32,
+    separator_chars: usize,
 }
 
 #[derive(Clone, Copy)]

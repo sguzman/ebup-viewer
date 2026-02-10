@@ -84,12 +84,12 @@ impl App {
             button(text("Next").wrapping(Wrapping::None))
         };
 
-        let available_width = self.estimated_controls_width();
+        let available_width = self.controls_layout_width();
         let show_compact_status = !self.config.show_settings;
-        let show_settings_toggle = available_width >= 520.0;
-        let show_search_toggle = available_width >= 640.0;
-        let show_tts_toggle = available_width >= 760.0;
-        let show_text_only_toggle = available_width >= 860.0;
+        let show_settings_toggle = available_width >= 420.0;
+        let show_search_toggle = available_width >= 520.0;
+        let show_tts_toggle = available_width >= 620.0;
+        let show_text_only_toggle = available_width >= 760.0;
         let show_page_label = show_compact_status && available_width >= 760.0;
         let show_tts_progress_label = show_compact_status && available_width >= 920.0;
 
@@ -1043,11 +1043,11 @@ impl App {
         } else {
             button(text("Play From Highlight").wrapping(Wrapping::None))
         };
-        let available_width = self.estimated_controls_width();
-        let show_sentence_step = available_width >= 520.0;
-        let show_play_page = available_width >= 700.0;
-        let show_play_from_highlight = available_width >= 840.0;
-        let show_jump = available_width >= 980.0;
+        let available_width = self.controls_layout_width();
+        let show_sentence_step = available_width >= 420.0;
+        let show_play_page = available_width >= 560.0;
+        let show_play_from_highlight = available_width >= 700.0;
+        let show_jump = available_width >= 840.0;
 
         let mut controls = row![]
             .spacing(10)
@@ -1204,6 +1204,12 @@ impl App {
             width = (width - 320.0).max(0.0);
         }
         width.max(0.0)
+    }
+
+    fn controls_layout_width(&self) -> f32 {
+        let stable_window_width = self.config.window_width.max(320.0);
+        let measured = self.estimated_controls_width();
+        measured.max(stable_window_width)
     }
 
     fn format_duration_dhms(duration: Duration) -> String {

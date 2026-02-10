@@ -314,6 +314,11 @@ impl App {
 
 impl App {
     fn starter_view(&self) -> Element<'_, Message> {
+        let starter_width = self.config.window_width.max(320.0);
+        let show_recent_panel = self.recent.visible && starter_width >= 1_260.0;
+        let show_calibre_panel = self.calibre.visible && starter_width >= 980.0;
+        let show_refresh_button = starter_width >= 1_120.0;
+
         let open_button = if self.book_loading {
             button("Opening...")
         } else {
@@ -345,7 +350,11 @@ impl App {
                     "Show Calibre"
                 })
                 .on_press(Message::ToggleCalibreBrowser),
-                button("Refresh Calibre").on_press(Message::RefreshCalibreBooks),
+                if show_refresh_button {
+                    button("Refresh Calibre").on_press(Message::RefreshCalibreBooks)
+                } else {
+                    button("Refresh")
+                },
             ]
             .spacing(8),
         ]
@@ -357,12 +366,18 @@ impl App {
         if let Some(err) = &self.book_loading_error {
             top = top.push(text(err).size(13.0));
         }
+        if self.recent.visible && !show_recent_panel {
+            top = top.push(text("Recent panel hidden: window too narrow.").size(12.0));
+        }
+        if self.calibre.visible && !show_calibre_panel {
+            top = top.push(text("Calibre panel hidden: window too narrow.").size(12.0));
+        }
 
         let mut layout: Row<'_, Message> = row![container(top).padding(16).width(Length::Fill)];
-        if self.recent.visible {
+        if show_recent_panel {
             layout = layout.push(self.recent_panel());
         }
-        if self.calibre.visible {
+        if show_calibre_panel {
             layout = layout.push(self.calibre_panel());
         }
         layout.spacing(16).into()
@@ -524,7 +539,57 @@ impl App {
         } else if self.calibre.books.is_empty() {
             body = body.push(text("No eligible books found.").size(13.0));
         } else {
-            let columns = self.calibre.config.sanitized_columns();
+            let mut columns = self.calibre.config.sanitized_columns();
+            let mut estimated_min_width = 420.0;
+            for column in &columns {
+                estimated_min_width += match column {
+                    CalibreColumn::Title => 240.0,
+                    CalibreColumn::Author => 220.0,
+                    CalibreColumn::Extension => 72.0,
+                    CalibreColumn::Year => 72.0,
+                    CalibreColumn::Size => 88.0,
+                };
+            }
+            let panel_budget = if self.recent.visible {
+                (self.config.window_width - 420.0).max(420.0)
+            } else {
+                (self.config.window_width - 120.0).max(420.0)
+            };
+            while estimated_min_width > panel_budget && columns.len() > 1 {
+                if let Some(idx) = columns
+                    .iter()
+                    .position(|c| matches!(c, CalibreColumn::Size))
+                {
+                    columns.remove(idx);
+                    estimated_min_width -= 88.0;
+                    continue;
+                }
+                if let Some(idx) = columns
+                    .iter()
+                    .position(|c| matches!(c, CalibreColumn::Year))
+                {
+                    columns.remove(idx);
+                    estimated_min_width -= 72.0;
+                    continue;
+                }
+                if let Some(idx) = columns
+                    .iter()
+                    .position(|c| matches!(c, CalibreColumn::Extension))
+                {
+                    columns.remove(idx);
+                    estimated_min_width -= 72.0;
+                    continue;
+                }
+                if let Some(idx) = columns
+                    .iter()
+                    .position(|c| matches!(c, CalibreColumn::Author))
+                {
+                    columns.remove(idx);
+                    estimated_min_width -= 220.0;
+                    continue;
+                }
+                break;
+            }
             let header_font_size = (self.config.font_size as f32 - 1.0).max(10.0);
             let row_font_size = (self.config.font_size as f32 - 2.0).max(9.0);
             let needle = self.calibre.search_query.trim().to_ascii_lowercase();
@@ -758,7 +823,8 @@ impl App {
         button(
             text(format!("{label}{sort_hint}"))
                 .size(font_size)
-                .align_x(Horizontal::Left),
+                .align_x(Horizontal::Left)
+                .wrapping(Wrapping::None),
         )
         .on_press(Message::SortCalibreBy(column))
         .width(width)

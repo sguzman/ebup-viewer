@@ -63,7 +63,14 @@ impl App {
             Message::CalibreBooksLoaded { books, error } => {
                 self.handle_calibre_books_loaded(books, error)
             }
-            Message::OpenCalibreBook(path) => self.handle_open_calibre_book(path, &mut effects),
+            Message::OpenCalibreBook(book_id) => {
+                self.handle_open_calibre_book(book_id, &mut effects)
+            }
+            Message::CalibreBookResolved {
+                book_id,
+                path,
+                error,
+            } => self.handle_calibre_book_resolved(book_id, path, error, &mut effects),
             Message::ToggleTextOnly => self.handle_toggle_text_only(&mut effects),
             Message::FontFamilyChanged(family) => {
                 self.handle_font_family_changed(family, &mut effects);
@@ -208,6 +215,23 @@ impl App {
                     |message| message,
                 )
             }
+            Effect::ResolveCalibreBook { book, config } => Task::perform(
+                async move {
+                    match crate::calibre::materialize_book_path(&config, &book) {
+                        Ok(path) => Message::CalibreBookResolved {
+                            book_id: book.id,
+                            path: Some(path),
+                            error: None,
+                        },
+                        Err(err) => Message::CalibreBookResolved {
+                            book_id: book.id,
+                            path: None,
+                            error: Some(err.to_string()),
+                        },
+                    }
+                },
+                |message| message,
+            ),
             Effect::LaunchBook(path) => {
                 self.save_epub_config();
                 self.persist_bookmark();
@@ -420,7 +444,44 @@ impl App {
         self.sort_calibre_books();
     }
 
-    fn handle_open_calibre_book(&mut self, path: std::path::PathBuf, effects: &mut Vec<Effect>) {
+    fn handle_open_calibre_book(&mut self, book_id: u64, effects: &mut Vec<Effect>) {
+        let Some(book) = self.calibre.books.iter().find(|b| b.id == book_id).cloned() else {
+            self.calibre.error = Some(format!("Book id {book_id} not found in loaded catalogue"));
+            return;
+        };
+
+        if let Some(path) = book.path.clone().filter(|path| path.exists()) {
+            effects.push(Effect::LaunchBook(path));
+        } else {
+            self.calibre.error = None;
+            effects.push(Effect::ResolveCalibreBook {
+                book,
+                config: self.calibre.config.clone(),
+            });
+        }
+    }
+
+    fn handle_calibre_book_resolved(
+        &mut self,
+        book_id: u64,
+        path: Option<std::path::PathBuf>,
+        error: Option<String>,
+        effects: &mut Vec<Effect>,
+    ) {
+        if let Some(err) = error {
+            self.calibre.error = Some(format!("Failed to open book {book_id}: {err}"));
+            return;
+        }
+
+        let Some(path) = path else {
+            self.calibre.error = Some(format!("Book {book_id} could not be resolved"));
+            return;
+        };
+
+        if let Some(entry) = self.calibre.books.iter_mut().find(|b| b.id == book_id) {
+            entry.path = Some(path.clone());
+        }
+        self.calibre.error = None;
         effects.push(Effect::LaunchBook(path));
     }
 

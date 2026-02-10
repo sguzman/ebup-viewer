@@ -535,9 +535,12 @@ impl App {
             body = body.push(text("No eligible books found.").size(13.0));
         } else {
             let columns = self.calibre.config.sanitized_columns();
+            let header_font_size = (self.config.font_size as f32 - 1.0).max(10.0);
+            let row_font_size = (self.config.font_size as f32 - 2.0).max(9.0);
 
             let mut header: Row<'_, Message> = row![
                 text("Cover")
+                    .size(header_font_size)
                     .width(Length::Fixed(COVER_COL_WIDTH))
                     .align_x(Horizontal::Center)
             ]
@@ -548,32 +551,38 @@ impl App {
                     CalibreColumn::Title => header.push(self.calibre_header_button(
                         CalibreColumn::Title,
                         "Title",
-                        Length::FillPortion(4),
+                        Length::FillPortion(2),
+                        header_font_size,
                     )),
                     CalibreColumn::Extension => header.push(self.calibre_header_button(
                         CalibreColumn::Extension,
                         "Ext",
                         Length::FillPortion(1),
+                        header_font_size,
                     )),
                     CalibreColumn::Author => header.push(self.calibre_header_button(
                         CalibreColumn::Author,
                         "Author",
-                        Length::FillPortion(3),
+                        Length::FillPortion(2),
+                        header_font_size,
                     )),
                     CalibreColumn::Year => header.push(self.calibre_header_button(
                         CalibreColumn::Year,
                         "Year",
-                        Length::FillPortion(1),
+                        Length::FillPortion(2),
+                        header_font_size,
                     )),
                     CalibreColumn::Size => header.push(self.calibre_header_button(
                         CalibreColumn::Size,
                         "Size",
-                        Length::FillPortion(1),
+                        Length::FillPortion(2),
+                        header_font_size,
                     )),
                 };
             }
             header = header.push(
                 text("Open")
+                    .size(header_font_size)
                     .width(Length::Fixed(ACTION_COL_WIDTH))
                     .align_x(Horizontal::Center),
             );
@@ -608,36 +617,38 @@ impl App {
                     line = match column {
                         CalibreColumn::Title => line.push(
                             text(Self::truncate_text(&book.title, 44))
-                                .width(Length::FillPortion(4))
+                                .size(row_font_size)
+                                .width(Length::FillPortion(2))
                                 .wrapping(Wrapping::None),
                         ),
                         CalibreColumn::Extension => line.push(
                             text(book.extension.to_uppercase())
+                                .size(row_font_size)
                                 .width(Length::FillPortion(1))
                                 .wrapping(Wrapping::None),
                         ),
                         CalibreColumn::Author => line.push(
                             text(Self::truncate_text(&book.authors, 26))
-                                .width(Length::FillPortion(3))
+                                .size(row_font_size)
+                                .width(Length::FillPortion(2))
                                 .wrapping(Wrapping::None),
                         ),
                         CalibreColumn::Year => line.push(
                             text(year.clone())
-                                .width(Length::FillPortion(1))
+                                .size(row_font_size)
+                                .width(Length::FillPortion(2))
                                 .wrapping(Wrapping::None),
                         ),
                         CalibreColumn::Size => line.push(
                             text(size.clone())
-                                .width(Length::FillPortion(1))
+                                .size(row_font_size)
+                                .width(Length::FillPortion(2))
                                 .wrapping(Wrapping::None),
                         ),
                     };
                 }
-                let open_button = if let Some(path) = &book.path {
-                    button("Open").on_press(Message::OpenCalibreBook(path.clone()))
-                } else {
-                    button("Open")
-                };
+                let open_button = button(text("Open").size(row_font_size))
+                    .on_press(Message::OpenCalibreBook(book.id));
                 line = line.push(open_button.width(Length::Fixed(ACTION_COL_WIDTH)));
                 rows = rows.push(line);
             }
@@ -656,7 +667,7 @@ impl App {
             body
         ]
         .spacing(8)
-        .width(Length::Fixed(640.0));
+        .width(Length::FillPortion(2));
 
         container(panel).padding(12).into()
     }
@@ -696,16 +707,21 @@ impl App {
         column: CalibreColumn,
         label: &str,
         width: Length,
+        font_size: f32,
     ) -> Element<'_, Message> {
         let sort_hint = if self.calibre.sort_column == column {
             if self.calibre.sort_desc { " D" } else { " A" }
         } else {
             ""
         };
-        button(text(format!("{label}{sort_hint}")).align_x(Horizontal::Left))
-            .on_press(Message::SortCalibreBy(column))
-            .width(width)
-            .into()
+        button(
+            text(format!("{label}{sort_hint}"))
+                .size(font_size)
+                .align_x(Horizontal::Left),
+        )
+        .on_press(Message::SortCalibreBy(column))
+        .width(width)
+        .into()
     }
 
     pub(super) fn settings_panel(&self) -> Element<'_, Message> {

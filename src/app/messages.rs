@@ -29,7 +29,12 @@ pub enum Message {
         books: Vec<CalibreBook>,
         error: Option<String>,
     },
-    OpenCalibreBook(PathBuf),
+    OpenCalibreBook(u64),
+    CalibreBookResolved {
+        book_id: u64,
+        path: Option<PathBuf>,
+        error: Option<String>,
+    },
     ToggleTextOnly,
     FontFamilyChanged(FontFamily),
     FontWeightChanged(FontWeight),

@@ -1,3 +1,4 @@
+use crate::calibre::{CalibreBook, CalibreConfig};
 use iced::widget::scrollable::RelativeOffset;
 
 mod appearance;
@@ -10,11 +11,20 @@ mod tts;
 pub(super) enum Effect {
     SaveConfig,
     SaveBookmark,
-    StartTts { page: usize, sentence_idx: usize },
+    StartTts {
+        page: usize,
+        sentence_idx: usize,
+    },
     StopTts,
     ScrollTo(RelativeOffset),
     AutoScrollToCurrent,
-    LoadCalibreBooks { force_refresh: bool },
+    LoadCalibreBooks {
+        force_refresh: bool,
+    },
+    ResolveCalibreBook {
+        book: CalibreBook,
+        config: CalibreConfig,
+    },
     LaunchBook(std::path::PathBuf),
     QuitSafely,
 }

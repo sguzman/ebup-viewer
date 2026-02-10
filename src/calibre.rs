@@ -11,6 +11,7 @@ use tracing::warn;
 const DEFAULT_CALIBRE_CONFIG_PATH: &str = "conf/calibre.toml";
 const CALIBRE_CACHE_PATH: &str = ".cache/calibre-books.toml";
 const CALIBRE_CACHE_REV: &str = "calibre-cache-v1";
+const CALIBRE_DOWNLOAD_DIR: &str = ".cache/calibre-downloads";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
@@ -200,6 +201,71 @@ pub fn load_books(config: &CalibreConfig, force_refresh: bool) -> Result<Vec<Cal
     Ok(books)
 }
 
+pub fn materialize_book_path(config: &CalibreConfig, book: &CalibreBook) -> Result<PathBuf> {
+    if let Some(path) = book.path.as_ref().filter(|path| path.exists()) {
+        return Ok(path.clone());
+    }
+
+    let ext = canonical_extension(&book.extension);
+    let cache_root = PathBuf::from(CALIBRE_DOWNLOAD_DIR);
+    fs::create_dir_all(&cache_root)
+        .with_context(|| format!("failed to create {}", cache_root.display()))?;
+
+    let file_name = format!("{}-{}.{}", book.id, short_title_hash(&book.title), ext);
+    let target_path = cache_root.join(file_name);
+    if target_path.exists() {
+        return Ok(target_path);
+    }
+
+    let mut last_err = None;
+    for target in calibre_targets(config) {
+        let tmp_dir = cache_root.join(format!(
+            "tmp-{}-{}-{}",
+            book.id,
+            std::process::id(),
+            now_unix_nanos()
+        ));
+        if let Err(err) = fs::create_dir_all(&tmp_dir) {
+            last_err = Some(format!("failed to create {}: {err}", tmp_dir.display()));
+            continue;
+        }
+
+        let export_result = run_calibredb_export(config, &target, book.id, &ext, &tmp_dir)
+            .and_then(|_| {
+                find_exported_file(&tmp_dir, &ext).ok_or_else(|| {
+                    anyhow!(
+                        "export completed but no .{ext} file was found in {}",
+                        tmp_dir.display()
+                    )
+                })
+            })
+            .and_then(|found| {
+                fs::copy(&found, &target_path).with_context(|| {
+                    format!(
+                        "failed to copy exported file {} -> {}",
+                        found.display(),
+                        target_path.display()
+                    )
+                })?;
+                Ok(())
+            });
+
+        let _ = fs::remove_dir_all(&tmp_dir);
+
+        match export_result {
+            Ok(()) => return Ok(target_path),
+            Err(err) => last_err = Some(format!("{}: {err}", target.label)),
+        }
+    }
+
+    Err(anyhow!(
+        "failed to materialize book id={} ext={} via calibre targets. {}",
+        book.id,
+        ext,
+        last_err.unwrap_or_else(|| "no export targets succeeded".to_string())
+    ))
+}
+
 fn fetch_books(config: &CalibreConfig) -> Result<Vec<CalibreBook>> {
     let rows = fetch_rows_from_targets(config)?;
     let allowed_extensions = config.sanitized_extensions();
@@ -311,6 +377,47 @@ fn run_calibredb_list(
             )
         })?;
     Ok(rows)
+}
+
+fn run_calibredb_export(
+    config: &CalibreConfig,
+    target: &CalibreTarget,
+    book_id: u64,
+    extension: &str,
+    out_dir: &Path,
+) -> Result<()> {
+    let mut cmd = Command::new(&config.calibredb_bin);
+    cmd.arg("--with-library").arg(&target.with_library);
+    if let Some(username) = &target.username {
+        cmd.arg("--username").arg(username);
+    }
+    if let Some(password) = &target.password {
+        cmd.arg("--password").arg(password);
+    }
+    cmd.arg("export")
+        .arg("--single-dir")
+        .arg("--dont-write-opf")
+        .arg("--dont-save-cover")
+        .arg("--dont-save-extra-files")
+        .arg("--to-dir")
+        .arg(out_dir)
+        .arg("--formats")
+        .arg(extension)
+        .arg(book_id.to_string());
+
+    let output = cmd.output().with_context(|| {
+        format!(
+            "failed to run calibredb export for id {book_id} against {}",
+            target.label
+        )
+    })?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            String::from_utf8_lossy(&output.stderr).trim().to_string()
+        ))
+    }
 }
 
 struct CalibreTarget {
@@ -487,6 +594,41 @@ fn normalize_format_value(raw: &str) -> String {
         .unwrap_or_default()
 }
 
+fn canonical_extension(raw: &str) -> String {
+    let normalized = raw.trim().trim_start_matches('.').to_ascii_lowercase();
+    if normalized == "markdown" {
+        "md".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn find_exported_file(dir: &Path, extension: &str) -> Option<PathBuf> {
+    let wanted = canonical_extension(extension);
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(canonical_extension)?;
+        if ext == wanted {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn short_title_hash(title: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(title.as_bytes());
+    let hash = format!("{:x}", hasher.finalize());
+    hash.chars().take(8).collect()
+}
+
 fn resolve_book_file_path(
     library: Option<&Path>,
     id_dir_index: &HashMap<u64, PathBuf>,
@@ -640,5 +782,12 @@ fn now_unix_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn now_unix_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
         .unwrap_or(0)
 }

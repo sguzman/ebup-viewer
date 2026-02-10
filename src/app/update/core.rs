@@ -394,6 +394,9 @@ impl App {
     }
 
     fn handle_toggle_recent_books(&mut self) {
+        if !self.starter_mode {
+            return;
+        }
         self.recent.visible = !self.recent.visible;
         if self.recent.visible {
             self.refresh_recent_books();
@@ -419,6 +422,9 @@ impl App {
     }
 
     fn handle_toggle_calibre_browser(&mut self, effects: &mut Vec<Effect>) {
+        if !self.starter_mode {
+            return;
+        }
         self.calibre.visible = !self.calibre.visible;
         if self.calibre.visible && self.calibre.books.is_empty() && !self.calibre.loading {
             effects.push(Effect::LoadCalibreBooks {

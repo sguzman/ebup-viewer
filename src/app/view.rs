@@ -46,18 +46,6 @@ impl App {
             "Search"
         })
         .on_press(Message::ToggleSearch);
-        let recent_toggle = button(if self.recent.visible {
-            "Hide Recent"
-        } else {
-            "Recent"
-        })
-        .on_press(Message::ToggleRecentBooks);
-        let calibre_toggle = button(if self.calibre.visible {
-            "Hide Calibre"
-        } else {
-            "Calibre"
-        })
-        .on_press(Message::ToggleCalibreBrowser);
         let tts_toggle = button(if self.config.show_tts {
             "Hide TTS"
         } else {
@@ -94,8 +82,6 @@ impl App {
             theme_toggle,
             settings_toggle,
             search_toggle,
-            recent_toggle,
-            calibre_toggle,
             tts_toggle,
             text_only_toggle,
             horizontal_space(),
@@ -320,12 +306,6 @@ impl App {
 
         if self.config.show_settings {
             layout = layout.push(self.settings_panel());
-        }
-        if self.recent.visible {
-            layout = layout.push(self.recent_panel());
-        }
-        if self.calibre.visible {
-            layout = layout.push(self.calibre_panel());
         }
 
         layout.into()

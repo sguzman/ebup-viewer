@@ -598,8 +598,12 @@ impl App {
                         }
                     };
                 }
-                line =
-                    line.push(button("Open").on_press(Message::OpenCalibreBook(book.path.clone())));
+                let open_button = if let Some(path) = &book.path {
+                    button("Open").on_press(Message::OpenCalibreBook(path.clone()))
+                } else {
+                    button("Open")
+                };
+                line = line.push(open_button);
                 rows = rows.push(line);
             }
 

@@ -90,7 +90,7 @@ pub struct CalibreBook {
     pub authors: String,
     pub year: Option<i32>,
     pub file_size_bytes: Option<u64>,
-    pub path: PathBuf,
+    pub path: Option<PathBuf>,
     pub cover_thumbnail: Option<PathBuf>,
 }
 
@@ -230,12 +230,11 @@ fn fetch_books(config: &CalibreConfig) -> Result<Vec<CalibreBook>> {
             continue;
         };
 
-        let Some(path) =
-            resolve_book_file_path(library.as_deref(), &id_dir_index, &row, id, &selected_ext)
-        else {
-            continue;
-        };
-        let size_from_fs = fs::metadata(&path).ok().map(|m| m.len());
+        let path =
+            resolve_book_file_path(library.as_deref(), &id_dir_index, &row, id, &selected_ext);
+        let size_from_fs = path
+            .as_ref()
+            .and_then(|resolved| fs::metadata(resolved).ok().map(|m| m.len()));
         let file_size_bytes = size_from_fs.or_else(|| parse_u64_field(&row, "size"));
 
         if !allowed_set.contains(&selected_ext) {
@@ -249,7 +248,9 @@ fn fetch_books(config: &CalibreConfig) -> Result<Vec<CalibreBook>> {
             authors,
             year,
             file_size_bytes,
-            cover_thumbnail: resolve_cover_thumbnail(path.parent()),
+            cover_thumbnail: path
+                .as_ref()
+                .and_then(|resolved| resolve_cover_thumbnail(resolved.parent())),
             path,
         });
     }

@@ -16,10 +16,24 @@ const CALIBRE_CACHE_REV: &str = "calibre-cache-v1";
 pub struct CalibreConfig {
     pub enabled: bool,
     pub library_path: Option<PathBuf>,
+    pub library_url: Option<String>,
+    pub state_path: Option<PathBuf>,
+    pub content_server: ContentServerConfig,
     pub calibredb_bin: String,
+    pub server_urls: Vec<String>,
+    pub server_username: Option<String>,
+    pub server_password: Option<String>,
+    pub allow_local_library_fallback: bool,
     pub allowed_extensions: Vec<String>,
     pub columns: Vec<String>,
     pub list_cache_ttl_secs: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(default)]
+pub struct ContentServerConfig {
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 impl Default for CalibreConfig {
@@ -27,7 +41,17 @@ impl Default for CalibreConfig {
         Self {
             enabled: false,
             library_path: None,
+            library_url: Some("http://127.0.0.1:8080".to_string()),
+            state_path: None,
+            content_server: ContentServerConfig::default(),
             calibredb_bin: "calibredb".to_string(),
+            server_urls: vec![
+                "http://127.0.0.1:8080".to_string(),
+                "http://localhost:8080".to_string(),
+            ],
+            server_username: None,
+            server_password: None,
+            allow_local_library_fallback: false,
             allowed_extensions: vec!["epub".to_string(), "md".to_string(), "txt".to_string()],
             columns: vec![
                 "title".to_string(),
@@ -151,51 +175,23 @@ pub fn load_books(config: &CalibreConfig, force_refresh: bool) -> Result<Vec<Cal
         return Ok(Vec::new());
     }
 
-    let library = config
-        .library_path
-        .clone()
-        .ok_or_else(|| anyhow!("calibre.library_path is not set"))?;
-    if !library.exists() {
-        return Err(anyhow!(
-            "calibre library path does not exist: {}",
-            library.display()
-        ));
-    }
-
-    let signature = cache_signature(config, &library);
+    let signature = cache_signature(config);
     if !force_refresh {
         if let Some(cached) = try_load_cache(config, &signature)? {
             return Ok(cached);
         }
     }
 
-    let books = fetch_books(config, &library)?;
+    let books = fetch_books(config)?;
     write_cache(&signature, &books)?;
     Ok(books)
 }
 
-fn fetch_books(config: &CalibreConfig, library: &Path) -> Result<Vec<CalibreBook>> {
-    let output = Command::new(&config.calibredb_bin)
-        .arg("--with-library")
-        .arg(library)
-        .arg("list")
-        .arg("--for-machine")
-        .arg("--fields")
-        .arg("id,title,authors,pubdate,formats,size,path")
-        .output()
-        .with_context(|| "failed to run calibredb list command")?;
-
-    if !output.status.success() {
-        return Err(anyhow!(
-            "calibredb list failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-
-    let rows: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)
-        .with_context(|| "failed to parse calibredb JSON output")?;
+fn fetch_books(config: &CalibreConfig) -> Result<Vec<CalibreBook>> {
+    let rows = fetch_rows_from_targets(config)?;
     let allowed_extensions = config.sanitized_extensions();
     let allowed_set: HashSet<String> = allowed_extensions.iter().cloned().collect();
+    let library = config.state_path.clone().or(config.library_path.clone());
 
     let mut books = Vec::new();
     for row in rows {
@@ -217,7 +213,7 @@ fn fetch_books(config: &CalibreConfig, library: &Path) -> Result<Vec<CalibreBook
             continue;
         };
 
-        let Some(path) = resolve_book_file_path(library, &row, &selected_ext) else {
+        let Some(path) = resolve_book_file_path(library.as_deref(), &row, &selected_ext) else {
             continue;
         };
         let size_from_fs = fs::metadata(&path).ok().map(|m| m.len());
@@ -246,6 +242,144 @@ fn fetch_books(config: &CalibreConfig, library: &Path) -> Result<Vec<CalibreBook
             .then_with(|| a.id.cmp(&b.id))
     });
     Ok(books)
+}
+
+fn fetch_rows_from_targets(config: &CalibreConfig) -> Result<Vec<serde_json::Value>> {
+    let mut last_err = None;
+    for target in calibre_targets(config) {
+        match run_calibredb_list(config, &target) {
+            Ok(rows) => return Ok(rows),
+            Err(err) => last_err = Some(format!("{}: {err}", target.label)),
+        }
+    }
+    Err(anyhow!(
+        "no server detected (checked configured/default calibre content-server URLs). {}",
+        last_err.unwrap_or_else(|| "no targets were available".to_string())
+    ))
+}
+
+fn run_calibredb_list(
+    config: &CalibreConfig,
+    target: &CalibreTarget,
+) -> Result<Vec<serde_json::Value>> {
+    let mut cmd = Command::new(&config.calibredb_bin);
+    cmd.arg("--with-library").arg(&target.with_library);
+    if let Some(username) = &target.username {
+        cmd.arg("--username").arg(username);
+    }
+    if let Some(password) = &target.password {
+        cmd.arg("--password").arg(password);
+    }
+    cmd.arg("list")
+        .arg("--for-machine")
+        .arg("--fields")
+        .arg("id,title,authors,pubdate,formats,size,path");
+
+    let output = cmd
+        .output()
+        .with_context(|| format!("failed to run calibredb list against {}", target.label))?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            String::from_utf8_lossy(&output.stderr).trim().to_string()
+        ));
+    }
+    let rows: Vec<serde_json::Value> =
+        serde_json::from_slice(&output.stdout).with_context(|| {
+            format!(
+                "failed to parse calibredb JSON output from {}",
+                target.label
+            )
+        })?;
+    Ok(rows)
+}
+
+struct CalibreTarget {
+    label: String,
+    with_library: String,
+    username: Option<String>,
+    password: Option<String>,
+}
+
+fn calibre_targets(config: &CalibreConfig) -> Vec<CalibreTarget> {
+    let mut targets = Vec::new();
+    if let Some(url) = sanitized_library_url(config) {
+        targets.push(CalibreTarget {
+            label: format!("server:{url}"),
+            with_library: url,
+            username: effective_username(config),
+            password: effective_password(config),
+        });
+    }
+    for url in sanitized_server_urls(config) {
+        if targets.iter().any(|t| t.with_library == url) {
+            continue;
+        }
+        targets.push(CalibreTarget {
+            label: format!("server:{url}"),
+            with_library: url,
+            username: effective_username(config),
+            password: effective_password(config),
+        });
+    }
+    if config.allow_local_library_fallback {
+        if let Some(path) = config.state_path.as_ref().or(config.library_path.as_ref()) {
+            targets.push(CalibreTarget {
+                label: format!("local:{}", path.display()),
+                with_library: path.to_string_lossy().to_string(),
+                username: None,
+                password: None,
+            });
+        }
+    }
+    targets
+}
+
+fn sanitized_server_urls(config: &CalibreConfig) -> Vec<String> {
+    let mut urls = Vec::new();
+    for raw in &config.server_urls {
+        let url = raw.trim().trim_end_matches('/').to_string();
+        if url.starts_with("http://") || url.starts_with("https://") {
+            if !urls.iter().any(|u| u == &url) {
+                urls.push(url);
+            }
+        }
+    }
+    if urls.is_empty() {
+        vec![
+            "http://127.0.0.1:8080".to_string(),
+            "http://localhost:8080".to_string(),
+        ]
+    } else {
+        urls
+    }
+}
+
+fn sanitized_library_url(config: &CalibreConfig) -> Option<String> {
+    config
+        .library_url
+        .as_ref()
+        .map(|v| v.trim().to_string())
+        .filter(|v| v.starts_with("http://") || v.starts_with("https://"))
+}
+
+fn effective_username(config: &CalibreConfig) -> Option<String> {
+    config
+        .content_server
+        .username
+        .as_ref()
+        .or(config.server_username.as_ref())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+fn effective_password(config: &CalibreConfig) -> Option<String> {
+    config
+        .content_server
+        .password
+        .as_ref()
+        .or(config.server_password.as_ref())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 fn parse_u64_field(row: &serde_json::Value, key: &str) -> Option<u64> {
@@ -334,12 +468,15 @@ fn normalize_format_value(raw: &str) -> String {
 }
 
 fn resolve_book_file_path(
-    library: &Path,
+    library: Option<&Path>,
     row: &serde_json::Value,
     extension: &str,
 ) -> Option<PathBuf> {
-    let rel_dir = parse_string_field(row, "path")?;
-    let base = library.join(rel_dir);
+    let rel_dir = parse_string_field(row, "path");
+    let base = match (library, rel_dir.as_deref()) {
+        (Some(root), Some(rel)) => root.join(rel),
+        _ => return None,
+    };
     let entries = fs::read_dir(&base).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
@@ -413,11 +550,25 @@ fn write_cache(signature: &str, books: &[CalibreBook]) -> Result<()> {
     Ok(())
 }
 
-fn cache_signature(config: &CalibreConfig, library: &Path) -> String {
+fn cache_signature(config: &CalibreConfig) -> String {
     let mut hasher = Sha256::new();
     hasher.update(CALIBRE_CACHE_REV.as_bytes());
-    hasher.update(library.to_string_lossy().as_bytes());
     hasher.update(config.calibredb_bin.as_bytes());
+    if let Some(url) = sanitized_library_url(config) {
+        hasher.update(url.as_bytes());
+        hasher.update([0u8]);
+    }
+    for url in sanitized_server_urls(config) {
+        hasher.update(url.as_bytes());
+        hasher.update([0u8]);
+    }
+    if let Some(path) = &config.state_path {
+        hasher.update(path.to_string_lossy().as_bytes());
+    }
+    if let Some(path) = &config.library_path {
+        hasher.update(path.to_string_lossy().as_bytes());
+    }
+    hasher.update([config.allow_local_library_fallback as u8]);
     for ext in config.sanitized_extensions() {
         hasher.update(ext.as_bytes());
         hasher.update([0_u8]);

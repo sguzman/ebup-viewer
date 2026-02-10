@@ -2,11 +2,27 @@
 # Enable Calibre browser integration.
 enabled = true
 
-# Local Calibre library root.
+# Chunkr-compatible calibre fields.
 library_path = "/drive/calibre/en_nonfiction"
+library_url = "http://127.0.0.1:8081/#en_nonfiction"
+state_path = ""
 
 # Calibre CLI binary.
 calibredb_bin = "calibredb"
+
+# Legacy/extra server URL list (optional).
+server_urls = ["http://127.0.0.1:8080", "http://localhost:8080"]
+server_username = ""
+server_password = ""
+
+[calibre.content_server]
+username = "admin"
+password = "admin"
+
+[calibre]
+
+# If true, fallback to local library path when no server target is reachable.
+allow_local_library_fallback = false
 
 # Allowed reader formats (only epub/markdown/txt are accepted).
 allowed_extensions = ["epub", "md", "txt"]

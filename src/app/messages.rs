@@ -3,6 +3,7 @@ use crate::calibre::{CalibreBook, CalibreColumn};
 use crate::config::AppConfig;
 use crate::config::{FontFamily, FontWeight};
 use crate::epub_loader::LoadedBook;
+use crate::normalizer::PageNormalization;
 use iced::keyboard::{Key, Modifiers};
 use iced::widget::scrollable::RelativeOffset;
 use std::path::PathBuf;
@@ -107,6 +108,12 @@ pub enum Message {
         start_idx: usize,
         request_id: u64,
         files: Vec<(PathBuf, Duration)>,
+    },
+    TtsPlanReady {
+        page: usize,
+        requested_display_idx: usize,
+        request_id: u64,
+        plan: PageNormalization,
     },
     Tick(Instant),
 }

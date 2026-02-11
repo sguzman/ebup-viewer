@@ -472,14 +472,70 @@ impl App {
         );
     }
 
+    pub(super) fn handle_tts_plan_ready(
+        &mut self,
+        page: usize,
+        requested_display_idx: usize,
+        request_id: u64,
+        plan: crate::normalizer::PageNormalization,
+        effects: &mut Vec<Effect>,
+    ) {
+        if request_id != self.tts.request_id {
+            debug!(
+                request_id,
+                current = self.tts.request_id,
+                "Ignoring stale TTS plan request"
+            );
+            return;
+        }
+        if page != self.reader.current_page {
+            debug!(
+                page,
+                current = self.reader.current_page,
+                "Ignoring stale TTS plan for different page"
+            );
+            return;
+        }
+
+        self.tts.display_to_audio = plan.display_to_audio;
+        self.tts.audio_to_display = plan.audio_to_display;
+        let Some(audio_start_idx) =
+            self.find_audio_start_for_display_sentence(requested_display_idx)
+        else {
+            warn!(
+                page = page + 1,
+                display_idx = requested_display_idx,
+                "No speakable text on page after normalization"
+            );
+            self.tts.preparing = false;
+            self.tts.preparing_page = None;
+            self.tts.preparing_sentence_idx = None;
+            self.tts.pending_append = false;
+            self.tts.current_sentence_idx = Some(requested_display_idx);
+            self.tts.sentence_offset = 0;
+            return;
+        };
+        let display_start_idx = self
+            .display_index_for_audio_sentence(audio_start_idx)
+            .unwrap_or(requested_display_idx);
+        self.tts.sentence_offset = audio_start_idx;
+        self.tts.current_sentence_idx = Some(display_start_idx);
+        effects.push(Effect::PrepareTtsBatches {
+            page,
+            request_id,
+            audio_start_idx,
+            audio_sentences: plan.audio_sentences,
+        });
+    }
+
     pub(super) fn start_playback_from(
         &mut self,
         page: usize,
         sentence_idx: usize,
     ) -> Task<super::super::messages::Message> {
-        let Some(engine) = self.tts.engine.clone() else {
+        if self.tts.engine.is_none() {
             return Task::none();
-        };
+        }
 
         self.stop_playback();
         self.tts.track.clear();
@@ -492,6 +548,7 @@ impl App {
             self.tts.preparing = false;
             self.tts.preparing_page = None;
             self.tts.preparing_sentence_idx = None;
+            self.tts.pending_append = false;
             self.tts.current_sentence_idx = None;
             self.tts.sentence_offset = 0;
             self.tts.display_to_audio.clear();
@@ -511,39 +568,9 @@ impl App {
             );
             return Task::none();
         }
+        self.tts.current_sentence_idx = Some(requested_display_idx);
+        self.tts.sentence_offset = requested_display_idx;
 
-        let plan = self
-            .normalizer
-            .plan_page_cached(&self.epub_path, page, &display_sentences);
-        self.tts.display_to_audio = plan.display_to_audio;
-        self.tts.audio_to_display = plan.audio_to_display;
-        let audio_sentences = plan.audio_sentences;
-        let Some(audio_start_idx) =
-            self.find_audio_start_for_display_sentence(requested_display_idx)
-        else {
-            warn!(
-                page = page + 1,
-                display_idx = requested_display_idx,
-                "No speakable text on page after normalization"
-            );
-            self.tts.preparing = false;
-            self.tts.preparing_page = None;
-            self.tts.preparing_sentence_idx = None;
-            self.tts.current_sentence_idx = Some(requested_display_idx);
-            self.tts.sentence_offset = 0;
-            return Task::none();
-        };
-        let display_start_idx = self
-            .display_index_for_audio_sentence(audio_start_idx)
-            .unwrap_or(requested_display_idx);
-        self.tts.sentence_offset = audio_start_idx;
-        self.tts.current_sentence_idx = Some(display_start_idx);
-
-        let cache_root = crate::cache::tts_dir(&self.epub_path);
-        let speed = self.config.tts_speed;
-        let threads = self.config.tts_threads.max(1);
-        let progress_log_interval_secs = self.config.tts_progress_log_interval_secs;
-        let page_id = page;
         self.tts.started_at = None;
         self.tts.elapsed = Duration::ZERO;
         self.tts.pending_append = false;
@@ -555,96 +582,23 @@ impl App {
         info!(
             page = page + 1,
             sentence_idx = requested_display_idx,
-            audio_start_idx,
             request_id,
-            speed,
-            threads,
-            progress_log_interval_secs,
-            "Preparing playback task"
+            "Scheduling async TTS planning task"
         );
-
-        let total_audio = audio_sentences.len();
-        let remaining = total_audio.saturating_sub(audio_start_idx);
-        let initial_count = remaining.min(1);
-        let initial_sentences = audio_sentences
-            .iter()
-            .skip(audio_start_idx)
-            .take(initial_count)
-            .cloned()
-            .collect::<Vec<_>>();
-        let append_sentences = audio_sentences
-            .iter()
-            .skip(audio_start_idx + initial_count)
-            .cloned()
-            .collect::<Vec<_>>();
-        self.tts.pending_append = !append_sentences.is_empty();
-        info!(
-            page = page + 1,
-            audio_start_idx,
-            initial_count,
-            append_count = append_sentences.len(),
-            "Split TTS generation into initial playback batch and background append batch"
-        );
-
-        let initial_engine = engine.clone();
-        let initial_cache = cache_root.clone();
-        let initial_task = Task::perform(
+        let normalizer = self.normalizer.clone();
+        let epub_path = self.epub_path.clone();
+        Task::perform(
             async move {
-                initial_engine
-                    .prepare_batch(
-                        initial_cache,
-                        initial_sentences,
-                        0,
-                        threads,
-                        Duration::from_secs_f32(progress_log_interval_secs),
-                    )
-                    .map(|files| super::super::messages::Message::TtsPrepared {
-                        page: page_id,
-                        start_idx: audio_start_idx,
-                        request_id,
-                        files,
-                    })
-                    .unwrap_or_else(|_| super::super::messages::Message::TtsPrepared {
-                        page: page_id,
-                        start_idx: audio_start_idx,
-                        request_id,
-                        files: Vec::new(),
-                    })
+                let plan = normalizer.plan_page_cached(&epub_path, page, &display_sentences);
+                super::super::messages::Message::TtsPlanReady {
+                    page,
+                    requested_display_idx,
+                    request_id,
+                    plan,
+                }
             },
             |msg| msg,
-        );
-
-        if append_sentences.is_empty() {
-            return initial_task;
-        }
-
-        let append_start_idx = audio_start_idx + initial_count;
-        let append_task = Task::perform(
-            async move {
-                engine
-                    .prepare_batch(
-                        cache_root,
-                        append_sentences,
-                        0,
-                        threads,
-                        Duration::from_secs_f32(progress_log_interval_secs),
-                    )
-                    .map(|files| super::super::messages::Message::TtsAppendPrepared {
-                        page: page_id,
-                        start_idx: append_start_idx,
-                        request_id,
-                        files,
-                    })
-                    .unwrap_or_else(|_| super::super::messages::Message::TtsAppendPrepared {
-                        page: page_id,
-                        start_idx: append_start_idx,
-                        request_id,
-                        files: Vec::new(),
-                    })
-            },
-            |msg| msg,
-        );
-        Task::batch([initial_task, append_task])
+        )
     }
 
     fn begin_play_from_sentence(

@@ -15,6 +15,12 @@ pub(super) enum Effect {
         page: usize,
         sentence_idx: usize,
     },
+    PrepareTtsBatches {
+        page: usize,
+        request_id: u64,
+        audio_start_idx: usize,
+        audio_sentences: Vec<String>,
+    },
     StopTts,
     ScrollTo(RelativeOffset),
     AutoScrollToCurrent,

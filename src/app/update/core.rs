@@ -175,6 +175,18 @@ impl App {
                 request_id,
                 files,
             } => self.handle_tts_append_prepared(page, start_idx, request_id, files),
+            Message::TtsPlanReady {
+                page,
+                requested_display_idx,
+                request_id,
+                plan,
+            } => self.handle_tts_plan_ready(
+                page,
+                requested_display_idx,
+                request_id,
+                plan,
+                &mut effects,
+            ),
             Message::Tick(now) => self.handle_tick(now, &mut effects),
         }
 
@@ -197,6 +209,104 @@ impl App {
                 Task::none()
             }
             Effect::StartTts { page, sentence_idx } => self.start_playback_from(page, sentence_idx),
+            Effect::PrepareTtsBatches {
+                page,
+                request_id,
+                audio_start_idx,
+                audio_sentences,
+            } => {
+                let Some(engine) = self.tts.engine.clone() else {
+                    self.tts.preparing = false;
+                    self.tts.preparing_page = None;
+                    self.tts.preparing_sentence_idx = None;
+                    self.tts.pending_append = false;
+                    return Task::none();
+                };
+                let cache_root = crate::cache::tts_dir(&self.epub_path);
+                let threads = self.config.tts_threads.max(1);
+                let progress_log_interval =
+                    Duration::from_secs_f32(self.config.tts_progress_log_interval_secs);
+                let remaining = audio_sentences.len().saturating_sub(audio_start_idx);
+                let initial_count = remaining.min(1);
+                let initial_sentences = audio_sentences
+                    .iter()
+                    .skip(audio_start_idx)
+                    .take(initial_count)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let append_sentences = audio_sentences
+                    .iter()
+                    .skip(audio_start_idx + initial_count)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                self.tts.pending_append = !append_sentences.is_empty();
+                info!(
+                    page = page + 1,
+                    audio_start_idx,
+                    initial_count,
+                    append_count = append_sentences.len(),
+                    request_id,
+                    "Split TTS generation into initial playback batch and background append batch"
+                );
+                let initial_engine = engine.clone();
+                let initial_cache = cache_root.clone();
+                let initial_task = Task::perform(
+                    async move {
+                        initial_engine
+                            .prepare_batch(
+                                initial_cache,
+                                initial_sentences,
+                                0,
+                                threads,
+                                progress_log_interval,
+                            )
+                            .map(|files| Message::TtsPrepared {
+                                page,
+                                start_idx: audio_start_idx,
+                                request_id,
+                                files,
+                            })
+                            .unwrap_or_else(|_| Message::TtsPrepared {
+                                page,
+                                start_idx: audio_start_idx,
+                                request_id,
+                                files: Vec::new(),
+                            })
+                    },
+                    |msg| msg,
+                );
+                if append_sentences.is_empty() {
+                    initial_task
+                } else {
+                    let append_start_idx = audio_start_idx + initial_count;
+                    let append_task = Task::perform(
+                        async move {
+                            engine
+                                .prepare_batch(
+                                    cache_root,
+                                    append_sentences,
+                                    0,
+                                    threads,
+                                    progress_log_interval,
+                                )
+                                .map(|files| Message::TtsAppendPrepared {
+                                    page,
+                                    start_idx: append_start_idx,
+                                    request_id,
+                                    files,
+                                })
+                                .unwrap_or_else(|_| Message::TtsAppendPrepared {
+                                    page,
+                                    start_idx: append_start_idx,
+                                    request_id,
+                                    files: Vec::new(),
+                                })
+                        },
+                        |msg| msg,
+                    );
+                    Task::batch([initial_task, append_task])
+                }
+            }
             Effect::StopTts => {
                 self.stop_playback();
                 Task::none()

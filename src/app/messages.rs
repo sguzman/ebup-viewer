@@ -115,6 +115,14 @@ pub enum Message {
         request_id: u64,
         plan: PageNormalization,
     },
+    TtsInitialReady {
+        page: usize,
+        requested_display_idx: usize,
+        request_id: u64,
+        sentence_count: usize,
+        start_display_idx: Option<usize>,
+        audio_sentence: Option<String>,
+    },
     Tick(Instant),
 }
 

@@ -18,13 +18,8 @@ use tracing::{info, warn};
 
 impl App {
     pub fn subscription(app: &App) -> Subscription<Message> {
-        let mut subscriptions: Vec<Subscription<Message>> = vec![
-            iced::window::resize_events().map(|(_id, size)| Message::WindowResized {
-                width: size.width,
-                height: size.height,
-            }),
-            event::listen_with(runtime_event_to_message),
-        ];
+        let mut subscriptions: Vec<Subscription<Message>> =
+            vec![event::listen_with(runtime_event_to_message)];
 
         if app.tts.running {
             subscriptions.push(time::every(Duration::from_millis(50)).map(Message::Tick));
@@ -185,6 +180,22 @@ impl App {
                 requested_display_idx,
                 request_id,
                 plan,
+                &mut effects,
+            ),
+            Message::TtsInitialReady {
+                page,
+                requested_display_idx,
+                request_id,
+                sentence_count,
+                start_display_idx,
+                audio_sentence,
+            } => self.handle_tts_initial_ready(
+                page,
+                requested_display_idx,
+                request_id,
+                sentence_count,
+                start_display_idx,
+                audio_sentence,
                 &mut effects,
             ),
             Message::Tick(now) => self.handle_tick(now, &mut effects),
@@ -756,6 +767,10 @@ fn runtime_event_to_message(
         return None;
     }
     match event {
+        Event::Window(iced::window::Event::Resized(size)) => Some(Message::WindowResized {
+            width: size.width,
+            height: size.height,
+        }),
         Event::Window(iced::window::Event::Moved(position)) => Some(Message::WindowMoved {
             x: position.x,
             y: position.y,

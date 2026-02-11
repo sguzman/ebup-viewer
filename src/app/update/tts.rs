@@ -163,8 +163,10 @@ impl App {
         if self.tts.preparing {
             self.tts.request_id = self.tts.request_id.wrapping_add(1);
             self.tts.preparing = false;
+            self.tts.prepare_dispatched = false;
             self.tts.preparing_page = None;
             self.tts.preparing_sentence_idx = None;
+            self.tts.quick_start_display_idx = None;
             self.tts.pending_append = false;
             self.tts.pending_append_batch = None;
             info!("Cancelled pending TTS batch preparation");
@@ -356,6 +358,8 @@ impl App {
         if files.is_empty() {
             warn!("TTS batch was empty; stopping playback");
             self.stop_playback();
+            self.tts.prepare_dispatched = false;
+            self.tts.quick_start_display_idx = None;
             self.tts.current_sentence_idx = None;
             return;
         }
@@ -424,6 +428,8 @@ impl App {
                 );
             } else {
                 warn!("Failed to start playback from prepared files");
+                self.tts.prepare_dispatched = false;
+                self.tts.quick_start_display_idx = None;
                 self.tts.pending_append = false;
                 self.tts.pending_append_batch = None;
             }
@@ -527,24 +533,123 @@ impl App {
                 "No speakable text on page after normalization"
             );
             self.tts.preparing = false;
+            self.tts.prepare_dispatched = false;
             self.tts.preparing_page = None;
             self.tts.preparing_sentence_idx = None;
+            self.tts.quick_start_display_idx = None;
             self.tts.pending_append = false;
             self.tts.pending_append_batch = None;
             self.tts.current_sentence_idx = Some(requested_display_idx);
             self.tts.sentence_offset = 0;
             return;
         };
-        let display_start_idx = self
-            .display_index_for_audio_sentence(audio_start_idx)
+        let mut full_audio_sentences = plan.audio_sentences;
+        if !self.tts.prepare_dispatched {
+            let display_start_idx = self
+                .display_index_for_audio_sentence(audio_start_idx)
+                .unwrap_or(requested_display_idx);
+            self.tts.sentence_offset = audio_start_idx;
+            self.tts.current_sentence_idx = Some(display_start_idx);
+            self.tts.prepare_dispatched = true;
+            effects.push(Effect::PrepareTtsBatches {
+                page,
+                request_id,
+                audio_start_idx,
+                audio_sentences: full_audio_sentences,
+            });
+            return;
+        }
+
+        let quick_display_idx = self
+            .tts
+            .quick_start_display_idx
             .unwrap_or(requested_display_idx);
-        self.tts.sentence_offset = audio_start_idx;
+        let quick_audio_idx = self
+            .find_audio_start_for_display_sentence(quick_display_idx)
+            .unwrap_or(audio_start_idx);
+        let display_start_idx = self
+            .display_index_for_audio_sentence(quick_audio_idx)
+            .unwrap_or(quick_display_idx);
+        self.tts.sentence_offset = quick_audio_idx;
         self.tts.current_sentence_idx = Some(display_start_idx);
+
+        let append_start = quick_audio_idx.saturating_add(1);
+        if append_start >= full_audio_sentences.len() {
+            self.tts.pending_append = false;
+            self.tts.pending_append_batch = None;
+            return;
+        }
+
+        let append_sentences = full_audio_sentences.split_off(append_start);
+        self.tts.pending_append = true;
+
+        if self.tts.playback.is_some() && !self.tts.preparing {
+            effects.push(Effect::PrepareTtsAppend {
+                page,
+                request_id,
+                start_idx: append_start,
+                audio_sentences: append_sentences,
+            });
+        } else {
+            self.tts.pending_append_batch = Some(super::super::state::PendingAppendBatch {
+                page,
+                request_id,
+                start_idx: append_start,
+                audio_sentences: append_sentences,
+            });
+        }
+    }
+
+    pub(super) fn handle_tts_initial_ready(
+        &mut self,
+        page: usize,
+        requested_display_idx: usize,
+        request_id: u64,
+        sentence_count: usize,
+        start_display_idx: Option<usize>,
+        audio_sentence: Option<String>,
+        effects: &mut Vec<Effect>,
+    ) {
+        if request_id != self.tts.request_id {
+            debug!(
+                request_id,
+                current = self.tts.request_id,
+                "Ignoring stale initial TTS request"
+            );
+            return;
+        }
+        if page != self.reader.current_page {
+            debug!(
+                page,
+                current = self.reader.current_page,
+                "Ignoring stale initial TTS result for different page"
+            );
+            return;
+        }
+        if self.tts.prepare_dispatched {
+            return;
+        }
+
+        let Some(audio_sentence) = audio_sentence else {
+            self.tts.quick_start_display_idx = None;
+            return;
+        };
+        let display_idx = start_display_idx.unwrap_or(requested_display_idx);
+        self.tts.quick_start_display_idx = Some(display_idx);
+        self.tts.current_sentence_idx = Some(display_idx);
+        self.tts.sentence_offset = 0;
+        self.tts.display_to_audio = vec![None; sentence_count];
+        if display_idx < self.tts.display_to_audio.len() {
+            self.tts.display_to_audio[display_idx] = Some(0);
+        }
+        self.tts.audio_to_display = vec![display_idx];
+        self.tts.pending_append = true;
+        self.tts.prepare_dispatched = true;
         effects.push(Effect::PrepareTtsBatches {
             page,
             request_id,
-            audio_start_idx,
-            audio_sentences: plan.audio_sentences,
+            audio_start_idx: 0,
+            audio_sentences: vec![audio_sentence],
         });
     }
 
@@ -565,8 +670,10 @@ impl App {
         let display_sentences = self.raw_sentences_for_page(page);
         if display_sentences.is_empty() {
             self.tts.preparing = false;
+            self.tts.prepare_dispatched = false;
             self.tts.preparing_page = None;
             self.tts.preparing_sentence_idx = None;
+            self.tts.quick_start_display_idx = None;
             self.tts.pending_append = false;
             self.tts.pending_append_batch = None;
             self.tts.current_sentence_idx = None;
@@ -593,6 +700,8 @@ impl App {
 
         self.tts.started_at = None;
         self.tts.elapsed = Duration::ZERO;
+        self.tts.prepare_dispatched = false;
+        self.tts.quick_start_display_idx = None;
         self.tts.pending_append = false;
         self.tts.pending_append_batch = None;
         self.tts.preparing = true;
@@ -604,11 +713,32 @@ impl App {
             page = page + 1,
             sentence_idx = requested_display_idx,
             request_id,
-            "Scheduling async TTS planning task"
+            "Scheduling async TTS planning tasks"
         );
         let normalizer = self.normalizer.clone();
+        let initial_normalizer = normalizer.clone();
         let epub_path = self.epub_path.clone();
-        Task::perform(
+        let initial_epub_path = epub_path.clone();
+        let initial_sentences = display_sentences.clone();
+        let initial_task = Task::perform(
+            async move {
+                let initial = initial_normalizer.first_speakable_sentence_cached(
+                    &initial_epub_path,
+                    &initial_sentences,
+                    requested_display_idx,
+                );
+                super::super::messages::Message::TtsInitialReady {
+                    page,
+                    requested_display_idx,
+                    request_id,
+                    sentence_count: initial_sentences.len(),
+                    start_display_idx: initial.as_ref().map(|(idx, _)| *idx),
+                    audio_sentence: initial.map(|(_, sentence)| sentence),
+                }
+            },
+            |msg| msg,
+        );
+        let full_task = Task::perform(
             async move {
                 let plan = normalizer.plan_page_cached(&epub_path, page, &display_sentences);
                 super::super::messages::Message::TtsPlanReady {
@@ -619,7 +749,8 @@ impl App {
                 }
             },
             |msg| msg,
-        )
+        );
+        Task::batch(vec![initial_task, full_task])
     }
 
     fn begin_play_from_sentence(

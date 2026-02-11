@@ -13,7 +13,7 @@ day_highlight = { r = 0.2, g = 0.4, b = 0.7, a = 0.15 }
 night_highlight = { r = 0.8, g = 0.8, b = 0.5, a = 0.2 }
 
 [window]
-width = 1024
+width = 1624
 height = 768
 
 [reading_behavior]

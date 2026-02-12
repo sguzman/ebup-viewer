@@ -242,16 +242,23 @@ impl App {
         let mut output = String::with_capacity(base.len() + 16);
 
         for ch in base.chars() {
-            match ch {
-                ' ' => output.push_str(&word_gap),
-                '\n' => output.push('\n'),
-                _ => {
-                    output.push(ch);
-                    if !letter_gap.is_empty() {
-                        output.push_str(&letter_gap);
-                    }
-                }
-            }
+            Self::push_formatted_char(ch, &word_gap, &letter_gap, &mut output);
+        }
+
+        output
+    }
+
+    pub(super) fn format_sentence_for_display(&self, sentence: &str) -> String {
+        if self.config.word_spacing == 0 && self.config.letter_spacing == 0 {
+            return sentence.to_string();
+        }
+
+        let word_gap = " ".repeat((self.config.word_spacing as usize).saturating_add(1));
+        let letter_gap = " ".repeat(self.config.letter_spacing as usize);
+        let mut output = String::with_capacity(sentence.len() + 8);
+
+        for ch in sentence.chars() {
+            Self::push_formatted_char(ch, &word_gap, &letter_gap, &mut output);
         }
 
         output
@@ -296,7 +303,10 @@ impl App {
         if self.config.word_spacing == 0 && self.config.letter_spacing == 0 {
             return self.raw_sentences_for_page(self.reader.current_page);
         }
-        split_sentences(&self.formatted_page_content())
+        self.raw_sentences_for_page(self.reader.current_page)
+            .into_iter()
+            .map(|sentence| self.format_sentence_for_display(&sentence))
+            .collect()
     }
 
     pub(super) fn text_only_preview_for_current_page(&self) -> Option<&TextOnlyPreview> {
@@ -308,10 +318,8 @@ impl App {
     pub(super) fn text_only_highlight_audio_idx_for_current_page(&self) -> Option<usize> {
         let display_idx = self.tts.current_sentence_idx?;
         let preview = self.text_only_preview_for_current_page()?;
-        preview
-            .display_to_audio
-            .get(display_idx)
-            .and_then(|mapped| *mapped)
+        Self::nearest_audio_idx_for_display(display_idx, &preview.display_to_audio)
+            .map(|idx| idx.min(preview.audio_sentences.len().saturating_sub(1)))
     }
 
     pub(super) fn text_only_display_idx_for_audio_idx(&self, audio_idx: usize) -> Option<usize> {
@@ -412,6 +420,40 @@ impl App {
             b: base.b,
             a: base.a,
         }
+    }
+
+    fn push_formatted_char(ch: char, word_gap: &str, letter_gap: &str, output: &mut String) {
+        match ch {
+            ' ' => output.push_str(word_gap),
+            '\n' => output.push('\n'),
+            _ => {
+                output.push(ch);
+                if !letter_gap.is_empty() {
+                    output.push_str(letter_gap);
+                }
+            }
+        }
+    }
+
+    fn nearest_audio_idx_for_display(
+        display_idx: usize,
+        display_to_audio: &[Option<usize>],
+    ) -> Option<usize> {
+        if display_to_audio.is_empty() {
+            return None;
+        }
+        let clamped = display_idx.min(display_to_audio.len().saturating_sub(1));
+        display_to_audio
+            .iter()
+            .skip(clamped)
+            .find_map(|mapped| *mapped)
+            .or_else(|| {
+                display_to_audio
+                    .iter()
+                    .take(clamped + 1)
+                    .rev()
+                    .find_map(|mapped| *mapped)
+            })
     }
 
     pub(super) fn save_epub_config(&self) {

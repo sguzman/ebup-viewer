@@ -190,11 +190,13 @@ impl App {
                     Vec::with_capacity(preview.audio_sentences.len().saturating_mul(2));
 
                 for (idx, sentence) in preview.audio_sentences.iter().enumerate() {
+                    let display_idx = preview.audio_to_display.get(idx).copied().unwrap_or(idx);
                     let mut span: iced::widget::text::Span<'_, Message> =
                         iced::widget::text::Span::new(sentence.as_str())
                             .font(self.current_font())
                             .size(self.config.font_size as f32)
-                            .line_height(LineHeight::Relative(self.config.line_spacing));
+                            .line_height(LineHeight::Relative(self.config.line_spacing))
+                            .link(Message::SentenceClicked(display_idx));
 
                     if Some(idx) == highlight_idx {
                         span = span
@@ -262,11 +264,8 @@ impl App {
                             iced::widget::text::Span::new(sentence)
                                 .font(self.current_font())
                                 .size(self.config.font_size as f32)
-                                .line_height(LineHeight::Relative(self.config.line_spacing));
-
-                        if idx < raw_sentences.len() {
-                            span = span.link(Message::SentenceClicked(idx));
-                        }
+                                .line_height(LineHeight::Relative(self.config.line_spacing))
+                                .link(Message::SentenceClicked(idx));
 
                         if Some(idx) == highlight_idx {
                             span = span
@@ -962,7 +961,7 @@ impl App {
                 .align_y(Vertical::Center),
             row![
                 text(format!(
-                    "Pause after sentence: {:.1} s",
+                    "Pause after sentence: {:.2} s",
                     self.config.pause_after_sentence
                 )),
                 slider(
@@ -970,7 +969,7 @@ impl App {
                     self.config.pause_after_sentence,
                     Message::PauseAfterSentenceChanged
                 )
-                .step(0.1)
+                .step(0.01)
             ]
             .spacing(8)
             .align_y(Vertical::Center),

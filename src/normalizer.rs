@@ -253,12 +253,7 @@ impl TextNormalizer {
                 return Some((idx, audio_idx, cleaned));
             }
         }
-        for (idx, sentence) in display_sentences
-            .iter()
-            .enumerate()
-            .take(clamped + 1)
-            .rev()
-        {
+        for (idx, sentence) in display_sentences.iter().enumerate().take(clamped + 1).rev() {
             if let Some(cleaned) = self.normalize_sentence_cached(epub_path, &config_hash, sentence)
             {
                 let audio_idx = prefix_audio[idx];

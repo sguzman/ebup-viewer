@@ -17,14 +17,22 @@ impl App {
         pause: f32,
         effects: &mut Vec<Effect>,
     ) {
-        let clamped = pause.clamp(0.0, 2.0);
+        let clamped = if pause.is_finite() {
+            pause.clamp(0.0, 2.0)
+        } else {
+            self.config.pause_after_sentence
+        };
         if (clamped - self.config.pause_after_sentence).abs() > f32::EPSILON {
             self.config.pause_after_sentence = clamped;
             info!(pause_secs = clamped, "Updated pause after sentence");
             effects.push(Effect::SaveConfig);
             if let Some(playback) = &self.tts.playback {
                 self.tts.resume_after_prepare = !playback.is_paused();
-                let idx = self.tts.current_sentence_idx.unwrap_or(0);
+                let idx = self
+                    .tts
+                    .current_sentence_idx
+                    .or_else(|| self.display_index_for_audio_sentence(self.tts.sentence_offset))
+                    .unwrap_or(0);
                 effects.push(Effect::StartTts {
                     page: self.reader.current_page,
                     sentence_idx: idx,

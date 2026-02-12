@@ -6,6 +6,7 @@ use super::super::state::{
 use super::Effect;
 use crate::cache::{Bookmark, save_bookmark};
 use iced::widget::scrollable::RelativeOffset;
+use std::time::{Duration, Instant};
 use tracing::info;
 
 impl App {
@@ -48,7 +49,10 @@ impl App {
 
         if sanitized != self.bookmark.last_scroll_offset {
             self.bookmark.last_scroll_offset = sanitized;
-            effects.push(Effect::SaveBookmark);
+            if self.should_emit_scroll_bookmark_save() {
+                effects.push(Effect::SaveBookmark);
+                self.bookmark.last_scroll_bookmark_save_at = Some(Instant::now());
+            }
         }
 
         if let Some(idx) = self.bookmark.pending_sentence_snap.take() {
@@ -58,6 +62,7 @@ impl App {
                     self.bookmark.last_scroll_offset = offset;
                     effects.push(Effect::ScrollTo(offset));
                     effects.push(Effect::SaveBookmark);
+                    self.bookmark.last_scroll_bookmark_save_at = Some(Instant::now());
                 }
             }
         }
@@ -125,6 +130,14 @@ impl App {
 
     fn current_sentences(&self) -> Vec<String> {
         self.raw_sentences_for_page(self.reader.current_page)
+    }
+
+    fn should_emit_scroll_bookmark_save(&self) -> bool {
+        const SCROLL_BOOKMARK_SAVE_INTERVAL: Duration = Duration::from_millis(250);
+        let Some(last) = self.bookmark.last_scroll_bookmark_save_at else {
+            return true;
+        };
+        Instant::now().saturating_duration_since(last) >= SCROLL_BOOKMARK_SAVE_INTERVAL
     }
 
     pub(crate) fn scroll_offset_for_sentence(&self, sentence_idx: usize) -> Option<RelativeOffset> {

@@ -15,7 +15,7 @@ impl App {
             vec![event::listen_with(runtime::runtime_event_to_message)];
 
         if app.tts.is_playing() {
-            subscriptions.push(time::every(Duration::from_millis(50)).map(Message::Tick));
+            subscriptions.push(time::every(Duration::from_millis(80)).map(Message::Tick));
         }
 
         Subscription::batch(subscriptions)

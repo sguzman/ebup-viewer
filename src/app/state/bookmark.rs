@@ -1,4 +1,5 @@
 use iced::widget::scrollable::RelativeOffset;
+use std::time::Instant;
 
 /// Bookmark and scroll tracking model.
 pub struct BookmarkState {
@@ -9,6 +10,7 @@ pub struct BookmarkState {
     pub(in crate::app) content_width: f32,
     pub(in crate::app) content_height: f32,
     pub(in crate::app) pending_sentence_snap: Option<usize>,
+    pub(in crate::app) last_scroll_bookmark_save_at: Option<Instant>,
 }
 
 pub struct TextOnlyPreview {

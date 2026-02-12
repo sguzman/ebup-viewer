@@ -391,6 +391,7 @@ impl App {
         self.bookmark.last_scroll_offset = RelativeOffset::START;
         self.bookmark.viewport_fraction = 0.25;
         self.bookmark.pending_sentence_snap = None;
+        self.bookmark.last_scroll_bookmark_save_at = None;
         self.tts = TtsState::new(tts_engine_from_config(&self.config));
 
         self.repaginate();
@@ -538,6 +539,7 @@ impl App {
                 content_width: 0.0,
                 content_height: 0.0,
                 pending_sentence_snap: None,
+                last_scroll_bookmark_save_at: None,
             },
             epub_path,
             tts: TtsState::new(tts_engine_from_config(&config)),
@@ -663,6 +665,7 @@ impl App {
                 content_width: 0.0,
                 content_height: 0.0,
                 pending_sentence_snap: None,
+                last_scroll_bookmark_save_at: None,
             },
             config,
             epub_path: PathBuf::new(),

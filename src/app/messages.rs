@@ -121,6 +121,7 @@ pub enum Message {
         request_id: u64,
         sentence_count: usize,
         start_display_idx: Option<usize>,
+        start_audio_idx: Option<usize>,
         audio_sentence: Option<String>,
     },
     Tick(Instant),

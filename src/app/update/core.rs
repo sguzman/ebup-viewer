@@ -188,6 +188,7 @@ impl App {
                 request_id,
                 sentence_count,
                 start_display_idx,
+                start_audio_idx,
                 audio_sentence,
             } => self.handle_tts_initial_ready(
                 page,
@@ -195,6 +196,7 @@ impl App {
                 request_id,
                 sentence_count,
                 start_display_idx,
+                start_audio_idx,
                 audio_sentence,
                 &mut effects,
             ),

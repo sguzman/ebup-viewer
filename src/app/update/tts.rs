@@ -607,6 +607,7 @@ impl App {
         request_id: u64,
         sentence_count: usize,
         start_display_idx: Option<usize>,
+        start_audio_idx: Option<usize>,
         audio_sentence: Option<String>,
         effects: &mut Vec<Effect>,
     ) {
@@ -635,20 +636,21 @@ impl App {
             return;
         };
         let display_idx = start_display_idx.unwrap_or(requested_display_idx);
+        let audio_idx = start_audio_idx.unwrap_or(0);
         self.tts.quick_start_display_idx = Some(display_idx);
         self.tts.current_sentence_idx = Some(display_idx);
-        self.tts.sentence_offset = 0;
+        self.tts.sentence_offset = audio_idx;
         self.tts.display_to_audio = vec![None; sentence_count];
         if display_idx < self.tts.display_to_audio.len() {
-            self.tts.display_to_audio[display_idx] = Some(0);
+            self.tts.display_to_audio[display_idx] = Some(audio_idx);
         }
-        self.tts.audio_to_display = vec![display_idx];
+        self.tts.audio_to_display = vec![display_idx; audio_idx.saturating_add(1)];
         self.tts.pending_append = true;
         self.tts.prepare_dispatched = true;
         effects.push(Effect::PrepareTtsBatches {
             page,
             request_id,
-            audio_start_idx: 0,
+            audio_start_idx: audio_idx,
             audio_sentences: vec![audio_sentence],
         });
     }
@@ -732,8 +734,9 @@ impl App {
                     requested_display_idx,
                     request_id,
                     sentence_count: initial_sentences.len(),
-                    start_display_idx: initial.as_ref().map(|(idx, _)| *idx),
-                    audio_sentence: initial.map(|(_, sentence)| sentence),
+                    start_display_idx: initial.as_ref().map(|(display_idx, _, _)| *display_idx),
+                    start_audio_idx: initial.as_ref().map(|(_, audio_idx, _)| *audio_idx),
+                    audio_sentence: initial.map(|(_, _, sentence)| sentence),
                 }
             },
             |msg| msg,

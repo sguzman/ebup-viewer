@@ -1,5 +1,6 @@
 mod messages;
 mod state;
+mod topbar_layout;
 mod update;
 mod view;
 

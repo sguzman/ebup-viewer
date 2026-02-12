@@ -5,6 +5,7 @@ use super::state::{
     MAX_HORIZONTAL_MARGIN, MAX_LETTER_SPACING, MAX_TTS_VOLUME, MAX_VERTICAL_MARGIN,
     MAX_WORD_SPACING, MIN_TTS_SPEED, MIN_TTS_VOLUME, PAGE_FLOW_SPACING_PX,
 };
+use super::topbar_layout::{TopBarLabels, estimate_button_width_px, topbar_plan};
 use crate::calibre::CalibreColumn;
 use crate::config::HighlightColor;
 use crate::pagination::{MAX_FONT_SIZE, MAX_LINES_PER_PAGE, MIN_FONT_SIZE, MIN_LINES_PER_PAGE};
@@ -77,48 +78,37 @@ impl App {
             Self::control_button("Next")
         };
 
-        let controls_spacing = 10.0;
-        let controls_budget = (self.controls_layout_width() - 12.0).max(0.0);
-        let mut used_controls_width = Self::estimate_button_width_px("Previous")
-            + Self::estimate_button_width_px("Next")
-            + Self::estimate_button_width_px(theme_label)
-            + Self::estimate_button_width_px("Close Book")
-            + Self::estimate_button_width_px(if self.config.show_settings {
-                "Hide Settings"
-            } else {
-                "Show Settings"
-            })
-            + Self::estimate_button_width_px(if self.show_stats {
-                "Hide Stats"
-            } else {
-                "Show Stats"
-            })
-            + (controls_spacing * 5.0);
-        let mut add_optional = |label: &str| -> bool {
-            let extra = controls_spacing + Self::estimate_button_width_px(label);
-            if used_controls_width + extra <= controls_budget {
-                used_controls_width += extra;
-                true
-            } else {
-                false
-            }
-        };
-        // Priority order: keep mode-switching available first.
-        let show_text_only_toggle = add_optional(if self.text_only_mode {
-            "Pretty Text"
-        } else {
-            "Text Only"
-        });
-        let show_tts_toggle = add_optional(if self.config.show_tts {
-            "Hide TTS"
-        } else {
-            "Show TTS"
-        });
-        let show_search_toggle = add_optional(if self.search.visible {
-            "Hide Search"
-        } else {
-            "Search"
-        });
+        let visibility = topbar_plan(
+            self.controls_layout_width(),
+            TopBarLabels {
+                theme: theme_label,
+                settings: if self.config.show_settings {
+                    "Hide Settings"
+                } else {
+                    "Show Settings"
+                },
+                stats: if self.show_stats {
+                    "Hide Stats"
+                } else {
+                    "Show Stats"
+                },
+                text_mode: if self.text_only_mode {
+                    "Pretty Text"
+                } else {
+                    "Text Only"
+                },
+                tts: if self.config.show_tts {
+                    "Hide TTS"
+                } else {
+                    "Show TTS"
+                },
+                search: if self.search.visible {
+                    "Hide Search"
+                } else {
+                    "Search"
+                },
+            },
+        );
 
         let mut controls_row = row![
             prev_button,
@@ -131,13 +121,13 @@ impl App {
         .spacing(10)
         .align_y(Vertical::Center)
         .width(Length::Fill);
-        if show_text_only_toggle {
+        if visibility.show_text_mode {
             controls_row = controls_row.push(text_only_toggle);
         }
-        if show_tts_toggle {
+        if visibility.show_tts {
             controls_row = controls_row.push(tts_toggle);
         }
-        if show_search_toggle {
+        if visibility.show_search {
             controls_row = controls_row.push(search_toggle);
         }
         controls_row = controls_row.push(horizontal_space());
@@ -1224,9 +1214,9 @@ impl App {
         let available_width = self.controls_layout_width();
         let controls_spacing = 10.0;
         let controls_budget = (available_width - 12.0).max(0.0);
-        let mut used_controls_width = Self::estimate_button_width_px(play_label);
+        let mut used_controls_width = estimate_button_width_px(play_label);
         let mut add_optional = |label: &str| -> bool {
-            let extra = controls_spacing + Self::estimate_button_width_px(label);
+            let extra = controls_spacing + estimate_button_width_px(label);
             if used_controls_width + extra <= controls_budget {
                 used_controls_width += extra;
                 true
@@ -1397,13 +1387,7 @@ impl App {
 
     fn control_button<'a>(label: &'a str) -> iced::widget::Button<'a, Message> {
         button(text(label).wrapping(Wrapping::None))
-            .width(Length::Fixed(Self::estimate_button_width_px(label)))
-    }
-
-    fn estimate_button_width_px(label: &str) -> f32 {
-        // Approximate intrinsic width for default text size plus button padding.
-        let chars = label.chars().count() as f32;
-        (chars * 9.0) + 44.0
+            .width(Length::Fixed(estimate_button_width_px(label)))
     }
 
     fn format_duration_dhms(duration: Duration) -> String {

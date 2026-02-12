@@ -675,21 +675,24 @@ impl App {
             return;
         };
         let display_idx = start_display_idx.unwrap_or(requested_display_idx);
-        let audio_idx = start_audio_idx.unwrap_or(0);
+        let _audio_idx = start_audio_idx.unwrap_or(0);
         self.tts.quick_start_display_idx = Some(display_idx);
         self.tts.current_sentence_idx = Some(display_idx);
-        self.tts.sentence_offset = audio_idx;
+        // Quick-start batches contain only one sentence; keep indices relative
+        // to that batch and rely on `quick_start_display_idx` to re-anchor once
+        // full-page normalization arrives.
+        self.tts.sentence_offset = 0;
         self.tts.display_to_audio = vec![None; sentence_count];
         if display_idx < self.tts.display_to_audio.len() {
-            self.tts.display_to_audio[display_idx] = Some(audio_idx);
+            self.tts.display_to_audio[display_idx] = Some(0);
         }
-        self.tts.audio_to_display = vec![display_idx; audio_idx.saturating_add(1)];
+        self.tts.audio_to_display = vec![display_idx];
         self.tts.pending_append = true;
         self.tts.prepare_dispatched = true;
         effects.push(Effect::PrepareTtsBatches {
             page,
             request_id,
-            audio_start_idx: audio_idx,
+            audio_start_idx: 0,
             audio_sentences: vec![audio_sentence],
         });
     }

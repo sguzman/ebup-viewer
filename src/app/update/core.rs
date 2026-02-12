@@ -239,17 +239,24 @@ impl App {
                 let threads = self.config.tts_threads.max(1);
                 let progress_log_interval =
                     Duration::from_secs_f32(self.config.tts_progress_log_interval_secs);
-                let remaining = audio_sentences.len().saturating_sub(audio_start_idx);
+                let clamped_start_idx =
+                    audio_start_idx.min(audio_sentences.len().saturating_sub(1));
+                let start_idx = if audio_sentences.is_empty() {
+                    0
+                } else {
+                    clamped_start_idx
+                };
+                let remaining = audio_sentences.len().saturating_sub(start_idx);
                 let initial_count = remaining.min(1);
                 let initial_sentences = audio_sentences
                     .iter()
-                    .skip(audio_start_idx)
+                    .skip(start_idx)
                     .take(initial_count)
                     .cloned()
                     .collect::<Vec<_>>();
                 let append_sentences = audio_sentences
                     .iter()
-                    .skip(audio_start_idx + initial_count)
+                    .skip(start_idx + initial_count)
                     .cloned()
                     .collect::<Vec<_>>();
                 self.tts.pending_append = !append_sentences.is_empty();
@@ -259,13 +266,13 @@ impl App {
                     Some(super::super::state::PendingAppendBatch {
                         page,
                         request_id,
-                        start_idx: audio_start_idx + initial_count,
+                        start_idx: start_idx + initial_count,
                         audio_sentences: append_sentences,
                     })
                 };
                 info!(
                     page = page + 1,
-                    audio_start_idx,
+                    audio_start_idx = start_idx,
                     initial_count,
                     append_count = self
                         .tts
@@ -290,13 +297,13 @@ impl App {
                             )
                             .map(|files| Message::TtsPrepared {
                                 page,
-                                start_idx: audio_start_idx,
+                                start_idx,
                                 request_id,
                                 files,
                             })
                             .unwrap_or_else(|_| Message::TtsPrepared {
                                 page,
-                                start_idx: audio_start_idx,
+                                start_idx,
                                 request_id,
                                 files: Vec::new(),
                             })

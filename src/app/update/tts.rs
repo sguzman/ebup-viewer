@@ -7,6 +7,9 @@ use iced::widget::scrollable::RelativeOffset;
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
+mod effects;
+mod transitions;
+
 impl App {
     pub(super) fn handle_toggle_tts_controls(&mut self, effects: &mut Vec<Effect>) {
         debug!("Toggled TTS controls");
@@ -510,78 +513,16 @@ impl App {
         plan: crate::normalizer::PageNormalization,
         effects: &mut Vec<Effect>,
     ) {
-        if request_id != self.tts.request_id {
-            debug!(
-                request_id,
-                current = self.tts.request_id,
-                "Ignoring stale TTS plan request"
-            );
-            return;
-        }
-        if page != self.reader.current_page {
-            debug!(
+        let actions = transitions::transition(
+            self,
+            transitions::TtsEvent::PlanReady {
                 page,
-                current = self.reader.current_page,
-                "Ignoring stale TTS plan for different page"
-            );
-            return;
-        }
-
-        let full_audio_sentences = plan.audio_sentences;
-        if full_audio_sentences.is_empty() {
-            warn!(
-                page = page + 1,
-                display_idx = requested_display_idx,
-                "No speakable text on page after normalization"
-            );
-            self.tts.lifecycle = TtsLifecycle::Idle;
-            self.tts.pending_append = false;
-            self.tts.pending_append_batch = None;
-            self.tts.current_sentence_idx = Some(requested_display_idx);
-            self.tts.sentence_offset = 0;
-            return;
-        }
-
-        // Guard against stale/corrupted mappings that can reference audio indices
-        // outside this exact normalization payload.
-        self.tts.display_to_audio = plan
-            .display_to_audio
-            .into_iter()
-            .map(|mapped| mapped.filter(|idx| *idx < full_audio_sentences.len()))
-            .collect();
-        self.tts.audio_to_display = plan
-            .audio_to_display
-            .into_iter()
-            .take(full_audio_sentences.len())
-            .collect();
-
-        let Some(mut audio_start_idx) =
-            self.find_audio_start_for_display_sentence(requested_display_idx)
-        else {
-            warn!(
-                page = page + 1,
-                display_idx = requested_display_idx,
-                "No speakable text on page after normalization"
-            );
-            self.tts.lifecycle = TtsLifecycle::Idle;
-            self.tts.pending_append = false;
-            self.tts.pending_append_batch = None;
-            self.tts.current_sentence_idx = Some(requested_display_idx);
-            self.tts.sentence_offset = 0;
-            return;
-        };
-        audio_start_idx = audio_start_idx.min(full_audio_sentences.len().saturating_sub(1));
-        let display_start_idx = self
-            .display_index_for_audio_sentence(audio_start_idx)
-            .unwrap_or(requested_display_idx);
-        self.tts.sentence_offset = audio_start_idx;
-        self.tts.current_sentence_idx = Some(display_start_idx);
-        effects.push(Effect::PrepareTtsBatches {
-            page,
-            request_id,
-            audio_start_idx,
-            audio_sentences: full_audio_sentences,
-        });
+                requested_display_idx,
+                request_id,
+                plan,
+            },
+        );
+        effects::append_effects_from_actions(actions, effects);
     }
 
     pub(super) fn start_playback_from(
@@ -589,79 +530,11 @@ impl App {
         page: usize,
         sentence_idx: usize,
     ) -> Task<super::super::messages::Message> {
-        if self.tts.engine.is_none() {
-            return Task::none();
-        }
-
-        self.stop_playback();
-        self.tts.track.clear();
-        self.tts.elapsed = Duration::ZERO;
-        self.tts.started_at = None;
-
-        let display_sentences = self.raw_sentences_for_page(page);
-        if display_sentences.is_empty() {
-            self.tts.lifecycle = TtsLifecycle::Idle;
-            self.tts.pending_append = false;
-            self.tts.pending_append_batch = None;
-            self.tts.current_sentence_idx = None;
-            self.tts.sentence_offset = 0;
-            self.tts.display_to_audio.clear();
-            self.tts.audio_to_display.clear();
-            return Task::none();
-        }
-
-        let requested_display_idx = sentence_idx.min(display_sentences.len().saturating_sub(1));
-        if let Some((preparing_page, preparing_sentence_idx, _)) = self.tts.preparing_context() {
-            if preparing_page == page && preparing_sentence_idx == requested_display_idx {
-                info!(
-                    page = page + 1,
-                    sentence_idx = requested_display_idx,
-                    "Skipping duplicate TTS start request while preparation is in progress"
-                );
-                return Task::none();
-            }
-        }
-        self.tts.current_sentence_idx = Some(requested_display_idx);
-        self.tts.sentence_offset = requested_display_idx;
-
-        self.tts.started_at = None;
-        self.tts.elapsed = Duration::ZERO;
-        self.tts.pending_append = false;
-        self.tts.pending_append_batch = None;
-        self.tts.request_id = self.tts.request_id.wrapping_add(1);
-        let request_id = self.tts.request_id;
-        self.tts.lifecycle = TtsLifecycle::Preparing {
-            page,
-            sentence_idx: requested_display_idx,
-            request_id,
-        };
-        info!(
-            page = page + 1,
-            sentence_idx = requested_display_idx,
-            request_id,
-            "Scheduling async TTS planning tasks"
+        let actions = transitions::transition(
+            self,
+            transitions::TtsEvent::StartRequested { page, sentence_idx },
         );
-        let normalizer = self.normalizer.clone();
-        let epub_path = self.epub_path.clone();
-        debug!(
-            page = page + 1,
-            sentence_idx = requested_display_idx,
-            request_id,
-            "Quick-start batch disabled; waiting for full normalization plan"
-        );
-        let full_task = Task::perform(
-            async move {
-                let plan = normalizer.plan_page_cached(&epub_path, page, &display_sentences);
-                super::super::messages::Message::TtsPlanReady {
-                    page,
-                    requested_display_idx,
-                    request_id,
-                    plan,
-                }
-            },
-            |msg| msg,
-        );
-        full_task
+        effects::tasks_from_actions(self, actions)
     }
 
     fn begin_play_from_sentence(

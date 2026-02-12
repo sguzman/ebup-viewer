@@ -48,6 +48,9 @@ impl From<ConfigTables> for AppConfig {
             key_prev_sentence: tables.keybindings.prev_sentence,
             key_repeat_sentence: tables.keybindings.repeat_sentence,
             key_toggle_search: tables.keybindings.toggle_search,
+            key_toggle_settings: tables.keybindings.toggle_settings,
+            key_toggle_stats: tables.keybindings.toggle_stats,
+            key_toggle_tts: tables.keybindings.toggle_tts,
             show_tts: tables.ui.show_tts,
             show_settings: tables.ui.show_settings,
             log_level: tables.logging.log_level,
@@ -111,6 +114,9 @@ impl From<&AppConfig> for ConfigTables {
                 prev_sentence: config.key_prev_sentence.clone(),
                 repeat_sentence: config.key_repeat_sentence.clone(),
                 toggle_search: config.key_toggle_search.clone(),
+                toggle_settings: config.key_toggle_settings.clone(),
+                toggle_stats: config.key_toggle_stats.clone(),
+                toggle_tts: config.key_toggle_tts.clone(),
             },
         }
     }
@@ -280,6 +286,12 @@ struct KeybindingsConfig {
     repeat_sentence: String,
     #[serde(default = "defaults::default_key_toggle_search")]
     toggle_search: String,
+    #[serde(default = "defaults::default_key_toggle_settings")]
+    toggle_settings: String,
+    #[serde(default = "defaults::default_key_toggle_stats")]
+    toggle_stats: String,
+    #[serde(default = "defaults::default_key_toggle_tts")]
+    toggle_tts: String,
 }
 
 impl Default for KeybindingsConfig {
@@ -291,6 +303,9 @@ impl Default for KeybindingsConfig {
             prev_sentence: defaults::default_key_prev_sentence(),
             repeat_sentence: defaults::default_key_repeat_sentence(),
             toggle_search: defaults::default_key_toggle_search(),
+            toggle_settings: defaults::default_key_toggle_settings(),
+            toggle_stats: defaults::default_key_toggle_stats(),
+            toggle_tts: defaults::default_key_toggle_tts(),
         }
     }
 }

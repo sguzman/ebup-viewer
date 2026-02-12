@@ -111,3 +111,15 @@ pub(crate) fn default_key_repeat_sentence() -> String {
 pub(crate) fn default_key_toggle_search() -> String {
     "ctrl+f".to_string()
 }
+
+pub(crate) fn default_key_toggle_settings() -> String {
+    "ctrl+t".to_string()
+}
+
+pub(crate) fn default_key_toggle_stats() -> String {
+    "ctrl+g".to_string()
+}
+
+pub(crate) fn default_key_toggle_tts() -> String {
+    "ctrl+y".to_string()
+}

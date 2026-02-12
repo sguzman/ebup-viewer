@@ -71,6 +71,12 @@ pub struct AppConfig {
     pub key_repeat_sentence: String,
     #[serde(default = "crate::config::defaults::default_key_toggle_search")]
     pub key_toggle_search: String,
+    #[serde(default = "crate::config::defaults::default_key_toggle_settings")]
+    pub key_toggle_settings: String,
+    #[serde(default = "crate::config::defaults::default_key_toggle_stats")]
+    pub key_toggle_stats: String,
+    #[serde(default = "crate::config::defaults::default_key_toggle_tts")]
+    pub key_toggle_tts: String,
 }
 
 impl Default for AppConfig {
@@ -111,6 +117,9 @@ impl Default for AppConfig {
             key_prev_sentence: crate::config::defaults::default_key_prev_sentence(),
             key_repeat_sentence: crate::config::defaults::default_key_repeat_sentence(),
             key_toggle_search: crate::config::defaults::default_key_toggle_search(),
+            key_toggle_settings: crate::config::defaults::default_key_toggle_settings(),
+            key_toggle_stats: crate::config::defaults::default_key_toggle_stats(),
+            key_toggle_tts: crate::config::defaults::default_key_toggle_tts(),
         }
     }
 }

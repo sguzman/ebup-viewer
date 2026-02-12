@@ -1024,15 +1024,15 @@ impl App {
         let sentences_through = sentences_before + page_sentences;
         let total_sentences: usize = self.reader.page_sentence_counts.iter().sum();
 
-        let percent_start = if total_words == 0 {
+        let percent_start = if total_sentences == 0 {
             0.0
         } else {
-            words_before as f32 / total_words as f32 * 100.0
+            sentences_before as f32 / total_sentences as f32 * 100.0
         };
-        let percent_end = if total_words == 0 {
+        let percent_end = if total_sentences == 0 {
             0.0
         } else {
-            words_through as f32 / total_words as f32 * 100.0
+            sentences_through as f32 / total_sentences as f32 * 100.0
         };
 
         let panel = column![

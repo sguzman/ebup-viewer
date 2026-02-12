@@ -236,6 +236,9 @@ impl App {
                             overrides.key_prev_sentence = base_config.key_prev_sentence.clone();
                             overrides.key_repeat_sentence = base_config.key_repeat_sentence.clone();
                             overrides.key_toggle_search = base_config.key_toggle_search.clone();
+                            overrides.key_toggle_settings = base_config.key_toggle_settings.clone();
+                            overrides.key_toggle_stats = base_config.key_toggle_stats.clone();
+                            overrides.key_toggle_tts = base_config.key_toggle_tts.clone();
                             config = overrides;
                         }
                         let bookmark = load_bookmark(&requested_path);

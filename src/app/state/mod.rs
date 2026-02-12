@@ -780,4 +780,7 @@ fn clamp_config(config: &mut AppConfig) {
     normalize_key_binding(&mut config.key_prev_sentence, "s".to_string());
     normalize_key_binding(&mut config.key_repeat_sentence, "r".to_string());
     normalize_key_binding(&mut config.key_toggle_search, "ctrl+f".to_string());
+    normalize_key_binding(&mut config.key_toggle_settings, "ctrl+t".to_string());
+    normalize_key_binding(&mut config.key_toggle_stats, "ctrl+g".to_string());
+    normalize_key_binding(&mut config.key_toggle_tts, "ctrl+y".to_string());
 }

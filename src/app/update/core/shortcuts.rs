@@ -37,6 +37,23 @@ impl App {
             modifiers,
         ) {
             Some(Message::ToggleSearch)
+        } else if Self::shortcut_matches(
+            &self.config.key_toggle_settings,
+            "ctrl+t",
+            &pressed,
+            modifiers,
+        ) {
+            Some(Message::ToggleSettings)
+        } else if Self::shortcut_matches(
+            &self.config.key_toggle_stats,
+            "ctrl+g",
+            &pressed,
+            modifiers,
+        ) {
+            Some(Message::ToggleStats)
+        } else if Self::shortcut_matches(&self.config.key_toggle_tts, "ctrl+y", &pressed, modifiers)
+        {
+            Some(Message::ToggleTtsControls)
         } else {
             None
         }

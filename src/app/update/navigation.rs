@@ -90,13 +90,39 @@ impl App {
     fn go_to_page(&mut self, new_page: usize) -> Vec<Effect> {
         let mut effects = Vec::new();
         if new_page < self.reader.pages.len() {
+            let was_paused = self
+                .tts
+                .playback
+                .as_ref()
+                .map(|p| p.is_paused())
+                .unwrap_or(matches!(
+                    self.tts.lifecycle,
+                    super::super::state::TtsLifecycle::Paused
+                ));
+            let should_resume_playback = self
+                .tts
+                .playback
+                .as_ref()
+                .map(|p| !p.is_paused())
+                .unwrap_or_else(|| self.tts.is_playing() || self.tts.is_preparing());
             self.reader.current_page = new_page;
+            let sentence_count = self.sentence_count_for_page(new_page);
+            self.tts.set_current_sentence_clamped(0, sentence_count);
+            self.tts.last_sentences = self.raw_sentences_for_page(new_page);
             self.bookmark.last_scroll_offset = RelativeOffset::START;
             tracing::info!(page = self.reader.current_page + 1, "Navigated to page");
-            effects.push(Effect::StartTts {
-                page: self.reader.current_page,
-                sentence_idx: 0,
-            });
+            if should_resume_playback {
+                self.tts.resume_after_prepare = true;
+                effects.push(Effect::StartTts {
+                    page: self.reader.current_page,
+                    sentence_idx: 0,
+                });
+            } else {
+                self.stop_playback();
+                if was_paused {
+                    self.tts.lifecycle = super::super::state::TtsLifecycle::Paused;
+                }
+            }
             effects.push(Effect::AutoScrollToCurrent);
             effects.push(Effect::SaveBookmark);
         }

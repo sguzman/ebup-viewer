@@ -195,24 +195,53 @@ impl App {
     }
 
     pub(super) fn handle_seek_forward(&mut self, effects: &mut Vec<Effect>) {
+        let was_paused = self
+            .tts
+            .playback
+            .as_ref()
+            .map(|p| p.is_paused())
+            .unwrap_or(matches!(self.tts.lifecycle, TtsLifecycle::Paused));
+        let should_resume_playback = self
+            .tts
+            .playback
+            .as_ref()
+            .map(|p| !p.is_paused())
+            .unwrap_or_else(|| self.tts.is_playing() || self.tts.is_preparing());
         let next_idx = self.tts.current_sentence_idx.unwrap_or(0) + 1;
         if next_idx < self.sentence_count_for_page(self.reader.current_page) {
             info!(next_idx, "Seeking forward within page");
-            self.tts.resume_after_prepare = true;
-            effects.push(Effect::StartTts {
-                page: self.reader.current_page,
-                sentence_idx: next_idx,
-            });
+            if should_resume_playback {
+                self.tts.resume_after_prepare = true;
+                effects.push(Effect::StartTts {
+                    page: self.reader.current_page,
+                    sentence_idx: next_idx,
+                });
+            } else {
+                self.stop_playback();
+                if was_paused {
+                    self.tts.lifecycle = TtsLifecycle::Paused;
+                }
+                self.tts.current_sentence_idx = Some(next_idx);
+            }
             effects.push(Effect::AutoScrollToCurrent);
             effects.push(Effect::SaveBookmark);
         } else if self.reader.current_page + 1 < self.reader.pages.len() {
             self.reader.current_page += 1;
             info!("Seeking forward into next page");
-            self.tts.resume_after_prepare = true;
-            effects.push(Effect::StartTts {
-                page: self.reader.current_page,
-                sentence_idx: 0,
-            });
+            self.tts.last_sentences = self.raw_sentences_for_page(self.reader.current_page);
+            if should_resume_playback {
+                self.tts.resume_after_prepare = true;
+                effects.push(Effect::StartTts {
+                    page: self.reader.current_page,
+                    sentence_idx: 0,
+                });
+            } else {
+                self.stop_playback();
+                if was_paused {
+                    self.tts.lifecycle = TtsLifecycle::Paused;
+                }
+                self.tts.current_sentence_idx = Some(0);
+            }
             self.bookmark.last_scroll_offset = RelativeOffset::START;
             effects.push(Effect::SaveConfig);
             effects.push(Effect::AutoScrollToCurrent);
@@ -221,17 +250,38 @@ impl App {
     }
 
     pub(super) fn handle_seek_backward(&mut self, effects: &mut Vec<Effect>) {
+        let was_paused = self
+            .tts
+            .playback
+            .as_ref()
+            .map(|p| p.is_paused())
+            .unwrap_or(matches!(self.tts.lifecycle, TtsLifecycle::Paused));
+        let should_resume_playback = self
+            .tts
+            .playback
+            .as_ref()
+            .map(|p| !p.is_paused())
+            .unwrap_or_else(|| self.tts.is_playing() || self.tts.is_preparing());
         let current_idx = self.tts.current_sentence_idx.unwrap_or(0);
         if current_idx > 0 {
             info!(
                 previous_idx = current_idx.saturating_sub(1),
                 "Seeking backward within page"
             );
-            self.tts.resume_after_prepare = true;
-            effects.push(Effect::StartTts {
-                page: self.reader.current_page,
-                sentence_idx: current_idx - 1,
-            });
+            let previous_idx = current_idx - 1;
+            if should_resume_playback {
+                self.tts.resume_after_prepare = true;
+                effects.push(Effect::StartTts {
+                    page: self.reader.current_page,
+                    sentence_idx: previous_idx,
+                });
+            } else {
+                self.stop_playback();
+                if was_paused {
+                    self.tts.lifecycle = TtsLifecycle::Paused;
+                }
+                self.tts.current_sentence_idx = Some(previous_idx);
+            }
             effects.push(Effect::AutoScrollToCurrent);
             effects.push(Effect::SaveBookmark);
         } else if self.reader.current_page > 0 {
@@ -240,11 +290,20 @@ impl App {
                 .sentence_count_for_page(self.reader.current_page)
                 .saturating_sub(1);
             info!("Seeking backward into previous page");
-            self.tts.resume_after_prepare = true;
-            effects.push(Effect::StartTts {
-                page: self.reader.current_page,
-                sentence_idx: last_idx,
-            });
+            self.tts.last_sentences = self.raw_sentences_for_page(self.reader.current_page);
+            if should_resume_playback {
+                self.tts.resume_after_prepare = true;
+                effects.push(Effect::StartTts {
+                    page: self.reader.current_page,
+                    sentence_idx: last_idx,
+                });
+            } else {
+                self.stop_playback();
+                if was_paused {
+                    self.tts.lifecycle = TtsLifecycle::Paused;
+                }
+                self.tts.current_sentence_idx = Some(last_idx);
+            }
             self.bookmark.last_scroll_offset = RelativeOffset::START;
             effects.push(Effect::SaveConfig);
             effects.push(Effect::AutoScrollToCurrent);

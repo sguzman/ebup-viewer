@@ -70,7 +70,7 @@ impl App {
 
     pub(super) fn handle_jump_to_current_audio(&mut self, effects: &mut Vec<Effect>) {
         if let Some(idx) = self.tts.current_sentence_idx {
-            if let Some(offset) = self.scroll_offset_for_sentence(idx) {
+            if let Some(offset) = self.scroll_offset_for_sentence_jump(idx) {
                 info!(
                     idx,
                     fraction = offset.y,
@@ -141,6 +141,25 @@ impl App {
     }
 
     pub(crate) fn scroll_offset_for_sentence(&self, sentence_idx: usize) -> Option<RelativeOffset> {
+        self.scroll_offset_for_sentence_with_mode(
+            sentence_idx,
+            self.config.center_spoken_sentence,
+            false,
+        )
+    }
+
+    fn scroll_offset_for_sentence_jump(&self, sentence_idx: usize) -> Option<RelativeOffset> {
+        // Jump actions should be stricter than passive tracking: force center behavior and
+        // keep a visibility guard band so the highlighted sentence does not land outside view.
+        self.scroll_offset_for_sentence_with_mode(sentence_idx, true, true)
+    }
+
+    fn scroll_offset_for_sentence_with_mode(
+        &self,
+        sentence_idx: usize,
+        center_spoken_sentence: bool,
+        guard_visibility: bool,
+    ) -> Option<RelativeOffset> {
         let model = self.scroll_target_model(sentence_idx)?;
         let progress = self.sentence_progress_for_model(&model).unwrap_or_else(|| {
             let clamped_idx = model
@@ -165,11 +184,17 @@ impl App {
         let sentence_start_px = text_top_px + progress.start * text_height_px;
         let sentence_middle_px = text_top_px + progress.middle * text_height_px;
 
-        let desired_top_px = if self.config.center_spoken_sentence {
+        let mut desired_top_px = if center_spoken_sentence {
             sentence_middle_px - 0.50 * viewport_height
         } else {
             sentence_start_px - 0.25 * viewport_height
         };
+
+        if guard_visibility {
+            let min_top = sentence_start_px - 0.85 * viewport_height;
+            let max_top = sentence_start_px - 0.08 * viewport_height;
+            desired_top_px = desired_top_px.clamp(min_top, max_top);
+        }
 
         // `snap_to` expects offset over the scrollable range (content - viewport).
         let scrollable_px = (content_height - viewport_height).max(1.0);

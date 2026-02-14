@@ -308,20 +308,9 @@ impl App {
     }
 
     fn text_units(text: &str) -> f32 {
-        text.chars()
-            .map(|ch| {
-                if ch == '\n' {
-                    2.0
-                } else if ch.is_whitespace() {
-                    0.35
-                } else if ch.is_ascii_punctuation() {
-                    0.65
-                } else {
-                    1.0
-                }
-            })
-            .sum::<f32>()
-            .max(1.0)
+        // Use exact character counts for sentence progress to avoid drift from
+        // punctuation/whitespace-heavy prose where weighted heuristics skew jumps.
+        text.chars().count().max(1) as f32
     }
 
     fn current_page_image_count(&self) -> usize {

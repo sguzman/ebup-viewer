@@ -84,12 +84,6 @@ impl App {
         let clamped = speed.clamp(MIN_TTS_SPEED, MAX_TTS_SPEED);
         self.config.tts_speed = clamped;
         info!(speed = self.config.tts_speed, "Adjusted TTS speed");
-        if self.config.tts_speed > 2.0 {
-            warn!(
-                speed = self.config.tts_speed,
-                "Very high playback speed can reduce intelligibility because playback uses post-processing time-stretch"
-            );
-        }
         if let Some(playback) = &self.tts.playback {
             self.tts.resume_after_prepare = !playback.is_paused();
             let idx = self.tts.current_sentence_idx.unwrap_or(0);

@@ -148,11 +148,7 @@ impl App {
             .spacing(4)
             .width(Length::FillPortion(1)),
             column![
-                text(if self.config.tts_speed > 2.0 {
-                    format!("Speed: {:.2}x (clarity may drop)", self.config.tts_speed)
-                } else {
-                    format!("Speed: {:.2}x", self.config.tts_speed)
-                }),
+                text(format!("Speed: {:.2}x", self.config.tts_speed)),
                 slider(
                     MIN_TTS_SPEED..=super::state::MAX_TTS_SPEED,
                     self.config.tts_speed,

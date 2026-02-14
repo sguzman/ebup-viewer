@@ -1,228 +1,411 @@
 # ebup-viewer
 
-Rust desktop EPUB reader with integrated TTS playback using Piper.
+Rust desktop reader for EPUB/TXT/Markdown with synchronized TTS playback, sentence highlighting, bookmark persistence, and a starter library flow (recent books + Calibre).
 
-`ebup-viewer` loads an EPUB, paginates the extracted text, and provides synchronized sentence-level audio playback with highlighting, bookmarking, and per-book persisted settings.
+## Current Project Status
 
-## Current Status
+This project is actively developed and currently supports:
 
-- UI: `iced` (`wgpu` backend)
-- EPUB parsing: `epub` + `html2text`
-- TTS model runtime: `piper-rs`
-- Audio playback: `rodio`
-- Speed/pitch compensation at playback: `sonic-rs-sys`
-- TTS parallelism: multi-process worker pool (`tts_threads`)
+- Reading flow with sentence-aware highlighting and click-to-play from sentence.
+- TTS synthesis through Piper (`piper-rs`) with multi-process workers.
+- Audio playback through `rodio`, with playback speed applied as post-processing (`sonic-rs-sys`).
+- Text normalization and chunking pipeline for TTS quality and stability.
+- Starter mode for opening local files, recent books, and Calibre-backed books.
+- Per-book persistent config/bookmark/cache with content-hash-based cache directories.
+- Ctrl+C safe quit handling with config/bookmark save before exit.
 
-## Features
+## Supported Source Formats
 
-- EPUB text extraction from spine chapters
-- Reader pagination with configurable lines-per-page
-- Configurable typography and spacing controls
-- Day/Night mode and sentence highlight colors
-- Sentence-aware TTS playback controls
-- Play from page start or current highlighted sentence
-- Seek sentence forward/backward
-- Auto-scroll to current spoken sentence
-- Scroll/position bookmark resume
-- Per-EPUB cached config and TTS WAV cache
-- Global audio progress indicator (`TTS xx.x%`) based on sentence index across the whole book
+- `.epub`
+- `.txt`
+- `.md` / `.markdown`
 
-## Architecture
+Loading behavior:
+
+- `.txt` is read directly.
+- `.md` and `.epub` attempt a `pandoc` plain-text conversion path first.
+- If `pandoc` conversion fails:
+- `.md` falls back to raw markdown text.
+- `.epub` falls back to native EPUB parsing (`epub` + `html2text`).
+
+Image behavior:
+
+- EPUB images are extracted and rendered in reading view.
+- Markdown image links (`![alt](path)`) are resolved and rendered when local files exist.
+
+## High-Level Features
+
+- Starter mode with:
+- Local path open input.
+- Recent books panel (with cached cover thumbnails).
+- Calibre browser panel (sortable/searchable).
+- Reader mode with:
+- Page navigation.
+- Theme toggle (day/night).
+- Text-only and pretty-text modes.
+- Search panel (regex-based).
+- TTS controls with sentence-level navigation.
+- Settings panel and stats panel (mutually exclusive).
+
+- TTS behavior:
+- Play page from start.
+- Play from highlighted sentence.
+- Click any sentence to play from there.
+- Sentence seek forward/backward.
+- Auto-scroll and optional center-tracking.
+- Jump to currently spoken sentence.
+
+- Persistence:
+- Per-book bookmark (`page`, sentence, scroll offset).
+- Per-book UI/TTS config overrides.
+- TTS WAV cache.
+- Normalization cache.
+
+## Architecture Overview
 
 Top-level modules:
 
-- `src/main.rs`: startup, logging, config load/override, EPUB load, app launch, worker mode dispatch
-- `src/app/`: GUI state/update/view
-- `src/tts.rs`: TTS engine facade, worker-pool orchestration, cache lookups, playback + time-stretching
-- `src/tts_worker.rs`: worker process entry (`--tts-worker`) that runs Piper synthesis and writes WAV files
-- `src/epub_loader.rs`: EPUB text extraction
-- `src/pagination.rs`: text-to-page chunking
-- `src/cache.rs`: bookmark/config/audio cache paths and persistence
-- `src/config/`: typed config model + TOML parsing/serialization
-- `src/text_utils.rs`: sentence splitting utility
+- `src/main.rs`: process startup, config load, path-mode vs starter-mode app launch, Ctrl+C signal flagging.
+- `src/app/`: GUI state/update/view, subscriptions, reducers/effects.
+- `src/epub_loader.rs`: source loading and image extraction.
+- `src/pagination.rs`: pagination from sentence stream into page text.
+- `src/text_utils.rs`: sentence splitting with abbreviation handling and oversized-comma-chain splitting.
+- `src/normalizer.rs`: TTS normalization, sentence/page caching, display/audio index mapping, long-sentence chunking.
+- `src/tts.rs`: TTS engine facade, worker pool orchestration, cache lookups, playback append/time-stretch.
+- `src/tts_worker.rs`: `--tts-worker` subprocess protocol and synthesis execution.
+- `src/cache.rs`: bookmark/config/cache paths, recent books, thumbnails.
+- `src/config/`: typed config models, grouped TOML schema, defaults, parse/serialize.
+- `src/calibre.rs`: Calibre catalog loading, caching, thumbnail hydration, export/materialization.
 
-### App update split
+App update split (`src/app/update/`):
 
-`src/app/update/` is organized by domain:
-
-- `core.rs`: reducer/effect dispatch/subscriptions
-- `navigation.rs`: page navigation and pagination-related behavior
-- `appearance.rs`: theme/typography/settings mutations
-- `tts.rs`: playback lifecycle, batch prep, seek, timing ticks
-- `scroll.rs`: scroll tracking, bookmark capture, jump-to-audio behavior
+- `core/mod.rs`: subscription wiring (`Tick`, runtime events, signal polling).
+- `core/reducer.rs`: message reducer and effect dispatch.
+- `core/runtime.rs`: effect execution (save/load, quit, async tasks).
+- `core/shortcuts.rs`: keybinding parsing/matching.
+- `appearance.rs`: config mutations (theme, fonts, spacing, numeric edit input, window geometry).
+- `navigation.rs`: page transitions and page-level state migration.
+- `scroll.rs`: scroll tracking, bookmark persistence throttling, geometry-aware sentence targeting.
+- `tts.rs`: user TTS actions and lifecycle glue.
+- `tts/transitions.rs`: explicit TTS state transitions and mapping setup.
+- `tts/effects.rs`: action-to-task/effect conversion.
 
 ## Runtime Flow
 
-1. `main` checks for `--tts-worker`; if present, runs worker loop and exits.
-2. Main app initializes tracing and loads `conf/config.toml`.
-3. If `.cache/<book-hash>/config.toml` exists, per-book overrides are loaded.
-4. `log_level` and `tts_threads` are explicitly taken from base config to avoid stale cached values.
-5. EPUB is loaded and converted to plain text.
-6. GUI app starts with bookmark restore (`page`, `sentence_idx`/`sentence_text`, `scroll_y`).
-7. On TTS start:
-   - Sentences are split for current page.
-   - Engine prepares WAV files from `sentence_idx..`.
-   - Missing files are synthesized by worker processes and written into cache.
-   - Playback starts through `rodio`.
-8. While playing, `Tick` updates current sentence highlight using accumulated clip durations + configured pause.
-9. At page end, playback auto-advances to next page if available.
+### 1) Startup
 
-## TTS Model and Parallelism
+- If process receives `--tts-worker`, it runs worker mode and exits after protocol loop.
+- Otherwise main app installs Ctrl+C handler, initializes tracing, loads `conf/config.toml`, and parses optional source path arg.
 
-This project uses `piper-rs` with separate worker processes to avoid in-process phonemization/threading issues.
+### 2) Starter Mode (no path arg)
 
-- `tts_threads = N` means up to `N` worker processes for sentence synthesis.
-- Work is per sentence (round-robin dispatch across workers).
-- Worker IPC is line-delimited JSON over stdin/stdout.
-- Audio generation is always done at normal synthesis rate.
-- Playback speed (`tts_speed`) is applied during playback, with Sonic time-stretching to reduce pitch distortion.
+- Opens starter UI (`run_app_starter`).
+- Recent books list is loaded from cache metadata.
+- Calibre list can load immediately if enabled in `conf/calibre.toml`.
 
-## Requirements
+### 3) Direct Book Mode (path arg)
 
-Tested on Linux. You need:
+- Source path is remembered in cache metadata.
+- Per-book cached config override is loaded if present.
+- Some fields are intentionally forced from base config to avoid stale per-book values:
+- `log_level`
+- `tts_threads`
+- `tts_progress_log_interval_secs`
+- all keybindings
 
-- Rust toolchain (`cargo`, `rustc`)
-- C toolchain (`clang`/`cc`, linker)
-- `cmake` (for vendored `espeak-rs-sys` build)
-- ONNX Runtime library available to linker/runtime (`libonnxruntime`)
-- ALSA development/runtime (`libasound`)
-- Piper voice model files (`.onnx` + matching `.onnx.json`)
-- eSpeak data directory (for phonemization data used by Piper)
+- Bookmark is loaded if present.
+- Source text and images are loaded.
+- Reader app starts and restores page/sentence/scroll when possible.
+
+### 4) Reading and TTS
+
+- Page text is represented as sentence lists.
+- TTS start request goes through transition logic:
+- normalize + map display sentences to audio sentences.
+- split initial batch vs append batch.
+- synthesize/cache missing audio in worker pool.
+- start playback with optional pause insertion.
+
+- Highlight index is updated from playback timing ticks and mapping.
+- Auto-scroll targets use geometry-aware estimates and guard bands to keep highlighted text visible.
+
+## UI and Layout Behavior
+
+### Top Controls
+
+- Buttons include: `Previous`, `Next`, theme toggle, `Close Book`, settings toggle, stats toggle, plus optional controls (`Text Only`/`Pretty Text`, TTS toggle, search toggle).
+- Top bar uses width planning (`src/app/topbar_layout.rs`) to hide lower-priority controls when width is tight.
+- Control rows and TTS controls are fixed-height to avoid vertical text/button collapse.
+
+### Text Modes
+
+- `Pretty Text`: page sentence view with clickable spans and sentence highlight.
+- `Text Only`: normalized TTS preview with clickable spans mapped back to display sentence indices.
+
+### Settings Panel
+
+- Font family/weight, line spacing, pause-after-sentence, lines-per-page, margins, word/letter spacing.
+- Auto-scroll toggle and center-tracking toggle.
+- Day/night highlight RGBA controls.
+- Numeric setting labels can be clicked to edit directly in a text box.
+- Numeric text input validates range/type and shows red border when invalid.
+- While numeric input is active, mouse wheel adjusts value by setting-specific step.
+
+### Stats Panel
+
+- Mutually exclusive with settings panel.
+- Includes:
+- Page index
+- TTS progress (3 decimals)
+- page/book ETA
+- words/sentences on page
+- percent at page start/end
+- words/sentences read through current page
+
+### Search
+
+- Regex-based sentence search within current page context.
+- In text-only mode it searches normalized audio sentences.
+- In pretty mode it searches display sentences.
+
+## TTS, Normalization, and Quality Pipeline
+
+### Playback Speed vs Synthesis
+
+- Synthesis is generated by Piper workers.
+- Playback speed (`tts_speed`) is applied later at playback append (`time_stretch`), not in synthesis generation.
+
+### Normalization (`conf/normalizer.toml`)
+
+- Cleans markdown/link/citation noise.
+- Expands abbreviations/acronyms and supports custom pronunciation maps.
+- Supports sentence-level or page-level normalization cache modes.
+- Performs long-sentence chunking for TTS (`chunk_long_sentences`, char/word limits).
+
+### Mapping Model
+
+Normalization outputs:
+
+- `audio_sentences`
+- `display_to_audio`
+- `audio_to_display`
+
+These mappings are used to keep click-to-play, highlight, and auto-scroll aligned when one display sentence maps to multiple audio chunks.
+
+### Oversized Sentence Handling
+
+- TTS chunking limits are configurable (`max_audio_chars_per_chunk`, `max_audio_words_per_chunk`).
+- Display sentence splitting also protects UI alignment for long comma/semicolon chains.
+- This prevents giant single-span highlights and improves click/jump accuracy.
+
+## Configuration Reference
+
+Primary config file: `conf/config.toml`
+
+### `[appearance]`
+
+- `theme`: `day` or `night`
+- `font_family`: enum from `FontFamily`
+- `font_weight`: `light` / `normal` / `bold`
+- `font_size`: `12..36` clamp
+- `line_spacing`: `0.8..2.5` clamp
+- `word_spacing`: `0..5`
+- `letter_spacing`: `0..3`
+- `lines_per_page`: `8..1000` clamp
+- `margin_horizontal`: `0..1000`
+- `margin_vertical`: `0..100`
+- `day_highlight`: RGBA object
+- `night_highlight`: RGBA object
+
+Current defaults in code (`src/config/defaults.rs`):
+
+- `font_size = 22`
+- `lines_per_page = 700`
+
+### `[window]`
+
+- `width`, `height`
+- optional `x`, `y`
+
+Window values are clamped and persisted.
+
+### `[reading_behavior]`
+
+- `pause_after_sentence`: `0.0..2.0`, slider step `0.01`
+- `auto_scroll_tts`: bool
+- `center_spoken_sentence`: bool
+
+### `[ui]`
+
+- `show_tts`: bool
+- `show_settings`: bool
+
+### `[logging]`
+
+- `log_level`: `trace|debug|info|warn|error`
+
+### `[tts]`
+
+- `tts_model_path`: Piper model path (`.onnx`)
+- `tts_espeak_path`: root path for eSpeak data
+- `tts_speed`: playback speed (`0.1..3.0`)
+- `tts_volume`: `0.0..2.0`
+- `tts_threads`: worker process count (min `1`)
+- `tts_progress_log_interval_secs`: `0.1..60.0`
+
+### `[keybindings]`
+
+Defaults:
+
+- `toggle_play_pause = "space"`
+- `safe_quit = "q"`
+- `next_sentence = "f"`
+- `prev_sentence = "s"`
+- `repeat_sentence = "r"`
+- `toggle_search = "ctrl+f"`
+- `toggle_settings = "ctrl+t"`
+- `toggle_stats = "ctrl+g"`
+- `toggle_tts = "ctrl+y"`
 
 Notes:
 
-- Crate patch points `espeak-rs-sys` to `vendor/espeak-rs-sys`.
-- `.cargo/config.toml` sets `CMAKE_ARGS = "-DUSE_LIBPCAUDIO=OFF"` to avoid pcaudiolib dependency.
+- Shortcuts are normalized to lowercase.
+- `spacebar` alias is accepted for `space`.
+- Extra unexpected modifiers cause a mismatch.
 
-## Build
+## Normalizer Config Reference
+
+File: `conf/normalizer.toml`
+
+Important keys:
+
+- `enabled`
+- `mode = "sentence" | "page"`
+- whitespace cleanup toggles
+- markdown/link cleanup toggles
+- citation/bracket cleanup toggles
+- `chunk_long_sentences`
+- `max_audio_chars_per_chunk`
+- `max_audio_words_per_chunk`
+- `min_sentence_chars`
+- `require_alphanumeric`
+- replacement maps and token drops
+- acronym expansion and letter sounds
+- pronunciation controls:
+- year mode
+- brand map
+- custom pronunciations
+
+## Calibre Integration
+
+File: `conf/calibre.toml`
+
+Capabilities:
+
+- load catalog from Calibre targets
+- configurable columns and extension filter
+- cached catalog with TTL
+- thumbnail prefetch/cache
+- local materialization/export for selected books
+
+If disabled, starter UI still works for direct path and recent books.
+
+## Cache Layout and Persistence
+
+Root cache: `.cache/`
+
+Per source (content-hash dir): `.cache/<source-content-sha256>/`
+
+- `bookmark.toml`: page/sentence/scroll
+- `config.toml`: per-book settings
+- `source-path.txt`: canonical source path hint (for recent books)
+- `tts/tts-<hash>.wav`: synthesized audio cache
+- `normalized/`: normalization caches
+- `s-<sentence-hash>-<config-hash>.toml` (sentence mode)
+- `p<page>-<source-hash>-<config-hash>.toml` (page mode)
+- `thumbs/cover-thumb.jpg`: recent-book cover thumbnail
+
+Cache key notes:
+
+- TTS WAV key includes model path + normalized sentence text.
+- Normalization cache keys include normalization config hash.
+- Old cache entries are not auto-pruned.
+
+## Build and Run
+
+### Build
 
 ```bash
 cargo build --release
 ```
 
-## Run
+### Run in starter mode
 
 ```bash
-cargo run --release -- <path-to-book.epub>
+cargo run --release
 ```
 
-Example:
+### Run with a specific book
 
 ```bash
-cargo run --release -- res/pg64317-images-3.epub
+cargo run --release -- /path/to/book.epub
 ```
 
-## Configuration
+## Requirements
 
-Primary file: `conf/config.toml`
+Required:
 
-Sections:
+- Rust toolchain
+- C/C++ build toolchain (`cc`, linker, `clang` for bindgen toolchains)
+- `cmake`
+- ALSA runtime/dev (`libasound`)
+- Piper voice model (`.onnx` + matching `.onnx.json`)
+- eSpeak data directory
 
-- `[appearance]`
-- `[reading_behavior]`
-- `[ui]`
-- `[logging]`
-- `[tts]`
+Recommended:
 
-### Keys
+- `pandoc` for robust non-EPUB/plain conversion pipeline
 
-| Key | Type | Purpose |
-|---|---|---|
-| `appearance.theme` | `day`/`night` | UI theme |
-| `appearance.font_family` | enum | Reader font family |
-| `appearance.font_weight` | `light`/`normal`/`bold` | Reader font weight |
-| `appearance.font_size` | `u32` | Text size |
-| `appearance.line_spacing` | `f32` | Line height multiplier |
-| `appearance.word_spacing` | `u32` | Extra spacing between words |
-| `appearance.letter_spacing` | `u32` | Extra spacing between letters |
-| `appearance.lines_per_page` | `usize` | Pagination density |
-| `appearance.margin_horizontal` | `u16` | Horizontal padding |
-| `appearance.margin_vertical` | `u16` | Vertical padding |
-| `appearance.day_highlight` | RGBA object | Current sentence color in day mode |
-| `appearance.night_highlight` | RGBA object | Current sentence color in night mode |
-| `reading_behavior.pause_after_sentence` | `f32` | Pause inserted between clips |
-| `reading_behavior.auto_scroll_tts` | `bool` | Follow sentence while playing |
-| `reading_behavior.center_spoken_sentence` | `bool` | Center-ish tracking behavior |
-| `ui.show_tts` | `bool` | Show TTS controls |
-| `ui.show_settings` | `bool` | Show settings panel |
-| `logging.log_level` | `trace..error` | Runtime log verbosity |
-| `tts.tts_model_path` | `string` | Path to Piper `.onnx` model |
-| `tts.tts_espeak_path` | `string` | Root path containing `espeak-ng-data` |
-| `tts.tts_speed` | `f32` | Playback speed multiplier |
-| `tts.tts_threads` | `usize` | Worker process count for synthesis |
+Project-specific notes:
 
-## Cache Layout
+- `espeak-rs-sys` is patched to vendored path in `Cargo.toml`.
+- `.cargo/config.toml` sets `CMAKE_ARGS = "-DUSE_LIBPCAUDIO=OFF"`.
 
-Cache root is `.cache/`.
+## Signal Handling and Safe Exit
 
-Per EPUB, files are under `.cache/<sha256(epub-path)>/`:
-
-- `bookmark.toml`: page/sentence/scroll resume state
-- `config.toml`: per-book persisted UI + TTS settings
-- `tts/tts-<hash>.wav`: sentence-level synthesized audio cache
-
-Audio cache key hash uses model path + sentence text. Changing model path naturally invalidates cache keys.
-
-## UI Controls
-
-Reader controls:
-
-- Previous/Next page
-- Theme toggle
-- Settings panel toggle
-- TTS panel toggle
-- Font size slider
-
-TTS controls:
-
-- Seek backward/forward sentence
-- Play/Pause
-- Play page from start
-- Play from highlighted sentence
-- Jump to current audio sentence
-- Speed slider
-
-Top bar status:
-
-- `Page n of m`
-- `TTS xx.x%` global audio cursor progress
-
-## Logging
-
-- Tracing is initialized at startup.
-- Default filter falls back to `debug` if not configured.
-- `logging.log_level` in config is applied at runtime.
-- `RUST_LOG` can still influence initial startup filter.
+- Ctrl+C sets an atomic flag from signal handler.
+- App polls system signals on subscription interval (`120ms`).
+- On signal, app dispatches safe quit effect:
+- save per-book config
+- persist bookmark
+- stop playback
+- exit
 
 ## Troubleshooting
 
-### Linker errors around `audio_object_*` / `create_audio_device_object`
+### `espeak-rs-sys` transmute warnings
 
-If these appear, ensure vendored `espeak-rs-sys` is active and built with pcaudiolib disabled.
+- Warnings from generated bindgen output are non-fatal.
 
-Check:
+### Vulkan `Unrecognized present mode ...`
 
-- `Cargo.toml` has `[patch.crates-io] espeak-rs-sys = { path = "vendor/espeak-rs-sys" }`
-- `.cargo/config.toml` includes `CMAKE_ARGS = "-DUSE_LIBPCAUDIO=OFF"`
+- Usually driver/backend informational (`wgpu-hal`).
 
-Then clean and rebuild:
+### Missing/failed pandoc conversion
 
-```bash
-cargo clean
-cargo build --release
-```
+- Reader attempts fallback paths for `.md` and `.epub`.
+- For non-EPUB formats beyond supported text/markdown, install/fix pandoc or use supported formats.
 
-### `espeak-rs-sys` "unnecessary transmute" warnings
+### Cache confusion after normalization changes
 
-These are generated in bindgen output from dependency build artifacts and are non-fatal.
+- Normalization changes should generate new normalized cache keys.
+- If you want a clean slate, remove relevant per-book cache directories under `.cache/`.
 
-### Vulkan warning `Unrecognized present mode 1000361000`
+## Dependency Compatibility Status
 
-This comes from `wgpu-hal`/driver interactions. If app behavior is normal, it is usually informational.
-
-### `tts_threads` appears ignored
-
-Current startup logic intentionally forces `tts_threads` from base `conf/config.toml` over cached per-book config to avoid stale values.
+- Current checked stack is stable with `piper-rs = 0.1.9` and `ort = 2.0.0-rc.9` in lockfile.
+- A full blanket `cargo update` currently pulls `ort/ort-sys` newer RCs and breaks `piper-rs` compile due upstream incompatibility.
+- Use targeted updates only until upstream versions align.
 
 ## Development
 
@@ -230,21 +413,22 @@ Useful commands:
 
 ```bash
 cargo check
-cargo fmt
+cargo test
+cargo fmt --all
 cargo clippy --all-targets --all-features
 ```
 
-If you change config schema:
+When editing config schema:
 
-- Update `src/config/models.rs`
-- Update table mapping in `src/config/tables.rs`
-- Update defaults in `src/config/defaults.rs`
-- Update sample `conf/config.toml`
+- update `src/config/models.rs`
+- update `src/config/tables.rs`
+- update `src/config/defaults.rs`
+- update `conf/config.toml` sample
+- update README config reference
 
-If you change TTS worker protocol:
+When editing TTS worker protocol:
 
-- Keep request/response structs in sync between `src/tts.rs` and `src/tts_worker.rs`
-- Validate worker mode manually with `cargo run -- --tts-worker ...` only for debugging
+- keep `src/tts.rs` request/response structures aligned with `src/tts_worker.rs`
 
 ## License
 

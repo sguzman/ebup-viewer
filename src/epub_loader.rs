@@ -22,7 +22,7 @@ static RE_MARKDOWN_IMAGE: Lazy<Regex> =
 const PANDOC_FILTER_REL_PATH: &str = "conf/pandoc/strip-nontext.lua";
 const PANDOC_PIPELINE_REV: &str = "pandoc-clean-v1";
 const QUACK_CHECK_CONFIG_REL_PATH: &str = "conf/quack-check.toml";
-const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v1";
+const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v2";
 const QUACK_CHECK_TEXT_FILENAME_DEFAULT: &str = "transcript.txt";
 
 #[derive(Debug, Clone)]
@@ -202,7 +202,7 @@ fn load_pdf_with_quack_check(path: &Path) -> Result<String> {
             total_chars = cached.len(),
             "Using cached quack-check PDF transcript"
         );
-        return Ok(cached);
+        return Ok(normalize_pdf_text_for_reader(&cached));
     }
 
     let (_, _, run_out_dir) = pdf_cache_paths(path);
@@ -217,7 +217,7 @@ fn load_pdf_with_quack_check(path: &Path) -> Result<String> {
     let text = if run.text.trim().is_empty() {
         "No textual content found in this file.".to_string()
     } else {
-        run.text
+        normalize_pdf_text_for_reader(&run.text)
     };
 
     write_pdf_cache(path, &signature, &text)?;
@@ -229,6 +229,56 @@ fn load_pdf_with_quack_check(path: &Path) -> Result<String> {
         "Finished quack-check PDF transcription"
     );
     Ok(text)
+}
+
+fn normalize_pdf_text_for_reader(input: &str) -> String {
+    // PDF text extraction often preserves physical line wraps. Unwrap lines inside
+    // paragraphs so pagination/highlighting tracks prose flow instead of scan layout.
+    let mut out = String::with_capacity(input.len());
+    let normalized = input.replace("\r\n", "\n").replace('\r', "\n");
+    let mut paragraph = String::new();
+
+    for line in normalized.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            flush_pdf_paragraph(&mut out, &mut paragraph);
+            continue;
+        }
+
+        if paragraph.is_empty() {
+            paragraph.push_str(trimmed);
+            continue;
+        }
+
+        if paragraph.ends_with('-')
+            && trimmed
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_lowercase())
+                .unwrap_or(false)
+        {
+            paragraph.pop();
+            paragraph.push_str(trimmed);
+        } else {
+            paragraph.push(' ');
+            paragraph.push_str(trimmed);
+        }
+    }
+
+    flush_pdf_paragraph(&mut out, &mut paragraph);
+    out.trim().to_string()
+}
+
+fn flush_pdf_paragraph(out: &mut String, paragraph: &mut String) {
+    if paragraph.trim().is_empty() {
+        paragraph.clear();
+        return;
+    }
+    if !out.is_empty() {
+        out.push_str("\n\n");
+    }
+    out.push_str(paragraph.trim());
+    paragraph.clear();
 }
 
 fn load_with_pandoc(path: &Path) -> Result<String> {

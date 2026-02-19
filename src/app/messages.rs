@@ -26,6 +26,7 @@ pub enum Message {
     SearchPrev,
     ToggleRecentBooks,
     OpenRecentBook(PathBuf),
+    DeleteRecentBook(PathBuf),
     ToggleCalibreBrowser,
     PrimeCalibreLoad,
     OpenPathInputChanged(String),

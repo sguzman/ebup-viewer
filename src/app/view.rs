@@ -351,7 +351,6 @@ impl App {
 impl App {
     fn starter_view(&self) -> Element<'_, Message> {
         let starter_width = self.config.window_width.max(320.0);
-        let show_recent_panel = self.recent.visible && starter_width >= 1_260.0;
         let show_calibre_panel = self.calibre.visible && starter_width >= 980.0;
         let show_refresh_button = starter_width >= 1_120.0;
 
@@ -410,17 +409,14 @@ impl App {
         if let Some(err) = &self.book_loading_error {
             top = top.push(text(err).size(13.0));
         }
-        if self.recent.visible && !show_recent_panel {
-            top = top.push(text("Recent panel hidden: window too narrow.").size(12.0));
+        if self.recent.visible {
+            top = top.push(self.recent_panel());
         }
         if self.calibre.visible && !show_calibre_panel {
             top = top.push(text("Calibre panel hidden: window too narrow.").size(12.0));
         }
 
         let mut layout: Row<'_, Message> = row![container(top).padding(16).width(Length::Fill)];
-        if show_recent_panel {
-            layout = layout.push(self.recent_panel());
-        }
         if show_calibre_panel {
             layout = layout.push(self.calibre_panel());
         }
@@ -547,6 +543,12 @@ impl App {
                         button("Open")
                     } else {
                         button("Open").on_press(Message::OpenRecentBook(book.source_path.clone()))
+                    },
+                    if self.book_loading {
+                        button("Delete")
+                    } else {
+                        button("Delete")
+                            .on_press(Message::DeleteRecentBook(book.source_path.clone()))
                     }
                 ]
                 .spacing(8)
@@ -562,7 +564,7 @@ impl App {
             scrollable(entries).height(Length::Fill)
         ]
         .spacing(8)
-        .width(Length::Fixed(360.0));
+        .width(Length::Fill);
 
         container(panel).padding(12).into()
     }

@@ -207,6 +207,25 @@ pub fn persist_clipboard_text_source(text: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+pub fn delete_recent_source_and_cache(source_path: &Path) -> Result<(), String> {
+    let cache_path = hash_dir(source_path);
+
+    if source_path.exists() {
+        let metadata = fs::metadata(source_path).map_err(|err| err.to_string())?;
+        if metadata.is_dir() {
+            fs::remove_dir_all(source_path).map_err(|err| err.to_string())?;
+        } else {
+            fs::remove_file(source_path).map_err(|err| err.to_string())?;
+        }
+    }
+
+    if cache_path.exists() {
+        fs::remove_dir_all(&cache_path).map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
+}
+
 pub fn list_recent_books(limit: usize) -> Vec<RecentBook> {
     let Ok(entries) = fs::read_dir(CACHE_DIR) else {
         return Vec::new();

@@ -24,6 +24,7 @@ impl App {
             Message::SearchPrev => self.handle_search_prev(&mut effects),
             Message::ToggleRecentBooks => self.handle_toggle_recent_books(),
             Message::OpenRecentBook(path) => self.handle_open_recent_book(path, &mut effects),
+            Message::DeleteRecentBook(path) => self.handle_delete_recent_book(path),
             Message::ToggleCalibreBrowser => self.handle_toggle_calibre_browser(&mut effects),
             Message::PrimeCalibreLoad => self.handle_prime_calibre_load(&mut effects),
             Message::OpenPathInputChanged(path) => self.handle_open_path_input_changed(path),
@@ -267,6 +268,23 @@ impl App {
         self.book_loading_error = None;
         info!(path = %path.display(), "Opening recent book");
         effects.push(Effect::LoadBook(path));
+    }
+
+    fn handle_delete_recent_book(&mut self, path: std::path::PathBuf) {
+        if self.book_loading {
+            return;
+        }
+        match crate::cache::delete_recent_source_and_cache(&path) {
+            Ok(()) => {
+                info!(path = %path.display(), "Deleted recent source and cache");
+                self.book_loading_error = None;
+            }
+            Err(err) => {
+                self.book_loading_error =
+                    Some(format!("Failed to delete {}: {err}", path.display()));
+            }
+        }
+        self.refresh_recent_books();
     }
 
     fn handle_open_path_input_changed(&mut self, path: String) {

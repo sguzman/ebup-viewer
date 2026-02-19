@@ -37,6 +37,7 @@ pub(super) enum Effect {
         book: CalibreBook,
         config: CalibreConfig,
     },
+    ReadClipboard,
     LoadBook(std::path::PathBuf),
     ReturnToStarter,
     QuitSafely,

@@ -219,6 +219,7 @@ impl App {
                 },
                 |message| message,
             ),
+            Effect::ReadClipboard => iced::clipboard::read().map(Message::ClipboardRead),
             Effect::LoadBook(path) => {
                 self.book_loading = true;
                 self.book_loading_error = None;

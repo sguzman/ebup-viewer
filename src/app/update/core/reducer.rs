@@ -28,6 +28,8 @@ impl App {
             Message::PrimeCalibreLoad => self.handle_prime_calibre_load(&mut effects),
             Message::OpenPathInputChanged(path) => self.handle_open_path_input_changed(path),
             Message::OpenPathRequested => self.handle_open_path_requested(&mut effects),
+            Message::OpenClipboardRequested => self.handle_open_clipboard_requested(&mut effects),
+            Message::ClipboardRead(contents) => self.handle_clipboard_read(contents, &mut effects),
             Message::RefreshCalibreBooks => self.handle_refresh_calibre_books(&mut effects),
             Message::CalibreSearchQueryChanged(query) => {
                 self.handle_calibre_search_query_changed(query)
@@ -284,6 +286,43 @@ impl App {
             self.book_loading_error = None;
             info!(path = %candidate.display(), "Opening path from starter input");
             effects.push(Effect::LoadBook(candidate));
+        }
+    }
+
+    fn handle_open_clipboard_requested(&mut self, effects: &mut Vec<Effect>) {
+        if self.book_loading {
+            return;
+        }
+        self.book_loading = true;
+        self.book_loading_error = None;
+        info!("Opening text from clipboard");
+        effects.push(Effect::ReadClipboard);
+    }
+
+    fn handle_clipboard_read(&mut self, contents: Option<String>, effects: &mut Vec<Effect>) {
+        let Some(raw_text) = contents else {
+            self.book_loading = false;
+            self.book_loading_error =
+                Some("Clipboard is empty or unavailable; copy text and try again.".to_string());
+            return;
+        };
+
+        if raw_text.trim().is_empty() {
+            self.book_loading = false;
+            self.book_loading_error =
+                Some("Clipboard text is empty; copy some text and try again.".to_string());
+            return;
+        }
+
+        match crate::cache::persist_clipboard_text_source(&raw_text) {
+            Ok(path) => {
+                info!(path = %path.display(), "Persisted clipboard text; starting load");
+                effects.push(Effect::LoadBook(path));
+            }
+            Err(err) => {
+                self.book_loading = false;
+                self.book_loading_error = Some(format!("Failed to cache clipboard text: {err}"));
+            }
         }
     }
 

@@ -185,6 +185,28 @@ pub fn remember_source_path(source_path: &Path) {
     }
 }
 
+pub fn persist_clipboard_text_source(text: &str) -> Result<PathBuf, String> {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let trimmed = normalized.trim();
+    if trimmed.is_empty() {
+        return Err("clipboard text is empty".to_string());
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(trimmed.as_bytes());
+    let digest = format!("{:x}", hasher.finalize());
+    let short = &digest[..16];
+    let dir = Path::new(CACHE_DIR).join("clipboard");
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    let path = dir.join(format!("clipboard-{short}.txt"));
+
+    if !path.exists() {
+        fs::write(&path, trimmed).map_err(|err| err.to_string())?;
+    }
+
+    Ok(path)
+}
+
 pub fn list_recent_books(limit: usize) -> Vec<RecentBook> {
     let Ok(entries) = fs::read_dir(CACHE_DIR) else {
         return Vec::new();
@@ -239,6 +261,16 @@ pub fn normalized_dir(epub_path: &Path) -> PathBuf {
 }
 
 fn infer_recent_title(source_path: &Path) -> String {
+    if source_path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+        .map(|name| name == "clipboard")
+        .unwrap_or(false)
+    {
+        return "Clipboard Text".to_string();
+    }
+
     if source_path
         .extension()
         .and_then(|ext| ext.to_str())

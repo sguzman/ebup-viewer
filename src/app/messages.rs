@@ -30,6 +30,8 @@ pub enum Message {
     PrimeCalibreLoad,
     OpenPathInputChanged(String),
     OpenPathRequested,
+    OpenClipboardRequested,
+    ClipboardRead(Option<String>),
     RefreshCalibreBooks,
     CalibreSearchQueryChanged(String),
     SortCalibreBy(CalibreColumn),

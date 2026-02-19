@@ -360,16 +360,24 @@ impl App {
         } else {
             button("Open Path").on_press(Message::OpenPathRequested)
         };
-        let mut top = column![
+        let clipboard_button = if self.book_loading {
+            button("Open Clipboard")
+        } else {
+            button("Open Clipboard").on_press(Message::OpenClipboardRequested)
+        };
+        let mut top =
+            column![
             text("Welcome").size(28.0),
-            text("Open a local file or choose a book from Calibre / Recent.").size(14.0),
+            text("Open a local file, paste clipboard text, or choose a book from Calibre / Recent.")
+                .size(14.0),
             row![
                 text_input("Path to .epub/.pdf/.txt/.md", &self.open_path_input)
                     .on_input(Message::OpenPathInputChanged)
                     .on_submit(Message::OpenPathRequested)
                     .padding(10)
                     .width(Length::Fill),
-                open_button
+                open_button,
+                clipboard_button,
             ]
             .spacing(8)
             .align_y(Vertical::Center),
@@ -394,7 +402,7 @@ impl App {
             ]
             .spacing(8),
         ]
-        .spacing(12);
+            .spacing(12);
 
         if self.book_loading {
             top = top.push(text("Loading selected book...").size(13.0));

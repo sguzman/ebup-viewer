@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicU64, AtomicUsize, Ordering},
     mpsc,
 };
 use std::thread;
@@ -25,6 +25,7 @@ pub struct TtsEngine {
     model_path: PathBuf,
     espeak_root: PathBuf,
     worker_pool: Arc<Mutex<Option<WorkerPoolState>>>,
+    prepare_generation: Arc<AtomicU64>,
 }
 
 impl TtsEngine {
@@ -45,7 +46,12 @@ impl TtsEngine {
             model_path,
             espeak_root: espeak_path,
             worker_pool: Arc::new(Mutex::new(None)),
+            prepare_generation: Arc::new(AtomicU64::new(1)),
         })
+    }
+
+    pub fn cancel_preparation(&self) {
+        self.prepare_generation.fetch_add(1, Ordering::SeqCst);
     }
 
     /// Play a list of audio files sequentially; returns a sink to control playback.
@@ -95,6 +101,7 @@ impl TtsEngine {
     ) -> Result<Vec<(PathBuf, std::time::Duration)>> {
         let progress_log_interval =
             progress_log_interval.max(std::time::Duration::from_millis(100));
+        let generation = self.prepare_generation.load(Ordering::Acquire);
         info!(
             sentence_count = sentences.len(),
             start_idx,
@@ -116,36 +123,50 @@ impl TtsEngine {
         let mut collected: Vec<Option<(PathBuf, std::time::Duration)>> = vec![None; total];
         let mut pending: Vec<PendingJob> = Vec::new();
         let mut cached_hits = 0usize;
-
-        for (offset, sentence) in sentences.into_iter().skip(start_idx).enumerate() {
-            let normalized = normalize_sentence(&sentence);
-            let path = cache_path(&cache_root, &self.model_path, &normalized);
-            if path.exists() {
-                let dur = sentence_duration(&path);
-                collected[offset] = Some((path, dur));
-                cached_hits += 1;
-                continue;
-            }
-
-            if let Some(parent) = path.parent() {
-                if let Err(err) = fs::create_dir_all(parent) {
-                    warn!("Failed to create TTS cache dir: {err}");
-                    return Err(err.into());
-                }
-            }
-
-            let (result_tx, result_rx) = mpsc::channel();
-            pool.dispatch(normalized, path.clone(), result_tx)?;
-            pending.push(PendingJob {
-                offset,
-                path,
-                result_rx,
-            });
-        }
-
-        let pending_total = pending.len();
+        let mut pending_total = 0usize;
+        let mut remaining = sentences.into_iter().skip(start_idx).enumerate();
+        let max_in_flight = threads.max(1);
         let mut next_progress_log = started_at + progress_log_interval;
-        while !pending.is_empty() {
+        loop {
+            if self.prepare_generation.load(Ordering::Acquire) != generation {
+                info!("Cancelled TTS batch preparation");
+                return Err(anyhow::anyhow!("TTS batch preparation cancelled"));
+            }
+
+            while pending.len() < max_in_flight {
+                let Some((offset, sentence)) = remaining.next() else {
+                    break;
+                };
+                let normalized = normalize_sentence(&sentence);
+                let path = cache_path(&cache_root, &self.model_path, &normalized);
+                if path.exists() {
+                    let dur = sentence_duration(&path);
+                    collected[offset] = Some((path, dur));
+                    cached_hits += 1;
+                    continue;
+                }
+
+                if let Some(parent) = path.parent() {
+                    if let Err(err) = fs::create_dir_all(parent) {
+                        warn!("Failed to create TTS cache dir: {err}");
+                        return Err(err.into());
+                    }
+                }
+
+                let (result_tx, result_rx) = mpsc::channel();
+                pool.dispatch(normalized, path.clone(), result_tx)?;
+                pending_total += 1;
+                pending.push(PendingJob {
+                    offset,
+                    path,
+                    result_rx,
+                });
+            }
+
+            if pending.is_empty() && remaining.len() == 0 {
+                break;
+            }
+
             let mut made_progress = false;
             let mut idx = 0usize;
             while idx < pending.len() {
@@ -171,10 +192,6 @@ impl TtsEngine {
                     Err(mpsc::TryRecvError::Empty) => {}
                 }
                 idx += 1;
-            }
-
-            if pending.is_empty() {
-                break;
             }
 
             let now = std::time::Instant::now();

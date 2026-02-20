@@ -92,6 +92,9 @@ impl App {
     }
 
     pub(super) fn stop_playback(&mut self) {
+        if let Some(engine) = &self.tts.engine {
+            engine.cancel_preparation();
+        }
         if let Some(playback) = self.tts.playback.take() {
             playback.stop();
         }

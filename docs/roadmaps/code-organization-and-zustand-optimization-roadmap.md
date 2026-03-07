@@ -142,8 +142,8 @@ The codebase has working feature breadth, but several structural issues are now 
 
 ## Phase 4: Separate Event Ingestion from UI State
 
-- [ ] Refactor [ui/src/store/slices/jobsSlice.ts](/win/linux/Code/projects/lantern-leaf/ui/src/store/slices/jobsSlice.ts) into a dedicated event-ingestion module.
-- [ ] Convert backend listeners into domain-specific adapters that translate bridge events into minimal store mutations.
+- [x] Refactor [ui/src/store/slices/jobsSlice.ts](/win/linux/Code/projects/lantern-leaf/ui/src/store/slices/jobsSlice.ts) into a dedicated event-ingestion module.
+- [x] Convert backend listeners into domain-specific adapters that translate bridge events into minimal store mutations.
 - [ ] Coalesce or discard redundant events at the ingestion boundary rather than after they hit the UI store.
 - [ ] Track event rates and payload sizes for:
   - [ ] `reader-state`
@@ -248,7 +248,7 @@ The codebase has working feature breadth, but several structural issues are now 
 - [ ] Add guardrail tests for reader state decomposition:
   - [x] document state unchanged on pure playback move
   - [ ] panel toggle does not invalidate document payload
-  - [ ] TTS event does not force starter-screen rerender
+  - [x] TTS event does not force starter-screen rerender
 
 ## Recommended Order
 

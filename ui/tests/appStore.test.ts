@@ -365,6 +365,39 @@ describe("appStore event handling", () => {
     expect(state.runtimeLogLevel).toBe("warn");
   });
 
+  it("preserves event object identity when repeated bridge events carry the same visible payload", async () => {
+    const { backend, hooks } = createBackend();
+    const store = createTestStore(backend);
+    await store.getState().bootstrap();
+
+    hooks.tts?.({
+      request_id: 21,
+      action: "reader_tts_play",
+      tts: makeReaderSnapshot("/tmp/tts.epub", "TTS").tts
+    });
+    const ttsBefore = store.getState().ttsStateEvent;
+    hooks.tts?.({
+      request_id: 22,
+      action: "reader_tts_play",
+      tts: makeReaderSnapshot("/tmp/tts.epub", "TTS").tts
+    });
+
+    hooks.logLevel?.({
+      request_id: 23,
+      level: "warn"
+    });
+    const logBefore = store.getState().logLevelEvent;
+    hooks.logLevel?.({
+      request_id: 24,
+      level: "warn"
+    });
+
+    expect(store.getState().ttsStateEvent).toBe(ttsBefore);
+    expect(store.getState().logLevelEvent).toBe(logBefore);
+    expect(store.getState().lastTtsEventRequestId).toBe(22);
+    expect(store.getState().lastLogLevelEventRequestId).toBe(24);
+  });
+
   it("updates runtime log level via backend command", async () => {
     const { backend } = createBackend({
       loggingSetLevel: async (level) => level.toLowerCase()

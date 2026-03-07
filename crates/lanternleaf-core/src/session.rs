@@ -1113,4 +1113,26 @@ mod tests {
             (0..sentence_count).map(Some).collect::<Vec<_>>()
         );
     }
+
+    #[test]
+    fn build_sentence_anchor_map_for_native_html_uses_current_page_sentence_counts() {
+        let mut session = build_test_session(&[&["A1.", "A2."], &["B1.", "B2."], &["C1.", "C2."]]);
+        session.config.native_html_pretty_enabled = true;
+        session.reading_html = Some(
+            "<p>A1.</p><p>A2.</p><p>B1.</p><p>B2.</p><p>C1.</p><p>C2.</p>".to_string(),
+        );
+
+        assert_eq!(
+            session.build_sentence_anchor_map_for_page(0, 2),
+            vec![Some(0), Some(1)]
+        );
+        assert_eq!(
+            session.build_sentence_anchor_map_for_page(1, 2),
+            vec![Some(2), Some(3)]
+        );
+        assert_eq!(
+            session.build_sentence_anchor_map_for_page(2, 2),
+            vec![Some(4), Some(5)]
+        );
+    }
 }

@@ -81,6 +81,7 @@ impl ReaderSession {
             .iter()
             .map(|page| text_utils::split_sentences(page))
             .collect();
+        self.page_sentence_counts = self.raw_page_sentences.iter().map(Vec::len).collect();
         self.sentence_anchor_maps = self
             .raw_page_sentences
             .iter()
@@ -97,7 +98,6 @@ impl ReaderSession {
             .iter()
             .map(|page| page.split_whitespace().count())
             .collect();
-        self.page_sentence_counts = self.raw_page_sentences.iter().map(Vec::len).collect();
 
         self.current_page = self.current_page.min(self.pages.len().saturating_sub(1));
         self.current_plan_page = None;

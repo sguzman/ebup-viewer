@@ -25,6 +25,7 @@ export function useReaderScrollSync({
   const prettyLastAutoScrollAnchorRef = useRef<number | null>(null);
   const prettyLastAutoScrollPageRef = useRef<number | null>(null);
   const pendingScrollFrameRef = useRef<number | null>(null);
+  const shouldAutoScrollPlayback = reader.settings.auto_scroll_tts && reader.tts.state === "playing";
 
   const scrollNativeHtmlAnchorIntoView = useCallback(
     (anchor: HTMLElement, behavior: ScrollBehavior): void => {
@@ -43,7 +44,7 @@ export function useReaderScrollSync({
       if (idx === null || idx === undefined) {
         return;
       }
-      if (!force && !reader.settings.auto_scroll_tts) {
+      if (!force && !shouldAutoScrollPlayback) {
         return;
       }
       const container = sentenceScrollRef.current;
@@ -114,6 +115,7 @@ export function useReaderScrollSync({
       reader.settings.auto_scroll_tts,
       reader.settings.center_spoken_sentence,
       reader.text_only_mode,
+      shouldAutoScrollPlayback,
       resolvePrettyAnchorIdx,
       scrollNativeHtmlAnchorIntoView,
       sentenceRefs,
@@ -127,7 +129,7 @@ export function useReaderScrollSync({
 
   useEffect(() => {
     const idx = reader.highlighted_sentence_idx;
-    if (idx === null || idx === undefined || !reader.settings.auto_scroll_tts) {
+    if (idx === null || idx === undefined || !shouldAutoScrollPlayback) {
       return;
     }
     if (pendingScrollFrameRef.current !== null) {
@@ -135,8 +137,7 @@ export function useReaderScrollSync({
     }
     pendingScrollFrameRef.current = requestAnimationFrame(() => {
       pendingScrollFrameRef.current = null;
-      const behavior: ScrollBehavior = reader.tts.state === "playing" ? "auto" : "smooth";
-      alignHighlightedSentence(behavior);
+      alignHighlightedSentence("auto");
     });
     return () => {
       if (pendingScrollFrameRef.current !== null) {
@@ -156,11 +157,12 @@ export function useReaderScrollSync({
     reader.settings.margin_horizontal,
     reader.settings.margin_vertical,
     reader.settings.word_spacing,
-    reader.tts.state
+    reader.tts.state,
+    shouldAutoScrollPlayback
   ]);
 
   useEffect(() => {
-    if (!reader.settings.auto_scroll_tts) {
+    if (!shouldAutoScrollPlayback) {
       return;
     }
     if (!reader.text_only_mode && reader.pretty_kind === "html") {
@@ -199,6 +201,7 @@ export function useReaderScrollSync({
     reader.settings.margin_vertical,
     reader.settings.word_spacing,
     reader.text_only_mode,
+    shouldAutoScrollPlayback
   ]);
 
   return {

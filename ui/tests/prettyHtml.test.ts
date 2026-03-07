@@ -19,9 +19,8 @@ describe("renderNativePrettyHtml", () => {
         src: "asset:/cache/images/img-0001-aabbccddeeff-cover.jpg",
       },
     ]);
+    expect(out).toContain("<!doctype html>");
     expect(out).toContain('data-ll-html-anchor="0"');
-    expect(out).toContain('target="_blank"');
-    expect(out).toContain('rel="noreferrer"');
     expect(out).toContain('src="asset:/cache/images/img-0001-aabbccddeeff-cover.jpg"');
     expect(out).not.toContain("<script");
     expect(out).not.toContain("onclick=");
@@ -128,8 +127,8 @@ describe("renderNativePrettyHtml", () => {
       </div>
     `;
     const out = renderNativePrettyHtml(html, []);
+    expect(out).toContain('<base href="https://example.com/articles/start">');
     expect(out).toContain('href="https://example.com/docs/page-2"');
-    expect(out).toContain('target="_blank"');
     expect(out).toContain('src="https://example.com/articles/cover.jpg"');
     expect(out).not.toContain("data-ll-base-url");
   });
@@ -161,7 +160,7 @@ describe("renderNativePrettyHtml", () => {
     expect(out).toContain('src="asset:/cache/browser-tabs/assets/cover.jpg"');
   });
 
-  it("focuses browser tabs to the main reading surface instead of full site chrome", () => {
+  it("preserves full browser-tab documents instead of extracting a focused subtree", () => {
     const html = `
       <div data-ll-base-url="https://en.wikipedia.org/wiki/Example" data-ll-browser-tab="1">
         <html class="skin-vector-2022">
@@ -185,13 +184,13 @@ describe("renderNativePrettyHtml", () => {
     `;
     const out = renderNativePrettyHtml(html, []);
     expect(out).toContain("Article body");
-    expect(out).toContain("ll-browser-tab-root");
-    expect(out).not.toContain("Site header");
-    expect(out).not.toContain("Sidebar nav");
-    expect(out).not.toContain("Site footer");
+    expect(out).toContain("Site header");
+    expect(out).toContain("Sidebar nav");
+    expect(out).toContain("Site footer");
+    expect(out).toContain("skin-vector-2022");
   });
 
-  it("keeps article preface while dropping obvious browser-tab chrome after the main body", () => {
+  it("keeps full imported browser-tab content without pruning site chrome", () => {
     const html = `
       <div data-ll-base-url="https://example.com/story" data-ll-browser-tab="1">
         <article id="story">
@@ -210,7 +209,7 @@ describe("renderNativePrettyHtml", () => {
     expect(out).toContain("Primary body text");
     expect(out).toContain("Story Title");
     expect(out).toContain('src="asset:/cache/browser-tabs/assets/hero.jpg"');
-    expect(out).not.toContain("Advertisement");
-    expect(out).not.toContain("Related content and promos");
+    expect(out).toContain("Advertisement");
+    expect(out).toContain("Related content and promos");
   });
 });

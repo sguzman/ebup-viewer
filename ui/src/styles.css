@@ -70,19 +70,15 @@ body {
   object-fit: contain;
 }
 
-.reader-native-html-content {
+.reader-native-html-frame {
   display: block;
   width: 100%;
-  overflow-x: hidden;
+  height: 100%;
+  min-height: 24rem;
+  border: 0;
+  background: white;
 }
 
-.reader-native-html-content img {
-  max-width: 100% !important;
-  min-width: 0 !important;
-  height: auto !important;
-}
-
-.reader-native-html-content [data-ll-html-anchor].reader-pretty-highlight,
 .reader-markdown-content .reader-pretty-highlight {
   background: var(--reader-highlight-bg) !important;
   outline: 2px solid var(--reader-highlight-border) !important;

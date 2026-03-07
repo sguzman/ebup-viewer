@@ -69,166 +69,38 @@ function rewriteCssUrls(
   });
 }
 
-function focusBrowserTabContent(container: HTMLDivElement): void {
-  const browserWrapper = container.querySelector<HTMLElement>("[data-ll-browser-tab='1']");
-  if (!browserWrapper) {
-    return;
+function parseNativeHtmlDocument(rawHtml: string): Document {
+  const parser = new DOMParser();
+  const trimmed = rawHtml.trim();
+  if (/<html[\s>]/i.test(trimmed) || /<!doctype/i.test(trimmed)) {
+    return parser.parseFromString(trimmed, "text/html");
   }
-  if (container.querySelector("[data-ll-browser-tab-focused='1']")) {
-    return;
-  }
-  const htmlRoot = container.querySelector("html");
-  const bodyRoot = container.querySelector("body");
-  const headRoot = container.querySelector("head");
-  const candidateSelectors = [
-    ".mw-parser-output",
-    ".mw-body-content",
-    "main article",
-    "main#content",
-    "article",
-    "[role='main']",
-    "main",
-    "#content",
-    ".entry-content",
-    ".post-content",
-    ".article-content"
-  ];
-  let chosen: HTMLElement | null = null;
-  let fallback: HTMLElement | null = null;
-  let fallbackTextLen = 0;
-  for (const selector of candidateSelectors) {
-    const candidate = container.querySelector<HTMLElement>(selector);
-    if (!candidate) {
-      continue;
-    }
-    const textLen = (candidate.textContent ?? "").trim().length;
-    if (textLen >= 600) {
-      chosen = candidate;
-      break;
-    }
-    if (textLen > fallbackTextLen) {
-      fallback = candidate;
-      fallbackTextLen = textLen;
-    }
-  }
-  chosen ??= fallback;
-  if (!chosen) {
-    return;
-  }
-  const chosenTextLen = (chosen.textContent ?? "").trim().length;
-  const directChildren = Array.from(chosen.children).filter(
-    (child): child is HTMLElement => child instanceof HTMLElement
-  );
-  const refinedChild = directChildren
-    .filter((child) => ["section", "main", "article", "div"].includes(child.tagName.toLowerCase()))
-    .map((child) => ({
-      child,
-      textLen: (child.textContent ?? "").trim().length
-    }))
-    .sort((left, right) => right.textLen - left.textLen)[0];
-  if (
-    chosen.tagName.toLowerCase() === "article" &&
-    refinedChild &&
-    refinedChild.textLen >= 400 &&
-    refinedChild.textLen * 2 >= chosenTextLen
-  ) {
-    const rebuilt = chosen.cloneNode(false) as HTMLElement;
-    const noiseNeedles = [
-      "sponsor",
-      "comment",
-      "recirculation",
-      "editors-picks",
-      "edpick",
-      "bottom-sheet",
-      "share",
-      "newsletter",
-      "promo",
-      "subscribe",
-      "toolbar"
-    ];
-    const isNoise = (element: HTMLElement): boolean => {
-      if (["nav", "aside", "footer", "button"].includes(element.tagName.toLowerCase())) {
-        return true;
-      }
-      const attrs = `${element.id} ${element.className}`.toLowerCase();
-      if (noiseNeedles.some((needle) => attrs.includes(needle))) {
-        return true;
-      }
-      const text = (element.textContent ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-      return (
-        text.length < 200 &&
-        (text.includes("skip advertisement") ||
-          text.includes("advertisement") ||
-          text.includes("you have been granted access"))
-      );
-    };
-    const mainIdx = directChildren.indexOf(refinedChild.child);
-    directChildren.forEach((child, idx) => {
-      if (idx > mainIdx) {
-        return;
-      }
-      if (idx === mainIdx || !isNoise(child)) {
-        rebuilt.appendChild(child.cloneNode(true));
-      }
-    });
-    chosen = rebuilt;
-  } else if (
-    refinedChild &&
-    refinedChild.textLen >= 400 &&
-    refinedChild.textLen * 2 >= chosenTextLen
-  ) {
-    chosen = refinedChild.child;
-  }
-
-  const focused = document.createElement("div");
-  focused.dataset.llBaseUrl = browserWrapper.dataset.llBaseUrl ?? "";
-  focused.dataset.llBrowserTab = "1";
-
-  const title = container.querySelector("title")?.textContent?.trim();
-  if (title) {
-    const heading = document.createElement("h1");
-    heading.textContent = title;
-    focused.appendChild(heading);
-  }
-
-  const readingRoot = document.createElement("div");
-  const classes = [
-    "ll-browser-tab-root",
-    ...(htmlRoot?.className?.split(/\s+/) ?? []),
-    ...(bodyRoot?.className?.split(/\s+/) ?? [])
-  ].filter(Boolean);
-  readingRoot.className = Array.from(new Set(classes)).join(" ");
-  const inlineStyle = [htmlRoot?.getAttribute("style"), bodyRoot?.getAttribute("style")]
-    .filter(Boolean)
-    .join("; ");
-  if (inlineStyle.trim()) {
-    readingRoot.setAttribute("style", inlineStyle);
-  }
-
-  const styles = headRoot ? Array.from(headRoot.querySelectorAll("style")) : [];
-  for (const style of styles) {
-    readingRoot.appendChild(style.cloneNode(true));
-  }
-  readingRoot.appendChild(chosen.cloneNode(true));
-  focused.appendChild(readingRoot);
-
-  browserWrapper.replaceWith(focused);
+  const doc = document.implementation.createHTMLDocument("");
+  doc.body.innerHTML = rawHtml;
+  return doc;
 }
 
 export function renderNativePrettyHtml(
   html: string,
   imageCandidates: Array<{ rawPath: string; src: string }>
 ): string {
-  const container = document.createElement("div");
-  container.innerHTML = html;
-  focusBrowserTabContent(container);
+  const doc = parseNativeHtmlDocument(html);
+  if (!doc.head) {
+    const head = doc.createElement("head");
+    doc.documentElement.insertBefore(head, doc.body ?? null);
+  }
+  if (!doc.body) {
+    const body = doc.createElement("body");
+    doc.documentElement.appendChild(body);
+  }
   let baseUrl: string | null =
-    container.querySelector<HTMLElement>("[data-ll-base-url]")?.dataset.llBaseUrl ?? null;
-  const scopedRoot = container.querySelector("[data-ll-browser-tab='1']")
-    ? ".reader-native-html-content .ll-browser-tab-root"
-    : ".reader-native-html-content";
-  const wrappers = Array.from(container.querySelectorAll<HTMLElement>("[data-ll-base-url]"));
+    doc.querySelector<HTMLElement>("[data-ll-base-url]")?.dataset.llBaseUrl ?? null;
+  const wrappers = Array.from(doc.querySelectorAll<HTMLElement>("[data-ll-base-url]"));
   for (const wrapper of wrappers) {
+    const wrapperBaseUrl = wrapper.dataset.llBaseUrl?.trim();
+    if (!baseUrl && wrapperBaseUrl) {
+      baseUrl = wrapperBaseUrl;
+    }
     while (wrapper.firstChild) {
       wrapper.parentNode?.insertBefore(wrapper.firstChild, wrapper);
     }
@@ -318,6 +190,9 @@ export function renderNativePrettyHtml(
     ["td", new Set(["colspan", "rowspan"])],
     ["th", new Set(["colspan", "rowspan"])],
     ["style", new Set(["type", "media"])],
+    ["link", new Set(["href", "rel", "type", "media", "sizes"])],
+    ["meta", new Set(["charset", "name", "content", "http-equiv"])],
+    ["base", new Set(["href", "target"])],
     [
       "svg",
       new Set([
@@ -337,41 +212,6 @@ export function renderNativePrettyHtml(
     ["use", new Set(["href", "xlink:href"])],
   ]);
 
-  const scopeCssToNativeContainer = (rawCss: string): string => {
-    const scope = ".reader-native-html-content";
-    let css = rawCss.replace(/@import[^;]+;/gi, "");
-    css = css.replace(/@page\s*\{[\s\S]*?\}/gi, "");
-    css = css.replace(/(^|})\s*([^@}{][^{]+)\{/g, (_m, sep, selectorGroup) => {
-      const rewritten = String(selectorGroup)
-        .split(",")
-        .map((selector) => {
-          const trimmed = selector.trim();
-          if (!trimmed) {
-            return trimmed;
-          }
-          if (
-            trimmed.startsWith(scope) ||
-            trimmed.startsWith("@") ||
-            trimmed.startsWith("from") ||
-            trimmed.startsWith("to") ||
-            /\d+%\s*$/.test(trimmed)
-          ) {
-            return trimmed;
-          }
-          const normalized = trimmed
-            .replace(/\bhtml\b/g, scopedRoot)
-            .replace(/\bbody\b/g, scopedRoot)
-            .replace(/\:root\b/g, scopedRoot);
-          if (normalized.includes(scope)) {
-            return normalized;
-          }
-          return `${scope} ${normalized}`;
-        })
-        .join(", ");
-      return `${sep} ${rewritten}{`;
-    });
-    return css;
-  };
   const unusedImages = [...imageCandidates];
   const resolveImageTarget = (target: string): string | null => {
     const normalizedTarget = normalizeImageTarget(target);
@@ -554,14 +394,7 @@ export function renderNativePrettyHtml(
           baseUrl,
           resolveResourceTarget
         );
-        if (tag === "img") {
-          element.setAttribute(
-            "style",
-            rewritten.replace(/(?:^|;)\s*min-width\s*:[^;]+;?/gi, ";")
-          );
-        } else {
-          element.setAttribute("style", rewritten);
-        }
+        element.setAttribute("style", rewritten);
       }
       if (tag === "img") {
         const resolved = resolveResourceTarget(rawImgSrc) ?? "";
@@ -603,15 +436,20 @@ export function renderNativePrettyHtml(
         }
       } else if (tag === "style") {
         const rawCss = element.textContent ?? "";
-        element.textContent = rewriteCssUrls(
-          scopeCssToNativeContainer(rawCss),
-          baseUrl,
-          resolveResourceTarget
-        );
+        element.textContent = rewriteCssUrls(rawCss, baseUrl, resolveResourceTarget);
       } else if (tag === "link") {
-        // Remove external/relative stylesheet links to avoid global style bleed.
-        element.remove();
-        return;
+        const rel = (element.getAttribute("rel") ?? "").toLowerCase();
+        if (!rel || (!rel.includes("stylesheet") && !rel.includes("icon"))) {
+          element.remove();
+          return;
+        }
+        const href = (element.getAttribute("href") ?? "").trim();
+        const resolved = resolveResourceTarget(href) ?? resolveRelativeUrl(href, baseUrl) ?? "";
+        if (!resolved) {
+          element.remove();
+          return;
+        }
+        element.setAttribute("href", resolved);
       } else if (tag === "a") {
         const href = (element.getAttribute("href") ?? "").trim();
         const resolvedImage = resolveImageTarget(href);
@@ -630,11 +468,10 @@ export function renderNativePrettyHtml(
           element.removeAttribute("href");
         } else {
           element.setAttribute("href", resolved);
-          if (resolved.startsWith("http://") || resolved.startsWith("https://")) {
-            element.setAttribute("target", "_blank");
-            element.setAttribute("rel", "noreferrer");
-          }
         }
+      } else if (tag === "base") {
+        element.remove();
+        return;
       }
       const children = [...node.childNodes];
       for (const child of children) {
@@ -646,6 +483,16 @@ export function renderNativePrettyHtml(
       }
     }
   };
-  sanitizeNode(container);
-  return container.innerHTML;
+  sanitizeNode(doc.documentElement);
+  if (baseUrl) {
+    const base = doc.createElement("base");
+    base.setAttribute("href", baseUrl);
+    doc.head.prepend(base);
+  }
+  if (!doc.querySelector("meta[charset]")) {
+    const meta = doc.createElement("meta");
+    meta.setAttribute("charset", "utf-8");
+    doc.head.prepend(meta);
+  }
+  return `<!doctype html>\n${doc.documentElement.outerHTML}`;
 }

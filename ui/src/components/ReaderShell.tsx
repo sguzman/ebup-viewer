@@ -698,6 +698,7 @@ export const ReaderShell = memo(function ReaderShell({
   const [sessionSentencesRead, setSessionSentencesRead] = useState(0);
   const [sessionPagesFinished, setSessionPagesFinished] = useState(0);
   const nativeHtmlCacheRef = useRef<{ key: string; html: string }>({ key: "", html: "" });
+  const nativeHtmlFrameRef = useRef<HTMLIFrameElement | null>(null);
   const prettyAnchorElementsRef = useRef<{
     html: Map<number, HTMLElement>;
     markdown: Map<number, HTMLElement>;
@@ -771,6 +772,17 @@ export const ReaderShell = memo(function ReaderShell({
     [reader.pretty_kind]
   );
 
+  const scrollNativeHtmlAnchorIntoView = useCallback(
+    (anchor: HTMLElement, behavior: ScrollBehavior): void => {
+      anchor.scrollIntoView({
+        behavior,
+        block: reader.settings.center_spoken_sentence ? "center" : "nearest",
+        inline: "nearest"
+      });
+    },
+    [reader.settings.center_spoken_sentence]
+  );
+
   const activePrettyAnchorIdx = useMemo(() => {
     const idx = reader.highlighted_sentence_idx;
     if (idx === null || idx === undefined) {
@@ -828,12 +840,7 @@ export const ReaderShell = memo(function ReaderShell({
           }
           const anchor = getPrettyAnchorNode(anchorIdx);
           if (anchor) {
-            scrollSentenceIntoView(
-              container,
-              anchor,
-              reader.settings.center_spoken_sentence,
-              behavior
-            );
+            scrollNativeHtmlAnchorIntoView(anchor, behavior);
             prettyLastAutoScrollPageRef.current = reader.current_page;
             prettyLastAutoScrollAnchorRef.current = anchorIdx;
             return;
@@ -859,6 +866,7 @@ export const ReaderShell = memo(function ReaderShell({
       reader.settings.center_spoken_sentence,
       reader.pretty_kind,
       resolvePrettyAnchorIdx,
+      scrollNativeHtmlAnchorIntoView,
       reader.reading_markdown_page,
       reader.reading_html_page,
       reader.sentences.length,
@@ -988,6 +996,13 @@ export const ReaderShell = memo(function ReaderShell({
     if (activePrettyAnchorIdx === null || activePrettyAnchorIdx === undefined) {
       return false;
     }
+    if (reader.pretty_kind === "html") {
+      if (prettyHighlightedNodeRef.current) {
+        prettyHighlightedNodeRef.current.classList.remove("reader-pretty-highlight");
+        prettyHighlightedNodeRef.current = null;
+      }
+      return false;
+    }
     const target = getPrettyAnchorNode(activePrettyAnchorIdx);
     if (target) {
       if (prettyHighlightedNodeRef.current && prettyHighlightedNodeRef.current !== target) {
@@ -1001,6 +1016,7 @@ export const ReaderShell = memo(function ReaderShell({
   }, [
     activePrettyAnchorIdx,
     getPrettyAnchorNode,
+    reader.pretty_kind,
     reader.text_only_mode,
   ]);
 
@@ -1204,16 +1220,19 @@ export const ReaderShell = memo(function ReaderShell({
     if (prettyAnchorLookupKeyRef.current === prettyLookupKey) {
       return;
     }
-    const container = sentenceScrollRef.current;
-    if (!container) {
-      return;
-    }
     const kind = hasPrettyHtml ? "html" : hasPrettyMarkdown ? "markdown" : null;
     if (!kind) {
       return;
     }
     const attribute = kind === "html" ? "data-ll-html-anchor" : "data-ll-md-anchor";
-    const anchors = Array.from(container.querySelectorAll(`[${attribute}]`)) as HTMLElement[];
+    const root =
+      kind === "html"
+        ? nativeHtmlFrameRef.current?.contentDocument
+        : sentenceScrollRef.current;
+    if (!root) {
+      return;
+    }
+    const anchors = Array.from(root.querySelectorAll(`[${attribute}]`)) as HTMLElement[];
     const nextMap = new Map<number, HTMLElement>();
     for (const element of anchors) {
       const raw = element.getAttribute(attribute);
@@ -1230,6 +1249,58 @@ export const ReaderShell = memo(function ReaderShell({
     }
     prettyAnchorLookupKeyRef.current = prettyLookupKey;
   }, [hasPrettyHtml, hasPrettyMarkdown, prettyLookupKey]);
+
+  useEffect(() => {
+    if (!hasPrettyHtml) {
+      return;
+    }
+    const frame = nativeHtmlFrameRef.current;
+    const doc = frame?.contentDocument;
+    if (!frame || !doc) {
+      return;
+    }
+
+    const rebuildHtmlAnchors = (): void => {
+      const anchors = Array.from(doc.querySelectorAll("[data-ll-html-anchor]")) as HTMLElement[];
+      const nextMap = new Map<number, HTMLElement>();
+      for (const element of anchors) {
+        const raw = element.getAttribute("data-ll-html-anchor");
+        const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
+        if (Number.isFinite(parsed)) {
+          nextMap.set(parsed, element);
+        }
+      }
+      prettyAnchorElementsRef.current.html = nextMap;
+      prettyAnchorLookupKeyRef.current = prettyLookupKey;
+    };
+
+    const handleLoad = (): void => {
+      rebuildHtmlAnchors();
+    };
+
+    const handleClick = (event: globalThis.MouseEvent): void => {
+      const target = event.target as HTMLElement | null;
+      const anchor = target?.closest("a");
+      if (!anchor) {
+        return;
+      }
+      const href = (anchor.getAttribute("href") ?? "").trim();
+      if (!href || href.startsWith("#")) {
+        return;
+      }
+      event.preventDefault();
+      window.open(href, "_blank", "noopener,noreferrer");
+    };
+
+    frame.addEventListener("load", handleLoad);
+    doc.addEventListener("click", handleClick);
+    rebuildHtmlAnchors();
+
+    return () => {
+      frame.removeEventListener("load", handleLoad);
+      doc.removeEventListener("click", handleClick);
+    };
+  }, [hasPrettyHtml, prettyLookupKey]);
 
   useEffect(() => {
     if (!hasPrettyHtml || !renderedNativeHtml) {
@@ -1497,7 +1568,11 @@ export const ReaderShell = memo(function ReaderShell({
             <div className="min-h-0 flex flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200">
               <div
                 ref={sentenceScrollRef}
-                className="overflow-y-auto overscroll-contain"
+                className={
+                  hasPrettyHtml && !hasPrettyMarkdown && !showSentenceList
+                    ? "overflow-hidden overscroll-contain"
+                    : "overflow-y-auto overscroll-contain"
+                }
                 data-testid="reader-sentence-scroll-container"
                 style={{
                   height: reader.panels.show_tts ? "calc(100% - 118px)" : "100%",
@@ -1511,15 +1586,29 @@ export const ReaderShell = memo(function ReaderShell({
                     : "transparent"
                 }}
               >
-                <Stack spacing={0.75}>
+                <Stack
+                  spacing={0.75}
+                  sx={{
+                    minHeight: hasPrettyHtml && !hasPrettyMarkdown && !showSentenceList ? "100%" : undefined,
+                    height: hasPrettyHtml && !hasPrettyMarkdown && !showSentenceList ? "100%" : undefined,
+                  }}
+                >
                   {hasPrettyHtml ? (
-                    <div style={{ width: "100%" }}>
-                      <div
-                        className="reader-native-html-content"
+                    <div
+                      style={{
+                        width: "100%",
+                        flex: showSentenceList || hasPrettyMarkdown ? undefined : 1,
+                        minHeight: showSentenceList || hasPrettyMarkdown ? undefined : 0,
+                      }}
+                    >
+                      <iframe
+                        ref={nativeHtmlFrameRef}
+                        className="reader-native-html-frame"
                         data-testid="reader-pretty-native-html"
                         data-reader-browser-tab={isBrowserTabPrettyHtml ? "1" : "0"}
-                        onClick={handlePrettyContentClick}
-                        dangerouslySetInnerHTML={{ __html: renderedNativeHtml }}
+                        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                        srcDoc={renderedNativeHtml}
+                        title={`Native HTML reader page ${reader.current_page + 1}`}
                       />
                     </div>
                   ) : null}

@@ -3,6 +3,7 @@ import { useEffect } from "react";
 const counters = new Map<string, number>();
 const measures = new Map<string, number[]>();
 const selectorCounters = new Map<string, number>();
+const eventCounters = new Map<string, { count: number; bytes: number }>();
 let flushHandle: number | null = null;
 
 function scheduleFlush(): void {
@@ -28,13 +29,24 @@ function scheduleFlush(): void {
         }
       ])
     );
+    const eventSummary = Object.fromEntries(
+      Array.from(eventCounters.entries()).map(([name, summary]) => [
+        name,
+        {
+          count: summary.count,
+          avgBytes: summary.count > 0 ? Math.round(summary.bytes / summary.count) : 0
+        }
+      ])
+    );
     console.debug("ui perf summary", {
       renders: renderSummary,
       selectors: selectorSummary,
+      events: eventSummary,
       measures: measureSummary
     });
     counters.clear();
     selectorCounters.clear();
+    eventCounters.clear();
     measures.clear();
   }, 5000);
 }
@@ -65,5 +77,22 @@ export function recordSelectorInvalidation(name: string): void {
     return;
   }
   selectorCounters.set(name, (selectorCounters.get(name) ?? 0) + 1);
+  scheduleFlush();
+}
+
+export function recordEventIngestion(name: string, payload: unknown): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  let bytes = 0;
+  try {
+    bytes = JSON.stringify(payload)?.length ?? 0;
+  } catch {
+    bytes = 0;
+  }
+  const current = eventCounters.get(name) ?? { count: 0, bytes: 0 };
+  current.count += 1;
+  current.bytes += bytes;
+  eventCounters.set(name, current);
   scheduleFlush();
 }

@@ -146,10 +146,10 @@ The codebase has working feature breadth, but several structural issues are now 
 - [x] Convert backend listeners into domain-specific adapters that translate bridge events into minimal store mutations.
 - [ ] Coalesce or discard redundant events at the ingestion boundary rather than after they hit the UI store.
 - [ ] Track event rates and payload sizes for:
-  - [ ] `reader-state`
-  - [ ] `tts-state`
-  - [ ] `session-state`
-- [ ] Introduce explicit “no-op if no visible change” guards for hot events.
+  - [x] `reader-state`
+  - [x] `tts-state`
+  - [x] `session-state`
+- [x] Introduce explicit “no-op if no visible change” guards for hot events.
 
 ## Phase 5: Decompose ReaderShell into Focused Modules
 
@@ -162,9 +162,9 @@ The codebase has working feature breadth, but several structural issues are now 
   - [x] `ReaderStatsPanel`
   - [x] `ReaderSettingsPanel`
   - [x] `ReaderTtsPanel`
-  - [ ] `useReaderScrollSync`
+  - [x] `useReaderScrollSync`
   - [x] `useReaderHighlightSync`
-  - [ ] `useHtmlSentenceAnchorMap`
+  - [x] `useHtmlSentenceAnchorMap`
 - [x] Move markdown rendering helpers out of `ReaderShell` into their own module.
 - [x] Ensure each extracted component receives only the props it actually needs.
 - [x] Reduce inline object creation and large effect dependency sets where those dependencies only exist because too much logic is colocated.
@@ -256,7 +256,7 @@ The codebase has working feature breadth, but several structural issues are now 
 - [x] Step 2: Replace broad selectors with narrow domain hooks.
 - [x] Step 3: Extract `ReaderShell` hooks/components so selector work has somewhere smaller to land.
 - [x] Step 4: Decompose `StarterShell` and thumbnail/browser-tab flows.
-- [ ] Step 5: Clean up duplicated rendering/sync utilities.
+- [x] Step 5: Clean up duplicated rendering/sync utilities.
 - [ ] Step 6: Adjust backend event/payload shapes to match the new frontend state model.
 - [ ] Step 7: Split the largest Rust modules along capability boundaries.
 

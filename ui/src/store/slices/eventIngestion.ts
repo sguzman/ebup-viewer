@@ -95,6 +95,49 @@ function sameLogLevelEvent(left: AppStore["logLevelEvent"], right: LogLevelEvent
   return left.level === right.level;
 }
 
+function sameReaderSnapshot(
+  left: AppStore["reader"],
+  right: ReaderStateEvent["reader"]
+): boolean {
+  if (!left) {
+    return false;
+  }
+  const leftSentences = left.sentences ?? [];
+  const rightSentences = right.sentences ?? [];
+  const leftSearchMatches = left.search_matches ?? [];
+  const rightSearchMatches = right.search_matches ?? [];
+  const leftSentenceAnchorMap = left.sentence_anchor_map ?? [];
+  const rightSentenceAnchorMap = right.sentence_anchor_map ?? [];
+  return (
+    left.source_path === right.source_path &&
+    left.current_page === right.current_page &&
+    left.total_pages === right.total_pages &&
+    left.text_only_mode === right.text_only_mode &&
+    left.pretty_kind === right.pretty_kind &&
+    left.reading_markdown_page === right.reading_markdown_page &&
+    left.reading_html_page === right.reading_html_page &&
+    left.page_text === right.page_text &&
+    left.search_query === right.search_query &&
+    left.selected_search_match === right.selected_search_match &&
+    left.highlighted_sentence_idx === right.highlighted_sentence_idx &&
+    left.tts.state === right.tts.state &&
+    left.tts.current_sentence_idx === right.tts.current_sentence_idx &&
+    left.tts.sentence_count === right.tts.sentence_count &&
+    left.tts.can_seek_prev === right.tts.can_seek_prev &&
+    left.tts.can_seek_next === right.tts.can_seek_next &&
+    left.tts.progress_pct === right.tts.progress_pct &&
+    left.panels.show_settings === right.panels.show_settings &&
+    left.panels.show_stats === right.panels.show_stats &&
+    left.panels.show_tts === right.panels.show_tts &&
+    leftSentences.length === rightSentences.length &&
+    leftSearchMatches.length === rightSearchMatches.length &&
+    leftSentenceAnchorMap.length === rightSentenceAnchorMap.length &&
+    leftSentences.every((value, idx) => value === rightSentences[idx]) &&
+    leftSearchMatches.every((value, idx) => value === rightSearchMatches[idx]) &&
+    leftSentenceAnchorMap.every((value, idx) => value === rightSentenceAnchorMap[idx])
+  );
+}
+
 export function reduceSourceOpenEvent(
   current: AppStore,
   event: SourceOpenEvent
@@ -230,10 +273,12 @@ export function reduceReaderStateEvent(
       };
 
   const next: Partial<AppStore> = {
-    reader: event.reader,
     lastReaderEventRequestId: event.request_id,
     lastSessionEventRequestId: Math.max(current.lastSessionEventRequestId, event.request_id)
   };
+  if (!sameReaderSnapshot(current.reader, event.reader)) {
+    next.reader = event.reader;
+  }
   if (!sameSessionState(current.session, nextSession)) {
     next.session = nextSession;
   }

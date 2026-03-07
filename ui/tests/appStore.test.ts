@@ -300,6 +300,28 @@ describe("appStore event handling", () => {
     expect(after).toBe(before);
   });
 
+  it("preserves reader object identity on repeated reader events with no visible change", async () => {
+    const { backend, hooks } = createBackend();
+    const store = createTestStore(backend);
+    await store.getState().bootstrap();
+
+    hooks.reader?.({
+      request_id: 9,
+      action: "reader_state",
+      reader: makeReaderSnapshot("/tmp/book.epub", "Stable reader event")
+    });
+    const before = store.getState().reader;
+
+    hooks.reader?.({
+      request_id: 10,
+      action: "reader_state",
+      reader: makeReaderSnapshot("/tmp/book.epub", "Stable reader event")
+    });
+
+    const after = store.getState().reader;
+    expect(after).toBe(before);
+  });
+
   it("treats open_cancelled as info without setting app error", async () => {
     const { backend } = createBackend({
       sourceOpenPath: async () => {

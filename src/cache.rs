@@ -286,6 +286,7 @@ pub fn persist_clipboard_text_source(text: &str) -> Result<PathBuf, String> {
 }
 
 pub fn delete_recent_source_and_cache(source_path: &Path) -> Result<(), String> {
+    let canonical_source = fs::canonicalize(source_path).unwrap_or_else(|_| source_path.to_path_buf());
     let cache_path = hash_dir(source_path);
     if is_browser_tab_manifest(source_path) {
         let browser_tab_dir = source_path
@@ -297,7 +298,36 @@ pub fn delete_recent_source_and_cache(source_path: &Path) -> Result<(), String> 
         delete_path_if_present(source_path)?;
     }
     delete_dir_if_present(&cache_path)?;
+    delete_recent_entry_dirs_for_source(&canonical_source)?;
+    if canonical_source != source_path {
+        delete_recent_entry_dirs_for_source(source_path)?;
+    }
 
+    Ok(())
+}
+
+fn delete_recent_entry_dirs_for_source(source_path: &Path) -> Result<(), String> {
+    let Ok(entries) = fs::read_dir(cache_root()) else {
+        return Ok(());
+    };
+    let target = source_path.to_string_lossy().to_string();
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let source_hint_path = entry_path.join(SOURCE_PATH_FILE);
+        let Ok(raw) = fs::read_to_string(&source_hint_path) else {
+            continue;
+        };
+        if raw.trim() != target {
+            continue;
+        }
+        delete_dir_if_present(&entry_path)?;
+    }
     Ok(())
 }
 
@@ -453,7 +483,10 @@ pub fn list_recent_books(limit: usize) -> Vec<RecentBook> {
             let source_hint_path = entry.path().join(SOURCE_PATH_FILE);
             let source_path_raw = fs::read_to_string(&source_hint_path).ok()?;
             let source_path = PathBuf::from(source_path_raw.trim());
-            let source_path = resolve_existing_recent_source_path(&source_path)?;
+            let Some(source_path) = resolve_existing_recent_source_path(&source_path) else {
+                let _ = delete_dir_if_present(&entry.path());
+                return None;
+            };
 
             // Self-heal stale source hint paths after workspace/project moves.
             let current_hint = source_path_raw.trim();
@@ -1011,6 +1044,24 @@ sentence_text = "legacy bookmark entry"
 
         delete_recent_source_and_cache(&manifest_path).expect("delete browser tab recent");
         assert!(!manifest_path.exists());
+    }
+
+    #[test]
+    fn list_recent_books_prunes_stale_recent_entry_dirs() {
+        let source = unique_source_path("txt");
+        write_source_file(&source);
+        remember_source_path(&source);
+        let cache_path = hash_dir(&source);
+        assert!(cache_path.exists());
+
+        fs::remove_file(&source).expect("remove source file");
+
+        let recents = list_recent_books(20);
+        assert!(recents.is_empty());
+        assert!(
+            !cache_path.exists(),
+            "stale recent cache dir should be pruned when source is missing"
+        );
     }
 
     #[test]

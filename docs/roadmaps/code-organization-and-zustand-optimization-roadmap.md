@@ -230,7 +230,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [x] browser-tab assets
   - [x] TTS cache
   - [x] normalized artifacts
-- [ ] Split [src/epub_loader.rs](/win/linux/Code/projects/lantern-leaf/src/epub_loader.rs) by source type and artifact pipeline.
+- [x] Split [src/epub_loader.rs](/win/linux/Code/projects/lantern-leaf/src/epub_loader.rs) by source type and artifact pipeline.
 - [ ] Split [src/calibre.rs](/win/linux/Code/projects/lantern-leaf/src/calibre.rs) into:
   - [x] catalogue loading
   - [x] cache handling

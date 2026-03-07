@@ -9,8 +9,10 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRenderDebugCounter } from "../perf/debug";
 import type { ReaderSettingsPatch, ReaderSnapshot, TtsStateEvent } from "../types";
-import { renderMarkdownToHtml } from "./markdownRender";
-import { renderNativePrettyHtml } from "./prettyHtml";
+import {
+  renderPrettyMarkdownDocument,
+  renderPrettyNativeHtmlDocument
+} from "./contentRender";
 import {
   ReaderPrettyHtmlPane,
   ReaderPrettyMarkdownPane,
@@ -170,7 +172,7 @@ export const ReaderShell = memo(function ReaderShell({
     if (!hasPrettyMarkdown || !reader.reading_markdown_page) {
       return "";
     }
-    return renderMarkdownToHtml(reader.reading_markdown_page, readerImageCandidates);
+    return renderPrettyMarkdownDocument(reader.reading_markdown_page, readerImageCandidates);
   }, [hasPrettyMarkdown, reader.reading_markdown_page, readerImageCandidates]);
   const renderedNativeHtml = useMemo(() => {
     if (!hasPrettyHtml || !reader.reading_html_page) {
@@ -180,7 +182,7 @@ export const ReaderShell = memo(function ReaderShell({
     if (nativeHtmlCacheRef.current.key === key) {
       return nativeHtmlCacheRef.current.html;
     }
-    const rendered = renderNativePrettyHtml(reader.reading_html_page, readerImageCandidates);
+    const rendered = renderPrettyNativeHtmlDocument(reader.reading_html_page, readerImageCandidates);
     nativeHtmlCacheRef.current = { key, html: rendered };
     return rendered;
   }, [

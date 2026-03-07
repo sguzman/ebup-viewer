@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  computeVirtualWindow,
   filterAndSortCalibreBooks,
   type CalibreSort
 } from "../src/components/calibreList";
+import { computeVirtualWindow } from "../src/components/starterVirtualList";
 import type { CalibreBook } from "../src/types";
 
 function makeBook(id: number, title: string, authors: string, year: number): CalibreBook {

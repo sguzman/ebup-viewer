@@ -10,11 +10,11 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  computeVirtualWindow,
   filterAndSortCalibreBooks,
   type CalibreSort
 } from "./calibreList";
 import { useRenderDebugCounter } from "../perf/debug";
+import { computeVirtualWindow } from "./starterVirtualList";
 import { useBrowserTabs } from "./useBrowserTabs";
 import { useCalibreThumbnails } from "./useCalibreThumbnails";
 import {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 
-import { renderNativePrettyHtml } from "../src/components/prettyHtml";
+import { renderPrettyNativeHtmlDocument } from "../src/components/contentRender";
 
 describe("renderNativePrettyHtml", () => {
   it("sanitizes unsafe markup and rewrites image/link targets", () => {
@@ -13,7 +13,7 @@ describe("renderNativePrettyHtml", () => {
         <script>alert('xss')</script>
       </section>
     `;
-    const out = renderNativePrettyHtml(html, [
+    const out = renderPrettyNativeHtmlDocument(html, [
       {
         rawPath: "images/img-0001-aabbccddeeff-cover.jpg",
         src: "asset:/cache/images/img-0001-aabbccddeeff-cover.jpg",
@@ -36,7 +36,7 @@ describe("renderNativePrettyHtml", () => {
         <p id="fn1">Footnote body</p>
       </article>
     `;
-    const out = renderNativePrettyHtml(html, []);
+    const out = renderPrettyNativeHtmlDocument(html, []);
     expect(out).toContain('href="#fn1"');
     expect(out).toContain("<table>");
     expect(out).toContain("Footnote body");
@@ -45,7 +45,7 @@ describe("renderNativePrettyHtml", () => {
 
   it("does not transform markdown-style link/image syntax into HTML tags", () => {
     const html = `<p>Raw markdown [link](doc.md) and ![img](cover.png)</p>`;
-    const out = renderNativePrettyHtml(html, []);
+    const out = renderPrettyNativeHtmlDocument(html, []);
     expect(out).toContain("[link](doc.md)");
     expect(out).toContain("![img](cover.png)");
     expect(out).not.toContain('href="doc.md"');
@@ -58,7 +58,7 @@ describe("renderNativePrettyHtml", () => {
         <image width="100" height="100" xlink:href="images/00161.jpeg"></image>
       </svg>
     `;
-    const out = renderNativePrettyHtml(html, [
+    const out = renderPrettyNativeHtmlDocument(html, [
       {
         rawPath: "images/img-0010-deadbeef0011-00161.jpeg",
         src: "asset:/cache/images/img-0010-deadbeef0011-00161.jpeg",
@@ -77,7 +77,7 @@ describe("renderNativePrettyHtml", () => {
         <p class="coverimage"><img src="../images/00001.jpeg" alt="img"/></p>
       </section>
     `;
-    const out = renderNativePrettyHtml(html, [
+    const out = renderPrettyNativeHtmlDocument(html, [
       {
         rawPath: "/tmp/cache/images/images/00161.jpeg",
         src: "asset:/cache/images/images/00161.jpeg",
@@ -96,7 +96,7 @@ describe("renderNativePrettyHtml", () => {
     const html = `
       <section><article><p>Sentence one.</p><p>Sentence two.</p></article></section>
     `;
-    const out = renderNativePrettyHtml(html, []);
+    const out = renderPrettyNativeHtmlDocument(html, []);
     expect(out).not.toContain("<section data-ll-html-anchor=");
     expect(out).not.toContain("<article data-ll-html-anchor=");
     expect(out).not.toContain("<img data-ll-html-anchor=");
@@ -112,7 +112,7 @@ describe("renderNativePrettyHtml", () => {
         </div>
       </article>
     `;
-    const out = renderNativePrettyHtml(html, []);
+    const out = renderPrettyNativeHtmlDocument(html, []);
     expect(out).not.toContain('<article data-ll-html-anchor=');
     expect(out).not.toContain('<div class="wrapper" data-ll-html-anchor=');
     expect(out).toContain('First paragraph inside a div block');
@@ -127,7 +127,7 @@ describe("renderNativePrettyHtml", () => {
         <img src="./cover.jpg" alt="Cover"/>
       </div>
     `;
-    const out = renderNativePrettyHtml(html, []);
+    const out = renderPrettyNativeHtmlDocument(html, []);
     expect(out).toContain('<base href="https://example.com/articles/start">');
     expect(out).toContain('href="https://example.com/docs/page-2"');
     expect(out).toContain('src="https://example.com/articles/cover.jpg"');
@@ -142,7 +142,7 @@ describe("renderNativePrettyHtml", () => {
         <img src="https://example.com/articles/cover.jpg" alt="Cover"/>
       </div>
     `;
-    const out = renderNativePrettyHtml(html, [
+    const out = renderPrettyNativeHtmlDocument(html, [
       {
         rawPath: "https://example.com/img/hero.png",
         src: "asset:/cache/browser-tabs/assets/hero.png",
@@ -183,7 +183,7 @@ describe("renderNativePrettyHtml", () => {
         </html>
       </div>
     `;
-    const out = renderNativePrettyHtml(html, []);
+    const out = renderPrettyNativeHtmlDocument(html, []);
     expect(out).toContain("Article body");
     expect(out).toContain("Site header");
     expect(out).toContain("Sidebar nav");
@@ -204,7 +204,7 @@ describe("renderNativePrettyHtml", () => {
         </article>
       </div>
     `;
-    const out = renderNativePrettyHtml(html, [
+    const out = renderPrettyNativeHtmlDocument(html, [
       { rawPath: "https://example.com/hero.jpg", src: "asset:/cache/browser-tabs/assets/hero.jpg" }
     ]);
     expect(out).toContain("Primary body text");

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { renderMarkdownToHtml } from "../src/components/markdownRender";
+import { renderPrettyMarkdownDocument } from "../src/components/contentRender";
 
 describe("renderMarkdownToHtml", () => {
   it("renders headings, paragraphs, lists, links, and image anchors", () => {
-    const out = renderMarkdownToHtml(
+    const out = renderPrettyMarkdownDocument(
       [
         "# Heading",
         "",
@@ -27,7 +27,7 @@ describe("renderMarkdownToHtml", () => {
   });
 
   it("falls back gracefully when markdown image targets cannot be resolved", () => {
-    const out = renderMarkdownToHtml("![Missing](missing.png)", []);
+    const out = renderPrettyMarkdownDocument("![Missing](missing.png)", []);
 
     expect(out).toContain("reader-md-missing-image");
     expect(out).toContain("[image: Missing]");

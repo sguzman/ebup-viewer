@@ -6,7 +6,7 @@ import {
   type BrowserWindowInfo,
   type BrowsrHealth
 } from "../api/tauri";
-import { computeVirtualWindow, type VirtualWindow } from "./calibreList";
+import { computeVirtualWindow, type VirtualWindow } from "./starterVirtualList";
 import { toUiErrorMessage } from "./starterShared";
 
 export interface BrowserTabsState {

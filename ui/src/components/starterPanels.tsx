@@ -21,7 +21,8 @@ import { memo } from "react";
 
 import type { BrowserTabInfo, BrowserWindowInfo, BrowsrHealth } from "../api/tauri";
 import type { CalibreBook, RecentBook } from "../types";
-import type { CalibreSort, VirtualWindow } from "./calibreList";
+import type { CalibreSort } from "./calibreList";
+import type { VirtualWindow } from "./starterVirtualList";
 import { toThumbnailSrc } from "./starterShared";
 
 export function StarterOpenPanel({

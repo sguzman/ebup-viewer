@@ -2,8 +2,9 @@
 
 ## Frontend ownership boundaries
 
-- `prettyHtml.ts` owns native HTML sanitization, asset URL rewriting, and iframe-ready HTML document output.
-- `markdownRender.ts` owns markdown-to-HTML rendering and image resolution for pretty markdown pages.
+- `contentRender.ts` is the reader-facing entry point for pretty-content rendering.
+  - `prettyHtml.ts` owns native HTML sanitization, asset URL rewriting, and iframe-ready HTML document output.
+  - `markdownRender.ts` owns markdown-to-HTML rendering and image resolution for pretty markdown pages.
 - `htmlSync.ts` owns HTML anchor extraction heuristics and sentence-to-anchor matching.
 - `useReaderHighlightSync.ts` owns DOM-facing reader sync behavior:
   - pretty-anchor lookup

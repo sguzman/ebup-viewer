@@ -266,6 +266,10 @@ export function useReaderViewState() {
   );
 }
 
+export function useReaderViewTuple(): readonly [AppStore["reader"], boolean] {
+  return useAppStore((state) => [state.reader, selectReaderBusy(state)] as const);
+}
+
 export function useReaderActionState() {
   return useAppStore(
     useShallow((state) => ({
@@ -316,6 +320,35 @@ export function useStarterViewState() {
       pdfTranscriptionEvent: state.pdfTranscriptionEvent,
       runtimeLogLevel: state.runtimeLogLevel
     }))
+  );
+}
+
+export function useStarterViewTuple(): readonly [
+  AppStore["bootstrapState"],
+  AppStore["recents"],
+  AppStore["calibreBooks"],
+  boolean,
+  boolean,
+  boolean,
+  AppStore["sourceOpenEvent"],
+  AppStore["calibreLoadEvent"],
+  AppStore["pdfTranscriptionEvent"],
+  AppStore["runtimeLogLevel"]
+] {
+  return useAppStore(
+    (state) =>
+      [
+        state.bootstrapState,
+        state.recents,
+        state.calibreBooks,
+        selectStarterBusy(state),
+        state.loadingRecents,
+        state.loadingCalibre || state.operations.calibreLoad,
+        state.sourceOpenEvent,
+        state.calibreLoadEvent,
+        state.pdfTranscriptionEvent,
+        state.runtimeLogLevel
+      ] as const
   );
 }
 

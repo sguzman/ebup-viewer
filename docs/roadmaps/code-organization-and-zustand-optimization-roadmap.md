@@ -129,11 +129,11 @@ The codebase has working feature breadth, but several structural issues are now 
 
 - [x] Replace broad object selectors in [ui/src/store/selectors.ts](/win/linux/Code/projects/lantern-leaf/ui/src/store/selectors.ts) with smaller dedicated hooks.
 - [x] Eliminate large selectors such as `useReaderScreenState` and `useStarterScreenState`.
-- [ ] Prefer selectors that return:
+- [x] Prefer selectors that return:
   - [x] a single primitive
-  - [ ] a tiny tuple
+  - [x] a tiny tuple
   - [x] a very small object with stable member count and clear equality
-- [ ] Audit every component that currently subscribes to `reader`.
+- [x] Audit every component that currently subscribes to `reader`.
 - [x] Ensure `ReaderQuickActionsDock` remains isolated from playback churn.
 - [ ] Add explicit tests proving that:
   - [x] playback ticks do not rerender starter UI
@@ -144,7 +144,7 @@ The codebase has working feature breadth, but several structural issues are now 
 
 - [x] Refactor [ui/src/store/slices/jobsSlice.ts](/win/linux/Code/projects/lantern-leaf/ui/src/store/slices/jobsSlice.ts) into a dedicated event-ingestion module.
 - [x] Convert backend listeners into domain-specific adapters that translate bridge events into minimal store mutations.
-- [ ] Coalesce or discard redundant events at the ingestion boundary rather than after they hit the UI store.
+- [x] Coalesce or discard redundant events at the ingestion boundary rather than after they hit the UI store.
 - [ ] Track event rates and payload sizes for:
   - [x] `reader-state`
   - [x] `tts-state`
@@ -153,7 +153,7 @@ The codebase has working feature breadth, but several structural issues are now 
 
 ## Phase 5: Decompose ReaderShell into Focused Modules
 
-- [ ] Extract from [ui/src/components/ReaderShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/ReaderShell.tsx):
+- [x] Extract from [ui/src/components/ReaderShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/ReaderShell.tsx):
   - [x] `ReaderTopBar`
   - [x] `ReaderSearchBar`
   - [x] `ReaderPrettyHtmlPane`
@@ -171,23 +171,23 @@ The codebase has working feature breadth, but several structural issues are now 
 
 ## Phase 6: Decompose StarterShell and Async Thumbnail Flow
 
-- [ ] Split [ui/src/components/StarterShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/StarterShell.tsx) into:
+- [x] Split [ui/src/components/StarterShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/StarterShell.tsx) into:
   - [x] `StarterOpenPanel`
   - [x] `StarterBrowserTabsPanel`
   - [x] `StarterRecentsPanel`
   - [x] `StarterCalibrePanel`
   - [x] `useBrowserTabs`
   - [x] `useCalibreThumbnails`
-  - [ ] virtualization helpers colocated with their owning list
+  - [x] virtualization helpers colocated with their owning list
 - [x] Move browser health and browser-tab loading into focused hooks with explicit loading/error state.
 - [x] Batch thumbnail updates and keep them local to the calibre list domain.
 - [x] Avoid list-wide rerender when one row thumbnail changes.
 
 ## Phase 7: Remove Duplicated Rendering and Sync Logic
 
-- [ ] Consolidate content rendering responsibilities:
-  - [ ] native HTML sanitization/rewrite
-  - [ ] markdown-to-HTML rendering
+- [x] Consolidate content rendering responsibilities:
+  - [x] native HTML sanitization/rewrite
+  - [x] markdown-to-HTML rendering
   - [x] HTML anchor extraction
   - [x] sentence-to-anchor mapping
 - [x] Remove rendering helpers from [ui/src/components/ReaderShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/ReaderShell.tsx) that belong in dedicated utility modules.

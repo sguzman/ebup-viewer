@@ -23,10 +23,10 @@ import {
   useAppToastState,
   useReaderActionState,
   useReaderTtsMetaState,
-  useReaderViewState,
+  useReaderViewTuple,
   useSessionMode,
   useStarterActionState,
-  useStarterViewState
+  useStarterViewTuple
 } from "./store/selectors";
 import { highlightBorder, mapFontFamily, mapFontWeight, toCssRgba } from "./theme/mapping";
 import type { ThemeMode } from "./types";
@@ -290,7 +290,7 @@ function AppHiddenStatus() {
 }
 
 function ReaderScreen() {
-  const { reader, busy } = useReaderViewState();
+  const [reader, busy] = useReaderViewTuple();
   const ttsStateEvent = useReaderTtsMetaState();
   const {
     closeReaderSession,
@@ -362,16 +362,27 @@ function ReaderScreen() {
 }
 
 function StarterScreen() {
-  const starter = useStarterViewState();
+  const [
+    bootstrapState,
+    recents,
+    calibreBooks,
+    busy,
+    loadingRecents,
+    loadingCalibre,
+    sourceOpenEvent,
+    calibreLoadEvent,
+    pdfTranscriptionEvent,
+    runtimeLogLevel
+  ] = useStarterViewTuple();
   const actions = useStarterActionState();
   return (
     <StarterShell
-      bootstrap={starter.bootstrapState}
-      recents={starter.recents}
-      calibreBooks={starter.calibreBooks}
-      busy={starter.busy}
-      loadingRecents={starter.loadingRecents}
-      loadingCalibre={starter.loadingCalibre}
+      bootstrap={bootstrapState}
+      recents={recents}
+      calibreBooks={calibreBooks}
+      busy={busy}
+      loadingRecents={loadingRecents}
+      loadingCalibre={loadingCalibre}
       onOpenPath={actions.openSourcePath}
       onOpenClipboardText={actions.openClipboardText}
       onOpenBrowserTab={actions.openBrowserTab}
@@ -379,10 +390,10 @@ function StarterScreen() {
       onRefreshRecents={actions.refreshRecents}
       onLoadCalibre={actions.loadCalibreBooks}
       onOpenCalibreBook={actions.openCalibreBook}
-      sourceOpenEvent={starter.sourceOpenEvent}
-      calibreLoadEvent={starter.calibreLoadEvent}
-      pdfTranscriptionEvent={starter.pdfTranscriptionEvent}
-      runtimeLogLevel={starter.runtimeLogLevel}
+      sourceOpenEvent={sourceOpenEvent}
+      calibreLoadEvent={calibreLoadEvent}
+      pdfTranscriptionEvent={pdfTranscriptionEvent}
+      runtimeLogLevel={runtimeLogLevel}
       onSetRuntimeLogLevel={actions.setRuntimeLogLevel}
       onToggleTheme={actions.toggleTheme}
     />

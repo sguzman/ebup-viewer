@@ -20,6 +20,16 @@ function makeState(): AppStore {
     recents: [],
     calibreBooks: [],
     telemetry: [],
+    operations: {
+      sourceOpen: false,
+      starterCommand: false,
+      readerCommand: false,
+      readerTts: false,
+      readerSettings: false,
+      browserTabRefresh: false,
+      calibreLoad: false,
+      runtimeConfig: false
+    },
     loadingBootstrap: false,
     loadingRecents: false,
     loadingCalibre: false,
@@ -76,12 +86,14 @@ function makeState(): AppStore {
     readerTtsSeekNext: async () => {},
     readerTtsSeekPrev: async () => {},
     readerTtsRepeatSentence: async () => {},
+    readerTtsPrecomputePage: async () => {},
     toggleSettingsPanel: async () => {},
     toggleStatsPanel: async () => {},
     toggleTtsPanel: async () => {},
     loadCalibreBooks: async () => {},
     openCalibreBook: async () => {},
     setRuntimeLogLevel: async () => {},
+    toggleTheme: async () => {},
     clearError: () => {},
     dismissToast: () => {},
     clearTelemetry: () => {}
@@ -91,11 +103,15 @@ function makeState(): AppStore {
 describe("store selectors", () => {
   it("projects stable slices from a base app store", () => {
     const state = makeState();
+    state.operations.readerTts = true;
+    state.operations.calibreLoad = true;
 
     expect(selectSessionSlice(state).loadingBootstrap).toBe(false);
     expect(selectReaderSlice(state).reader).toBeNull();
+    expect(selectReaderSlice(state).busy).toBe(true);
     expect(selectTtsSlice(state).ttsStateEvent).toBeNull();
     expect(selectCalibreSlice(state).calibreBooks).toEqual([]);
+    expect(selectCalibreSlice(state).loadingCalibre).toBe(true);
     expect(selectSettingsSlice(state).runtimeLogLevel).toBe("info");
     expect(selectStatsSlice(state).stats).toBeNull();
     expect(selectJobsSlice(state).pdfTranscriptionEvent).toBeNull();

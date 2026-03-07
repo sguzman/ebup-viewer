@@ -1,5 +1,5 @@
 import type { AppStore } from "../appStore";
-import { toBridgeError } from "./shared";
+import { setOperationBusy, toBridgeError } from "./shared";
 import type { SliceContext } from "./types";
 
 export function createReaderSliceActions({ set, get, backend }: SliceContext): Pick<
@@ -19,11 +19,14 @@ export function createReaderSliceActions({ set, get, backend }: SliceContext): P
   const syncReader = async (
     fn: () => Promise<Awaited<ReturnType<typeof backend.readerGetSnapshot>>>
   ) => {
+    setOperationBusy(set, get, "readerCommand", true);
     try {
       const reader = await fn();
       set({ reader });
     } catch (error) {
       set({ error: toBridgeError(error).message });
+    } finally {
+      setOperationBusy(set, get, "readerCommand", false);
     }
   };
 

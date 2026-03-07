@@ -232,6 +232,16 @@ function createTestStore(backend: BackendApi) {
   return createStore<AppStore>(createAppStoreState(backend));
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("appStore event handling", () => {
   it("applies the newest reader event and ignores stale reader events", async () => {
     const { backend, hooks } = createBackend();
@@ -345,6 +355,42 @@ describe("appStore event handling", () => {
     const state = store.getState();
     expect(state.runtimeLogLevel).toBe("error");
     expect(state.toast?.message).toContain("error");
+  });
+
+  it("tracks scoped source-open and reader-tts operation flags independently", async () => {
+    const openGate = deferred<OpenSourceResult>();
+    const ttsGate = deferred<ReaderSnapshot>();
+    const { backend } = createBackend({
+      sourceOpenPath: async () => openGate.promise,
+      readerTtsPlay: async () => ttsGate.promise
+    });
+    const store = createTestStore(backend);
+
+    const openPromise = store.getState().openSourcePath("/tmp/book.epub");
+    expect(store.getState().operations.sourceOpen).toBe(true);
+    expect(store.getState().operations.readerTts).toBe(false);
+
+    const ttsPromise = store.getState().readerTtsPlay();
+    expect(store.getState().operations.sourceOpen).toBe(true);
+    expect(store.getState().operations.readerTts).toBe(true);
+    expect(store.getState().busy).toBe(true);
+
+    openGate.resolve({
+      session: makeSessionState("reader"),
+      reader: makeReaderSnapshot("/tmp/book.epub", "Opened")
+    });
+    await openPromise;
+
+    expect(store.getState().operations.sourceOpen).toBe(false);
+    expect(store.getState().operations.readerTts).toBe(true);
+    expect(store.getState().busy).toBe(true);
+
+    ttsGate.resolve(makeReaderSnapshot("/tmp/book.epub", "Playing"));
+    await ttsPromise;
+
+    expect(store.getState().operations.sourceOpen).toBe(false);
+    expect(store.getState().operations.readerTts).toBe(false);
+    expect(store.getState().busy).toBe(false);
   });
 
   it("ignores stale source/calibre/pdf/tts/log events by request id", async () => {

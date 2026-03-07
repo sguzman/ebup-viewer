@@ -40,6 +40,19 @@ export interface ActionTelemetry {
   error: string | null;
 }
 
+export interface OperationState {
+  sourceOpen: boolean;
+  starterCommand: boolean;
+  readerCommand: boolean;
+  readerTts: boolean;
+  readerSettings: boolean;
+  browserTabRefresh: boolean;
+  calibreLoad: boolean;
+  runtimeConfig: boolean;
+}
+
+export type OperationScope = keyof OperationState;
+
 export interface AppStore {
   bootstrapState: BootstrapState | null;
   session: SessionState | null;
@@ -47,6 +60,7 @@ export interface AppStore {
   recents: RecentBook[];
   calibreBooks: CalibreBook[];
   telemetry: ActionTelemetry[];
+  operations: OperationState;
   loadingBootstrap: boolean;
   loadingRecents: boolean;
   loadingCalibre: boolean;
@@ -124,6 +138,7 @@ const initialStoreState: Pick<
   | "recents"
   | "calibreBooks"
   | "telemetry"
+  | "operations"
   | "loadingBootstrap"
   | "loadingRecents"
   | "loadingCalibre"
@@ -157,6 +172,16 @@ const initialStoreState: Pick<
   recents: [],
   calibreBooks: [],
   telemetry: [],
+  operations: {
+    sourceOpen: false,
+    starterCommand: false,
+    readerCommand: false,
+    readerTts: false,
+    readerSettings: false,
+    browserTabRefresh: false,
+    calibreLoad: false,
+    runtimeConfig: false
+  },
   loadingBootstrap: false,
   loadingRecents: false,
   loadingCalibre: false,

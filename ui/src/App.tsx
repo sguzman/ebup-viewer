@@ -21,9 +21,12 @@ import {
   useAppShellState,
   useAppThemeState,
   useAppToastState,
-  useReaderScreenState,
+  useReaderActionState,
+  useReaderTtsMetaState,
+  useReaderViewState,
   useSessionMode,
-  useStarterScreenState
+  useStarterActionState,
+  useStarterViewState
 } from "./store/selectors";
 import { highlightBorder, mapFontFamily, mapFontWeight, toCssRgba } from "./theme/mapping";
 import type { ThemeMode } from "./types";
@@ -287,10 +290,9 @@ function AppHiddenStatus() {
 }
 
 function ReaderScreen() {
+  const { reader, busy } = useReaderViewState();
+  const ttsStateEvent = useReaderTtsMetaState();
   const {
-    reader,
-    busy,
-    ttsStateEvent,
     closeReaderSession,
     readerNextPage,
     readerPrevPage,
@@ -316,7 +318,7 @@ function ReaderScreen() {
     toggleSettingsPanel,
     toggleStatsPanel,
     toggleTtsPanel
-  } = useReaderScreenState();
+  } = useReaderActionState();
 
   if (!reader) {
     return null;
@@ -360,7 +362,8 @@ function ReaderScreen() {
 }
 
 function StarterScreen() {
-  const starter = useStarterScreenState();
+  const starter = useStarterViewState();
+  const actions = useStarterActionState();
   return (
     <StarterShell
       bootstrap={starter.bootstrapState}
@@ -369,19 +372,19 @@ function StarterScreen() {
       busy={starter.busy}
       loadingRecents={starter.loadingRecents}
       loadingCalibre={starter.loadingCalibre}
-      onOpenPath={starter.openSourcePath}
-      onOpenClipboardText={starter.openClipboardText}
-      onOpenBrowserTab={starter.openBrowserTab}
-      onDeleteRecent={starter.deleteRecent}
-      onRefreshRecents={starter.refreshRecents}
-      onLoadCalibre={starter.loadCalibreBooks}
-      onOpenCalibreBook={starter.openCalibreBook}
+      onOpenPath={actions.openSourcePath}
+      onOpenClipboardText={actions.openClipboardText}
+      onOpenBrowserTab={actions.openBrowserTab}
+      onDeleteRecent={actions.deleteRecent}
+      onRefreshRecents={actions.refreshRecents}
+      onLoadCalibre={actions.loadCalibreBooks}
+      onOpenCalibreBook={actions.openCalibreBook}
       sourceOpenEvent={starter.sourceOpenEvent}
       calibreLoadEvent={starter.calibreLoadEvent}
       pdfTranscriptionEvent={starter.pdfTranscriptionEvent}
       runtimeLogLevel={starter.runtimeLogLevel}
-      onSetRuntimeLogLevel={starter.setRuntimeLogLevel}
-      onToggleTheme={starter.toggleTheme}
+      onSetRuntimeLogLevel={actions.setRuntimeLogLevel}
+      onToggleTheme={actions.toggleTheme}
     />
   );
 }

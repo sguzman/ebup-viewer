@@ -98,7 +98,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
     },
 
     openSourcePath: async (path) => {
-      await withBusy(set, get, "openSourcePath", async () => {
+      await withBusy(set, get, "openSourcePath", "sourceOpen", async () => {
         try {
           const result = await backend.sourceOpenPath(path);
           const recents = await backend.recentList();
@@ -127,7 +127,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
     },
 
     openClipboardText: async () => {
-      await withBusy(set, get, "openClipboardText", async () => {
+      await withBusy(set, get, "openClipboardText", "sourceOpen", async () => {
         try {
           const result = await backend.sourceOpenClipboard();
           const recents = await backend.recentList();
@@ -156,7 +156,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
     },
 
     openBrowserTab: async (tabId, windowId) => {
-      await withBusy(set, get, "openBrowserTab", async () => {
+      await withBusy(set, get, "openBrowserTab", "sourceOpen", async () => {
         try {
           const result = await backend.sourceOpenBrowserTab(tabId, windowId);
           const recents = await backend.recentList();
@@ -185,7 +185,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
     },
 
     refreshCurrentBrowserTab: async () => {
-      await withBusy(set, get, "refreshCurrentBrowserTab", async () => {
+      await withBusy(set, get, "refreshCurrentBrowserTab", "browserTabRefresh", async () => {
         const reader = get().reader;
         if (!reader || !reader.source_path.toLowerCase().endsWith(".lltab")) {
           return;
@@ -212,7 +212,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
     },
 
     deleteRecent: async (path) => {
-      await withBusy(set, get, "deleteRecent", async () => {
+      await withBusy(set, get, "deleteRecent", "starterCommand", async () => {
         try {
           await backend.recentDelete(path);
           const recents = await backend.recentList();
@@ -238,7 +238,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
     },
 
     returnToStarter: async () => {
-      await withBusy(set, get, "returnToStarter", async () => {
+      await withBusy(set, get, "returnToStarter", "readerCommand", async () => {
         try {
           const session = await backend.sessionReturnToStarter();
           set({
@@ -257,7 +257,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
     },
 
     closeReaderSession: async () => {
-      await withBusy(set, get, "closeReaderSession", async () => {
+      await withBusy(set, get, "closeReaderSession", "readerCommand", async () => {
         try {
           const session = await backend.readerCloseSession();
           set({

@@ -105,7 +105,7 @@ export function createSettingsSliceActions({ set, get, backend }: SliceContext):
     },
 
     toggleTheme: async () => {
-      await withBusy(set, get, "toggleTheme", async () => {
+      await withBusy(set, get, "toggleTheme", "readerSettings", async () => {
         const previousBootstrap = get().bootstrapState;
         const previousReader = get().reader;
         const session = get().session;
@@ -211,7 +211,7 @@ export function createSettingsSliceActions({ set, get, backend }: SliceContext):
     },
 
     setRuntimeLogLevel: async (level) => {
-      await withBusy(set, get, "setRuntimeLogLevel", async () => {
+      await withBusy(set, get, "setRuntimeLogLevel", "runtimeConfig", async () => {
         try {
           const normalized = await backend.loggingSetLevel(level);
           set({

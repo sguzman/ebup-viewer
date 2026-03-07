@@ -1,5 +1,5 @@
 import type { BridgeError, SessionState } from "../../types";
-import type { ActionTelemetry, ToastMessage } from "../appStore";
+import type { ActionTelemetry, OperationScope, ToastMessage } from "../appStore";
 import type { StoreGet, StoreSet } from "./types";
 
 type ToastSeverity = "info" | "success" | "error";
@@ -89,20 +89,48 @@ export function togglePanels(
   return next;
 }
 
+export function setOperationBusy(
+  set: StoreSet,
+  get: StoreGet,
+  scope: OperationScope,
+  active: boolean
+): void {
+  const current = get().operations;
+  const next = {
+    ...current,
+    [scope]: active
+  };
+  const busy =
+    next.sourceOpen ||
+    next.starterCommand ||
+    next.readerCommand ||
+    next.readerTts ||
+    next.readerSettings ||
+    next.browserTabRefresh ||
+    next.calibreLoad ||
+    next.runtimeConfig;
+  set({
+    operations: next,
+    busy
+  });
+}
+
 export async function withBusy(
   set: StoreSet,
   get: StoreGet,
   action: string,
+  scope: OperationScope,
   fn: () => Promise<void>
 ): Promise<void> {
   const startedAt = Date.now();
-  set({ busy: true, error: null });
+  set({ error: null });
+  setOperationBusy(set, get, scope, true);
   try {
     await fn();
     finishTelemetry(set, get, action, startedAt, true, null);
   } catch (error) {
     finishTelemetry(set, get, action, startedAt, false, toMessage(error));
   } finally {
-    set({ busy: false });
+    setOperationBusy(set, get, scope, false);
   }
 }

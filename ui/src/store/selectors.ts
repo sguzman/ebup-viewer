@@ -2,6 +2,24 @@ import { useShallow } from "zustand/react/shallow";
 
 import { useAppStore, type AppStore } from "./appStore";
 
+function selectReaderBusy(state: AppStore): boolean {
+  return (
+    state.operations.readerCommand ||
+    state.operations.readerTts ||
+    state.operations.readerSettings ||
+    state.operations.browserTabRefresh
+  );
+}
+
+function selectStarterBusy(state: AppStore): boolean {
+  return (
+    state.operations.sourceOpen ||
+    state.operations.starterCommand ||
+    state.operations.calibreLoad ||
+    state.operations.runtimeConfig
+  );
+}
+
 export const selectSessionSlice = (state: AppStore) => ({
   bootstrapState: state.bootstrapState,
   session: state.session,
@@ -21,7 +39,7 @@ export const selectSessionSlice = (state: AppStore) => ({
 
 export const selectReaderSlice = (state: AppStore) => ({
   reader: state.reader,
-  busy: state.busy,
+  busy: selectReaderBusy(state),
   refreshReaderSnapshot: state.refreshReaderSnapshot,
   readerNextPage: state.readerNextPage,
   readerPrevPage: state.readerPrevPage,
@@ -52,7 +70,7 @@ export const selectTtsSlice = (state: AppStore) => ({
 
 export const selectCalibreSlice = (state: AppStore) => ({
   calibreBooks: state.calibreBooks,
-  loadingCalibre: state.loadingCalibre,
+  loadingCalibre: state.loadingCalibre || state.operations.calibreLoad,
   loadCalibreBooks: state.loadCalibreBooks,
   openCalibreBook: state.openCalibreBook
 });
@@ -147,7 +165,7 @@ export function useReaderScreenState() {
   return useAppStore(
     useShallow((state) => ({
       reader: state.reader,
-      busy: state.busy,
+      busy: selectReaderBusy(state),
       ttsStateEvent: state.ttsStateEvent,
       closeReaderSession: state.closeReaderSession,
       readerNextPage: state.readerNextPage,
@@ -184,9 +202,9 @@ export function useStarterScreenState() {
       bootstrapState: state.bootstrapState,
       recents: state.recents,
       calibreBooks: state.calibreBooks,
-      busy: state.busy,
+      busy: selectStarterBusy(state),
       loadingRecents: state.loadingRecents,
-      loadingCalibre: state.loadingCalibre,
+      loadingCalibre: state.loadingCalibre || state.operations.calibreLoad,
       sourceOpenEvent: state.sourceOpenEvent,
       calibreLoadEvent: state.calibreLoadEvent,
       pdfTranscriptionEvent: state.pdfTranscriptionEvent,
@@ -207,7 +225,10 @@ export function useStarterScreenState() {
 export function useReaderQuickActionsState() {
   return useAppStore(
     useShallow((state) => ({
-      busy: state.busy,
+      busy:
+        state.operations.readerCommand ||
+        state.operations.readerSettings ||
+        state.operations.browserTabRefresh,
       isTextOnly: state.reader?.text_only_mode ?? false,
       isBrowserTab: state.reader?.source_path.toLowerCase().endsWith(".lltab") ?? false,
       showSettings: state.reader?.panels.show_settings ?? false,
@@ -218,6 +239,84 @@ export function useReaderQuickActionsState() {
       onToggleSettingsPanel: state.toggleSettingsPanel,
       onToggleStatsPanel: state.toggleStatsPanel,
       onToggleTtsPanel: state.toggleTtsPanel
+    }))
+  );
+}
+
+export function useReaderViewState() {
+  return useAppStore(
+    useShallow((state) => ({
+      reader: state.reader,
+      busy: selectReaderBusy(state)
+    }))
+  );
+}
+
+export function useReaderActionState() {
+  return useAppStore(
+    useShallow((state) => ({
+      closeReaderSession: state.closeReaderSession,
+      readerNextPage: state.readerNextPage,
+      readerPrevPage: state.readerPrevPage,
+      readerSetPage: state.readerSetPage,
+      readerSentenceClick: state.readerSentenceClick,
+      readerNextSentence: state.readerNextSentence,
+      readerPrevSentence: state.readerPrevSentence,
+      readerTtsPlay: state.readerTtsPlay,
+      readerTtsPause: state.readerTtsPause,
+      readerTtsTogglePlayPause: state.readerTtsTogglePlayPause,
+      readerTtsPlayFromPageStart: state.readerTtsPlayFromPageStart,
+      readerTtsPlayFromHighlight: state.readerTtsPlayFromHighlight,
+      readerTtsSeekNext: state.readerTtsSeekNext,
+      readerTtsSeekPrev: state.readerTtsSeekPrev,
+      readerTtsRepeatSentence: state.readerTtsRepeatSentence,
+      readerTtsPrecomputePage: state.readerTtsPrecomputePage,
+      readerToggleTextOnly: state.readerToggleTextOnly,
+      readerSearchSetQuery: state.readerSearchSetQuery,
+      readerSearchNext: state.readerSearchNext,
+      readerSearchPrev: state.readerSearchPrev,
+      readerApplySettings: state.readerApplySettings,
+      toggleTheme: state.toggleTheme,
+      toggleSettingsPanel: state.toggleSettingsPanel,
+      toggleStatsPanel: state.toggleStatsPanel,
+      toggleTtsPanel: state.toggleTtsPanel
+    }))
+  );
+}
+
+export function useReaderTtsMetaState() {
+  return useAppStore((state) => state.ttsStateEvent);
+}
+
+export function useStarterViewState() {
+  return useAppStore(
+    useShallow((state) => ({
+      bootstrapState: state.bootstrapState,
+      recents: state.recents,
+      calibreBooks: state.calibreBooks,
+      busy: selectStarterBusy(state),
+      loadingRecents: state.loadingRecents,
+      loadingCalibre: state.loadingCalibre || state.operations.calibreLoad,
+      sourceOpenEvent: state.sourceOpenEvent,
+      calibreLoadEvent: state.calibreLoadEvent,
+      pdfTranscriptionEvent: state.pdfTranscriptionEvent,
+      runtimeLogLevel: state.runtimeLogLevel
+    }))
+  );
+}
+
+export function useStarterActionState() {
+  return useAppStore(
+    useShallow((state) => ({
+      openSourcePath: state.openSourcePath,
+      openClipboardText: state.openClipboardText,
+      openBrowserTab: state.openBrowserTab,
+      deleteRecent: state.deleteRecent,
+      refreshRecents: state.refreshRecents,
+      loadCalibreBooks: state.loadCalibreBooks,
+      openCalibreBook: state.openCalibreBook,
+      setRuntimeLogLevel: state.setRuntimeLogLevel,
+      toggleTheme: state.toggleTheme
     }))
   );
 }

@@ -1,8 +1,8 @@
 import type { AppStore } from "../appStore";
-import { toBridgeError } from "./shared";
+import { setOperationBusy, toBridgeError } from "./shared";
 import type { SliceContext } from "./types";
 
-export function createTtsSliceActions({ set, backend }: SliceContext): Pick<
+export function createTtsSliceActions({ set, get, backend }: SliceContext): Pick<
   AppStore,
   | "readerTtsPlay"
   | "readerTtsPause"
@@ -17,11 +17,14 @@ export function createTtsSliceActions({ set, backend }: SliceContext): Pick<
   const syncReader = async (
     fn: () => Promise<Awaited<ReturnType<typeof backend.readerGetSnapshot>>>
   ) => {
+    setOperationBusy(set, get, "readerTts", true);
     try {
       const reader = await fn();
       set({ reader });
     } catch (error) {
       set({ error: toBridgeError(error).message });
+    } finally {
+      setOperationBusy(set, get, "readerTts", false);
     }
   };
 

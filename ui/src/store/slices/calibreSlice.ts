@@ -1,5 +1,5 @@
 import type { AppStore } from "../appStore";
-import { buildToast, finishTelemetry, toBridgeError, withBusy } from "./shared";
+import { buildToast, finishTelemetry, setOperationBusy, toBridgeError, withBusy } from "./shared";
 import type { SliceContext } from "./types";
 
 export function createCalibreSliceActions({ set, get, backend }: SliceContext): Pick<
@@ -10,6 +10,7 @@ export function createCalibreSliceActions({ set, get, backend }: SliceContext): 
     loadCalibreBooks: async (forceRefresh) => {
       const startedAt = Date.now();
       set({ loadingCalibre: true, error: null });
+      setOperationBusy(set, get, "calibreLoad", true);
       try {
         const calibreBooks = await backend.calibreLoadBooks(forceRefresh);
         set({ calibreBooks });
@@ -23,11 +24,12 @@ export function createCalibreSliceActions({ set, get, backend }: SliceContext): 
         finishTelemetry(set, get, "loadCalibreBooks", startedAt, false, bridgeError.message);
       } finally {
         set({ loadingCalibre: false });
+        setOperationBusy(set, get, "calibreLoad", false);
       }
     },
 
     openCalibreBook: async (bookId) => {
-      await withBusy(set, get, "openCalibreBook", async () => {
+      await withBusy(set, get, "openCalibreBook", "sourceOpen", async () => {
         try {
           const result = await backend.calibreOpenBook(bookId);
           const recents = await backend.recentList();

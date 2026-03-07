@@ -165,7 +165,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] `useReaderScrollSync`
   - [ ] `useReaderHighlightSync`
   - [ ] `useHtmlSentenceAnchorMap`
-- [ ] Move markdown rendering helpers out of `ReaderShell` into their own module.
+- [x] Move markdown rendering helpers out of `ReaderShell` into their own module.
 - [ ] Ensure each extracted component receives only the props it actually needs.
 - [ ] Reduce inline object creation and large effect dependency sets where those dependencies only exist because too much logic is colocated.
 
@@ -190,7 +190,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] markdown-to-HTML rendering
   - [ ] HTML anchor extraction
   - [ ] sentence-to-anchor mapping
-- [ ] Remove rendering helpers from [ui/src/components/ReaderShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/ReaderShell.tsx) that belong in dedicated utility modules.
+- [x] Remove rendering helpers from [ui/src/components/ReaderShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/ReaderShell.tsx) that belong in dedicated utility modules.
 - [ ] Define one module that owns HTML sync contracts end to end.
 - [ ] Add tests that assert sync logic independently of the full reader component tree.
 

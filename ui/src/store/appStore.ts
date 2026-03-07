@@ -7,6 +7,8 @@ import type {
   CalibreLoadEvent,
   LogLevelEvent,
   PdfTranscriptionEvent,
+  ReaderPlaybackState,
+  ReaderPlaybackStateEvent,
   ReaderSettingsPatch,
   ReaderSnapshot,
   RecentBook,
@@ -57,6 +59,7 @@ export interface AppStore {
   bootstrapState: BootstrapState | null;
   session: SessionState | null;
   reader: ReaderSnapshot | null;
+  readerPlayback: ReaderPlaybackState | null;
   recents: RecentBook[];
   calibreBooks: CalibreBook[];
   telemetry: ActionTelemetry[];
@@ -70,6 +73,7 @@ export interface AppStore {
   sourceOpenEvent: SourceOpenEvent | null;
   calibreLoadEvent: CalibreLoadEvent | null;
   ttsStateEvent: TtsStateEvent | null;
+  readerPlaybackStateEvent: ReaderPlaybackStateEvent | null;
   pdfTranscriptionEvent: PdfTranscriptionEvent | null;
   logLevelEvent: LogLevelEvent | null;
   runtimeLogLevel: string;
@@ -80,8 +84,10 @@ export interface AppStore {
   logLevelSubscribed: boolean;
   sessionStateSubscribed: boolean;
   readerStateSubscribed: boolean;
+  readerPlaybackStateSubscribed: boolean;
   lastSessionEventRequestId: number;
   lastReaderEventRequestId: number;
+  lastReaderPlaybackEventRequestId: number;
   lastSourceOpenEventRequestId: number;
   lastCalibreEventRequestId: number;
   lastTtsEventRequestId: number;
@@ -135,6 +141,7 @@ const initialStoreState: Pick<
   | "bootstrapState"
   | "session"
   | "reader"
+  | "readerPlayback"
   | "recents"
   | "calibreBooks"
   | "telemetry"
@@ -148,6 +155,7 @@ const initialStoreState: Pick<
   | "sourceOpenEvent"
   | "calibreLoadEvent"
   | "ttsStateEvent"
+  | "readerPlaybackStateEvent"
   | "pdfTranscriptionEvent"
   | "logLevelEvent"
   | "runtimeLogLevel"
@@ -158,8 +166,10 @@ const initialStoreState: Pick<
   | "logLevelSubscribed"
   | "sessionStateSubscribed"
   | "readerStateSubscribed"
+  | "readerPlaybackStateSubscribed"
   | "lastSessionEventRequestId"
   | "lastReaderEventRequestId"
+  | "lastReaderPlaybackEventRequestId"
   | "lastSourceOpenEventRequestId"
   | "lastCalibreEventRequestId"
   | "lastTtsEventRequestId"
@@ -169,6 +179,7 @@ const initialStoreState: Pick<
   bootstrapState: null,
   session: null,
   reader: null,
+  readerPlayback: null,
   recents: [],
   calibreBooks: [],
   telemetry: [],
@@ -191,6 +202,7 @@ const initialStoreState: Pick<
   sourceOpenEvent: null,
   calibreLoadEvent: null,
   ttsStateEvent: null,
+  readerPlaybackStateEvent: null,
   pdfTranscriptionEvent: null,
   logLevelEvent: null,
   runtimeLogLevel: "info",
@@ -201,8 +213,10 @@ const initialStoreState: Pick<
   logLevelSubscribed: false,
   sessionStateSubscribed: false,
   readerStateSubscribed: false,
+  readerPlaybackStateSubscribed: false,
   lastSessionEventRequestId: 0,
   lastReaderEventRequestId: 0,
+  lastReaderPlaybackEventRequestId: 0,
   lastSourceOpenEventRequestId: 0,
   lastCalibreEventRequestId: 0,
   lastTtsEventRequestId: 0,

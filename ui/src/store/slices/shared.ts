@@ -1,4 +1,4 @@
-import type { BridgeError, SessionState } from "../../types";
+import type { BridgeError, ReaderPlaybackState, ReaderSnapshot, SessionState } from "../../types";
 import type { ActionTelemetry, OperationScope, ToastMessage } from "../appStore";
 import type { StoreGet, StoreSet } from "./types";
 
@@ -113,6 +113,19 @@ export function setOperationBusy(
     operations: next,
     busy
   });
+}
+
+export function toReaderPlaybackState(reader: ReaderSnapshot | null): ReaderPlaybackState | null {
+  if (!reader) {
+    return null;
+  }
+  return {
+    source_path: reader.source_path,
+    current_page: reader.current_page,
+    highlighted_sentence_idx: reader.highlighted_sentence_idx,
+    tts: reader.tts,
+    stats: reader.stats
+  };
 }
 
 export async function withBusy(

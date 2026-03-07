@@ -9,6 +9,7 @@ import type {
   LogLevelEvent,
   OpenSourceResult,
   PdfTranscriptionEvent,
+  ReaderPlaybackStateEvent,
   ReaderStateEvent,
   ReaderSettingsPatch,
   ReaderSnapshot,
@@ -867,6 +868,7 @@ export interface BackendApi {
   onCalibreLoad: (handler: (event: CalibreLoadEvent) => void) => Promise<UnlistenFn>;
   onSessionState: (handler: (event: SessionStateEvent) => void) => Promise<UnlistenFn>;
   onReaderState: (handler: (event: ReaderStateEvent) => void) => Promise<UnlistenFn>;
+  onReaderPlaybackState: (handler: (event: ReaderPlaybackStateEvent) => void) => Promise<UnlistenFn>;
   onTtsState: (handler: (event: TtsStateEvent) => void) => Promise<UnlistenFn>;
   onPdfTranscription: (handler: (event: PdfTranscriptionEvent) => void) => Promise<UnlistenFn>;
   onLogLevel: (handler: (event: LogLevelEvent) => void) => Promise<UnlistenFn>;
@@ -941,6 +943,11 @@ function createTauriBackendApi(): BackendApi {
     onReaderState: async (handler) => {
       return listen<ReaderStateEvent>("reader-state", (event) => handler(event.payload));
     },
+    onReaderPlaybackState: async (handler) => {
+      return listen<ReaderPlaybackStateEvent>("reader-playback-state", (event) =>
+        handler(event.payload)
+      );
+    },
     onTtsState: async (handler) => {
       return listen<TtsStateEvent>("tts-state", (event) => handler(event.payload));
     },
@@ -1004,6 +1011,7 @@ function createMockBackendApi(): BackendApi {
     onCalibreLoad: mockOnCalibreLoad,
     onSessionState: mockOnSessionState,
     onReaderState: mockOnReaderState,
+    onReaderPlaybackState: async () => () => {},
     onTtsState: mockOnTtsState,
     onPdfTranscription: mockOnPdfTranscription,
     onLogLevel: mockOnLogLevel

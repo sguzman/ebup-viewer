@@ -1,5 +1,12 @@
 import type { AppStore } from "../appStore";
-import { buildToast, finishTelemetry, setOperationBusy, toBridgeError, withBusy } from "./shared";
+import {
+  buildToast,
+  finishTelemetry,
+  setOperationBusy,
+  toBridgeError,
+  toReaderPlaybackState,
+  withBusy
+} from "./shared";
 import type { SliceContext } from "./types";
 
 export function createCalibreSliceActions({ set, get, backend }: SliceContext): Pick<
@@ -36,6 +43,7 @@ export function createCalibreSliceActions({ set, get, backend }: SliceContext): 
           set({
             session: result.session,
             reader: result.reader,
+            readerPlayback: toReaderPlaybackState(result.reader),
             recents,
             toast: buildToast("success", "Book opened from calibre")
           });

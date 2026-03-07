@@ -8,6 +8,7 @@ import {
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRenderDebugCounter } from "../perf/debug";
+import { useReaderPlaybackState } from "../store/selectors";
 import type { ReaderSettingsPatch, ReaderSnapshot, TtsStateEvent } from "../types";
 import {
   renderPrettyMarkdownDocument,
@@ -64,7 +65,7 @@ interface ReaderShellProps {
 }
 
 export const ReaderShell = memo(function ReaderShell({
-  reader,
+  reader: documentReader,
   busy,
   onCloseSession,
   onPrevPage,
@@ -105,6 +106,19 @@ export const ReaderShell = memo(function ReaderShell({
   void onTtsPrecomputePage;
 
   useRenderDebugCounter("ReaderShell");
+  const playback = useReaderPlaybackState(documentReader.source_path, documentReader.current_page);
+  const reader = useMemo(
+    () =>
+      playback
+        ? {
+            ...documentReader,
+            highlighted_sentence_idx: playback.highlighted_sentence_idx,
+            tts: playback.tts,
+            stats: playback.stats
+          }
+        : documentReader,
+    [documentReader, playback]
+  );
   const [pageInput, setPageInput] = useState(String(reader.current_page + 1));
   const [searchInput, setSearchInput] = useState(reader.search_query);
   const sentenceRefs = useRef<Record<number, HTMLButtonElement | null>>({});

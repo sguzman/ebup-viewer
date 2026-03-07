@@ -62,6 +62,8 @@ static EVENT_EMISSION_TELEMETRY: OnceLock<Mutex<EventEmissionTelemetry>> = OnceL
 struct EventEmissionTelemetry {
     last_reader_emit: Option<Instant>,
     last_tts_emit: Option<Instant>,
+    last_reader_document_source_path: Option<String>,
+    last_reader_document_page: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
@@ -210,6 +212,25 @@ struct ReaderStateEvent {
     request_id: u64,
     action: String,
     reader: session::ReaderSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+struct ReaderPlaybackState {
+    source_path: String,
+    current_page: usize,
+    highlighted_sentence_idx: Option<usize>,
+    tts: session::ReaderTtsView,
+    stats: session::ReaderStats,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+struct ReaderPlaybackStateEvent {
+    #[ts(type = "number")]
+    request_id: u64,
+    action: String,
+    playback: ReaderPlaybackState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -745,6 +766,8 @@ pub fn export_ts_bindings(out_dir: &Path) -> Result<(), String> {
     export_single_type::<LogLevelEvent>(out_dir)?;
     export_single_type::<SessionStateEvent>(out_dir)?;
     export_single_type::<ReaderStateEvent>(out_dir)?;
+    export_single_type::<ReaderPlaybackState>(out_dir)?;
+    export_single_type::<ReaderPlaybackStateEvent>(out_dir)?;
     export_single_type::<BridgeError>(out_dir)?;
     export_single_type::<session::PanelState>(out_dir)?;
     export_single_type::<session::ReaderSettingsView>(out_dir)?;
@@ -773,6 +796,8 @@ export type { PdfTranscriptionEvent } from "./PdfTranscriptionEvent";
 export type { LogLevelEvent } from "./LogLevelEvent";
 export type { SessionStateEvent } from "./SessionStateEvent";
 export type { ReaderStateEvent } from "./ReaderStateEvent";
+export type { ReaderPlaybackState } from "./ReaderPlaybackState";
+export type { ReaderPlaybackStateEvent } from "./ReaderPlaybackStateEvent";
 export type { BridgeError } from "./BridgeError";
 export type { PanelState } from "./PanelState";
 export type { ReaderSettingsView } from "./ReaderSettingsView";
@@ -927,6 +952,16 @@ fn classify_reader_action(action: &str) -> &'static str {
     }
 }
 
+fn to_reader_playback_state(reader: &session::ReaderSnapshot) -> ReaderPlaybackState {
+    ReaderPlaybackState {
+        source_path: reader.source_path.clone(),
+        current_page: reader.current_page,
+        highlighted_sentence_idx: reader.highlighted_sentence_idx,
+        tts: reader.tts.clone(),
+        stats: reader.stats.clone(),
+    }
+}
+
 fn emit_reader_state(
     app: &tauri::AppHandle,
     request_id: u64,
@@ -934,15 +969,59 @@ fn emit_reader_state(
     reader: &session::ReaderSnapshot,
 ) {
     let now = Instant::now();
-    let (since_last_emit_ms, emission_rate_hz) = event_emission_telemetry()
+    let update_kind = classify_reader_action(action);
+    let playback = to_reader_playback_state(reader);
+    let playback_payload_size_bytes = serde_json::to_vec(&playback)
+        .map(|payload| payload.len())
+        .unwrap_or_default();
+    let (since_last_emit_ms, emission_rate_hz, emit_playback_only) = event_emission_telemetry()
         .lock()
         .ok()
-        .map(|mut telemetry| emission_rate_fields(&mut telemetry.last_reader_emit, now))
-        .unwrap_or((None, None));
+        .map(|mut telemetry| {
+            let (elapsed, rate_hz) = emission_rate_fields(&mut telemetry.last_reader_emit, now);
+            let same_document_as_last_full_emit = telemetry
+                .last_reader_document_source_path
+                .as_deref()
+                .map(|path| path == reader.source_path.as_str())
+                .unwrap_or(false)
+                && telemetry.last_reader_document_page == Some(reader.current_page);
+            let playback_only =
+                action == "reader_tts_runtime_step" && same_document_as_last_full_emit;
+            if !playback_only {
+                telemetry.last_reader_document_source_path = Some(reader.source_path.clone());
+                telemetry.last_reader_document_page = Some(reader.current_page);
+            }
+            (elapsed, rate_hz, playback_only)
+        })
+        .unwrap_or((None, None, false));
+
+    if emit_playback_only {
+        tracing::debug!(
+            request_id,
+            action,
+            update_kind,
+            page = playback.current_page + 1,
+            highlighted_sentence_idx = playback.highlighted_sentence_idx,
+            tts_state = ?playback.tts.state,
+            payload_size_bytes = playback_payload_size_bytes,
+            since_last_emit_ms,
+            emission_rate_hz,
+            "Emitting reader-playback-state bridge event"
+        );
+        let _ = app.emit(
+            "reader-playback-state",
+            ReaderPlaybackStateEvent {
+                request_id,
+                action: action.to_string(),
+                playback,
+            },
+        );
+        return;
+    }
+
     let snapshot_size_bytes = serde_json::to_vec(reader)
         .map(|payload| payload.len())
         .unwrap_or_default();
-    let update_kind = classify_reader_action(action);
     tracing::debug!(
         request_id,
         action,
@@ -1833,6 +1912,7 @@ const BRIDGE_EVENT_NAMES: &[&str] = &[
     "calibre-load",
     "session-state",
     "reader-state",
+    "reader-playback-state",
     "tts-state",
     "pdf-transcription",
     "log-level",
@@ -1954,6 +2034,7 @@ mod tests {
                 "calibre-load",
                 "session-state",
                 "reader-state",
+                "reader-playback-state",
                 "tts-state",
                 "pdf-transcription",
                 "log-level",

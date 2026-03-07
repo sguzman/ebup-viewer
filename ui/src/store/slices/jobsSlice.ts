@@ -2,6 +2,7 @@ import {
   reduceCalibreLoadEvent,
   reduceLogLevelEvent,
   reducePdfTranscriptionEvent,
+  reduceReaderPlaybackStateEvent,
   reduceReaderStateEvent,
   reduceSessionStateEvent,
   reduceSourceOpenEvent,
@@ -55,5 +56,12 @@ export async function ensureJobSubscriptions({ set, get, backend }: SliceContext
   if (!get().readerStateSubscribed) {
     await backend.onReaderState(applyReducedEvent("bridge:reader-state", reduceReaderStateEvent));
     set({ readerStateSubscribed: true });
+  }
+
+  if (!get().readerPlaybackStateSubscribed) {
+    await backend.onReaderPlaybackState(
+      applyReducedEvent("bridge:reader-playback-state", reduceReaderPlaybackStateEvent)
+    );
+    set({ readerPlaybackStateSubscribed: true });
   }
 }

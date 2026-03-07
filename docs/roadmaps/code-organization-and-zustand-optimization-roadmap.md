@@ -196,13 +196,13 @@ The codebase has working feature breadth, but several structural issues are now 
 
 ## Phase 8: Backend Contract and Payload Optimization
 
-- [ ] Review the bridge contract so it does not require replacing the full reader snapshot for transient playback movement.
+- [x] Review the bridge contract so it does not require replacing the full reader snapshot for transient playback movement.
 - [ ] Split backend payloads into:
   - [ ] document/page structure
-  - [ ] playback cursor/progress
+  - [x] playback cursor/progress
   - [ ] settings/panels
   - [ ] operational events
-- [ ] Reduce frequency of heavy reader snapshot emission from the backend when only playback cursor changed.
+- [x] Reduce frequency of heavy reader snapshot emission from the backend when only playback cursor changed.
 - [ ] Add tracing fields for:
   - [x] snapshot size
   - [x] snapshot emission rate

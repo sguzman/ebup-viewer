@@ -2,13 +2,14 @@ import type {
   CalibreLoadEvent,
   LogLevelEvent,
   PdfTranscriptionEvent,
+  ReaderPlaybackStateEvent,
   ReaderStateEvent,
   SessionStateEvent,
   SourceOpenEvent,
   TtsStateEvent
 } from "../../types";
 import type { AppStore } from "../appStore";
-import { buildToast } from "./shared";
+import { buildToast, toReaderPlaybackState } from "./shared";
 
 function samePanels(
   left: AppStore["session"] extends infer T
@@ -135,6 +136,32 @@ function sameReaderSnapshot(
     leftSentences.every((value, idx) => value === rightSentences[idx]) &&
     leftSearchMatches.every((value, idx) => value === rightSearchMatches[idx]) &&
     leftSentenceAnchorMap.every((value, idx) => value === rightSentenceAnchorMap[idx])
+  );
+}
+
+function sameReaderPlaybackState(
+  left: AppStore["readerPlayback"],
+  right: ReaderPlaybackStateEvent["playback"]
+): boolean {
+  if (!left) {
+    return false;
+  }
+  return (
+    left.source_path === right.source_path &&
+    left.current_page === right.current_page &&
+    left.highlighted_sentence_idx === right.highlighted_sentence_idx &&
+    left.tts.state === right.tts.state &&
+    left.tts.current_sentence_idx === right.tts.current_sentence_idx &&
+    left.tts.sentence_count === right.tts.sentence_count &&
+    left.tts.can_seek_prev === right.tts.can_seek_prev &&
+    left.tts.can_seek_next === right.tts.can_seek_next &&
+    left.tts.progress_pct === right.tts.progress_pct &&
+    left.stats.page_index === right.stats.page_index &&
+    left.stats.total_pages === right.stats.total_pages &&
+    left.stats.tts_progress_pct === right.stats.tts_progress_pct &&
+    left.stats.global_progress_pct === right.stats.global_progress_pct &&
+    left.stats.page_time_remaining_secs === right.stats.page_time_remaining_secs &&
+    left.stats.book_time_remaining_secs === right.stats.book_time_remaining_secs
   );
 }
 
@@ -279,8 +306,31 @@ export function reduceReaderStateEvent(
   if (!sameReaderSnapshot(current.reader, event.reader)) {
     next.reader = event.reader;
   }
+  const nextPlayback = toReaderPlaybackState(event.reader);
+  if (!sameReaderPlaybackState(current.readerPlayback, nextPlayback!)) {
+    next.readerPlayback = nextPlayback;
+  }
   if (!sameSessionState(current.session, nextSession)) {
     next.session = nextSession;
+  }
+  return next;
+}
+
+export function reduceReaderPlaybackStateEvent(
+  current: AppStore,
+  event: ReaderPlaybackStateEvent
+): Partial<AppStore> {
+  if (event.request_id < current.lastReaderPlaybackEventRequestId) {
+    return {};
+  }
+  const next: Partial<AppStore> = {
+    lastReaderPlaybackEventRequestId: event.request_id
+  };
+  if (!sameReaderPlaybackState(current.readerPlayback, event.playback)) {
+    next.readerPlayback = event.playback;
+  }
+  if (current.readerPlaybackStateEvent !== event) {
+    next.readerPlaybackStateEvent = event;
   }
   return next;
 }

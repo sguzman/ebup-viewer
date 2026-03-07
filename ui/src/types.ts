@@ -11,6 +11,8 @@ export type {
   PanelState,
   PdfTranscriptionEvent,
   ReaderSettingsPatch,
+  ReaderPlaybackState,
+  ReaderPlaybackStateEvent,
   ReaderSettingsView,
   PrettyKind,
   ReaderSnapshot,

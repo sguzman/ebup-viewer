@@ -1,6 +1,13 @@
 import type { AppStore } from "../appStore";
 import { ensureJobSubscriptions } from "./jobsSlice";
-import { buildToast, finishTelemetry, toBridgeError, toMessage, withBusy } from "./shared";
+import {
+  buildToast,
+  finishTelemetry,
+  toBridgeError,
+  toMessage,
+  toReaderPlaybackState,
+  withBusy
+} from "./shared";
 import type { SliceContext } from "./types";
 
 export function createSessionSliceActions({ set, get, backend }: SliceContext): Pick<
@@ -29,10 +36,11 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
               active_source_path: null,
               open_in_flight: false
             },
-            reader: null
+            reader: null,
+            readerPlayback: null
           });
         } else {
-          set({ reader: null });
+          set({ reader: null, readerPlayback: null });
         }
       } catch (error) {
         set({ error: toBridgeError(error).message });
@@ -70,6 +78,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
           recents,
           calibreBooks,
           reader,
+          readerPlayback: toReaderPlaybackState(reader),
           runtimeLogLevel: bootstrapState.config.log_level
         });        finishTelemetry(set, get, "bootstrap", startedAt, true, null);
       } catch (error) {
@@ -105,6 +114,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
           set({
             session: result.session,
             reader: result.reader,
+            readerPlayback: toReaderPlaybackState(result.reader),
             recents,
             toast: buildToast("success", "Source opened")
           });
@@ -134,6 +144,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
           set({
             session: result.session,
             reader: result.reader,
+            readerPlayback: toReaderPlaybackState(result.reader),
             recents,
             toast: buildToast("success", "Clipboard text opened")
           });
@@ -163,6 +174,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
           set({
             session: result.session,
             reader: result.reader,
+            readerPlayback: toReaderPlaybackState(result.reader),
             recents,
             toast: buildToast("success", "Browser tab imported")
           });
@@ -196,6 +208,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
           set({
             session: result.session,
             reader: result.reader,
+            readerPlayback: toReaderPlaybackState(result.reader),
             recents,
             toast: buildToast("success", "Browser tab refreshed")
           });
@@ -243,7 +256,8 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
           const session = await backend.sessionReturnToStarter();
           set({
             session,
-            reader: null
+            reader: null,
+            readerPlayback: null
           });
         } catch (error) {
           const bridgeError = toBridgeError(error);
@@ -262,7 +276,8 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
           const session = await backend.readerCloseSession();
           set({
             session,
-            reader: null
+            reader: null,
+            readerPlayback: null
           });
         } catch (error) {
           const bridgeError = toBridgeError(error);

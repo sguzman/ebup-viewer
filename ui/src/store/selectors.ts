@@ -306,6 +306,19 @@ export function useReaderTtsMetaState() {
   return useAppStore((state) => state.ttsStateEvent);
 }
 
+export function useReaderPlaybackState(sourcePath: string, currentPage: number) {
+  return useAppStore((state) => {
+    const playback = state.readerPlayback;
+    if (!playback) {
+      return null;
+    }
+    if (playback.source_path !== sourcePath || playback.current_page !== currentPage) {
+      return null;
+    }
+    return playback;
+  });
+}
+
 export function useStarterViewState() {
   return useAppStore(
     useShallow((state) => ({

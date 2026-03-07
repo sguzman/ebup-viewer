@@ -40,6 +40,7 @@ export function useReaderHighlightSync({
 }: UseReaderHighlightSyncArgs): ReaderHighlightSyncState {
   const nativeHtmlFrameRef = useRef<HTMLIFrameElement | null>(null);
   const prettyHighlightedNodeRef = useRef<HTMLElement | null>(null);
+  const prettyHighlightedHtmlNodesRef = useRef<HTMLElement[]>([]);
   const [nativeHtmlLoadVersion, setNativeHtmlLoadVersion] = useState(0);
   const { prettyAnchorElementsRef, resolvePrettyAnchorIdx } = useHtmlSentenceAnchorMap({
     hasPrettyHtml,
@@ -54,8 +55,10 @@ export function useReaderHighlightSync({
 
   const getPrettyAnchorNode = useCallback(
     (anchorIdx: number): HTMLElement | null => {
-      const key = reader.pretty_kind === "html" ? "html" : "markdown";
-      return prettyAnchorElementsRef.current[key].get(anchorIdx) ?? null;
+      if (reader.pretty_kind === "html") {
+        return prettyAnchorElementsRef.current.html.get(anchorIdx) ?? null;
+      }
+      return prettyAnchorElementsRef.current.markdown.get(anchorIdx) ?? null;
     },
     [reader.pretty_kind]
   );
@@ -110,6 +113,12 @@ export function useReaderHighlightSync({
 
   const applyPrettyHighlight = useCallback((): boolean => {
     if (reader.text_only_mode) {
+      if (prettyHighlightedHtmlNodesRef.current.length > 0) {
+        for (const node of prettyHighlightedHtmlNodesRef.current) {
+          node.classList.remove("reader-pretty-highlight");
+        }
+        prettyHighlightedHtmlNodesRef.current = [];
+      }
       if (prettyHighlightedNodeRef.current) {
         prettyHighlightedNodeRef.current.classList.remove("reader-pretty-highlight");
         prettyHighlightedNodeRef.current = null;
@@ -117,11 +126,42 @@ export function useReaderHighlightSync({
       return false;
     }
     if (activePrettyAnchorIdx === null || activePrettyAnchorIdx === undefined) {
+      if (prettyHighlightedHtmlNodesRef.current.length > 0) {
+        for (const node of prettyHighlightedHtmlNodesRef.current) {
+          node.classList.remove("reader-pretty-highlight");
+        }
+        prettyHighlightedHtmlNodesRef.current = [];
+      }
       if (prettyHighlightedNodeRef.current) {
         prettyHighlightedNodeRef.current.classList.remove("reader-pretty-highlight");
         prettyHighlightedNodeRef.current = null;
       }
       return false;
+    }
+    if (reader.pretty_kind === "html") {
+      const nodes = prettyAnchorElementsRef.current.htmlSentenceSpans.get(activePrettyAnchorIdx) ?? [];
+      if (nodes.length > 0) {
+        for (const node of prettyHighlightedHtmlNodesRef.current) {
+          if (!nodes.includes(node)) {
+            node.classList.remove("reader-pretty-highlight");
+          }
+        }
+        for (const node of nodes) {
+          node.classList.add("reader-pretty-highlight");
+        }
+        prettyHighlightedHtmlNodesRef.current = nodes;
+        if (prettyHighlightedNodeRef.current && !nodes.includes(prettyHighlightedNodeRef.current)) {
+          prettyHighlightedNodeRef.current.classList.remove("reader-pretty-highlight");
+          prettyHighlightedNodeRef.current = null;
+        }
+        return true;
+      }
+      if (prettyHighlightedHtmlNodesRef.current.length > 0) {
+        for (const node of prettyHighlightedHtmlNodesRef.current) {
+          node.classList.remove("reader-pretty-highlight");
+        }
+        prettyHighlightedHtmlNodesRef.current = [];
+      }
     }
     const target = getPrettyAnchorNode(activePrettyAnchorIdx);
     if (!target) {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 
 import { recordPerfMeasure } from "../perf/debug";
 import type { ReaderSnapshot } from "../types";
+import { annotateNativeHtmlSentences } from "./nativeHtmlSentenceAnchors";
 import { buildReaderHtmlSyncMap, collectIndexedAnchors } from "./readerHtmlSync";
 
 interface UseHtmlSentenceAnchorMapArgs {
@@ -18,6 +19,7 @@ interface UseHtmlSentenceAnchorMapArgs {
 export interface HtmlSentenceAnchorMapState {
   prettyAnchorElementsRef: MutableRefObject<{
     html: Map<number, HTMLElement>;
+    htmlSentenceSpans: Map<number, HTMLElement[]>;
     markdown: Map<number, HTMLElement>;
   }>;
   resolvePrettyAnchorIdx: (idx: number) => number | null;
@@ -35,8 +37,9 @@ export function useHtmlSentenceAnchorMap({
 }: UseHtmlSentenceAnchorMapArgs): HtmlSentenceAnchorMapState {
   const prettyAnchorElementsRef = useRef<{
     html: Map<number, HTMLElement>;
+    htmlSentenceSpans: Map<number, HTMLElement[]>;
     markdown: Map<number, HTMLElement>;
-  }>({ html: new Map(), markdown: new Map() });
+  }>({ html: new Map(), htmlSentenceSpans: new Map(), markdown: new Map() });
   const htmlSentenceAnchorCacheRef = useRef<{ key: string; map: number[] }>({ key: "", map: [] });
   const prettyAnchorLookupKeyRef = useRef<string>("");
 
@@ -66,6 +69,7 @@ export function useHtmlSentenceAnchorMap({
   useEffect(() => {
     if (!prettyLookupKey) {
       prettyAnchorElementsRef.current.html.clear();
+      prettyAnchorElementsRef.current.htmlSentenceSpans.clear();
       prettyAnchorElementsRef.current.markdown.clear();
       prettyAnchorLookupKeyRef.current = "";
       return;
@@ -85,11 +89,18 @@ export function useHtmlSentenceAnchorMap({
     if (!root) {
       return;
     }
-    prettyAnchorElementsRef.current[kind] = collectIndexedAnchors(root, attribute);
     if (kind === "html") {
+      const result = annotateNativeHtmlSentences(root as Document, reader.sentences);
+      prettyAnchorElementsRef.current.html = result.firstAnchors;
+      prettyAnchorElementsRef.current.htmlSentenceSpans = result.sentenceAnchors;
       prettyAnchorElementsRef.current.markdown.clear();
+      if (import.meta.env.DEV) {
+        console.debug("reader native html sentence anchors", result.diagnostics);
+      }
     } else {
+      prettyAnchorElementsRef.current[kind] = collectIndexedAnchors(root, attribute);
       prettyAnchorElementsRef.current.html.clear();
+      prettyAnchorElementsRef.current.htmlSentenceSpans.clear();
     }
     prettyAnchorLookupKeyRef.current = prettyLookupKey;
   }, [
@@ -98,6 +109,7 @@ export function useHtmlSentenceAnchorMap({
     nativeHtmlFrameRef,
     nativeHtmlLoadVersion,
     prettyLookupKey,
+    reader.sentences,
     sentenceScrollRef
   ]);
 
@@ -112,7 +124,9 @@ export function useHtmlSentenceAnchorMap({
     }
 
     const rebuildHtmlAnchors = (): void => {
-      prettyAnchorElementsRef.current.html = collectIndexedAnchors(doc, "data-ll-html-anchor");
+      const result = annotateNativeHtmlSentences(doc, reader.sentences);
+      prettyAnchorElementsRef.current.html = result.firstAnchors;
+      prettyAnchorElementsRef.current.htmlSentenceSpans = result.sentenceAnchors;
       prettyAnchorLookupKeyRef.current = prettyLookupKey;
     };
 
@@ -142,11 +156,24 @@ export function useHtmlSentenceAnchorMap({
       frame.removeEventListener("load", handleLoad);
       doc.removeEventListener("click", handleClick);
     };
-  }, [hasPrettyHtml, nativeHtmlFrameRef, nativeHtmlLoadVersion, prettyLookupKey]);
+  }, [hasPrettyHtml, nativeHtmlFrameRef, nativeHtmlLoadVersion, prettyLookupKey, reader.sentences]);
 
   useEffect(() => {
     if (!hasPrettyHtml || !renderedNativeHtml) {
       htmlSentenceAnchorCacheRef.current = { key: "", map: [] };
+      return;
+    }
+    if (prettyAnchorElementsRef.current.htmlSentenceSpans.size > 0) {
+      htmlSentenceAnchorCacheRef.current = {
+        key: [
+          reader.source_path,
+          reader.current_page,
+          renderedNativeHtml,
+          sentencesKey,
+          "sentence-spans"
+        ].join("\n"),
+        map: reader.sentences.map((_, idx) => idx)
+      };
       return;
     }
     const cacheKey = [
@@ -195,6 +222,19 @@ export function useHtmlSentenceAnchorMap({
 
   const resolvePrettyAnchorIdx = (idx: number): number | null => {
     if (reader.pretty_kind === "html") {
+      if (prettyAnchorElementsRef.current.htmlSentenceSpans.has(idx)) {
+        return idx;
+      }
+      for (let offset = 1; offset < reader.sentences.length; offset += 1) {
+        const prev = idx - offset;
+        const next = idx + offset;
+        if (prev >= 0 && prettyAnchorElementsRef.current.htmlSentenceSpans.has(prev)) {
+          return prev;
+        }
+        if (next < reader.sentences.length && prettyAnchorElementsRef.current.htmlSentenceSpans.has(next)) {
+          return next;
+        }
+      }
       const anchors = htmlSentenceAnchorCacheRef.current.map;
       let anchorIdx = anchors[idx] ?? null;
       if (anchorIdx === null || anchorIdx === undefined) {

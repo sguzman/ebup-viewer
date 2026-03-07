@@ -88,7 +88,8 @@ function injectReaderHighlightOverlay(doc: Document): void {
   const style = doc.createElement("style");
   style.setAttribute("data-ll-reader-overlay", "1");
   style.textContent = `
-    [data-ll-html-anchor].reader-pretty-highlight {
+    [data-ll-html-anchor].reader-pretty-highlight,
+    [data-ll-html-sentence].reader-pretty-highlight {
       background: rgba(95, 143, 47, 0.18) !important;
       outline: 2px solid rgb(95, 143, 47) !important;
       border-radius: 0.2rem;

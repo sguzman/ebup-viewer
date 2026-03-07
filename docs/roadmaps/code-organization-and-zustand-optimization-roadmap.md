@@ -130,14 +130,14 @@ The codebase has working feature breadth, but several structural issues are now 
 - [x] Replace broad object selectors in [ui/src/store/selectors.ts](/win/linux/Code/projects/lantern-leaf/ui/src/store/selectors.ts) with smaller dedicated hooks.
 - [x] Eliminate large selectors such as `useReaderScreenState` and `useStarterScreenState`.
 - [ ] Prefer selectors that return:
-  - [ ] a single primitive
+  - [x] a single primitive
   - [ ] a tiny tuple
-  - [ ] a very small object with stable member count and clear equality
+  - [x] a very small object with stable member count and clear equality
 - [ ] Audit every component that currently subscribes to `reader`.
-- [ ] Ensure `ReaderQuickActionsDock` remains isolated from playback churn.
+- [x] Ensure `ReaderQuickActionsDock` remains isolated from playback churn.
 - [ ] Add explicit tests proving that:
-  - [ ] playback ticks do not rerender starter UI
-  - [ ] non-TTS controls do not rerender on pure TTS metadata changes
+  - [x] playback ticks do not rerender starter UI
+  - [x] non-TTS controls do not rerender on pure TTS metadata changes
   - [ ] panel toggles do not rerender the entire reader tree
 
 ## Phase 4: Separate Event Ingestion from UI State
@@ -239,7 +239,7 @@ The codebase has working feature breadth, but several structural issues are now 
 
 ## Phase 10: Performance Instrumentation and Regression Protection
 
-- [ ] Add dev-only counters for selector invalidation frequency by component.
+- [x] Add dev-only counters for selector invalidation frequency by component.
 - [x] Add tests around store write granularity.
 - [ ] Add a profiling script for long-running playback on:
   - [ ] large EPUB
@@ -247,7 +247,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] image-heavy HTML
 - [ ] Add guardrail tests for reader state decomposition:
   - [x] document state unchanged on pure playback move
-  - [ ] panel toggle does not invalidate document payload
+  - [x] panel toggle does not invalidate document payload
   - [x] TTS event does not force starter-screen rerender
 
 ## Recommended Order

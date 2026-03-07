@@ -5,25 +5,36 @@ import SpeedDialIcon from "@mui/material/SpeedDialIcon";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
 import TuneIcon from "@mui/icons-material/Tune";
 import { Box, ClickAwayListener, Fab, Paper, Stack, Typography } from "@mui/material";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 
-import { useReaderQuickActionsState } from "../store/selectors";
+import { recordSelectorInvalidation } from "../perf/debug";
+import {
+  useReaderQuickActionsActions,
+  useReaderQuickActionsBusy,
+  useReaderQuickActionsFlags
+} from "../store/selectors";
 
 export const ReaderQuickActionsDock = memo(function ReaderQuickActionsDock() {
+  const busy = useReaderQuickActionsBusy();
   const {
-    busy,
     isTextOnly,
     isBrowserTab,
     showSettings,
     showStats,
-    showTts,
+    showTts
+  } = useReaderQuickActionsFlags();
+  const {
     onRefreshBrowserTab,
     onToggleTextOnly,
     onToggleSettingsPanel,
     onToggleStatsPanel,
     onToggleTtsPanel
-  } = useReaderQuickActionsState();
+  } = useReaderQuickActionsActions();
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    recordSelectorInvalidation("ReaderQuickActionsDock");
+  }, [busy, isBrowserTab, isTextOnly, showSettings, showStats, showTts]);
 
   const actions = useMemo(
     () => [

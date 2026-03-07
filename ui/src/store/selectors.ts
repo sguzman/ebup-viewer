@@ -20,6 +20,22 @@ function selectStarterBusy(state: AppStore): boolean {
   );
 }
 
+function selectReaderDocumentKey(state: AppStore): string {
+  const reader = state.reader;
+  if (!reader) {
+    return "";
+  }
+  return [
+    reader.source_path,
+    reader.current_page,
+    reader.text_only_mode ? "text" : "pretty",
+    reader.pretty_kind,
+    reader.sentences.length,
+    reader.reading_markdown_page ?? "",
+    reader.reading_html_page ?? ""
+  ].join("\n");
+}
+
 export const selectSessionSlice = (state: AppStore) => ({
   bootstrapState: state.bootstrapState,
   session: state.session,
@@ -180,6 +196,65 @@ export function useReaderQuickActionsState() {
       onToggleTtsPanel: state.toggleTtsPanel
     }))
   );
+}
+
+export function useReaderQuickActionsBusy(): boolean {
+  return useAppStore(
+    (state) =>
+      state.operations.readerCommand ||
+      state.operations.readerSettings ||
+      state.operations.browserTabRefresh
+  );
+}
+
+export function useReaderQuickActionsFlags() {
+  return useAppStore(
+    useShallow((state) => ({
+      isBrowserTab: state.reader?.source_path.toLowerCase().endsWith(".lltab") ?? false,
+      isTextOnly: state.reader?.text_only_mode ?? false,
+      showSettings: state.reader?.panels.show_settings ?? false,
+      showStats: state.reader?.panels.show_stats ?? false,
+      showTts: state.reader?.panels.show_tts ?? false
+    }))
+  );
+}
+
+export function useReaderQuickActionsActions() {
+  return useAppStore(
+    useShallow((state) => ({
+      onRefreshBrowserTab: state.refreshCurrentBrowserTab,
+      onToggleTextOnly: state.readerToggleTextOnly,
+      onToggleSettingsPanel: state.toggleSettingsPanel,
+      onToggleStatsPanel: state.toggleStatsPanel,
+      onToggleTtsPanel: state.toggleTtsPanel
+    }))
+  );
+}
+
+export function useReaderDocumentState() {
+  const documentKey = useAppStore(selectReaderDocumentKey);
+  return useAppStore(
+    useShallow((state) => ({
+      documentKey,
+      reader: state.reader
+        ? {
+            source_path: state.reader.source_path,
+            current_page: state.reader.current_page,
+            text_only_mode: state.reader.text_only_mode,
+            pretty_kind: state.reader.pretty_kind,
+            reading_markdown_page: state.reader.reading_markdown_page,
+            reading_html_page: state.reader.reading_html_page,
+            page_text: state.reader.page_text,
+            sentences: state.reader.sentences,
+            sentence_anchor_map: state.reader.sentence_anchor_map
+          }
+        : null
+    }))
+  );
+}
+
+export function useReaderDocumentKey(): string {
+  return useAppStore(selectReaderDocumentKey);
 }
 
 export function useReaderViewState() {

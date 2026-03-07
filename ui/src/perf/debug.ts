@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 const counters = new Map<string, number>();
 const measures = new Map<string, number[]>();
+const selectorCounters = new Map<string, number>();
 let flushHandle: number | null = null;
 
 function scheduleFlush(): void {
@@ -14,6 +15,7 @@ function scheduleFlush(): void {
       return;
     }
     const renderSummary = Object.fromEntries(counters.entries());
+    const selectorSummary = Object.fromEntries(selectorCounters.entries());
     const measureSummary = Object.fromEntries(
       Array.from(measures.entries()).map(([name, values]) => [
         name,
@@ -28,9 +30,11 @@ function scheduleFlush(): void {
     );
     console.debug("ui perf summary", {
       renders: renderSummary,
+      selectors: selectorSummary,
       measures: measureSummary
     });
     counters.clear();
+    selectorCounters.clear();
     measures.clear();
   }, 5000);
 }
@@ -53,5 +57,13 @@ export function recordPerfMeasure(name: string, startedAt: number): void {
   const values = measures.get(name) ?? [];
   values.push(duration);
   measures.set(name, values);
+  scheduleFlush();
+}
+
+export function recordSelectorInvalidation(name: string): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  selectorCounters.set(name, (selectorCounters.get(name) ?? 0) + 1);
   scheduleFlush();
 }

@@ -1,0 +1,82 @@
+use super::*;
+
+impl SessionCommand {
+    pub fn action(&self) -> &'static str {
+        match self {
+            Self::GetSnapshot => "reader_get_snapshot",
+            Self::NextPage => "reader_next_page",
+            Self::PrevPage => "reader_prev_page",
+            Self::SetPage { .. } => "reader_set_page",
+            Self::SentenceClick { .. } => "reader_sentence_click",
+            Self::NextSentence => "reader_next_sentence",
+            Self::PrevSentence => "reader_prev_sentence",
+            Self::ToggleTextOnly => "reader_toggle_text_only",
+            Self::ApplySettings { .. } => "reader_apply_settings",
+            Self::SearchSetQuery { .. } => "reader_search_set_query",
+            Self::SearchNext => "reader_search_next",
+            Self::SearchPrev => "reader_search_prev",
+            Self::TtsPlay => "reader_tts_play",
+            Self::TtsPause => "reader_tts_pause",
+            Self::TtsTogglePlayPause => "reader_tts_toggle_play_pause",
+            Self::TtsPlayFromPageStart => "reader_tts_play_from_page_start",
+            Self::TtsPlayFromHighlight => "reader_tts_play_from_highlight",
+            Self::TtsSeekNext => "reader_tts_seek_next",
+            Self::TtsSeekPrev => "reader_tts_seek_prev",
+            Self::TtsRepeatSentence => "reader_tts_repeat_sentence",
+            Self::TtsStop => "reader_tts_stop",
+        }
+    }
+}
+
+impl ReaderSession {
+    pub fn apply_command(
+        &mut self,
+        command: SessionCommand,
+        panels: PanelState,
+        normalizer: &normalizer::TextNormalizer,
+    ) -> SessionEvent {
+        let action = command.action();
+        match command {
+            SessionCommand::GetSnapshot => {}
+            SessionCommand::NextPage => self.next_page(normalizer),
+            SessionCommand::PrevPage => self.prev_page(normalizer),
+            SessionCommand::SetPage { page } => self.set_page(page, normalizer),
+            SessionCommand::SentenceClick { sentence_idx } => {
+                self.sentence_click(sentence_idx, normalizer)
+            }
+            SessionCommand::NextSentence => self.select_next_sentence(normalizer),
+            SessionCommand::PrevSentence => self.select_prev_sentence(normalizer),
+            SessionCommand::ToggleTextOnly => self.toggle_text_only(normalizer),
+            SessionCommand::ApplySettings { patch } => self.apply_settings_patch(patch, normalizer),
+            SessionCommand::SearchSetQuery { query } => self.set_search_query(query, normalizer),
+            SessionCommand::SearchNext => self.search_next(normalizer),
+            SessionCommand::SearchPrev => self.search_prev(normalizer),
+            SessionCommand::TtsPlay => self.tts_play(normalizer),
+            SessionCommand::TtsPause => self.tts_pause(),
+            SessionCommand::TtsTogglePlayPause => self.tts_toggle_play_pause(normalizer),
+            SessionCommand::TtsPlayFromPageStart => self.tts_play_from_page_start(normalizer),
+            SessionCommand::TtsPlayFromHighlight => self.tts_play_from_highlight(normalizer),
+            SessionCommand::TtsSeekNext => self.tts_seek_next(normalizer),
+            SessionCommand::TtsSeekPrev => self.tts_seek_prev(normalizer),
+            SessionCommand::TtsRepeatSentence => self.tts_repeat_current_sentence(normalizer),
+            SessionCommand::TtsStop => self.tts_stop(),
+        }
+        SessionEvent {
+            action,
+            snapshot: self.snapshot(panels, normalizer),
+        }
+    }
+
+    pub fn source_path_str(&self) -> String {
+        self.source_path.to_string_lossy().to_string()
+    }
+
+    pub fn to_bookmark(&self) -> crate::cache::Bookmark {
+        crate::cache::Bookmark {
+            page: self.current_page,
+            sentence_idx: self.current_highlight_idx(),
+            sentence_text: None,
+            scroll_y: 0.0,
+        }
+    }
+}

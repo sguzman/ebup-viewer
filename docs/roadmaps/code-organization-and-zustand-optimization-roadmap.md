@@ -135,7 +135,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [x] a very small object with stable member count and clear equality
 - [x] Audit every component that currently subscribes to `reader`.
 - [x] Ensure `ReaderQuickActionsDock` remains isolated from playback churn.
-- [ ] Add explicit tests proving that:
+- [x] Add explicit tests proving that:
   - [x] playback ticks do not rerender starter UI
   - [x] non-TTS controls do not rerender on pure TTS metadata changes
   - [x] panel toggles do not rerender the entire reader tree
@@ -145,7 +145,7 @@ The codebase has working feature breadth, but several structural issues are now 
 - [x] Refactor [ui/src/store/slices/jobsSlice.ts](/win/linux/Code/projects/lantern-leaf/ui/src/store/slices/jobsSlice.ts) into a dedicated event-ingestion module.
 - [x] Convert backend listeners into domain-specific adapters that translate bridge events into minimal store mutations.
 - [x] Coalesce or discard redundant events at the ingestion boundary rather than after they hit the UI store.
-- [ ] Track event rates and payload sizes for:
+- [x] Track event rates and payload sizes for:
   - [x] `reader-state`
   - [x] `tts-state`
   - [x] `session-state`
@@ -218,12 +218,12 @@ The codebase has working feature breadth, but several structural issues are now 
   - [x] TTS runtime orchestration
   - [x] browser-tab commands
   - [x] shutdown/persistence
-- [ ] Split [crates/lanternleaf-core/src/session.rs](/win/linux/Code/projects/lantern-leaf/crates/lanternleaf-core/src/session.rs) by session domain:
-  - [ ] document loading
-  - [ ] pagination and page changes
-  - [ ] playback/cursor movement
-  - [ ] settings mutations
-  - [ ] session transitions
+- [x] Split [crates/lanternleaf-core/src/session.rs](/win/linux/Code/projects/lantern-leaf/crates/lanternleaf-core/src/session.rs) by session domain:
+  - [x] document loading
+  - [x] pagination and page changes
+  - [x] playback/cursor movement
+  - [x] settings mutations
+  - [x] session transitions
 - [x] Split [src/cache.rs](/win/linux/Code/projects/lantern-leaf/src/cache.rs) by artifact type:
   - [x] bookmarks/config
   - [x] dual-view artifacts
@@ -231,7 +231,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [x] TTS cache
   - [x] normalized artifacts
 - [x] Split [src/epub_loader.rs](/win/linux/Code/projects/lantern-leaf/src/epub_loader.rs) by source type and artifact pipeline.
-- [ ] Split [src/calibre.rs](/win/linux/Code/projects/lantern-leaf/src/calibre.rs) into:
+- [x] Split [src/calibre.rs](/win/linux/Code/projects/lantern-leaf/src/calibre.rs) into:
   - [x] catalogue loading
   - [x] cache handling
   - [x] thumbnail pipeline
@@ -245,7 +245,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [x] large EPUB
   - [x] imported browser tab
   - [x] image-heavy HTML
-- [ ] Add guardrail tests for reader state decomposition:
+- [x] Add guardrail tests for reader state decomposition:
   - [x] document state unchanged on pure playback move
   - [x] panel toggle does not invalidate document payload
   - [x] TTS event does not force starter-screen rerender
@@ -258,7 +258,7 @@ The codebase has working feature breadth, but several structural issues are now 
 - [x] Step 4: Decompose `StarterShell` and thumbnail/browser-tab flows.
 - [x] Step 5: Clean up duplicated rendering/sync utilities.
 - [ ] Step 6: Adjust backend event/payload shapes to match the new frontend state model.
-- [ ] Step 7: Split the largest Rust modules along capability boundaries.
+- [x] Step 7: Split the largest Rust modules along capability boundaries.
 
 ## Expected Payoff
 

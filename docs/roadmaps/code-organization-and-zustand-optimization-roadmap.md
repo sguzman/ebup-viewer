@@ -204,10 +204,10 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] operational events
 - [ ] Reduce frequency of heavy reader snapshot emission from the backend when only playback cursor changed.
 - [ ] Add tracing fields for:
-  - [ ] snapshot size
-  - [ ] snapshot emission rate
-  - [ ] playback update rate
-  - [ ] page-load vs cursor-move distinction
+  - [x] snapshot size
+  - [x] snapshot emission rate
+  - [x] playback update rate
+  - [x] page-load vs cursor-move distinction
 
 ## Phase 9: Rust Module Decomposition
 
@@ -232,10 +232,10 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] normalized artifacts
 - [ ] Split [src/epub_loader.rs](/win/linux/Code/projects/lantern-leaf/src/epub_loader.rs) by source type and artifact pipeline.
 - [ ] Split [src/calibre.rs](/win/linux/Code/projects/lantern-leaf/src/calibre.rs) into:
-  - [ ] catalogue loading
-  - [ ] cache handling
-  - [ ] thumbnail pipeline
-  - [ ] EPUB cover extraction
+  - [x] catalogue loading
+  - [x] cache handling
+  - [x] thumbnail pipeline
+  - [x] EPUB cover extraction
 
 ## Phase 10: Performance Instrumentation and Regression Protection
 

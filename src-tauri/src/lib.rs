@@ -26,6 +26,13 @@ const TTS_PROGRESS_POLL_INTERVAL: Duration = Duration::from_millis(8);
 const TTS_PREPARE_SENTENCE_WINDOW: usize = 8;
 
 static TRACING_LOG_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
+static EVENT_EMISSION_TELEMETRY: OnceLock<Mutex<EventEmissionTelemetry>> = OnceLock::new();
+
+#[derive(Debug, Default)]
+struct EventEmissionTelemetry {
+    last_reader_emit: Option<Instant>,
+    last_tts_emit: Option<Instant>,
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -881,12 +888,74 @@ fn emit_session_state(
     );
 }
 
+fn event_emission_telemetry() -> &'static Mutex<EventEmissionTelemetry> {
+    EVENT_EMISSION_TELEMETRY.get_or_init(|| Mutex::new(EventEmissionTelemetry::default()))
+}
+
+fn emission_rate_fields(
+    previous: &mut Option<Instant>,
+    now: Instant,
+) -> (Option<u128>, Option<f64>) {
+    let elapsed = previous.map(|last| now.saturating_duration_since(last).as_millis());
+    *previous = Some(now);
+    let rate_hz = elapsed.and_then(|ms| {
+        if ms == 0 {
+            None
+        } else {
+            Some(1000.0 / ms as f64)
+        }
+    });
+    (elapsed, rate_hz)
+}
+
+fn classify_reader_action(action: &str) -> &'static str {
+    match action {
+        "source_open" => "page_load",
+        "reader_next_page" | "reader_prev_page" | "reader_set_page" => "page_transition",
+        "reader_tts_runtime_step"
+        | "reader_sentence_click"
+        | "reader_next_sentence"
+        | "reader_prev_sentence"
+        | "reader_tts_seek_next"
+        | "reader_tts_seek_prev"
+        | "reader_tts_repeat_sentence"
+        | "reader_tts_play_from_page_start"
+        | "reader_tts_play_from_highlight" => "cursor_move",
+        "reader_apply_settings" | "panel_toggle_settings" | "panel_toggle_stats"
+        | "panel_toggle_tts" => "ui_mutation",
+        _ => "session_update",
+    }
+}
+
 fn emit_reader_state(
     app: &tauri::AppHandle,
     request_id: u64,
     action: &str,
     reader: &session::ReaderSnapshot,
 ) {
+    let now = Instant::now();
+    let (since_last_emit_ms, emission_rate_hz) = event_emission_telemetry()
+        .lock()
+        .ok()
+        .map(|mut telemetry| emission_rate_fields(&mut telemetry.last_reader_emit, now))
+        .unwrap_or((None, None));
+    let snapshot_size_bytes = serde_json::to_vec(reader)
+        .map(|payload| payload.len())
+        .unwrap_or_default();
+    let update_kind = classify_reader_action(action);
+    tracing::debug!(
+        request_id,
+        action,
+        update_kind,
+        page = reader.current_page + 1,
+        total_pages = reader.total_pages,
+        highlighted_sentence_idx = reader.highlighted_sentence_idx,
+        tts_state = ?reader.tts.state,
+        snapshot_size_bytes,
+        since_last_emit_ms,
+        emission_rate_hz,
+        "Emitting reader-state bridge event"
+    );
     let _ = app.emit(
         "reader-state",
         ReaderStateEvent {
@@ -903,6 +972,26 @@ fn emit_tts_state(
     action: &str,
     tts: &session::ReaderTtsView,
 ) {
+    let now = Instant::now();
+    let (since_last_emit_ms, playback_update_rate_hz) = event_emission_telemetry()
+        .lock()
+        .ok()
+        .map(|mut telemetry| emission_rate_fields(&mut telemetry.last_tts_emit, now))
+        .unwrap_or((None, None));
+    let payload_size_bytes = serde_json::to_vec(tts)
+        .map(|payload| payload.len())
+        .unwrap_or_default();
+    tracing::debug!(
+        request_id,
+        action,
+        update_kind = classify_reader_action(action),
+        tts_state = ?tts.state,
+        selected_sentence = tts.current_sentence_idx,
+        payload_size_bytes,
+        since_last_emit_ms,
+        playback_update_rate_hz,
+        "Emitting tts-state bridge event"
+    );
     let _ = app.emit(
         "tts-state",
         TtsStateEvent {
@@ -3199,6 +3288,7 @@ mod tests {
                 key_toggle_settings: "ctrl+t".to_string(),
                 key_toggle_stats: "ctrl+g".to_string(),
                 key_toggle_tts: "ctrl+y".to_string(),
+                browser_tabs_enabled: true,
             },
         };
 

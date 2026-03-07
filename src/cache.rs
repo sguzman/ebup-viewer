@@ -6,7 +6,12 @@
 //! is a tiny TOML file with a `page` field plus optional `sentence_idx`,
 //! `sentence_text`, and `scroll_y` for resuming inside the page.
 
-use crate::config::{AppConfig, parse_config, serialize_config};
+#[path = "cache/bookmarks_config.rs"]
+mod bookmarks_config;
+#[path = "cache/content_artifacts.rs"]
+mod content_artifacts;
+
+use crate::config::AppConfig;
 use crate::browser_tabs::{BrowserTab, BrowserTabSnapshot};
 use epub::doc::EpubDoc;
 use image::codecs::jpeg::JpegEncoder;
@@ -21,7 +26,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
 use std::io::Read;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
@@ -88,16 +92,7 @@ struct SourceDigestEntry {
     digest: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Bookmark {
-    pub page: usize,
-    #[serde(default)]
-    pub sentence_idx: Option<usize>,
-    #[serde(default)]
-    pub sentence_text: Option<String>,
-    #[serde(default = "default_scroll")]
-    pub scroll_y: f32,
-}
+pub use bookmarks_config::Bookmark;
 
 #[derive(Debug, Clone)]
 pub struct RecentBook {
@@ -236,66 +231,15 @@ fn is_sha256_dir_name(name: &str) -> bool {
     name.len() == 64 && name.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn default_scroll() -> f32 {
-    0.0
-}
-
 /// Load the cached bookmark for a given EPUB path, if present.
 pub fn load_bookmark(epub_path: &Path) -> Option<Bookmark> {
-    let path = bookmark_path(epub_path);
-    let data = match fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(err) => {
-            debug!(
-                path = %path.display(),
-                "No cached last page found or unreadable: {err}"
-            );
-            return None;
-        }
-    };
-    let value: CacheEntry = toml::from_str(&data).ok()?;
-    debug!(page = value.page, "Loaded last page bookmark");
-    Some(Bookmark {
-        page: value.page,
-        sentence_idx: value.sentence_idx,
-        sentence_text: value.sentence_text,
-        scroll_y: value.scroll_y.unwrap_or_else(default_scroll),
-    })
+    bookmarks_config::load_bookmark(epub_path)
 }
 
 /// Persist the current bookmark for a given EPUB path. Errors are ignored to
 /// keep the UI responsive.
 pub fn save_bookmark(epub_path: &Path, bookmark: &Bookmark) {
-    let path = bookmark_path(epub_path);
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let entry = CacheEntry {
-        page: bookmark.page,
-        sentence_idx: bookmark.sentence_idx,
-        sentence_text: bookmark.sentence_text.clone(),
-        scroll_y: Some(bookmark.scroll_y),
-    };
-    if let Ok(contents) = toml::to_string(&entry) {
-        if let Ok(mut file) = fs::File::create(path) {
-            if let Err(err) = file.write_all(contents.as_bytes()) {
-                warn!("Failed to persist last page: {err}");
-            } else {
-                debug!(page = bookmark.page, "Saved last page bookmark");
-            }
-        }
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct CacheEntry {
-    page: usize,
-    #[serde(default)]
-    sentence_idx: Option<usize>,
-    #[serde(default)]
-    sentence_text: Option<String>,
-    #[serde(default)]
-    scroll_y: Option<f32>,
+    bookmarks_config::save_bookmark(epub_path, bookmark)
 }
 
 pub fn hash_dir(epub_path: &Path) -> PathBuf {
@@ -354,211 +298,21 @@ fn source_content_hash(path: &Path) -> Option<String> {
     Some(digest)
 }
 
-fn bookmark_path(epub_path: &Path) -> PathBuf {
-    hash_dir(epub_path).join("bookmark.toml")
-}
-
 pub fn persist_dual_view_artifacts(
     source_path: &Path,
     tts_text: &str,
     reading_markdown: Option<&str>,
     reading_html: Option<&str>,
 ) {
-    ensure_content_layout(source_path);
-    let tts_path = hash_dir(source_path).join(CONTENT_TTS_TEXT_FILE);
-    if let Some(parent) = tts_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    match fs::write(&tts_path, tts_text) {
-        Ok(()) => {
-            debug!(
-                path = %tts_path.display(),
-                chars = tts_text.len(),
-                "Persisted cached tts_text artifact"
-            );
-        }
-        Err(err) => warn!(path = %tts_path.display(), "Failed to persist tts_text artifact: {err}"),
-    }
-
-    let markdown_path = hash_dir(source_path).join(CONTENT_READING_MARKDOWN_FILE);
-    match reading_markdown {
-        Some(markdown) => match fs::write(&markdown_path, markdown) {
-            Ok(()) => debug!(
-                path = %markdown_path.display(),
-                chars = markdown.len(),
-                "Persisted cached reading_markdown artifact"
-            ),
-            Err(err) => warn!(
-                path = %markdown_path.display(),
-                "Failed to persist reading_markdown artifact: {err}"
-            ),
-        },
-        None => {
-            let _ = fs::remove_file(&markdown_path);
-        }
-    }
-
-    let html_path = hash_dir(source_path).join(CONTENT_READING_HTML_FILE);
-    match reading_html {
-        Some(html) => match fs::write(&html_path, html) {
-            Ok(()) => debug!(
-                path = %html_path.display(),
-                chars = html.len(),
-                "Persisted cached reading_html artifact"
-            ),
-            Err(err) => warn!(
-                path = %html_path.display(),
-                "Failed to persist reading_html artifact: {err}"
-            ),
-        },
-        None => {
-            let _ = fs::remove_file(&html_path);
-        }
-    }
+    content_artifacts::persist_dual_view_artifacts(source_path, tts_text, reading_markdown, reading_html)
 }
 
 pub fn persist_sentence_anchor_map(source_path: &Path, page: usize, anchors: &[Option<usize>]) {
-    ensure_content_layout(source_path);
-    let map_dir = hash_dir(source_path)
-        .join("content")
-        .join("sentence-anchor-map");
-    if fs::create_dir_all(&map_dir).is_err() {
-        return;
-    }
-    let map_path = map_dir.join(format!("page-{page:05}.toml"));
-    #[derive(serde::Serialize)]
-    struct AnchorMap<'a> {
-        anchors: &'a [i64],
-    }
-    let encoded: Vec<i64> = anchors
-        .iter()
-        .map(|value| value.map(|v| v as i64).unwrap_or(-1))
-        .collect();
-    match toml::to_string(&AnchorMap { anchors: &encoded }) {
-        Ok(serialized) => {
-            if let Err(err) = fs::write(&map_path, serialized) {
-                warn!(path = %map_path.display(), "Failed to persist sentence anchor map: {err}");
-            } else {
-                debug!(
-                    path = %map_path.display(),
-                    count = anchors.len(),
-                    "Persisted sentence anchor map"
-                );
-            }
-        }
-        Err(err) => warn!("Failed to serialize sentence anchor map: {err}"),
-    }
+    content_artifacts::persist_sentence_anchor_map(source_path, page, anchors)
 }
 
 pub fn load_sentence_anchor_map(source_path: &Path, page: usize) -> Option<Vec<Option<usize>>> {
-    let map_path = hash_dir(source_path)
-        .join("content")
-        .join("sentence-anchor-map")
-        .join(format!("page-{page:05}.toml"));
-    let raw = fs::read_to_string(&map_path).ok()?;
-    #[derive(serde::Deserialize)]
-    struct AnchorMap {
-        anchors: Vec<i64>,
-    }
-    let parsed: AnchorMap = toml::from_str(&raw).ok()?;
-    Some(
-        parsed
-            .anchors
-            .into_iter()
-            .map(|value| (value >= 0).then_some(value as usize))
-            .collect(),
-    )
-}
-
-fn ensure_content_layout(source_path: &Path) {
-    let hash_root = hash_dir(source_path);
-    let version_path = hash_root.join(CONTENT_LAYOUT_VERSION_FILE);
-    let current = fs::read_to_string(&version_path).ok();
-    if current
-        .as_deref()
-        .map(str::trim)
-        .map(|value| value == CONTENT_LAYOUT_VERSION)
-        .unwrap_or(false)
-    {
-        return;
-    }
-
-    let content_dir = hash_root.join("content");
-    if let Err(err) = fs::create_dir_all(&content_dir) {
-        warn!(path = %content_dir.display(), "Failed to create content cache layout directory: {err}");
-        return;
-    }
-
-    migrate_legacy_content_files(&hash_root);
-
-    if let Some(parent) = version_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Err(err) = fs::write(&version_path, CONTENT_LAYOUT_VERSION) {
-        warn!(path = %version_path.display(), "Failed to persist content layout version: {err}");
-    } else {
-        debug!(
-            path = %version_path.display(),
-            version = CONTENT_LAYOUT_VERSION,
-            "Initialized content cache layout version"
-        );
-    }
-}
-
-fn migrate_legacy_content_files(hash_root: &Path) {
-    let legacy_plain = hash_root.join("source-plain.txt");
-    let new_plain = hash_root.join(CONTENT_TTS_TEXT_FILE);
-    if legacy_plain.exists() && !new_plain.exists() {
-        if let Err(err) = fs::rename(&legacy_plain, &new_plain) {
-            warn!(
-                from = %legacy_plain.display(),
-                to = %new_plain.display(),
-                "Failed to migrate legacy plain text cache file: {err}"
-            );
-        } else {
-            debug!(
-                from = %legacy_plain.display(),
-                to = %new_plain.display(),
-                "Migrated legacy plain text cache file"
-            );
-        }
-    }
-
-    let legacy_markdown = hash_root.join("source-markdown.txt");
-    let new_markdown = hash_root.join(CONTENT_READING_MARKDOWN_FILE);
-    if legacy_markdown.exists() && !new_markdown.exists() {
-        if let Err(err) = fs::rename(&legacy_markdown, &new_markdown) {
-            warn!(
-                from = %legacy_markdown.display(),
-                to = %new_markdown.display(),
-                "Failed to migrate legacy markdown cache file: {err}"
-            );
-        } else {
-            debug!(
-                from = %legacy_markdown.display(),
-                to = %new_markdown.display(),
-                "Migrated legacy markdown cache file"
-            );
-        }
-    }
-
-    let legacy_html = hash_root.join("source-html.html");
-    let new_html = hash_root.join(CONTENT_READING_HTML_FILE);
-    if legacy_html.exists() && !new_html.exists() {
-        if let Err(err) = fs::rename(&legacy_html, &new_html) {
-            warn!(
-                from = %legacy_html.display(),
-                to = %new_html.display(),
-                "Failed to migrate legacy HTML cache file: {err}"
-            );
-        } else {
-            debug!(
-                from = %legacy_html.display(),
-                to = %new_html.display(),
-                "Migrated legacy HTML cache file"
-            );
-        }
-    }
+    content_artifacts::load_sentence_anchor_map(source_path, page)
 }
 
 pub fn remember_source_path(source_path: &Path) {
@@ -1534,11 +1288,11 @@ pub fn list_recent_books(limit: usize) -> Vec<RecentBook> {
     books
 }
 pub fn tts_dir(epub_path: &Path) -> PathBuf {
-    hash_dir(epub_path).join("tts")
+    content_artifacts::tts_dir(epub_path)
 }
 
 pub fn normalized_dir(epub_path: &Path) -> PathBuf {
-    hash_dir(epub_path).join("normalized")
+    content_artifacts::normalized_dir(epub_path)
 }
 
 fn infer_recent_title(source_path: &Path) -> String {
@@ -1758,42 +1512,11 @@ fn write_thumbnail_file(path: &Path, raw_image: &[u8]) -> Result<(), String> {
 }
 
 pub fn load_epub_config(epub_path: &Path) -> Option<AppConfig> {
-    let path = hash_dir(epub_path).join("config.toml");
-    let data = match fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(err) => {
-            debug!(
-                path = %path.display(),
-                "No cached EPUB config found or unreadable: {err}"
-            );
-            return None;
-        }
-    };
-    match parse_config(&data) {
-        Ok(cfg) => {
-            debug!("Loaded cached EPUB config");
-            Some(cfg)
-        }
-        Err(err) => {
-            warn!("Cached EPUB config invalid: {err}");
-            None
-        }
-    }
+    bookmarks_config::load_epub_config(epub_path)
 }
 
 pub fn save_epub_config(epub_path: &Path, config: &AppConfig) {
-    let dir = hash_dir(epub_path);
-    let path = dir.join("config.toml");
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(contents) = serialize_config(config) {
-        if let Err(err) = fs::write(&path, contents) {
-            warn!(path = %path.display(), "Failed to save EPUB config: {err}");
-        } else {
-            debug!(path = %path.display(), "Persisted EPUB config");
-        }
-    }
+    bookmarks_config::save_epub_config(epub_path, config)
 }
 
 #[cfg(test)]

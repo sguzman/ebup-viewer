@@ -225,11 +225,11 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] settings mutations
   - [ ] session transitions
 - [ ] Split [src/cache.rs](/win/linux/Code/projects/lantern-leaf/src/cache.rs) by artifact type:
-  - [ ] bookmarks/config
-  - [ ] dual-view artifacts
+  - [x] bookmarks/config
+  - [x] dual-view artifacts
   - [ ] browser-tab assets
-  - [ ] TTS cache
-  - [ ] normalized artifacts
+  - [x] TTS cache
+  - [x] normalized artifacts
 - [ ] Split [src/epub_loader.rs](/win/linux/Code/projects/lantern-leaf/src/epub_loader.rs) by source type and artifact pipeline.
 - [ ] Split [src/calibre.rs](/win/linux/Code/projects/lantern-leaf/src/calibre.rs) into:
   - [x] catalogue loading

@@ -161,67 +161,6 @@ export function useAppToastState() {
   );
 }
 
-export function useReaderScreenState() {
-  return useAppStore(
-    useShallow((state) => ({
-      reader: state.reader,
-      busy: selectReaderBusy(state),
-      ttsStateEvent: state.ttsStateEvent,
-      closeReaderSession: state.closeReaderSession,
-      readerNextPage: state.readerNextPage,
-      readerPrevPage: state.readerPrevPage,
-      readerSetPage: state.readerSetPage,
-      readerSentenceClick: state.readerSentenceClick,
-      readerNextSentence: state.readerNextSentence,
-      readerPrevSentence: state.readerPrevSentence,
-      readerTtsPlay: state.readerTtsPlay,
-      readerTtsPause: state.readerTtsPause,
-      readerTtsTogglePlayPause: state.readerTtsTogglePlayPause,
-      readerTtsPlayFromPageStart: state.readerTtsPlayFromPageStart,
-      readerTtsPlayFromHighlight: state.readerTtsPlayFromHighlight,
-      readerTtsSeekNext: state.readerTtsSeekNext,
-      readerTtsSeekPrev: state.readerTtsSeekPrev,
-      readerTtsRepeatSentence: state.readerTtsRepeatSentence,
-      readerTtsPrecomputePage: state.readerTtsPrecomputePage,
-      readerToggleTextOnly: state.readerToggleTextOnly,
-      readerSearchSetQuery: state.readerSearchSetQuery,
-      readerSearchNext: state.readerSearchNext,
-      readerSearchPrev: state.readerSearchPrev,
-      readerApplySettings: state.readerApplySettings,
-      toggleTheme: state.toggleTheme,
-      toggleSettingsPanel: state.toggleSettingsPanel,
-      toggleStatsPanel: state.toggleStatsPanel,
-      toggleTtsPanel: state.toggleTtsPanel
-    }))
-  );
-}
-
-export function useStarterScreenState() {
-  return useAppStore(
-    useShallow((state) => ({
-      bootstrapState: state.bootstrapState,
-      recents: state.recents,
-      calibreBooks: state.calibreBooks,
-      busy: selectStarterBusy(state),
-      loadingRecents: state.loadingRecents,
-      loadingCalibre: state.loadingCalibre || state.operations.calibreLoad,
-      sourceOpenEvent: state.sourceOpenEvent,
-      calibreLoadEvent: state.calibreLoadEvent,
-      pdfTranscriptionEvent: state.pdfTranscriptionEvent,
-      runtimeLogLevel: state.runtimeLogLevel,
-      openSourcePath: state.openSourcePath,
-      openClipboardText: state.openClipboardText,
-      openBrowserTab: state.openBrowserTab,
-      deleteRecent: state.deleteRecent,
-      refreshRecents: state.refreshRecents,
-      loadCalibreBooks: state.loadCalibreBooks,
-      openCalibreBook: state.openCalibreBook,
-      setRuntimeLogLevel: state.setRuntimeLogLevel,
-      toggleTheme: state.toggleTheme
-    }))
-  );
-}
-
 export function useReaderQuickActionsState() {
   return useAppStore(
     useShallow((state) => ({

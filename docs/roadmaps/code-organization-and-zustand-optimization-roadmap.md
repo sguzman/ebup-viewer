@@ -128,7 +128,7 @@ The codebase has working feature breadth, but several structural issues are now 
 ## Phase 3: Narrow Selectors and Subscription Surfaces
 
 - [x] Replace broad object selectors in [ui/src/store/selectors.ts](/win/linux/Code/projects/lantern-leaf/ui/src/store/selectors.ts) with smaller dedicated hooks.
-- [ ] Eliminate large selectors such as `useReaderScreenState` and `useStarterScreenState`.
+- [x] Eliminate large selectors such as `useReaderScreenState` and `useStarterScreenState`.
 - [ ] Prefer selectors that return:
   - [ ] a single primitive
   - [ ] a tiny tuple
@@ -246,7 +246,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] imported browser tab
   - [ ] image-heavy HTML
 - [ ] Add guardrail tests for reader state decomposition:
-  - [ ] document state unchanged on pure playback move
+  - [x] document state unchanged on pure playback move
   - [ ] panel toggle does not invalidate document payload
   - [ ] TTS event does not force starter-screen rerender
 

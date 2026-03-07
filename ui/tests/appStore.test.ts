@@ -279,6 +279,27 @@ describe("appStore event handling", () => {
     expect(state.lastReaderEventRequestId).toBe(6);
   });
 
+  it("preserves session object identity on reader events when derived session fields are unchanged", async () => {
+    const { backend, hooks } = createBackend();
+    const store = createTestStore(backend);
+    await store.getState().bootstrap();
+
+    hooks.reader?.({
+      request_id: 7,
+      action: "reader_state",
+      reader: makeReaderSnapshot("/tmp/book.epub", "First reader event")
+    });
+    const before = store.getState().session;
+    hooks.reader?.({
+      request_id: 8,
+      action: "reader_state",
+      reader: makeReaderSnapshot("/tmp/book.epub", "Same session projection")
+    });
+
+    const after = store.getState().session;
+    expect(after).toBe(before);
+  });
+
   it("treats open_cancelled as info without setting app error", async () => {
     const { backend } = createBackend({
       sourceOpenPath: async () => {

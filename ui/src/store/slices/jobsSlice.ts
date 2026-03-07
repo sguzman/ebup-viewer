@@ -2,6 +2,37 @@ import type { AppStore } from "../appStore";
 import { buildToast } from "./shared";
 import type { SliceContext } from "./types";
 
+function samePanels(
+  left: AppStore["session"] extends infer T
+    ? T extends { panels: infer P }
+      ? P
+      : never
+    : never,
+  right: AppStore["session"] extends infer T
+    ? T extends { panels: infer P }
+      ? P
+      : never
+    : never
+): boolean {
+  return (
+    left.show_settings === right.show_settings &&
+    left.show_stats === right.show_stats &&
+    left.show_tts === right.show_tts
+  );
+}
+
+function sameSessionState(left: AppStore["session"], right: AppStore["session"]): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  return (
+    left.mode === right.mode &&
+    left.active_source_path === right.active_source_path &&
+    left.open_in_flight === right.open_in_flight &&
+    samePanels(left.panels, right.panels)
+  );
+}
+
 export async function ensureJobSubscriptions({ set, get, backend }: SliceContext): Promise<void> {
   if (!get().sourceOpenSubscribed) {
     await backend.onSourceOpen((event) => {
@@ -111,11 +142,15 @@ export async function ensureJobSubscriptions({ set, get, backend }: SliceContext
           return {};
         }
         const next: Partial<AppStore> = {
-          session: event.session,
           lastSessionEventRequestId: event.request_id
         };
+        if (!sameSessionState(current.session, event.session)) {
+          next.session = event.session;
+        }
         if (event.session.mode !== "reader") {
-          next.reader = null;
+          if (current.reader !== null) {
+            next.reader = null;
+          }
           next.lastReaderEventRequestId = Math.max(
             current.lastReaderEventRequestId,
             event.request_id
@@ -148,8 +183,7 @@ export async function ensureJobSubscriptions({ set, get, backend }: SliceContext
               panels: event.reader.panels
             };
 
-        return {
-          session: nextSession,
+        const next: Partial<AppStore> = {
           reader: event.reader,
           lastReaderEventRequestId: event.request_id,
           lastSessionEventRequestId: Math.max(
@@ -157,6 +191,10 @@ export async function ensureJobSubscriptions({ set, get, backend }: SliceContext
             event.request_id
           )
         };
+        if (!sameSessionState(current.session, nextSession)) {
+          next.session = nextSession;
+        }
+        return next;
       });
     });
     set({ readerStateSubscribed: true });

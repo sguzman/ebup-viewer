@@ -241,10 +241,10 @@ The codebase has working feature breadth, but several structural issues are now 
 
 - [x] Add dev-only counters for selector invalidation frequency by component.
 - [x] Add tests around store write granularity.
-- [ ] Add a profiling script for long-running playback on:
-  - [ ] large EPUB
-  - [ ] imported browser tab
-  - [ ] image-heavy HTML
+- [x] Add a profiling script for long-running playback on:
+  - [x] large EPUB
+  - [x] imported browser tab
+  - [x] image-heavy HTML
 - [ ] Add guardrail tests for reader state decomposition:
   - [x] document state unchanged on pure playback move
   - [x] panel toggle does not invalidate document payload

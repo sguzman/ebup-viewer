@@ -110,23 +110,137 @@ type MockBackendState = {
   recents: RecentBook[];
   calibreBooks: CalibreBook[];
   reader: ReaderSnapshot | null;
+  pages: Array<{ text: string; sentences: string[]; html?: string | null; markdown?: string | null }>;
   logLevel: string;
 };
 
-const MOCK_PAGES: Array<{ text: string; sentences: string[] }> = [
+const MOCK_PAGES: Array<{ text: string; sentences: string[]; html?: string | null; markdown?: string | null }> = [
   {
     text: "This is the mock reader content on page one.",
-    sentences: ["This is the mock reader content on page one."]
+    sentences: ["This is the mock reader content on page one."],
+    html: null,
+    markdown: null
   },
   {
     text: "This is the mock reader content on page two.",
-    sentences: ["This is the mock reader content on page two."]
+    sentences: ["This is the mock reader content on page two."],
+    html: null,
+    markdown: null
   },
   {
     text: "This is the mock reader content on page three.",
-    sentences: ["This is the mock reader content on page three."]
+    sentences: ["This is the mock reader content on page three."],
+    html: null,
+    markdown: null
   }
 ];
+
+type MockScenario = {
+  sourcePath: string;
+  sourceName: string;
+  prettyKind: ReaderSnapshot["pretty_kind"];
+  pages: MockBackendState["pages"];
+  images: ReaderSnapshot["images"];
+};
+
+function buildHtmlParagraphs(label: string, count: number, includeImages = false): string {
+  const parts: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    parts.push(
+      `<p>${label} paragraph ${index + 1}. ${label} sentence ${index + 1} continues with profiling content.</p>`
+    );
+    if (includeImages && index % 4 === 0) {
+      parts.push(
+        `<figure><img src="mock-image-${index + 1}.jpg" alt="${label} image ${index + 1}" /><figcaption>${label} image ${index + 1}</figcaption></figure>`
+      );
+    }
+  }
+  return `<article>${parts.join("")}</article>`;
+}
+
+function buildSentences(label: string, count: number): string[] {
+  return Array.from({ length: count }, (_, index) => `${label} sentence ${index + 1}.`);
+}
+
+function buildTextFromSentences(sentences: string[]): string {
+  return sentences.join(" ");
+}
+
+function mockScenarioForPath(path: string): MockScenario {
+  if (path.endsWith("mock-large.epub")) {
+    const pages = Array.from({ length: 12 }, (_, index) => {
+      const sentences = buildSentences(`Large EPUB page ${index + 1}`, 18);
+      return {
+        text: buildTextFromSentences(sentences),
+        sentences,
+        html: buildHtmlParagraphs(`Large EPUB page ${index + 1}`, 18, index % 3 === 0),
+        markdown: null
+      };
+    });
+    return {
+      sourcePath: path,
+      sourceName: "mock-large.epub",
+      prettyKind: "html",
+      pages,
+      images: Array.from({ length: 8 }, (_, index) => ({
+        raw_path: `large-epub-image-${index + 1}.jpg`,
+        local_path: `.cache/mock-images/large-epub-image-${index + 1}.jpg`
+      }))
+    };
+  }
+
+  if (path.endsWith("browser-tab.lltab")) {
+    const pages = Array.from({ length: 6 }, (_, index) => {
+      const sentences = buildSentences(`Imported browser tab page ${index + 1}`, 22);
+      return {
+        text: buildTextFromSentences(sentences),
+        sentences,
+        html: buildHtmlParagraphs(`Imported browser tab page ${index + 1}`, 22, true),
+        markdown: null
+      };
+    });
+    return {
+      sourcePath: path,
+      sourceName: "browser-tab.lltab",
+      prettyKind: "html",
+      pages,
+      images: Array.from({ length: 10 }, (_, index) => ({
+        raw_path: `browser-tab-image-${index + 1}.png`,
+        local_path: `.cache/mock-images/browser-tab-image-${index + 1}.png`
+      }))
+    };
+  }
+
+  if (path.endsWith("mock-image-heavy.html")) {
+    const pages = Array.from({ length: 8 }, (_, index) => {
+      const sentences = buildSentences(`Image-heavy HTML page ${index + 1}`, 16);
+      return {
+        text: buildTextFromSentences(sentences),
+        sentences,
+        html: buildHtmlParagraphs(`Image-heavy HTML page ${index + 1}`, 16, true),
+        markdown: null
+      };
+    });
+    return {
+      sourcePath: path,
+      sourceName: "mock-image-heavy.html",
+      prettyKind: "html",
+      pages,
+      images: Array.from({ length: 18 }, (_, index) => ({
+        raw_path: `image-heavy-${index + 1}.webp`,
+        local_path: `.cache/mock-images/image-heavy-${index + 1}.webp`
+      }))
+    };
+  }
+
+  return {
+    sourcePath: path,
+    sourceName: path.split(/[\\/]/).pop() ?? path,
+    prettyKind: "none",
+    pages: MOCK_PAGES,
+    images: []
+  };
+}
 
 const MOCK_BROWSER_WINDOWS: BrowserWindowInfo[] = [
   {
@@ -270,6 +384,7 @@ const mockState: MockBackendState = {
   recents: [],
   calibreBooks: [],
   reader: null,
+  pages: MOCK_PAGES,
   logLevel: "debug"
 };
 
@@ -281,21 +396,21 @@ function ensureMockReader(): ReaderSnapshot {
 }
 
 function applyMockPage(reader: ReaderSnapshot, page: number): void {
-  const clampedPage = Math.max(0, Math.min(MOCK_PAGES.length - 1, Math.floor(page)));
-  const pageData = MOCK_PAGES[clampedPage];
-  const totalWords = MOCK_PAGES.reduce((sum, item) => sum + item.text.split(/\s+/).length, 0);
-  const wordsBeforePage = MOCK_PAGES.slice(0, clampedPage).reduce(
+  const pages = mockState.pages;
+  const clampedPage = Math.max(0, Math.min(pages.length - 1, Math.floor(page)));
+  const pageData = pages[clampedPage];
+  const totalWords = pages.reduce((sum, item) => sum + item.text.split(/\s+/).length, 0);
+  const wordsBeforePage = pages.slice(0, clampedPage).reduce(
     (sum, item) => sum + item.text.split(/\s+/).length,
     0
   );
   const wordsOnPage = pageData.text.split(/\s+/).length;
 
   reader.current_page = clampedPage;
-  reader.total_pages = MOCK_PAGES.length;
+  reader.total_pages = pages.length;
   reader.tts_text_page = pageData.text;
-  reader.reading_markdown_page = null;
-  reader.reading_html_page = null;
-  reader.pretty_kind = "none";
+  reader.reading_markdown_page = pageData.markdown ?? null;
+  reader.reading_html_page = pageData.html ?? null;
   reader.page_text = pageData.text;
   reader.sentences = pageData.sentences;
   reader.sentence_anchor_map = pageData.sentences.map((_, idx) => idx);
@@ -303,7 +418,7 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
   reader.tts.current_sentence_idx = 0;
   reader.tts.sentence_count = pageData.sentences.length;
   reader.stats.page_index = clampedPage + 1;
-  reader.stats.total_pages = MOCK_PAGES.length;
+  reader.stats.total_pages = pages.length;
   reader.stats.page_word_count = wordsOnPage;
   reader.stats.page_sentence_count = pageData.sentences.length;
   reader.stats.tts_progress_pct = 100;
@@ -331,11 +446,17 @@ async function mockOpenWithPath(path: string): Promise<OpenSourceResult> {
     } satisfies BridgeError;
   }
 
+  const scenario = mockScenarioForPath(trimmed);
+  mockState.pages = scenario.pages;
   const reader = ensureMockReader();
-  reader.source_path = trimmed;
-  reader.source_name = trimmed.split(/[\\/]/).pop() ?? trimmed;
+  reader.source_path = scenario.sourcePath;
+  reader.source_name = scenario.sourceName;
+  reader.pretty_kind = scenario.prettyKind;
+  reader.images = scenario.images;
+  reader.text_only_mode = false;
   mockState.session.mode = "reader";
-  mockState.session.active_source_path = trimmed;
+  mockState.session.active_source_path = scenario.sourcePath;
+  applyMockPage(reader, 0);
   mockState.reader = reader;
   return {
     session: structuredClone(mockState.session),

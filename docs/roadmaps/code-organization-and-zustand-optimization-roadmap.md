@@ -82,7 +82,7 @@ The codebase has working feature breadth, but several structural issues are now 
 
 ## Phase 1: Establish Audit Baseline and Ownership Boundaries
 
-- [ ] Record current line-count hotspots and keep them visible in the roadmap issue/PR stream.
+- [x] Record current line-count hotspots and keep them visible in the roadmap issue/PR stream.
 - [ ] Define target module boundaries for:
   - [ ] reader rendering
   - [ ] reader sync/highlight logic
@@ -116,18 +116,18 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] search state
   - [ ] panel state
   - [ ] view-mode flags
-- [ ] Move `ttsStateEvent` out of broad UI selector surfaces unless a component truly renders it.
-- [ ] Replace app-global `busy` with scoped operation flags:
-  - [ ] source opening
-  - [ ] panel/settings mutation
-  - [ ] reader navigation
-  - [ ] calibre load
-  - [ ] browser-tab refresh
+- [x] Move `ttsStateEvent` out of broad UI selector surfaces unless a component truly renders it.
+- [x] Replace app-global `busy` with scoped operation flags:
+  - [x] source opening
+  - [x] panel/settings mutation
+  - [x] reader navigation
+  - [x] calibre load
+  - [x] browser-tab refresh
 - [ ] Ensure each store write updates only the minimum necessary domain.
 
 ## Phase 3: Narrow Selectors and Subscription Surfaces
 
-- [ ] Replace broad object selectors in [ui/src/store/selectors.ts](/win/linux/Code/projects/lantern-leaf/ui/src/store/selectors.ts) with smaller dedicated hooks.
+- [x] Replace broad object selectors in [ui/src/store/selectors.ts](/win/linux/Code/projects/lantern-leaf/ui/src/store/selectors.ts) with smaller dedicated hooks.
 - [ ] Eliminate large selectors such as `useReaderScreenState` and `useStarterScreenState`.
 - [ ] Prefer selectors that return:
   - [ ] a single primitive
@@ -240,7 +240,7 @@ The codebase has working feature breadth, but several structural issues are now 
 ## Phase 10: Performance Instrumentation and Regression Protection
 
 - [ ] Add dev-only counters for selector invalidation frequency by component.
-- [ ] Add tests around store write granularity.
+- [x] Add tests around store write granularity.
 - [ ] Add a profiling script for long-running playback on:
   - [ ] large EPUB
   - [ ] imported browser tab
@@ -252,8 +252,8 @@ The codebase has working feature breadth, but several structural issues are now 
 
 ## Recommended Order
 
-- [ ] Step 1: Reshape Zustand state by domain and frequency.
-- [ ] Step 2: Replace broad selectors with narrow domain hooks.
+- [x] Step 1: Reshape Zustand state by domain and frequency.
+- [x] Step 2: Replace broad selectors with narrow domain hooks.
 - [ ] Step 3: Extract `ReaderShell` hooks/components so selector work has somewhere smaller to land.
 - [ ] Step 4: Decompose `StarterShell` and thumbnail/browser-tab flows.
 - [ ] Step 5: Clean up duplicated rendering/sync utilities.

@@ -267,7 +267,9 @@ export function useReaderViewState() {
 }
 
 export function useReaderViewTuple(): readonly [AppStore["reader"], boolean] {
-  return useAppStore((state) => [state.readerDocument.snapshot, selectReaderBusy(state)] as const);
+  return useAppStore(
+    useShallow((state) => [state.readerDocument.snapshot, selectReaderBusy(state)] as const)
+  );
 }
 
 export function useReaderActionState() {
@@ -349,7 +351,7 @@ export function useStarterViewTuple(): readonly [
   AppStore["runtimeLogLevel"]
 ] {
   return useAppStore(
-    (state) =>
+    useShallow((state) =>
       [
         state.appShell.bootstrapState,
         state.starter.recents,
@@ -361,7 +363,7 @@ export function useStarterViewTuple(): readonly [
         state.jobs.calibreLoadEvent,
         state.jobs.pdfTranscriptionEvent,
         state.appShell.runtimeLogLevel
-      ] as const
+      ] as const)
   );
 }
 

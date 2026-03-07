@@ -212,12 +212,12 @@ The codebase has working feature breadth, but several structural issues are now 
 ## Phase 9: Rust Module Decomposition
 
 - [ ] Split [src-tauri/src/lib.rs](/win/linux/Code/projects/lantern-leaf/src-tauri/src/lib.rs) by runtime capability:
-  - [ ] bootstrap/config
-  - [ ] source open commands
+  - [x] bootstrap/config
+  - [x] source open commands
   - [x] reader commands
   - [ ] TTS runtime orchestration
   - [x] browser-tab commands
-  - [ ] shutdown/persistence
+  - [x] shutdown/persistence
 - [ ] Split [crates/lanternleaf-core/src/session.rs](/win/linux/Code/projects/lantern-leaf/crates/lanternleaf-core/src/session.rs) by session domain:
   - [ ] document loading
   - [ ] pagination and page changes

@@ -1,5 +1,7 @@
+mod app_shell_commands;
 mod browser_tab_commands;
 mod reader_commands;
+mod source_open_commands;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
@@ -17,6 +19,11 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt};
 use ts_rs::TS;
 
+pub(crate) use app_shell_commands::{
+    app_safe_quit, panel_toggle_settings, panel_toggle_stats, panel_toggle_tts, recent_delete,
+    recent_list, session_get_bootstrap, session_get_state, session_return_to_starter,
+    session_toggle_theme,
+};
 pub(crate) use browser_tab_commands::{
     browser_tabs_health, browser_tabs_list_tabs, browser_tabs_list_windows,
     source_open_browser_tab, source_refresh_browser_tab,
@@ -28,6 +35,9 @@ pub(crate) use reader_commands::{
     reader_toggle_text_only, reader_tts_pause, reader_tts_play, reader_tts_play_from_highlight,
     reader_tts_play_from_page_start, reader_tts_precompute_page, reader_tts_repeat_sentence,
     reader_tts_seek_next, reader_tts_seek_prev, reader_tts_toggle_play_pause,
+};
+pub(crate) use source_open_commands::{
+    source_open_clipboard, source_open_clipboard_text, source_open_path,
 };
 
 pub use lanternleaf_core::{
@@ -1894,204 +1904,6 @@ async fn maybe_refresh_legacy_browser_tab_source(
     }
 }
 
-#[tauri::command]
-fn session_get_bootstrap(
-    state: State<'_, Mutex<BackendState>>,
-) -> Result<BootstrapState, BridgeError> {
-    let guard = state
-        .lock()
-        .map_err(|_| bridge_error("lock_poisoned", "Backend state lock poisoned"))?;
-    Ok(bootstrap_state_from_backend(&guard))
-}
-
-#[tauri::command]
-fn session_toggle_theme(
-    state: State<'_, Mutex<BackendState>>,
-) -> Result<BootstrapState, BridgeError> {
-    let (request_id, bootstrap_state) = {
-        let mut guard = state
-            .lock()
-            .map_err(|_| bridge_error("lock_poisoned", "Backend state lock poisoned"))?;
-        let request_id = allocate_request_id(&mut guard);
-        guard.base_config.theme = match guard.base_config.theme {
-            config::ThemeMode::Day => config::ThemeMode::Night,
-            config::ThemeMode::Night => config::ThemeMode::Day,
-        };
-        (request_id, bootstrap_state_from_backend(&guard))
-    };
-    info!(
-        request_id,
-        theme = %bootstrap_state.config.theme,
-        "Toggled starter theme"
-    );
-    Ok(bootstrap_state)
-}
-
-#[tauri::command]
-fn session_get_state(state: State<'_, Mutex<BackendState>>) -> Result<SessionState, BridgeError> {
-    let guard = state
-        .lock()
-        .map_err(|_| bridge_error("lock_poisoned", "Backend state lock poisoned"))?;
-    Ok(to_session_state(&guard))
-}
-
-#[tauri::command]
-fn session_return_to_starter(
-    app: tauri::AppHandle,
-    state: State<'_, Mutex<BackendState>>,
-) -> Result<SessionState, BridgeError> {
-    let (session, request_id, cancelled_request, cancelled_source_path) = {
-        let mut guard = state
-            .lock()
-            .map_err(|_| bridge_error("lock_poisoned", "Backend state lock poisoned"))?;
-        let request_id = allocate_request_id(&mut guard);
-        let cancelled_request = if guard.open_in_flight {
-            guard.active_open_request
-        } else {
-            None
-        };
-        let cancelled_source_path = guard
-            .active_open_source_path
-            .as_ref()
-            .map(|path| path.to_string_lossy().to_string());
-        let _ = cleanup_for_shutdown(&mut guard);
-        (
-            to_session_state(&guard),
-            request_id,
-            cancelled_request,
-            cancelled_source_path,
-        )
-    };
-    emit_session_state(&app, request_id, "session_return_to_starter", &session);
-    if let Some(cancelled_request) = cancelled_request {
-        let _ = app.emit(
-            "source-open",
-            SourceOpenEvent {
-                request_id: cancelled_request,
-                phase: "cancelled".to_string(),
-                source_path: cancelled_source_path,
-                message: Some("Source open request cancelled by return-to-starter".to_string()),
-            },
-        );
-    }
-    Ok(session)
-}
-
-#[tauri::command]
-fn panel_toggle_settings(
-    app: tauri::AppHandle,
-    state: State<'_, Mutex<BackendState>>,
-) -> Result<SessionState, BridgeError> {
-    apply_panel_toggle(&app, &state, "panel_toggle_settings", |panels| {
-        panels.show_settings = !panels.show_settings;
-        if panels.show_settings {
-            panels.show_stats = false;
-        }
-    })
-}
-
-#[tauri::command]
-fn panel_toggle_stats(
-    app: tauri::AppHandle,
-    state: State<'_, Mutex<BackendState>>,
-) -> Result<SessionState, BridgeError> {
-    apply_panel_toggle(&app, &state, "panel_toggle_stats", |panels| {
-        panels.show_stats = !panels.show_stats;
-        if panels.show_stats {
-            panels.show_settings = false;
-        }
-    })
-}
-
-#[tauri::command]
-fn panel_toggle_tts(
-    app: tauri::AppHandle,
-    state: State<'_, Mutex<BackendState>>,
-) -> Result<SessionState, BridgeError> {
-    apply_panel_toggle(&app, &state, "panel_toggle_tts", |panels| {
-        panels.show_tts = !panels.show_tts;
-    })
-}
-
-#[tauri::command]
-fn recent_list(limit: Option<usize>) -> Vec<RecentBook> {
-    cache::list_recent_books(normalize_recent_limit(limit))
-        .into_iter()
-        .map(|recent| RecentBook {
-            source_path: recent.source_path.to_string_lossy().to_string(),
-            display_title: recent.display_title,
-            snippet: recent.snippet,
-            thumbnail_path: recent
-                .thumbnail_path
-                .as_deref()
-                .and_then(thumbnail_path_to_data_url),
-            last_opened_unix_secs: recent.last_opened_unix_secs,
-        })
-        .collect()
-}
-
-#[tauri::command]
-fn recent_delete(path: String) -> Result<(), BridgeError> {
-    let source = PathBuf::from(path.trim());
-    if source.as_os_str().is_empty() {
-        return Err(bridge_error("invalid_input", "Path cannot be empty"));
-    }
-    cache::delete_recent_source_and_cache(&source).map_err(|err| bridge_error("io_error", err))
-}
-
-#[tauri::command]
-async fn source_open_path(
-    app: tauri::AppHandle,
-    state: State<'_, Mutex<BackendState>>,
-    path: String,
-) -> Result<OpenSourceResult, BridgeError> {
-    let source = resolve_source_path(&path)?;
-    open_resolved_source(&app, &state, source).await
-}
-
-#[tauri::command]
-async fn source_open_clipboard_text(
-    app: tauri::AppHandle,
-    state: State<'_, Mutex<BackendState>>,
-    text: String,
-) -> Result<OpenSourceResult, BridgeError> {
-    let trimmed = text.trim().to_string();
-    if trimmed.is_empty() {
-        return Err(bridge_error("invalid_input", "clipboard text is empty"));
-    }
-    let path = cache::persist_clipboard_text_source(&trimmed)
-        .map_err(|err| bridge_error("invalid_input", err))?;
-    open_resolved_source(&app, &state, path).await
-}
-
-#[tauri::command]
-async fn source_open_clipboard(
-    app: tauri::AppHandle,
-    state: State<'_, Mutex<BackendState>>,
-) -> Result<OpenSourceResult, BridgeError> {
-    info!("Opening source from system clipboard");
-    let app_for_read = app.clone();
-    let text = tauri::async_runtime::spawn_blocking(move || {
-        read_clipboard_text_with_fallback(&app_for_read)
-    })
-    .await
-    .map_err(|err| {
-        bridge_error(
-            "clipboard_error",
-            format!("Clipboard worker task failed: {err}"),
-        )
-    })?
-    .map_err(|err| bridge_error("clipboard_error", err))?;
-    let trimmed = text.trim().to_string();
-    if trimmed.is_empty() {
-        warn!("Clipboard read succeeded but text was empty");
-        return Err(bridge_error("invalid_input", "clipboard text is empty"));
-    }
-    let path = cache::persist_clipboard_text_source(&trimmed)
-        .map_err(|err| bridge_error("invalid_input", err))?;
-    open_resolved_source(&app, &state, path).await
-}
-
 fn read_clipboard_text_with_fallback(app: &tauri::AppHandle) -> Result<String, String> {
     match app.clipboard().read_text() {
         Ok(text) => {
@@ -2166,16 +1978,6 @@ fn run_clipboard_command(bin: &str, args: &[&str]) -> Result<Option<String>, Str
     } else {
         Ok(Some(trimmed))
     }
-}
-
-#[tauri::command]
-fn app_safe_quit(
-    app: tauri::AppHandle,
-    state: State<'_, Mutex<BackendState>>,
-) -> Result<(), BridgeError> {
-    finalize_shutdown_from_mutex(state.inner());
-    app.exit(0);
-    Ok(())
 }
 
 #[tauri::command]

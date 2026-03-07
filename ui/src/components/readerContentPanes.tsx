@@ -6,6 +6,7 @@ import type { ReturnTypeTypographyLayout } from "./readerTypographyTypes";
 
 interface ReaderPrettyHtmlPaneProps {
   currentPage: number;
+  onFrameLoad: () => void;
   hasPrettyMarkdown: boolean;
   isBrowserTabPrettyHtml: boolean;
   nativeHtmlFrameRef: React.MutableRefObject<HTMLIFrameElement | null>;
@@ -29,6 +30,7 @@ interface ReaderTextOnlyPaneProps {
 
 export const ReaderPrettyHtmlPane = memo(function ReaderPrettyHtmlPane({
   currentPage,
+  onFrameLoad,
   hasPrettyMarkdown,
   isBrowserTabPrettyHtml,
   nativeHtmlFrameRef,
@@ -48,6 +50,7 @@ export const ReaderPrettyHtmlPane = memo(function ReaderPrettyHtmlPane({
         className="reader-native-html-frame"
         data-testid="reader-pretty-native-html"
         data-reader-browser-tab={isBrowserTabPrettyHtml ? "1" : "0"}
+        onLoad={onFrameLoad}
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         srcDoc={renderedNativeHtml}
         title={`Native HTML reader page ${currentPage + 1}`}

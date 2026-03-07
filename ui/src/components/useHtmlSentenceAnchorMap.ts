@@ -7,6 +7,7 @@ import { buildReaderHtmlSyncMap, collectIndexedAnchors } from "./readerHtmlSync"
 interface UseHtmlSentenceAnchorMapArgs {
   hasPrettyHtml: boolean;
   hasPrettyMarkdown: boolean;
+  nativeHtmlLoadVersion: number;
   nativeHtmlFrameRef: MutableRefObject<HTMLIFrameElement | null>;
   reader: ReaderSnapshot;
   renderedMarkdownHtml: string;
@@ -25,6 +26,7 @@ export interface HtmlSentenceAnchorMapState {
 export function useHtmlSentenceAnchorMap({
   hasPrettyHtml,
   hasPrettyMarkdown,
+  nativeHtmlLoadVersion,
   nativeHtmlFrameRef,
   reader,
   renderedMarkdownHtml,
@@ -90,7 +92,14 @@ export function useHtmlSentenceAnchorMap({
       prettyAnchorElementsRef.current.html.clear();
     }
     prettyAnchorLookupKeyRef.current = prettyLookupKey;
-  }, [hasPrettyHtml, hasPrettyMarkdown, nativeHtmlFrameRef, prettyLookupKey, sentenceScrollRef]);
+  }, [
+    hasPrettyHtml,
+    hasPrettyMarkdown,
+    nativeHtmlFrameRef,
+    nativeHtmlLoadVersion,
+    prettyLookupKey,
+    sentenceScrollRef
+  ]);
 
   useEffect(() => {
     if (!hasPrettyHtml) {
@@ -133,7 +142,7 @@ export function useHtmlSentenceAnchorMap({
       frame.removeEventListener("load", handleLoad);
       doc.removeEventListener("click", handleClick);
     };
-  }, [hasPrettyHtml, nativeHtmlFrameRef, prettyLookupKey]);
+  }, [hasPrettyHtml, nativeHtmlFrameRef, nativeHtmlLoadVersion, prettyLookupKey]);
 
   useEffect(() => {
     if (!hasPrettyHtml || !renderedNativeHtml) {
@@ -174,6 +183,7 @@ export function useHtmlSentenceAnchorMap({
     htmlSentenceAnchorCacheRef.current = { key: cacheKey, map };
   }, [
     hasPrettyHtml,
+    nativeHtmlLoadVersion,
     reader.current_page,
     reader.sentences,
     reader.source_path,

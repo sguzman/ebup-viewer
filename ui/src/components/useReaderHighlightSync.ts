@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type MouseEvent,
   type MutableRefObject
 } from "react";
@@ -23,6 +24,7 @@ interface UseReaderHighlightSyncArgs {
 
 export interface ReaderHighlightSyncState {
   handlePrettyContentClick: (event: MouseEvent<HTMLDivElement>) => void;
+  handleNativeHtmlFrameLoad: () => void;
   jumpToHighlightedSentence: () => void;
   nativeHtmlFrameRef: MutableRefObject<HTMLIFrameElement | null>;
 }
@@ -38,9 +40,11 @@ export function useReaderHighlightSync({
 }: UseReaderHighlightSyncArgs): ReaderHighlightSyncState {
   const nativeHtmlFrameRef = useRef<HTMLIFrameElement | null>(null);
   const prettyHighlightedNodeRef = useRef<HTMLElement | null>(null);
+  const [nativeHtmlLoadVersion, setNativeHtmlLoadVersion] = useState(0);
   const { prettyAnchorElementsRef, resolvePrettyAnchorIdx } = useHtmlSentenceAnchorMap({
     hasPrettyHtml,
     hasPrettyMarkdown,
+    nativeHtmlLoadVersion,
     nativeHtmlFrameRef,
     reader,
     renderedMarkdownHtml,
@@ -100,6 +104,10 @@ export function useReaderHighlightSync({
     scrollSentenceIntoView(container, element, false, "smooth");
   }, [sentenceScrollRef]);
 
+  const handleNativeHtmlFrameLoad = useCallback(() => {
+    setNativeHtmlLoadVersion((current) => current + 1);
+  }, []);
+
   const applyPrettyHighlight = useCallback((): boolean => {
     if (reader.text_only_mode) {
       if (prettyHighlightedNodeRef.current) {
@@ -132,10 +140,11 @@ export function useReaderHighlightSync({
       applyPrettyHighlight();
     });
     return () => cancelAnimationFrame(frame);
-  }, [applyPrettyHighlight, reader.current_page]);
+  }, [applyPrettyHighlight, nativeHtmlLoadVersion, reader.current_page]);
 
   return {
     handlePrettyContentClick,
+    handleNativeHtmlFrameLoad,
     jumpToHighlightedSentence,
     nativeHtmlFrameRef
   };

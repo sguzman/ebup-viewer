@@ -206,7 +206,12 @@ export const ReaderShell = memo(function ReaderShell({
     reader.source_path,
     readerImageCandidates
   ]);
-  const { handlePrettyContentClick, jumpToHighlightedSentence, nativeHtmlFrameRef } =
+  const {
+    handleNativeHtmlFrameLoad,
+    handlePrettyContentClick,
+    jumpToHighlightedSentence,
+    nativeHtmlFrameRef
+  } =
     useReaderHighlightSync({
       hasPrettyHtml,
       hasPrettyMarkdown,
@@ -279,6 +284,7 @@ export const ReaderShell = memo(function ReaderShell({
                   {hasPrettyHtml ? (
                     <ReaderPrettyHtmlPane
                       currentPage={reader.current_page}
+                      onFrameLoad={handleNativeHtmlFrameLoad}
                       hasPrettyMarkdown={hasPrettyMarkdown}
                       isBrowserTabPrettyHtml={isBrowserTabPrettyHtml}
                       nativeHtmlFrameRef={nativeHtmlFrameRef}

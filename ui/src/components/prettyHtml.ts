@@ -80,6 +80,24 @@ function parseNativeHtmlDocument(rawHtml: string): Document {
   return doc;
 }
 
+function injectReaderHighlightOverlay(doc: Document): void {
+  const existing = doc.querySelector("style[data-ll-reader-overlay='1']");
+  if (existing) {
+    return;
+  }
+  const style = doc.createElement("style");
+  style.setAttribute("data-ll-reader-overlay", "1");
+  style.textContent = `
+    [data-ll-html-anchor].reader-pretty-highlight {
+      background: rgba(95, 143, 47, 0.18) !important;
+      outline: 2px solid rgb(95, 143, 47) !important;
+      border-radius: 0.2rem;
+      scroll-margin-block: 24vh;
+    }
+  `;
+  doc.head.appendChild(style);
+}
+
 export function renderNativePrettyHtml(
   html: string,
   imageCandidates: Array<{ rawPath: string; src: string }>
@@ -494,5 +512,6 @@ export function renderNativePrettyHtml(
     meta.setAttribute("charset", "utf-8");
     doc.head.prepend(meta);
   }
+  injectReaderHighlightOverlay(doc);
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
 }

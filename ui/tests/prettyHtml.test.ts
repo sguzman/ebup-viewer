@@ -20,6 +20,7 @@ describe("renderNativePrettyHtml", () => {
       },
     ]);
     expect(out).toContain("<!doctype html>");
+    expect(out).toContain("data-ll-reader-overlay=\"1\"");
     expect(out).toContain('data-ll-html-anchor="0"');
     expect(out).toContain('src="asset:/cache/images/img-0001-aabbccddeeff-cover.jpg"');
     expect(out).not.toContain("<script");

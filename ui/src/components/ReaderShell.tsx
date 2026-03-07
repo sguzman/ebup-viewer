@@ -994,9 +994,6 @@ export const ReaderShell = memo(function ReaderShell({
       return false;
     }
     if (activePrettyAnchorIdx === null || activePrettyAnchorIdx === undefined) {
-      return false;
-    }
-    if (reader.pretty_kind === "html") {
       if (prettyHighlightedNodeRef.current) {
         prettyHighlightedNodeRef.current.classList.remove("reader-pretty-highlight");
         prettyHighlightedNodeRef.current = null;
@@ -1016,7 +1013,6 @@ export const ReaderShell = memo(function ReaderShell({
   }, [
     activePrettyAnchorIdx,
     getPrettyAnchorNode,
-    reader.pretty_kind,
     reader.text_only_mode,
   ]);
 

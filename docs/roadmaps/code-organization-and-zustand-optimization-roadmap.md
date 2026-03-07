@@ -90,7 +90,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [x] starter browser-tab import UI
   - [x] calibre list and thumbnail flow
   - [x] store event ingestion
-  - [ ] store reader domain state
+  - [x] store reader domain state
 - [ ] Add a short architecture note documenting which layer owns:
   - [x] pretty HTML rendering
   - [x] markdown rendering
@@ -138,7 +138,7 @@ The codebase has working feature breadth, but several structural issues are now 
 - [ ] Add explicit tests proving that:
   - [x] playback ticks do not rerender starter UI
   - [x] non-TTS controls do not rerender on pure TTS metadata changes
-  - [ ] panel toggles do not rerender the entire reader tree
+  - [x] panel toggles do not rerender the entire reader tree
 
 ## Phase 4: Separate Event Ingestion from UI State
 

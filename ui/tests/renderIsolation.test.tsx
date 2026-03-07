@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
+import { useShallow } from "zustand/react/shallow";
 
 import { useAppStore } from "../src/store/appStore";
 import {
@@ -259,6 +260,42 @@ describe("render isolation", () => {
           panels: {
             ...reader.panels,
             show_stats: true
+          }
+        }
+      });
+    });
+
+    expect(renders).toBe(1);
+    mounted.unmount();
+  });
+
+  it("panel toggles do not rerender document-only reader subscriptions", () => {
+    const reader = setBaseState();
+    let renders = 0;
+
+    function ReaderDocumentStateProbe() {
+      renders += 1;
+      const documentTuple = useAppStore(
+        useShallow((state) => [
+          state.reader?.source_path ?? "",
+          state.reader?.current_page ?? -1,
+          state.reader?.pretty_kind ?? "none"
+        ] as const)
+      );
+      return <div data-document-tuple={documentTuple.join("|")} />;
+    }
+
+    const mounted = mountProbe(<ReaderDocumentStateProbe />);
+    expect(renders).toBe(1);
+
+    act(() => {
+      useAppStore.setState({
+        reader: {
+          ...reader,
+          panels: {
+            show_settings: true,
+            show_stats: true,
+            show_tts: false
           }
         }
       });

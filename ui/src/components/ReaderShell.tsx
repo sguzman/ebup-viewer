@@ -12,6 +12,12 @@ import type { ReaderSettingsPatch, ReaderSnapshot, TtsStateEvent } from "../type
 import { renderMarkdownToHtml } from "./markdownRender";
 import { renderNativePrettyHtml } from "./prettyHtml";
 import {
+  ReaderPrettyHtmlPane,
+  ReaderPrettyMarkdownPane,
+  ReaderPrettyUnavailableNotice,
+  ReaderTextOnlyPane
+} from "./readerContentPanes";
+import {
   ReaderSearchBar,
   ReaderSettingsPanel,
   ReaderStatsPanel,
@@ -255,106 +261,32 @@ export const ReaderShell = memo(function ReaderShell({
                   }}
                 >
                   {hasPrettyHtml ? (
-                    <div
-                      style={{
-                        width: "100%",
-                        flex: showSentenceList || hasPrettyMarkdown ? undefined : 1,
-                        minHeight: showSentenceList || hasPrettyMarkdown ? undefined : 0,
-                      }}
-                    >
-                      <iframe
-                        ref={nativeHtmlFrameRef}
-                        className="reader-native-html-frame"
-                        data-testid="reader-pretty-native-html"
-                        data-reader-browser-tab={isBrowserTabPrettyHtml ? "1" : "0"}
-                        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                        srcDoc={renderedNativeHtml}
-                        title={`Native HTML reader page ${reader.current_page + 1}`}
-                      />
-                    </div>
+                    <ReaderPrettyHtmlPane
+                      currentPage={reader.current_page}
+                      hasPrettyMarkdown={hasPrettyMarkdown}
+                      isBrowserTabPrettyHtml={isBrowserTabPrettyHtml}
+                      nativeHtmlFrameRef={nativeHtmlFrameRef}
+                      renderedNativeHtml={renderedNativeHtml}
+                      showSentenceList={showSentenceList}
+                    />
                   ) : null}
                   {hasPrettyMarkdown ? (
-                    <div
-                      style={{
-                        maxWidth: "72ch",
-                        marginInline: "auto",
-                        padding: "10px 12px",
-                        border: "1px solid rgba(148, 163, 184, 0.36)",
-                        borderRadius: 12,
-                        background: "rgba(255, 255, 255, 0.82)",
-                        boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)",
-                        color: "#1f2937"
-                      }}
-                    >
-                      <div
-                        className="reader-markdown-content"
-                        data-testid="reader-pretty-markdown"
-                        onClick={handlePrettyContentClick}
-                        dangerouslySetInnerHTML={{ __html: renderedMarkdownHtml }}
-                      />
-                    </div>
+                    <ReaderPrettyMarkdownPane
+                      handlePrettyContentClick={handlePrettyContentClick}
+                      renderedMarkdownHtml={renderedMarkdownHtml}
+                    />
                   ) : null}
-                  {prettyUnavailable ? (
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      data-testid="reader-pretty-markdown-fallback"
-                    >
-                      Pretty view unavailable for this source. Showing text fallback.
-                    </Typography>
+                  {prettyUnavailable ? <ReaderPrettyUnavailableNotice /> : null}
+                  {showSentenceList ? (
+                    <ReaderTextOnlyPane
+                      isPrettyTextMode={isPrettyTextMode}
+                      onSentenceClick={onSentenceClick}
+                      reader={reader}
+                      readerTypography={readerTypography}
+                      searchMatchSet={searchMatchSet}
+                      sentenceRefs={sentenceRefs}
+                    />
                   ) : null}
-                  {showSentenceList
-                    ? reader.sentences.map((sentence, idx) => {
-                        const highlighted = reader.highlighted_sentence_idx === idx;
-                        const searchMatch = searchMatchSet.has(idx);
-                        const baseBorderColor = isPrettyTextMode
-                          ? "rgba(148, 163, 184, 0.36)"
-                          : "transparent";
-                        const baseBackground = isPrettyTextMode
-                          ? "rgba(255, 255, 255, 0.78)"
-                          : "transparent";
-                        return (
-                          <button
-                            key={`${reader.current_page}:${idx}`}
-                            ref={(element) => {
-                              sentenceRefs.current[idx] = element;
-                            }}
-                            type="button"
-                            onClick={() => void onSentenceClick(idx)}
-                            className="w-full rounded-lg border px-3 py-1.5 text-left transition-colors"
-                            data-testid={`reader-sentence-${idx}`}
-                            data-highlighted={highlighted ? "1" : "0"}
-                            style={{
-                              fontSize: `${readerTypography.fontSizePx}px`,
-                              lineHeight: isPrettyTextMode
-                                ? Math.max(readerTypography.lineSpacing, 1.55)
-                                : readerTypography.lineSpacing,
-                              wordSpacing: `${readerTypography.wordSpacingPx}px`,
-                              letterSpacing: `${readerTypography.letterSpacingPx}px`,
-                              borderColor: highlighted
-                                ? "var(--reader-highlight-border)"
-                                : searchMatch
-                                  ? "var(--reader-search-border)"
-                                  : baseBorderColor,
-                              background: highlighted
-                                ? "var(--reader-highlight-bg)"
-                                : searchMatch
-                                  ? "var(--reader-search-bg)"
-                                  : baseBackground,
-                              maxWidth: isPrettyTextMode ? "72ch" : "100%",
-                              marginInline: isPrettyTextMode ? "auto" : undefined,
-                              boxShadow: isPrettyTextMode
-                                ? "0 1px 2px rgba(15, 23, 42, 0.06)"
-                                : "none",
-                              borderRadius: isPrettyTextMode ? 12 : 8,
-                              color: isPrettyTextMode ? "#1f2937" : undefined
-                            }}
-                          >
-                            {sentence}
-                          </button>
-                        );
-                      })
-                    : null}
                 </Stack>
               </div>
               <TtsPlayerWidget

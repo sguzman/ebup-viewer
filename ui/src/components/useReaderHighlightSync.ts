@@ -9,8 +9,8 @@ import {
 
 import { recordPerfMeasure } from "../perf/debug";
 import type { ReaderSnapshot } from "../types";
-import { buildHtmlSentenceAnchorMap } from "./htmlSync";
 import { scrollSentenceIntoView } from "./readerDom";
+import { buildReaderHtmlSyncMap, collectIndexedAnchors } from "./readerHtmlSync";
 
 interface UseReaderHighlightSyncArgs {
   hasPrettyHtml: boolean;
@@ -357,16 +357,7 @@ export function useReaderHighlightSync({
     if (!root) {
       return;
     }
-    const anchors = Array.from(root.querySelectorAll(`[${attribute}]`)) as HTMLElement[];
-    const nextMap = new Map<number, HTMLElement>();
-    for (const element of anchors) {
-      const raw = element.getAttribute(attribute);
-      const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
-      if (Number.isFinite(parsed)) {
-        nextMap.set(parsed, element);
-      }
-    }
-    prettyAnchorElementsRef.current[kind] = nextMap;
+    prettyAnchorElementsRef.current[kind] = collectIndexedAnchors(root, attribute);
     if (kind === "html") {
       prettyAnchorElementsRef.current.markdown.clear();
     } else {
@@ -386,16 +377,7 @@ export function useReaderHighlightSync({
     }
 
     const rebuildHtmlAnchors = (): void => {
-      const anchors = Array.from(doc.querySelectorAll("[data-ll-html-anchor]")) as HTMLElement[];
-      const nextMap = new Map<number, HTMLElement>();
-      for (const element of anchors) {
-        const raw = element.getAttribute("data-ll-html-anchor");
-        const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
-        if (Number.isFinite(parsed)) {
-          nextMap.set(parsed, element);
-        }
-      }
-      prettyAnchorElementsRef.current.html = nextMap;
+      prettyAnchorElementsRef.current.html = collectIndexedAnchors(doc, "data-ll-html-anchor");
       prettyAnchorLookupKeyRef.current = prettyLookupKey;
     };
 
@@ -448,9 +430,8 @@ export function useReaderHighlightSync({
       return;
     }
     const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-    const anchorTexts = anchors.map((element) => element.textContent ?? "");
-    const { map, diagnostics } = buildHtmlSentenceAnchorMap(
-      anchorTexts,
+    const { map, diagnostics } = buildReaderHtmlSyncMap(
+      anchors,
       reader.sentences,
       reader.sentence_anchor_map
     );

@@ -156,9 +156,9 @@ The codebase has working feature breadth, but several structural issues are now 
 - [ ] Extract from [ui/src/components/ReaderShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/ReaderShell.tsx):
   - [x] `ReaderTopBar`
   - [x] `ReaderSearchBar`
-  - [ ] `ReaderPrettyHtmlPane`
-  - [ ] `ReaderPrettyMarkdownPane`
-  - [ ] `ReaderTextOnlyPane`
+  - [x] `ReaderPrettyHtmlPane`
+  - [x] `ReaderPrettyMarkdownPane`
+  - [x] `ReaderTextOnlyPane`
   - [x] `ReaderStatsPanel`
   - [x] `ReaderSettingsPanel`
   - [x] `ReaderTtsPanel`
@@ -172,27 +172,27 @@ The codebase has working feature breadth, but several structural issues are now 
 ## Phase 6: Decompose StarterShell and Async Thumbnail Flow
 
 - [ ] Split [ui/src/components/StarterShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/StarterShell.tsx) into:
-  - [ ] `StarterOpenPanel`
-  - [ ] `StarterBrowserTabsPanel`
-  - [ ] `StarterRecentsPanel`
-  - [ ] `StarterCalibrePanel`
+  - [x] `StarterOpenPanel`
+  - [x] `StarterBrowserTabsPanel`
+  - [x] `StarterRecentsPanel`
+  - [x] `StarterCalibrePanel`
   - [x] `useBrowserTabs`
   - [x] `useCalibreThumbnails`
   - [ ] virtualization helpers colocated with their owning list
 - [x] Move browser health and browser-tab loading into focused hooks with explicit loading/error state.
 - [x] Batch thumbnail updates and keep them local to the calibre list domain.
-- [ ] Avoid list-wide rerender when one row thumbnail changes.
+- [x] Avoid list-wide rerender when one row thumbnail changes.
 
 ## Phase 7: Remove Duplicated Rendering and Sync Logic
 
 - [ ] Consolidate content rendering responsibilities:
   - [ ] native HTML sanitization/rewrite
   - [ ] markdown-to-HTML rendering
-  - [ ] HTML anchor extraction
-  - [ ] sentence-to-anchor mapping
+  - [x] HTML anchor extraction
+  - [x] sentence-to-anchor mapping
 - [x] Remove rendering helpers from [ui/src/components/ReaderShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/ReaderShell.tsx) that belong in dedicated utility modules.
-- [ ] Define one module that owns HTML sync contracts end to end.
-- [ ] Add tests that assert sync logic independently of the full reader component tree.
+- [x] Define one module that owns HTML sync contracts end to end.
+- [x] Add tests that assert sync logic independently of the full reader component tree.
 
 ## Phase 8: Backend Contract and Payload Optimization
 

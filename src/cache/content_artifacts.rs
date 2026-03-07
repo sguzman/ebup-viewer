@@ -66,7 +66,11 @@ pub(super) fn persist_dual_view_artifacts(
     }
 }
 
-pub(super) fn persist_sentence_anchor_map(source_path: &Path, page: usize, anchors: &[Option<usize>]) {
+pub(super) fn persist_sentence_anchor_map(
+    source_path: &Path,
+    page: usize,
+    anchors: &[Option<usize>],
+) {
     ensure_content_layout(source_path);
     let map_dir = hash_dir(source_path)
         .join("content")
@@ -99,7 +103,10 @@ pub(super) fn persist_sentence_anchor_map(source_path: &Path, page: usize, ancho
     }
 }
 
-pub(super) fn load_sentence_anchor_map(source_path: &Path, page: usize) -> Option<Vec<Option<usize>>> {
+pub(super) fn load_sentence_anchor_map(
+    source_path: &Path,
+    page: usize,
+) -> Option<Vec<Option<usize>>> {
     let map_path = hash_dir(source_path)
         .join("content")
         .join("sentence-anchor-map")

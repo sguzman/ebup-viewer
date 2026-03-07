@@ -672,7 +672,9 @@ fn resolve_source_path(path: &str) -> Result<PathBuf, BridgeError> {
     })
 }
 
-fn browsr_client_from_config(cfg: &config::AppConfig) -> Result<browser_tabs::BrowsrClient, BridgeError> {
+fn browsr_client_from_config(
+    cfg: &config::AppConfig,
+) -> Result<browser_tabs::BrowsrClient, BridgeError> {
     browser_tabs::BrowsrClient::new(&cfg.browsr_base_url, cfg.browsr_timeout_ms)
         .map_err(|err| bridge_error("browsr_config_error", err.to_string()))
 }
@@ -921,7 +923,9 @@ fn classify_reader_action(action: &str) -> &'static str {
         | "reader_tts_repeat_sentence"
         | "reader_tts_play_from_page_start"
         | "reader_tts_play_from_highlight" => "cursor_move",
-        "reader_apply_settings" | "panel_toggle_settings" | "panel_toggle_stats"
+        "reader_apply_settings"
+        | "panel_toggle_settings"
+        | "panel_toggle_stats"
         | "panel_toggle_tts" => "ui_mutation",
         _ => "session_update",
     }
@@ -2198,7 +2202,10 @@ async fn source_refresh_browser_tab(
     let manifest = cache::load_browser_tab_manifest(&source_path).ok_or_else(|| {
         bridge_error(
             "invalid_input",
-            format!("Source is not a browser-tab manifest: {}", source_path.display()),
+            format!(
+                "Source is not a browser-tab manifest: {}",
+                source_path.display()
+            ),
         )
     })?;
     let cfg = {

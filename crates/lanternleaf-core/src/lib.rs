@@ -1,9 +1,9 @@
+#[path = "../../../src/browser_tabs.rs"]
+pub mod browser_tabs;
 #[path = "../../../src/cache.rs"]
 pub mod cache;
 #[path = "../../../src/calibre.rs"]
 pub mod calibre;
-#[path = "../../../src/browser_tabs.rs"]
-pub mod browser_tabs;
 #[path = "../../../src/cancellation.rs"]
 pub mod cancellation;
 #[path = "../../../src/config/mod.rs"]

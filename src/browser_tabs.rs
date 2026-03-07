@@ -210,7 +210,9 @@ impl BrowsrClient {
     }
 }
 
-async fn parse_json_response<T: for<'de> Deserialize<'de>>(response: reqwest::Response) -> Result<T> {
+async fn parse_json_response<T: for<'de> Deserialize<'de>>(
+    response: reqwest::Response,
+) -> Result<T> {
     let status = response.status();
     let body = response
         .text()
@@ -243,7 +245,9 @@ fn extract_error_message(body: &str) -> Option<String> {
     let parsed = serde_json::from_str::<ErrorEnvelope>(body).ok()?;
     let payload = parsed.error?;
     let code = payload.code.unwrap_or_else(|| "browsr_error".to_string());
-    let message = payload.message.unwrap_or_else(|| "unknown browsr error".to_string());
+    let message = payload
+        .message
+        .unwrap_or_else(|| "unknown browsr error".to_string());
     Some(format!("{code}: {message}"))
 }
 
@@ -252,7 +256,10 @@ fn truncate_body(body: &str) -> String {
     if body.chars().count() <= MAX_CHARS {
         return body.to_string();
     }
-    let mut out = body.chars().take(MAX_CHARS.saturating_sub(3)).collect::<String>();
+    let mut out = body
+        .chars()
+        .take(MAX_CHARS.saturating_sub(3))
+        .collect::<String>();
     out.push_str("...");
     out
 }
@@ -293,7 +300,8 @@ mod tests {
 
     #[test]
     fn extract_error_message_uses_structured_payload() {
-        let body = r#"{"error":{"code":"extension_disconnected","message":"extension not connected"}}"#;
+        let body =
+            r#"{"error":{"code":"extension_disconnected","message":"extension not connected"}}"#;
         assert_eq!(
             extract_error_message(body).as_deref(),
             Some("extension_disconnected: extension not connected")
@@ -316,9 +324,7 @@ mod tests {
         );
         let client = BrowsrClient::new(&base_url, 2_000).expect("client");
         let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
-        let snapshot = runtime
-            .block_on(client.snapshot_tab(42))
-            .expect("snapshot");
+        let snapshot = runtime.block_on(client.snapshot_tab(42)).expect("snapshot");
         let request = request_rx.recv().expect("captured request");
 
         assert!(request.starts_with("POST /v1/tabs/42/snapshot HTTP/1.1"));

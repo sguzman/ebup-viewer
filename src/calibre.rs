@@ -321,7 +321,6 @@ fn effective_password(config: &CalibreConfig) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

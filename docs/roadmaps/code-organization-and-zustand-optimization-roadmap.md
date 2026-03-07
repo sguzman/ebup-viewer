@@ -83,7 +83,7 @@ The codebase has working feature breadth, but several structural issues are now 
 ## Phase 1: Establish Audit Baseline and Ownership Boundaries
 
 - [x] Record current line-count hotspots and keep them visible in the roadmap issue/PR stream.
-- [ ] Define target module boundaries for:
+- [x] Define target module boundaries for:
   - [x] reader rendering
   - [x] reader sync/highlight logic
   - [x] reader controls and panel UI
@@ -91,7 +91,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [x] calibre list and thumbnail flow
   - [x] store event ingestion
   - [x] store reader domain state
-- [ ] Add a short architecture note documenting which layer owns:
+- [x] Add a short architecture note documenting which layer owns:
   - [x] pretty HTML rendering
   - [x] markdown rendering
   - [x] text-only sentence ownership
@@ -224,10 +224,10 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] playback/cursor movement
   - [ ] settings mutations
   - [ ] session transitions
-- [ ] Split [src/cache.rs](/win/linux/Code/projects/lantern-leaf/src/cache.rs) by artifact type:
+- [x] Split [src/cache.rs](/win/linux/Code/projects/lantern-leaf/src/cache.rs) by artifact type:
   - [x] bookmarks/config
   - [x] dual-view artifacts
-  - [ ] browser-tab assets
+  - [x] browser-tab assets
   - [x] TTS cache
   - [x] normalized artifacts
 - [ ] Split [src/epub_loader.rs](/win/linux/Code/projects/lantern-leaf/src/epub_loader.rs) by source type and artifact pipeline.

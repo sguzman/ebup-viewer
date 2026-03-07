@@ -12,8 +12,8 @@ use tracing::{debug, info};
 
 use super::{
     CalibreBook, CalibreConfig, THUMB_FETCH_TIMEOUT, THUMB_HEIGHT, THUMB_WIDTH,
-    cache_store::calibre_thumb_dir, effective_password, effective_username,
-    sanitized_library_url, sanitized_server_urls,
+    cache_store::calibre_thumb_dir, effective_password, effective_username, sanitized_library_url,
+    sanitized_server_urls,
 };
 
 pub(super) fn hydrate_book_thumbnails(
@@ -202,7 +202,10 @@ fn fetch_thumbnail_from_server(
         .ok()?;
     let username = effective_username(config);
     let password = effective_password(config);
-    let endpoints = [format!("get/thumb/{book_id}"), format!("get/cover/{book_id}")];
+    let endpoints = [
+        format!("get/thumb/{book_id}"),
+        format!("get/cover/{book_id}"),
+    ];
 
     for base in cover_server_urls(config).into_iter().take(1) {
         if Instant::now() >= deadline {

@@ -11,8 +11,8 @@ use tracing::{info, warn};
 use crate::cancellation::CancellationToken;
 
 use super::{
-    CALIBRE_DB_TIMEOUT_SECS, THUMB_CACHED_PREFETCH_BUDGET, THUMB_PREFETCH_BUDGET,
-    THUMB_PREFETCH_LIMIT, CalibreBook, CalibreConfig,
+    CALIBRE_DB_TIMEOUT_SECS, CalibreBook, CalibreConfig, THUMB_CACHED_PREFETCH_BUDGET,
+    THUMB_PREFETCH_BUDGET, THUMB_PREFETCH_LIMIT,
     cache_store::{
         cache_signature, calibre_download_dir, now_unix_nanos, try_load_cache, write_cache,
     },

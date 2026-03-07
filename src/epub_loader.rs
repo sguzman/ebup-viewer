@@ -130,10 +130,18 @@ fn load_source_content(path: &Path, cancel: Option<&CancellationToken>) -> Resul
         }
         let manifest = load_browser_tab_manifest(path)
             .with_context(|| format!("Failed to load browser-tab manifest {}", path.display()))?;
-        let tts_text = fs::read_to_string(&manifest.text_path)
-            .with_context(|| format!("Failed to read browser-tab text {}", manifest.text_path.display()))?;
-        let html = fs::read_to_string(&manifest.html_path)
-            .with_context(|| format!("Failed to read browser-tab html {}", manifest.html_path.display()))?;
+        let tts_text = fs::read_to_string(&manifest.text_path).with_context(|| {
+            format!(
+                "Failed to read browser-tab text {}",
+                manifest.text_path.display()
+            )
+        })?;
+        let html = fs::read_to_string(&manifest.html_path).with_context(|| {
+            format!(
+                "Failed to read browser-tab html {}",
+                manifest.html_path.display()
+            )
+        })?;
         let wrapped_html = wrap_browser_tab_html(&html, &manifest.url);
         info!(
             path = %path.display(),
@@ -1434,7 +1442,9 @@ fn quack_check_text_filename(config_path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::browser_tabs::{BrowserTab, BrowserTabSnapshot, SnapshotTruncation, SnapshotTruncationEntry};
+    use crate::browser_tabs::{
+        BrowserTab, BrowserTabSnapshot, SnapshotTruncation, SnapshotTruncationEntry,
+    };
     use crate::cache::{delete_recent_source_and_cache, persist_browser_tab_source};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1555,7 +1565,9 @@ mod tests {
             lang: Some("en".to_string()),
             ready_state: Some("complete".to_string()),
             captured_at: Some("2026-03-06T20:00:00Z".to_string()),
-            html: Some(r#"<article><p><img src="./cover.jpg"/>Hello article.</p></article>"#.to_string()),
+            html: Some(
+                r#"<article><p><img src="./cover.jpg"/>Hello article.</p></article>"#.to_string(),
+            ),
             text: Some("Hello article.".to_string()),
             selection: None,
             truncation: SnapshotTruncation {

@@ -84,19 +84,19 @@ The codebase has working feature breadth, but several structural issues are now 
 
 - [x] Record current line-count hotspots and keep them visible in the roadmap issue/PR stream.
 - [ ] Define target module boundaries for:
-  - [ ] reader rendering
-  - [ ] reader sync/highlight logic
-  - [ ] reader controls and panel UI
-  - [ ] starter browser-tab import UI
-  - [ ] calibre list and thumbnail flow
-  - [ ] store event ingestion
+  - [x] reader rendering
+  - [x] reader sync/highlight logic
+  - [x] reader controls and panel UI
+  - [x] starter browser-tab import UI
+  - [x] calibre list and thumbnail flow
+  - [x] store event ingestion
   - [ ] store reader domain state
 - [ ] Add a short architecture note documenting which layer owns:
-  - [ ] pretty HTML rendering
-  - [ ] markdown rendering
-  - [ ] text-only sentence ownership
-  - [ ] TTS playback cursor
-  - [ ] HTML sync mapping
+  - [x] pretty HTML rendering
+  - [x] markdown rendering
+  - [x] text-only sentence ownership
+  - [x] TTS playback cursor
+  - [x] HTML sync mapping
 
 ## Phase 2: Reshape Zustand State by Domain and Update Frequency
 
@@ -154,20 +154,20 @@ The codebase has working feature breadth, but several structural issues are now 
 ## Phase 5: Decompose ReaderShell into Focused Modules
 
 - [ ] Extract from [ui/src/components/ReaderShell.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/ReaderShell.tsx):
-  - [ ] `ReaderTopBar`
-  - [ ] `ReaderSearchBar`
+  - [x] `ReaderTopBar`
+  - [x] `ReaderSearchBar`
   - [ ] `ReaderPrettyHtmlPane`
   - [ ] `ReaderPrettyMarkdownPane`
   - [ ] `ReaderTextOnlyPane`
-  - [ ] `ReaderStatsPanel`
-  - [ ] `ReaderSettingsPanel`
-  - [ ] `ReaderTtsPanel`
+  - [x] `ReaderStatsPanel`
+  - [x] `ReaderSettingsPanel`
+  - [x] `ReaderTtsPanel`
   - [ ] `useReaderScrollSync`
-  - [ ] `useReaderHighlightSync`
+  - [x] `useReaderHighlightSync`
   - [ ] `useHtmlSentenceAnchorMap`
 - [x] Move markdown rendering helpers out of `ReaderShell` into their own module.
-- [ ] Ensure each extracted component receives only the props it actually needs.
-- [ ] Reduce inline object creation and large effect dependency sets where those dependencies only exist because too much logic is colocated.
+- [x] Ensure each extracted component receives only the props it actually needs.
+- [x] Reduce inline object creation and large effect dependency sets where those dependencies only exist because too much logic is colocated.
 
 ## Phase 6: Decompose StarterShell and Async Thumbnail Flow
 
@@ -176,11 +176,11 @@ The codebase has working feature breadth, but several structural issues are now 
   - [ ] `StarterBrowserTabsPanel`
   - [ ] `StarterRecentsPanel`
   - [ ] `StarterCalibrePanel`
-  - [ ] `useBrowserTabs`
-  - [ ] `useCalibreThumbnails`
+  - [x] `useBrowserTabs`
+  - [x] `useCalibreThumbnails`
   - [ ] virtualization helpers colocated with their owning list
-- [ ] Move browser health and browser-tab loading into focused hooks with explicit loading/error state.
-- [ ] Batch thumbnail updates and keep them local to the calibre list domain.
+- [x] Move browser health and browser-tab loading into focused hooks with explicit loading/error state.
+- [x] Batch thumbnail updates and keep them local to the calibre list domain.
 - [ ] Avoid list-wide rerender when one row thumbnail changes.
 
 ## Phase 7: Remove Duplicated Rendering and Sync Logic
@@ -254,8 +254,8 @@ The codebase has working feature breadth, but several structural issues are now 
 
 - [x] Step 1: Reshape Zustand state by domain and frequency.
 - [x] Step 2: Replace broad selectors with narrow domain hooks.
-- [ ] Step 3: Extract `ReaderShell` hooks/components so selector work has somewhere smaller to land.
-- [ ] Step 4: Decompose `StarterShell` and thumbnail/browser-tab flows.
+- [x] Step 3: Extract `ReaderShell` hooks/components so selector work has somewhere smaller to land.
+- [x] Step 4: Decompose `StarterShell` and thumbnail/browser-tab flows.
 - [ ] Step 5: Clean up duplicated rendering/sync utilities.
 - [ ] Step 6: Adjust backend event/payload shapes to match the new frontend state model.
 - [ ] Step 7: Split the largest Rust modules along capability boundaries.

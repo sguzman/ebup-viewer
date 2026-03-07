@@ -3,7 +3,6 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   Alert,
   Button,
@@ -19,20 +18,17 @@ import {
   TextField,
   Typography
 } from "@mui/material";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   computeVirtualWindow,
   filterAndSortCalibreBooks,
   type CalibreSort
 } from "./calibreList";
-import {
-  backendApi,
-  type BrowserTabInfo,
-  type BrowserWindowInfo,
-  type BrowsrHealth
-} from "../api/tauri";
-import { recordPerfMeasure, useRenderDebugCounter } from "../perf/debug";
+import { useRenderDebugCounter } from "../perf/debug";
+import { toThumbnailSrc } from "./starterShared";
+import { useBrowserTabs } from "./useBrowserTabs";
+import { useCalibreThumbnails } from "./useCalibreThumbnails";
 import type {
   BootstrapState,
   CalibreBook,
@@ -64,43 +60,6 @@ interface StarterShellProps {
   runtimeLogLevel: string;
 }
 
-function toUiErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) {
-      return message;
-    }
-  }
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  return fallback;
-}
-
-function toThumbnailSrc(path: string | null | undefined): string | null {
-  if (!path) {
-    return null;
-  }
-
-  const lower = path.toLowerCase();
-  if (
-    lower.startsWith("http://") ||
-    lower.startsWith("https://") ||
-    lower.startsWith("data:") ||
-    lower.startsWith("asset:")
-  ) {
-    return path;
-  }
-
-  const normalized = path.replace(/\\/g, "/");
-  const withLeadingSlash = normalized.startsWith("/") ? normalized : `/${normalized}`;
-  try {
-    return convertFileSrc(withLeadingSlash);
-  } catch {
-    return encodeURI(`file://${withLeadingSlash}`);
-  }
-}
-
 export function StarterShell({
   bootstrap,
   recents,
@@ -125,15 +84,6 @@ export function StarterShell({
   useRenderDebugCounter("StarterShell");
   const [path, setPath] = useState("");
   const [clipboardError, setClipboardError] = useState<string | null>(null);
-  const [browserHealth, setBrowserHealth] = useState<BrowsrHealth | null>(null);
-  const [browserHealthError, setBrowserHealthError] = useState<string | null>(null);
-  const [browserWindows, setBrowserWindows] = useState<BrowserWindowInfo[]>([]);
-  const [browserTabs, setBrowserTabs] = useState<BrowserTabInfo[]>([]);
-  const [browserTabsLoading, setBrowserTabsLoading] = useState(false);
-  const [browserTabsError, setBrowserTabsError] = useState<string | null>(null);
-  const [selectedBrowserWindowId, setSelectedBrowserWindowId] = useState<number | "all">("all");
-  const [browserTabSearch, setBrowserTabSearch] = useState("");
-  const [browserTabsScrollTop, setBrowserTabsScrollTop] = useState(0);
   const [calibreSearch, setCalibreSearch] = useState("");
   const [recentsSearch, setRecentsSearch] = useState("");
   const [showCalibre, setShowCalibre] = useState(true);
@@ -142,16 +92,27 @@ export function StarterShell({
   const [recentsScrollTop, setRecentsScrollTop] = useState(0);
   const [calibreScrollTop, setCalibreScrollTop] = useState(0);
   const [logLevelValue, setLogLevelValue] = useState(runtimeLogLevel);
-  const [calibreThumbOverrides, setCalibreThumbOverrides] = useState<Record<number, string>>({});
-  const calibreThumbInFlightRef = useRef<Set<number>>(new Set());
-  const calibreThumbFailedRef = useRef<Set<number>>(new Set());
-  const browserTabsWindowRef = useRef<number>(0);
+  const {
+    browserHealth,
+    browserHealthError,
+    browserTabSearch,
+    browserTabsError,
+    browserTabsLoading,
+    browserTabsRowHeight,
+    browserTabsViewportHeight,
+    browserTabsVirtualWindow,
+    browserWindows,
+    loadBrowserTabs,
+    selectedBrowserWindowId,
+    setBrowserTabSearch,
+    setBrowserTabsScrollTop,
+    setSelectedBrowserWindowId,
+    visibleBrowserTabs,
+    windowRef: browserTabsWindowRef
+  } = useBrowserTabs();
 
   const recentsRowHeight = 132;
   const recentsOverscan = 8;
-  const browserTabsRowHeight = 92;
-  const browserTabsOverscan = 6;
-  const browserTabsViewportHeight = 320;
   const calibreRowHeight = 58;
   const calibreViewportHeight = 384;
   const calibreOverscan = 10;
@@ -195,37 +156,6 @@ export function StarterShell({
     return sorted;
   }, [recents, recentsSearch, recentsSort]);
 
-  const visibleBrowserTabs = useMemo(() => {
-    const needle = browserTabSearch.trim().toLowerCase();
-    return browserTabs.filter((tab) => {
-      if (selectedBrowserWindowId !== "all" && tab.windowId !== selectedBrowserWindowId) {
-        return false;
-      }
-      if (!needle) {
-        return true;
-      }
-      return (
-        tab.title.toLowerCase().includes(needle) || tab.url.toLowerCase().includes(needle)
-      );
-    });
-  }, [browserTabSearch, browserTabs, selectedBrowserWindowId]);
-
-  const browserTabsVirtualWindow = useMemo(() => {
-    return computeVirtualWindow(
-      visibleBrowserTabs,
-      browserTabsScrollTop,
-      browserTabsRowHeight,
-      browserTabsViewportHeight,
-      browserTabsOverscan
-    );
-  }, [
-    browserTabsOverscan,
-    browserTabsRowHeight,
-    browserTabsScrollTop,
-    browserTabsViewportHeight,
-    visibleBrowserTabs
-  ]);
-
   const virtualWindow = useMemo(() => {
     return computeVirtualWindow(
       filteredCalibre,
@@ -267,132 +197,9 @@ export function StarterShell({
   }, [recentsSearch, recentsSort]);
 
   useEffect(() => {
-    setBrowserTabsScrollTop(0);
-    browserTabsWindowRef.current = 0;
-  }, [browserTabSearch, selectedBrowserWindowId]);
-
-  useEffect(() => {
     setLogLevelValue(runtimeLogLevel);
   }, [runtimeLogLevel]);
-
-  const loadBrowserTabs = async (refresh = false): Promise<void> => {
-    setBrowserTabsLoading(true);
-    setBrowserTabsError(null);
-    setBrowserHealthError(null);
-    try {
-      const [healthResult, windowsResult, tabsResult] = await Promise.allSettled([
-        backendApi.browserTabsHealth(),
-        backendApi.browserTabsListWindows(),
-        backendApi.browserTabsListTabs(
-          selectedBrowserWindowId === "all" ? undefined : selectedBrowserWindowId,
-          browserTabSearch,
-          refresh
-        )
-      ]);
-
-      if (healthResult.status === "fulfilled") {
-        setBrowserHealth(healthResult.value);
-      } else {
-        setBrowserHealth(null);
-        setBrowserHealthError(
-          toUiErrorMessage(healthResult.reason, "[starter-browser-tabs] Browsr health failed")
-        );
-      }
-
-      if (windowsResult.status === "fulfilled") {
-        setBrowserWindows(windowsResult.value);
-      } else {
-        setBrowserWindows([]);
-      }
-
-      if (tabsResult.status === "fulfilled") {
-        setBrowserTabs(tabsResult.value);
-      } else {
-        setBrowserTabs([]);
-        setBrowserTabsError(
-          toUiErrorMessage(tabsResult.reason, "[starter-browser-tabs] Tab listing failed")
-        );
-      }
-    } catch (error) {
-      setBrowserTabsError(
-        toUiErrorMessage(error, "[starter-browser-tabs] Browser tabs load failed")
-      );
-    } finally {
-      setBrowserTabsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadBrowserTabs(false);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const candidates = virtualWindow.items.filter((book) => {
-      if (book.cover_thumbnail) {
-        return false;
-      }
-      if (calibreThumbOverrides[book.id]) {
-        return false;
-      }
-      if (calibreThumbInFlightRef.current.has(book.id)) {
-        return false;
-      }
-      if (calibreThumbFailedRef.current.has(book.id)) {
-        return false;
-      }
-      return true;
-    });
-    if (candidates.length === 0) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const run = async (): Promise<void> => {
-      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-      const pending: Array<[number, string]> = [];
-      for (const book of candidates.slice(0, 18)) {
-        calibreThumbInFlightRef.current.add(book.id);
-        try {
-          const thumbnail = await backendApi.calibreEnsureThumbnail(book.id);
-          if (!thumbnail) {
-            calibreThumbFailedRef.current.add(book.id);
-            continue;
-          }
-          if (cancelled) {
-            continue;
-          }
-          pending.push([book.id, thumbnail]);
-        } catch {
-          calibreThumbFailedRef.current.add(book.id);
-        } finally {
-          calibreThumbInFlightRef.current.delete(book.id);
-        }
-      }
-      if (cancelled || pending.length === 0) {
-        return;
-      }
-      setCalibreThumbOverrides((current) => {
-        let changed = false;
-        const next = { ...current };
-        for (const [bookId, thumbnail] of pending) {
-          if (next[bookId] === thumbnail) {
-            continue;
-          }
-          next[bookId] = thumbnail;
-          changed = true;
-        }
-        return changed ? next : current;
-      });
-      recordPerfMeasure("StarterShell.thumbnailHydrationBatch", startedAt);
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [calibreThumbOverrides, virtualWindow.items]);
+  const calibreThumbOverrides = useCalibreThumbnails(virtualWindow.items);
 
   const handleOpenPath = async () => {
     await onOpenPath(path);

@@ -14,9 +14,82 @@ import {
 
 function makeState(): AppStore {
   return {
+    appShell: {
+      bootstrapState: null,
+      runtimeLogLevel: "info",
+      operations: {
+        sourceOpen: false,
+        starterCommand: false,
+        readerCommand: false,
+        readerTts: false,
+        readerSettings: false,
+        browserTabRefresh: false,
+        calibreLoad: false,
+        runtimeConfig: false
+      },
+      loadingBootstrap: false,
+      busy: false
+    },
+    sessionDomain: {
+      session: null
+    },
+    readerDocument: {
+      snapshot: null
+    },
+    readerPlaybackDomain: {
+      playback: null,
+      ttsStateEvent: null,
+      playbackEvent: null
+    },
+    readerUi: {
+      sourcePath: null,
+      currentPage: null,
+      totalPages: null,
+      textOnlyMode: false,
+      prettyKind: null,
+      searchQuery: "",
+      searchMatches: [],
+      selectedSearchMatch: null,
+      panels: null,
+      settings: null
+    },
+    starter: {
+      recents: [],
+      calibreBooks: [],
+      loadingRecents: false,
+      loadingCalibre: false
+    },
+    jobs: {
+      sourceOpenEvent: null,
+      calibreLoadEvent: null,
+      pdfTranscriptionEvent: null,
+      logLevelEvent: null,
+      sourceOpenSubscribed: false,
+      calibreSubscribed: false,
+      ttsStateSubscribed: false,
+      pdfTranscriptionSubscribed: false,
+      logLevelSubscribed: false,
+      sessionStateSubscribed: false,
+      readerStateSubscribed: false,
+      readerPlaybackStateSubscribed: false,
+      lastSessionEventRequestId: 0,
+      lastReaderEventRequestId: 0,
+      lastReaderPlaybackEventRequestId: 0,
+      lastSourceOpenEventRequestId: 0,
+      lastCalibreEventRequestId: 0,
+      lastTtsEventRequestId: 0,
+      lastPdfEventRequestId: 0,
+      lastLogLevelEventRequestId: 0
+    },
+    notifications: {
+      error: null,
+      toast: null,
+      telemetry: []
+    },
     bootstrapState: null,
     session: null,
     reader: null,
+    readerPlayback: null,
     recents: [],
     calibreBooks: [],
     telemetry: [],
@@ -39,6 +112,7 @@ function makeState(): AppStore {
     sourceOpenEvent: null,
     calibreLoadEvent: null,
     ttsStateEvent: null,
+    readerPlaybackStateEvent: null,
     pdfTranscriptionEvent: null,
     logLevelEvent: null,
     runtimeLogLevel: "info",
@@ -49,8 +123,10 @@ function makeState(): AppStore {
     logLevelSubscribed: false,
     sessionStateSubscribed: false,
     readerStateSubscribed: false,
+    readerPlaybackStateSubscribed: false,
     lastSessionEventRequestId: 0,
     lastReaderEventRequestId: 0,
+    lastReaderPlaybackEventRequestId: 0,
     lastSourceOpenEventRequestId: 0,
     lastCalibreEventRequestId: 0,
     lastTtsEventRequestId: 0,
@@ -105,6 +181,8 @@ describe("store selectors", () => {
     const state = makeState();
     state.operations.readerTts = true;
     state.operations.calibreLoad = true;
+    state.appShell.operations.readerTts = true;
+    state.appShell.operations.calibreLoad = true;
 
     expect(selectSessionSlice(state).loadingBootstrap).toBe(false);
     expect(selectReaderSlice(state).reader).toBeNull();

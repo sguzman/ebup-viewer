@@ -4,24 +4,24 @@ import { useAppStore, type AppStore } from "./appStore";
 
 function selectReaderBusy(state: AppStore): boolean {
   return (
-    state.operations.readerCommand ||
-    state.operations.readerTts ||
-    state.operations.readerSettings ||
-    state.operations.browserTabRefresh
+    state.appShell.operations.readerCommand ||
+    state.appShell.operations.readerTts ||
+    state.appShell.operations.readerSettings ||
+    state.appShell.operations.browserTabRefresh
   );
 }
 
 function selectStarterBusy(state: AppStore): boolean {
   return (
-    state.operations.sourceOpen ||
-    state.operations.starterCommand ||
-    state.operations.calibreLoad ||
-    state.operations.runtimeConfig
+    state.appShell.operations.sourceOpen ||
+    state.appShell.operations.starterCommand ||
+    state.appShell.operations.calibreLoad ||
+    state.appShell.operations.runtimeConfig
   );
 }
 
 function selectReaderDocumentKey(state: AppStore): string {
-  const reader = state.reader;
+  const reader = state.readerDocument.snapshot;
   if (!reader) {
     return "";
   }
@@ -37,10 +37,10 @@ function selectReaderDocumentKey(state: AppStore): string {
 }
 
 export const selectSessionSlice = (state: AppStore) => ({
-  bootstrapState: state.bootstrapState,
-  session: state.session,
-  loadingBootstrap: state.loadingBootstrap,
-  loadingRecents: state.loadingRecents,
+  bootstrapState: state.appShell.bootstrapState,
+  session: state.sessionDomain.session,
+  loadingBootstrap: state.appShell.loadingBootstrap,
+  loadingRecents: state.starter.loadingRecents,
   appSafeQuit: state.appSafeQuit,
   bootstrap: state.bootstrap,
   refreshRecents: state.refreshRecents,
@@ -54,7 +54,7 @@ export const selectSessionSlice = (state: AppStore) => ({
 });
 
 export const selectReaderSlice = (state: AppStore) => ({
-  reader: state.reader,
+  reader: state.readerDocument.snapshot,
   busy: selectReaderBusy(state),
   refreshReaderSnapshot: state.refreshReaderSnapshot,
   readerNextPage: state.readerNextPage,
@@ -71,8 +71,8 @@ export const selectReaderSlice = (state: AppStore) => ({
 });
 
 export const selectTtsSlice = (state: AppStore) => ({
-  reader: state.reader,
-  ttsStateEvent: state.ttsStateEvent,
+  reader: state.readerDocument.snapshot,
+  ttsStateEvent: state.readerPlaybackDomain.ttsStateEvent,
   readerTtsPlay: state.readerTtsPlay,
   readerTtsPause: state.readerTtsPause,
   readerTtsTogglePlayPause: state.readerTtsTogglePlayPause,
@@ -85,14 +85,14 @@ export const selectTtsSlice = (state: AppStore) => ({
 });
 
 export const selectCalibreSlice = (state: AppStore) => ({
-  calibreBooks: state.calibreBooks,
-  loadingCalibre: state.loadingCalibre || state.operations.calibreLoad,
+  calibreBooks: state.starter.calibreBooks,
+  loadingCalibre: state.starter.loadingCalibre || state.appShell.operations.calibreLoad,
   loadCalibreBooks: state.loadCalibreBooks,
   openCalibreBook: state.openCalibreBook
 });
 
 export const selectSettingsSlice = (state: AppStore) => ({
-  runtimeLogLevel: state.runtimeLogLevel,
+  runtimeLogLevel: state.appShell.runtimeLogLevel,
   toggleSettingsPanel: state.toggleSettingsPanel,
   toggleStatsPanel: state.toggleStatsPanel,
   toggleTtsPanel: state.toggleTtsPanel,
@@ -101,30 +101,30 @@ export const selectSettingsSlice = (state: AppStore) => ({
 });
 
 export const selectStatsSlice = (state: AppStore) => ({
-  stats: state.reader?.stats ?? null
+  stats: state.readerPlaybackDomain.playback?.stats ?? null
 });
 
 export const selectJobsSlice = (state: AppStore) => ({
-  sourceOpenEvent: state.sourceOpenEvent,
-  calibreLoadEvent: state.calibreLoadEvent,
-  pdfTranscriptionEvent: state.pdfTranscriptionEvent,
-  ttsStateEvent: state.ttsStateEvent
+  sourceOpenEvent: state.jobs.sourceOpenEvent,
+  calibreLoadEvent: state.jobs.calibreLoadEvent,
+  pdfTranscriptionEvent: state.jobs.pdfTranscriptionEvent,
+  ttsStateEvent: state.readerPlaybackDomain.ttsStateEvent
 });
 
 export const selectNotificationsSlice = (state: AppStore) => ({
-  error: state.error,
-  toast: state.toast,
+  error: state.notifications.error,
+  toast: state.notifications.toast,
   clearError: state.clearError,
   dismissToast: state.dismissToast,
-  telemetry: state.telemetry,
+  telemetry: state.notifications.telemetry,
   clearTelemetry: state.clearTelemetry
 });
 
 export function useAppShellState() {
   return useAppStore(
     useShallow((state) => ({
-      loadingBootstrap: state.loadingBootstrap,
-      error: state.error,
+      loadingBootstrap: state.appShell.loadingBootstrap,
+      error: state.notifications.error,
       clearError: state.clearError,
       bootstrap: state.bootstrap
     }))
@@ -134,8 +134,8 @@ export function useAppShellState() {
 export function useAppThemeState() {
   return useAppStore(
     useShallow((state) => ({
-      bootstrapState: state.bootstrapState,
-      readerThemeSettings: state.reader?.settings ?? null
+      bootstrapState: state.appShell.bootstrapState,
+      readerThemeSettings: state.readerUi.settings
     }))
   );
 }
@@ -143,8 +143,8 @@ export function useAppThemeState() {
 export function useAppKeyboardBindings() {
   return useAppStore(
     useShallow((state) => ({
-      bootstrapState: state.bootstrapState,
-      sessionMode: state.session?.mode ?? null,
+      bootstrapState: state.appShell.bootstrapState,
+      sessionMode: state.sessionDomain.session?.mode ?? null,
       appSafeQuit: state.appSafeQuit,
       toggleSettingsPanel: state.toggleSettingsPanel,
       toggleStatsPanel: state.toggleStatsPanel,
@@ -160,10 +160,10 @@ export function useAppKeyboardBindings() {
 export function useAppHiddenStatusState() {
   return useAppStore(
     useShallow((state) => ({
-      sessionMode: state.session?.mode ?? "unknown",
-      sourceOpenEvent: state.sourceOpenEvent,
-      pdfTranscriptionEvent: state.pdfTranscriptionEvent,
-      calibreLoadEvent: state.calibreLoadEvent
+      sessionMode: state.sessionDomain.session?.mode ?? "unknown",
+      sourceOpenEvent: state.jobs.sourceOpenEvent,
+      pdfTranscriptionEvent: state.jobs.pdfTranscriptionEvent,
+      calibreLoadEvent: state.jobs.calibreLoadEvent
     }))
   );
 }
@@ -171,7 +171,7 @@ export function useAppHiddenStatusState() {
 export function useAppToastState() {
   return useAppStore(
     useShallow((state) => ({
-      toast: state.toast,
+      toast: state.notifications.toast,
       dismissToast: state.dismissToast
     }))
   );
@@ -181,14 +181,14 @@ export function useReaderQuickActionsState() {
   return useAppStore(
     useShallow((state) => ({
       busy:
-        state.operations.readerCommand ||
-        state.operations.readerSettings ||
-        state.operations.browserTabRefresh,
-      isTextOnly: state.reader?.text_only_mode ?? false,
-      isBrowserTab: state.reader?.source_path.toLowerCase().endsWith(".lltab") ?? false,
-      showSettings: state.reader?.panels.show_settings ?? false,
-      showStats: state.reader?.panels.show_stats ?? false,
-      showTts: state.reader?.panels.show_tts ?? false,
+        state.appShell.operations.readerCommand ||
+        state.appShell.operations.readerSettings ||
+        state.appShell.operations.browserTabRefresh,
+      isTextOnly: state.readerUi.textOnlyMode,
+      isBrowserTab: state.readerUi.sourcePath?.toLowerCase().endsWith(".lltab") ?? false,
+      showSettings: state.readerUi.panels?.show_settings ?? false,
+      showStats: state.readerUi.panels?.show_stats ?? false,
+      showTts: state.readerUi.panels?.show_tts ?? false,
       onRefreshBrowserTab: state.refreshCurrentBrowserTab,
       onToggleTextOnly: state.readerToggleTextOnly,
       onToggleSettingsPanel: state.toggleSettingsPanel,
@@ -201,20 +201,20 @@ export function useReaderQuickActionsState() {
 export function useReaderQuickActionsBusy(): boolean {
   return useAppStore(
     (state) =>
-      state.operations.readerCommand ||
-      state.operations.readerSettings ||
-      state.operations.browserTabRefresh
+      state.appShell.operations.readerCommand ||
+      state.appShell.operations.readerSettings ||
+      state.appShell.operations.browserTabRefresh
   );
 }
 
 export function useReaderQuickActionsFlags() {
   return useAppStore(
     useShallow((state) => ({
-      isBrowserTab: state.reader?.source_path.toLowerCase().endsWith(".lltab") ?? false,
-      isTextOnly: state.reader?.text_only_mode ?? false,
-      showSettings: state.reader?.panels.show_settings ?? false,
-      showStats: state.reader?.panels.show_stats ?? false,
-      showTts: state.reader?.panels.show_tts ?? false
+      isBrowserTab: state.readerUi.sourcePath?.toLowerCase().endsWith(".lltab") ?? false,
+      isTextOnly: state.readerUi.textOnlyMode,
+      showSettings: state.readerUi.panels?.show_settings ?? false,
+      showStats: state.readerUi.panels?.show_stats ?? false,
+      showTts: state.readerUi.panels?.show_tts ?? false
     }))
   );
 }
@@ -236,17 +236,17 @@ export function useReaderDocumentState() {
   return useAppStore(
     useShallow((state) => ({
       documentKey,
-      reader: state.reader
+      reader: state.readerDocument.snapshot
         ? {
-            source_path: state.reader.source_path,
-            current_page: state.reader.current_page,
-            text_only_mode: state.reader.text_only_mode,
-            pretty_kind: state.reader.pretty_kind,
-            reading_markdown_page: state.reader.reading_markdown_page,
-            reading_html_page: state.reader.reading_html_page,
-            page_text: state.reader.page_text,
-            sentences: state.reader.sentences,
-            sentence_anchor_map: state.reader.sentence_anchor_map
+            source_path: state.readerDocument.snapshot.source_path,
+            current_page: state.readerDocument.snapshot.current_page,
+            text_only_mode: state.readerDocument.snapshot.text_only_mode,
+            pretty_kind: state.readerDocument.snapshot.pretty_kind,
+            reading_markdown_page: state.readerDocument.snapshot.reading_markdown_page,
+            reading_html_page: state.readerDocument.snapshot.reading_html_page,
+            page_text: state.readerDocument.snapshot.page_text,
+            sentences: state.readerDocument.snapshot.sentences,
+            sentence_anchor_map: state.readerDocument.snapshot.sentence_anchor_map
           }
         : null
     }))
@@ -260,14 +260,14 @@ export function useReaderDocumentKey(): string {
 export function useReaderViewState() {
   return useAppStore(
     useShallow((state) => ({
-      reader: state.reader,
+      reader: state.readerDocument.snapshot,
       busy: selectReaderBusy(state)
     }))
   );
 }
 
 export function useReaderViewTuple(): readonly [AppStore["reader"], boolean] {
-  return useAppStore((state) => [state.reader, selectReaderBusy(state)] as const);
+  return useAppStore((state) => [state.readerDocument.snapshot, selectReaderBusy(state)] as const);
 }
 
 export function useReaderActionState() {
@@ -303,12 +303,12 @@ export function useReaderActionState() {
 }
 
 export function useReaderTtsMetaState() {
-  return useAppStore((state) => state.ttsStateEvent);
+  return useAppStore((state) => state.readerPlaybackDomain.ttsStateEvent);
 }
 
 export function useReaderPlaybackState(sourcePath: string, currentPage: number) {
   return useAppStore((state) => {
-    const playback = state.readerPlayback;
+    const playback = state.readerPlaybackDomain.playback;
     if (!playback) {
       return null;
     }
@@ -322,16 +322,16 @@ export function useReaderPlaybackState(sourcePath: string, currentPage: number) 
 export function useStarterViewState() {
   return useAppStore(
     useShallow((state) => ({
-      bootstrapState: state.bootstrapState,
-      recents: state.recents,
-      calibreBooks: state.calibreBooks,
+      bootstrapState: state.appShell.bootstrapState,
+      recents: state.starter.recents,
+      calibreBooks: state.starter.calibreBooks,
       busy: selectStarterBusy(state),
-      loadingRecents: state.loadingRecents,
-      loadingCalibre: state.loadingCalibre || state.operations.calibreLoad,
-      sourceOpenEvent: state.sourceOpenEvent,
-      calibreLoadEvent: state.calibreLoadEvent,
-      pdfTranscriptionEvent: state.pdfTranscriptionEvent,
-      runtimeLogLevel: state.runtimeLogLevel
+      loadingRecents: state.starter.loadingRecents,
+      loadingCalibre: state.starter.loadingCalibre || state.appShell.operations.calibreLoad,
+      sourceOpenEvent: state.jobs.sourceOpenEvent,
+      calibreLoadEvent: state.jobs.calibreLoadEvent,
+      pdfTranscriptionEvent: state.jobs.pdfTranscriptionEvent,
+      runtimeLogLevel: state.appShell.runtimeLogLevel
     }))
   );
 }
@@ -351,16 +351,16 @@ export function useStarterViewTuple(): readonly [
   return useAppStore(
     (state) =>
       [
-        state.bootstrapState,
-        state.recents,
-        state.calibreBooks,
+        state.appShell.bootstrapState,
+        state.starter.recents,
+        state.starter.calibreBooks,
         selectStarterBusy(state),
-        state.loadingRecents,
-        state.loadingCalibre || state.operations.calibreLoad,
-        state.sourceOpenEvent,
-        state.calibreLoadEvent,
-        state.pdfTranscriptionEvent,
-        state.runtimeLogLevel
+        state.starter.loadingRecents,
+        state.starter.loadingCalibre || state.appShell.operations.calibreLoad,
+        state.jobs.sourceOpenEvent,
+        state.jobs.calibreLoadEvent,
+        state.jobs.pdfTranscriptionEvent,
+        state.appShell.runtimeLogLevel
       ] as const
   );
 }
@@ -382,5 +382,5 @@ export function useStarterActionState() {
 }
 
 export function useSessionMode(): "starter" | "reader" | null {
-  return useAppStore((state) => state.session?.mode ?? null);
+  return useAppStore((state) => state.sessionDomain.session?.mode ?? null);
 }

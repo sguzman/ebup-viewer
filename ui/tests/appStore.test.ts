@@ -8,6 +8,7 @@ import type {
   CalibreBook,
   CalibreLoadEvent,
   OpenSourceResult,
+  ReaderPlaybackStateEvent,
   ReaderSettingsPatch,
   ReaderSnapshot,
   ReaderStateEvent,
@@ -133,6 +134,7 @@ function createBackend(overrides: Partial<BackendApi> = {}) {
     calibre?: (event: CalibreLoadEvent) => void;
     session?: (event: SessionStateEvent) => void;
     reader?: (event: ReaderStateEvent) => void;
+    readerPlayback?: (event: ReaderPlaybackStateEvent) => void;
     tts?: (event: TtsStateEvent) => void;
     pdf?: (event: PdfTranscriptionEvent) => void;
     logLevel?: (event: LogLevelEvent) => void;
@@ -203,6 +205,10 @@ function createBackend(overrides: Partial<BackendApi> = {}) {
     },
     onReaderState: async (handler) => {
       hooks.reader = handler;
+      return async () => {};
+    },
+    onReaderPlaybackState: async (handler) => {
+      hooks.readerPlayback = handler;
       return async () => {};
     },
     onTtsState: async (handler) => {

@@ -72,13 +72,13 @@ The codebase has working feature breadth, but several structural issues are now 
 
 ## Success Criteria
 
-- [ ] Reader playback updates do not force rerender of controls that do not depend on the active cursor.
-- [ ] Zustand selectors subscribe to narrow, domain-specific state with stable equality semantics.
-- [ ] `ReaderShell` and `StarterShell` are split into small, testable components and hooks with clear ownership.
-- [ ] Reader state distinguishes stable document data from transient playback state.
-- [ ] Event ingestion is isolated from UI presentation state.
-- [ ] Large Rust files are decomposed by capability rather than by historical growth.
-- [ ] Profiling can attribute lag to a specific module, selector, or event path instead of a giant integration surface.
+- [x] Reader playback updates do not force rerender of controls that do not depend on the active cursor.
+- [x] Zustand selectors subscribe to narrow, domain-specific state with stable equality semantics.
+- [x] `ReaderShell` and `StarterShell` are split into small, testable components and hooks with clear ownership.
+- [x] Reader state distinguishes stable document data from transient playback state.
+- [x] Event ingestion is isolated from UI presentation state.
+- [x] Large Rust files are decomposed by capability rather than by historical growth.
+- [x] Profiling can attribute lag to a specific module, selector, or event path instead of a giant integration surface.
 
 ## Phase 1: Establish Audit Baseline and Ownership Boundaries
 
@@ -100,22 +100,22 @@ The codebase has working feature breadth, but several structural issues are now 
 
 ## Phase 2: Reshape Zustand State by Domain and Update Frequency
 
-- [ ] Split the current monolithic app store state into explicit domains:
-  - [ ] `appShell`
-  - [ ] `session`
-  - [ ] `readerDocument`
-  - [ ] `readerPlayback`
-  - [ ] `readerUi`
-  - [ ] `starter`
-  - [ ] `jobs`
-  - [ ] `notifications`
-- [ ] Stop treating `reader` as a single always-replaced snapshot for all frontend concerns.
-- [ ] Introduce a normalized reader state shape:
-  - [ ] stable document/page payload
-  - [ ] transient playback cursor and progress
-  - [ ] search state
-  - [ ] panel state
-  - [ ] view-mode flags
+- [x] Split the current monolithic app store state into explicit domains:
+  - [x] `appShell`
+  - [x] `session`
+  - [x] `readerDocument`
+  - [x] `readerPlayback`
+  - [x] `readerUi`
+  - [x] `starter`
+  - [x] `jobs`
+  - [x] `notifications`
+- [x] Stop treating `reader` as a single always-replaced snapshot for all frontend concerns.
+- [x] Introduce a normalized reader state shape:
+  - [x] stable document/page payload
+  - [x] transient playback cursor and progress
+  - [x] search state
+  - [x] panel state
+  - [x] view-mode flags
 - [x] Move `ttsStateEvent` out of broad UI selector surfaces unless a component truly renders it.
 - [x] Replace app-global `busy` with scoped operation flags:
   - [x] source opening
@@ -123,7 +123,7 @@ The codebase has working feature breadth, but several structural issues are now 
   - [x] reader navigation
   - [x] calibre load
   - [x] browser-tab refresh
-- [ ] Ensure each store write updates only the minimum necessary domain.
+- [x] Ensure each store write updates only the minimum necessary domain.
 
 ## Phase 3: Narrow Selectors and Subscription Surfaces
 
@@ -197,13 +197,13 @@ The codebase has working feature breadth, but several structural issues are now 
 ## Phase 8: Backend Contract and Payload Optimization
 
 - [x] Review the bridge contract so it does not require replacing the full reader snapshot for transient playback movement.
-- [ ] Split backend payloads into:
-  - [ ] document/page structure
+- [x] Split backend payloads into:
+  - [x] document/page structure
   - [x] playback cursor/progress
-  - [ ] settings/panels
-  - [ ] operational events
+  - [x] settings/panels
+  - [x] operational events
 - [x] Reduce frequency of heavy reader snapshot emission from the backend when only playback cursor changed.
-- [ ] Add tracing fields for:
+- [x] Add tracing fields for:
   - [x] snapshot size
   - [x] snapshot emission rate
   - [x] playback update rate
@@ -257,7 +257,7 @@ The codebase has working feature breadth, but several structural issues are now 
 - [x] Step 3: Extract `ReaderShell` hooks/components so selector work has somewhere smaller to land.
 - [x] Step 4: Decompose `StarterShell` and thumbnail/browser-tab flows.
 - [x] Step 5: Clean up duplicated rendering/sync utilities.
-- [ ] Step 6: Adjust backend event/payload shapes to match the new frontend state model.
+- [x] Step 6: Adjust backend event/payload shapes to match the new frontend state model.
 - [x] Step 7: Split the largest Rust modules along capability boundaries.
 
 ## Expected Payoff

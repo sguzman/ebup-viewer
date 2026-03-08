@@ -7,13 +7,13 @@
 - [ ] Synchronize the Text-only/TTS cursor back onto the native PDF render with stable visual highlight and scroll behavior.
 
 ## Geometry Robustness Contract
-- [ ] Treat PDF text geometry as a quality-classified signal, not as an always-correct source of truth.
-- [ ] Classify each opened PDF into one of these runtime geometry modes:
-- [ ] `high_text_trust`: embedded text is clean, ordered, and geometrically mappable at sentence level
-- [ ] `mixed_text_trust`: embedded text exists but requires fuzzy matching, block fallback, or partial sentence mapping
-- [ ] `ocr_required`: no reliable embedded text layer; OCR is required for meaningful sync
-- [ ] `render_only_no_sync`: the PDF can be rendered, but no trustworthy text/geometry mapping is available for cursor sync
-- [ ] Persist the detected geometry mode and confidence summary in cache so reopen behavior is deterministic.
+- [x] Treat PDF text geometry as a quality-classified signal, not as an always-correct source of truth.
+- [x] Classify each opened PDF into one of these runtime geometry modes:
+- [x] `high_text_trust`: embedded text is clean, ordered, and geometrically mappable at sentence level
+- [x] `mixed_text_trust`: embedded text exists but requires fuzzy matching, block fallback, or partial sentence mapping
+- [x] `ocr_required`: no reliable embedded text layer; OCR is required for meaningful sync
+- [x] `render_only_no_sync`: the PDF can be rendered, but no trustworthy text/geometry mapping is available for cursor sync
+- [x] Persist the detected geometry mode and confidence summary in cache so reopen behavior is deterministic.
 - [ ] Never present low-confidence geometry as exact sentence sync.
 - [ ] Require every highlight/scroll decision to carry an explicit confidence tier and fallback reason.
 
@@ -22,17 +22,17 @@
 - [ ] target sentence-level mapping as the primary contract
 - [ ] allow multi-rect highlights for a single sentence across wrapped lines or split spans
 - [ ] keep playback, search, and click-jump behavior sentence-accurate
-- [ ] For `mixed_text_trust` PDFs:
-- [ ] allow fuzzy text alignment and paragraph/block fallback
+- [x] For `mixed_text_trust` PDFs:
+- [x] allow fuzzy text alignment and paragraph/block fallback
 - [ ] prefer stable local-region highlighting over visually wrong sentence-level highlight
 - [ ] degrade to block highlight when sentence geometry is ambiguous
 - [ ] preserve `tts_text` ownership even when pretty-view sync becomes approximate
-- [ ] For `ocr_required` PDFs:
-- [ ] keep native PDF rendering available regardless of OCR readiness
+- [x] For `ocr_required` PDFs:
+- [x] keep native PDF rendering available regardless of OCR readiness
 - [ ] support OCR-backed text-only/TTS only when OCR output reaches minimum confidence thresholds
 - [ ] distinguish OCR text confidence from embedded-text confidence in logs and cache
-- [ ] For `render_only_no_sync` PDFs:
-- [ ] show the native PDF in Pretty Text mode without pretending highlight sync is available
+- [x] For `render_only_no_sync` PDFs:
+- [x] show the native PDF in Pretty Text mode without pretending highlight sync is available
 - [ ] keep Text-only/TTS functionality gated by available extracted text quality
 - [ ] expose a clear degraded-mode contract for no-highlight or page-level-only sync
 
@@ -150,11 +150,11 @@
 - [ ] Keep native PDF rendering available even when text extraction quality is poor.
 - [ ] Decide whether OCR is deferred, optional, or first-class for scanned PDFs.
 - [ ] If OCR is unavailable, present a clear degraded-mode contract for Text-only/TTS support.
-- [ ] Define degraded behavior by distinct runtime mode:
-- [ ] renderable PDF + trustworthy text geometry
-- [ ] renderable PDF + extracted text but low-confidence geometry
-- [ ] renderable PDF + OCR-derived text/geometry
-- [ ] renderable PDF + no usable mapping for highlight sync
+- [x] Define degraded behavior by distinct runtime mode:
+- [x] renderable PDF + trustworthy text geometry
+- [x] renderable PDF + extracted text but low-confidence geometry
+- [x] renderable PDF + OCR-derived text/geometry
+- [x] renderable PDF + no usable mapping for highlight sync
 - [ ] Add tracing distinguishing embedded-text PDFs from OCR-required PDFs.
 
 ## Phase 11: Validation and Regression Coverage

@@ -281,6 +281,8 @@ const mockReaderSnapshot = (): ReaderSnapshot => ({
   text_only_mode: false,
   has_structured_markdown: false,
   pretty_kind: "none",
+  pdf_geometry_mode: null,
+  pdf_sync_strategy: null,
   images: [],
   tts_text_page: MOCK_PAGES[0].text,
   reading_markdown_page: null,
@@ -413,6 +415,8 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
   reader.tts_text_page = pageData.text;
   reader.reading_markdown_page = pageData.markdown ?? null;
   reader.reading_html_page = pageData.html ?? null;
+  reader.pdf_geometry_mode = reader.source_path.toLowerCase().endsWith(".pdf") ? "high_text_trust" : null;
+  reader.pdf_sync_strategy = reader.source_path.toLowerCase().endsWith(".pdf") ? "sentence_spans" : null;
   reader.page_text = pageData.text;
   reader.sentences = pageData.sentences;
   reader.sentence_anchor_map = pageData.sentences.map((_, idx) => idx);

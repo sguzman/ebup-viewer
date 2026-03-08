@@ -46,8 +46,16 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [renderVersion, setRenderVersion] = useState(0);
+    const [mappingSummary, setMappingSummary] = useState<{
+      exact: number;
+      fallback: number;
+      missing: number;
+    } | null>(null);
 
     const pdfUrl = useMemo(() => toReaderImageSrc(sourcePath), [sourcePath]);
+    const canSyncHighlights = reader.pdf_sync_strategy !== "render_only";
+    const modeLabel = reader.pdf_geometry_mode ? reader.pdf_geometry_mode.replaceAll("_", " ") : "unknown";
+    const strategyLabel = reader.pdf_sync_strategy ? reader.pdf_sync_strategy.replaceAll("_", " ") : "unknown";
 
     const applyHighlight = useCallback(
       (behavior: ScrollBehavior, force = false) => {
@@ -61,9 +69,18 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           highlightedSentenceRef.current = null;
           return;
         }
+        if (!canSyncHighlights) {
+          highlightedSentenceRef.current = idx;
+          return;
+        }
 
         const spans = renderedPagesRef.current.flatMap((page) => page.spans);
-        const { matches } = buildPdfSentenceSpanMap(spans, reader.sentences);
+        const { matches, diagnostics } = buildPdfSentenceSpanMap(spans, reader.sentences);
+        setMappingSummary({
+          exact: diagnostics.exactMatches,
+          fallback: diagnostics.fallbackMatches,
+          missing: diagnostics.missingMatches
+        });
         const match = matches[idx];
         if (!match || match.spanIndexes.length === 0) {
           highlightedSentenceRef.current = idx;
@@ -91,7 +108,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           inline: "nearest"
         });
       },
-      [reader.highlighted_sentence_idx, reader.sentences, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence, reader.tts.state]
+      [canSyncHighlights, reader.highlighted_sentence_idx, reader.sentences, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence, reader.tts.state]
     );
 
     useImperativeHandle(ref, () => ({
@@ -180,7 +197,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           sx={{ mb: 1.25, px: 0.5 }}
         >
           <Typography variant="caption" color="text.secondary">
-            Native PDF
+            Native PDF | geometry: {modeLabel} | sync: {strategyLabel}
           </Typography>
           <ButtonGroup size="small" variant="outlined">
             <Button onClick={() => setZoom((value) => normalizeNumber(value - 0.1, 0.7, 2.5, 0.05, 2))}>
@@ -195,6 +212,16 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         {error ? (
           <Typography color="error" variant="body2" data-testid="reader-pretty-pdf-error">
             Failed to render PDF: {error}
+          </Typography>
+        ) : null}
+        {!error && !canSyncHighlights ? (
+          <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-degraded">
+            This PDF is render-only right now. Text-only/TTS can continue, but precise PDF highlight sync is unavailable.
+          </Typography>
+        ) : null}
+        {!error && canSyncHighlights && mappingSummary ? (
+          <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-summary">
+            Exact: {mappingSummary.exact} | Fallback: {mappingSummary.fallback} | Missing: {mappingSummary.missing}
           </Typography>
         ) : null}
         {loading ? (

@@ -13,6 +13,8 @@ function makeReaderSnapshot(overrides: Partial<ReaderSnapshot> = {}): ReaderSnap
     text_only_mode: true,
     has_structured_markdown: false,
     pretty_kind: "none",
+    pdf_geometry_mode: null,
+    pdf_sync_strategy: null,
     images: [],
     tts_text_page: "Alpha. Beta.",
     reading_markdown_page: null,

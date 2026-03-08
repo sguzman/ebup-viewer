@@ -1,4 +1,4 @@
-use super::SourceContent;
+use super::{PdfGeometryMode, PdfSyncStrategy, SourceContent};
 use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
 use crate::cancellation::CancellationToken;
 use anyhow::{Context, Result};
@@ -65,6 +65,8 @@ pub(super) fn load_source_content(
             reading_markdown: None,
             reading_html: Some(wrapped_html),
             has_structured_markdown: true,
+            pdf_geometry_mode: None,
+            pdf_sync_strategy: None,
         });
     }
 
@@ -86,6 +88,8 @@ pub(super) fn load_source_content(
             reading_markdown: None,
             reading_html: None,
             has_structured_markdown: false,
+            pdf_geometry_mode: None,
+            pdf_sync_strategy: None,
         });
     }
 
@@ -110,6 +114,8 @@ pub(super) fn load_source_content(
             reading_markdown: None,
             reading_html,
             has_structured_markdown: has_pretty,
+            pdf_geometry_mode: None,
+            pdf_sync_strategy: None,
         };
         info!(
             path = %path.display(),
@@ -135,6 +141,8 @@ pub(super) fn load_source_content(
             reading_markdown,
             reading_html: None,
             has_structured_markdown: has_pretty,
+            pdf_geometry_mode: None,
+            pdf_sync_strategy: None,
         };
         info!(
             path = %path.display(),
@@ -156,6 +164,8 @@ pub(super) fn load_source_content(
             reading_markdown: Some(data),
             reading_html: None,
             has_structured_markdown: true,
+            pdf_geometry_mode: None,
+            pdf_sync_strategy: None,
         });
     }
 
@@ -284,7 +294,7 @@ fn load_pdf_with_quack_check(
     let signature = pdf_signature(path, &config_sha256, &text_filename)?;
 
     if let Some(cached) = try_read_pdf_cache(path, &signature)? {
-        let tts_text = normalize_pdf_text_for_reader(&cached);
+        let tts_text = normalize_pdf_text_for_reader(&cached.text);
         info!(
             path = %path.display(),
             total_chars = tts_text.len(),
@@ -295,6 +305,8 @@ fn load_pdf_with_quack_check(
             reading_markdown: None,
             reading_html: None,
             has_structured_markdown: false,
+            pdf_geometry_mode: Some(cached.pdf_geometry_mode),
+            pdf_sync_strategy: Some(cached.pdf_sync_strategy),
         });
     }
 
@@ -311,11 +323,22 @@ fn load_pdf_with_quack_check(
             path.display()
         )
     })?;
-    let resolved = resolve_pdf_dual_view_content(&run.text, &run.markdown);
+    let report = load_quack_check_report(&run.job_dir).ok();
+    let resolved = resolve_pdf_dual_view_content(&run.text, &run.markdown, report.as_ref());
     let tts_text = resolved.tts_text;
     let reading_markdown = resolved.reading_markdown;
 
-    write_pdf_cache(path, &signature, &tts_text)?;
+    write_pdf_cache(
+        path,
+        &signature,
+        &tts_text,
+        resolved
+            .pdf_geometry_mode
+            .unwrap_or(PdfGeometryMode::MixedTextTrust),
+        resolved
+            .pdf_sync_strategy
+            .unwrap_or(PdfSyncStrategy::ParagraphFallback),
+    )?;
     info!(
         path = %path.display(),
         total_chars = tts_text.len(),
@@ -330,12 +353,15 @@ fn load_pdf_with_quack_check(
         reading_html: None,
         has_structured_markdown: reading_markdown.is_some(),
         reading_markdown,
+        pdf_geometry_mode: resolved.pdf_geometry_mode,
+        pdf_sync_strategy: resolved.pdf_sync_strategy,
     })
 }
 
 pub(super) fn resolve_pdf_dual_view_content(
     transcript_text: &str,
     markdown: &str,
+    report: Option<&crate::quack_check::report::JobReport>,
 ) -> SourceContent {
     let tts_text = if transcript_text.trim().is_empty() {
         "No textual content found in this file.".to_string()
@@ -347,11 +373,15 @@ pub(super) fn resolve_pdf_dual_view_content(
     } else {
         Some(markdown.to_string())
     };
+    let (pdf_geometry_mode, pdf_sync_strategy) =
+        derive_pdf_runtime_metadata(report, transcript_text, markdown);
     SourceContent {
         tts_text,
         reading_html: None,
         has_structured_markdown: reading_markdown.is_some(),
         reading_markdown,
+        pdf_geometry_mode: Some(pdf_geometry_mode),
+        pdf_sync_strategy: Some(pdf_sync_strategy),
     }
 }
 
@@ -601,6 +631,10 @@ struct PdfCacheMeta {
     quack_config_sha256: String,
     #[serde(default)]
     quack_text_filename: String,
+    #[serde(default)]
+    pdf_geometry_mode: Option<PdfGeometryMode>,
+    #[serde(default)]
+    pdf_sync_strategy: Option<PdfSyncStrategy>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -655,6 +689,8 @@ fn pdf_signature(path: &Path, config_sha256: &str, text_filename: &str) -> Resul
         pipeline_rev: QUACK_CHECK_PIPELINE_REV.to_string(),
         quack_config_sha256: config_sha256.to_string(),
         quack_text_filename: text_filename.to_string(),
+        pdf_geometry_mode: None,
+        pdf_sync_strategy: None,
     })
 }
 
@@ -750,7 +786,13 @@ fn try_read_pandoc_cache(
     Ok(Some(text))
 }
 
-fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<String>> {
+struct PdfCachedLoad {
+    text: String,
+    pdf_geometry_mode: PdfGeometryMode,
+    pdf_sync_strategy: PdfSyncStrategy,
+}
+
+fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<PdfCachedLoad>> {
     let (text_path, meta_path, _) = pdf_cache_paths(path);
     let meta_str = match fs::read_to_string(&meta_path) {
         Ok(v) => v,
@@ -808,7 +850,15 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<St
             });
         }
     };
-    Ok(Some(text))
+    Ok(Some(PdfCachedLoad {
+        text,
+        pdf_geometry_mode: cached_meta
+            .pdf_geometry_mode
+            .unwrap_or(PdfGeometryMode::MixedTextTrust),
+        pdf_sync_strategy: cached_meta
+            .pdf_sync_strategy
+            .unwrap_or(PdfSyncStrategy::ParagraphFallback),
+    }))
 }
 
 fn write_pandoc_cache(
@@ -842,7 +892,13 @@ fn write_pandoc_cache(
     Ok(())
 }
 
-fn write_pdf_cache(path: &Path, signature: &PdfCacheMeta, text: &str) -> Result<()> {
+fn write_pdf_cache(
+    path: &Path,
+    signature: &PdfCacheMeta,
+    text: &str,
+    pdf_geometry_mode: PdfGeometryMode,
+    pdf_sync_strategy: PdfSyncStrategy,
+) -> Result<()> {
     let (text_path, meta_path, _) = pdf_cache_paths(path);
     if let Some(parent) = text_path.parent() {
         fs::create_dir_all(parent)
@@ -856,8 +912,11 @@ fn write_pdf_cache(path: &Path, signature: &PdfCacheMeta, text: &str) -> Result<
         )
     })?;
 
+    let mut signature = signature.clone();
+    signature.pdf_geometry_mode = Some(pdf_geometry_mode);
+    signature.pdf_sync_strategy = Some(pdf_sync_strategy);
     let meta_toml =
-        toml::to_string(signature).context("Failed to serialize PDF transcript cache metadata")?;
+        toml::to_string(&signature).context("Failed to serialize PDF transcript cache metadata")?;
     fs::write(&meta_path, meta_toml).with_context(|| {
         format!(
             "Failed to write PDF transcript cache metadata at {}",
@@ -866,6 +925,59 @@ fn write_pdf_cache(path: &Path, signature: &PdfCacheMeta, text: &str) -> Result<
     })?;
 
     Ok(())
+}
+
+fn derive_pdf_runtime_metadata(
+    report: Option<&crate::quack_check::report::JobReport>,
+    transcript_text: &str,
+    markdown: &str,
+) -> (PdfGeometryMode, PdfSyncStrategy) {
+    if transcript_text.trim().is_empty() {
+        return (PdfGeometryMode::RenderOnlyNoSync, PdfSyncStrategy::RenderOnly);
+    }
+    let Some(report) = report else {
+        return if markdown.trim().is_empty() {
+            (PdfGeometryMode::MixedTextTrust, PdfSyncStrategy::ParagraphFallback)
+        } else {
+            (PdfGeometryMode::HighTextTrust, PdfSyncStrategy::SentenceSpans)
+        };
+    };
+
+    match report.decision.tier {
+        crate::quack_check::policy::QualityTier::HighText => {
+            (PdfGeometryMode::HighTextTrust, PdfSyncStrategy::SentenceSpans)
+        }
+        crate::quack_check::policy::QualityTier::MixedText => (
+            PdfGeometryMode::MixedTextTrust,
+            PdfSyncStrategy::ParagraphFallback,
+        ),
+        crate::quack_check::policy::QualityTier::Scan => (
+            PdfGeometryMode::OcrRequired,
+            if transcript_text.trim().is_empty() {
+                PdfSyncStrategy::RenderOnly
+            } else {
+                PdfSyncStrategy::ParagraphFallback
+            },
+        ),
+    }
+}
+
+fn load_quack_check_report(
+    job_dir: &Path,
+) -> Result<crate::quack_check::report::JobReport> {
+    let report_path = job_dir.join("final").join("report.json");
+    let raw = fs::read_to_string(&report_path).with_context(|| {
+        format!(
+            "Failed to read quack-check report at {}",
+            report_path.display()
+        )
+    })?;
+    serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "Failed to parse quack-check report JSON at {}",
+            report_path.display()
+        )
+    })
 }
 
 fn hash_file(path: &Path) -> Result<String> {

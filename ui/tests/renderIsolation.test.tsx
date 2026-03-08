@@ -57,6 +57,8 @@ function makeReaderSnapshot(): ReaderSnapshot {
     text_only_mode: false,
     has_structured_markdown: false,
     pretty_kind: "html",
+    pdf_geometry_mode: null,
+    pdf_sync_strategy: null,
     images: [],
     tts_text_page: "Alpha. Beta.",
     reading_markdown_page: null,

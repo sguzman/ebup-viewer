@@ -16,7 +16,7 @@ function makeReader(html: string, text: string): ReaderSnapshot {
   const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, 200);
   return {
     source_path: '/tmp/browser-tab.lltab', source_name: 'Browser Tab', current_page: 0, total_pages: 1,
-    text_only_mode: false, has_structured_markdown: true, pretty_kind: 'html', images: [],
+    text_only_mode: false, has_structured_markdown: true, pretty_kind: 'html', pdf_geometry_mode: null, pdf_sync_strategy: null, images: [],
     tts_text_page: text, reading_markdown_page: null, reading_html_page: html, page_text: text,
     sentences, sentence_anchor_map: sentences.map((_, i) => i), highlighted_sentence_idx: 0,
     search_query: '', search_matches: [], selected_search_match: null,

@@ -57,6 +57,8 @@ impl ReaderSession {
         let reading_markdown = loaded.reading_markdown;
         let reading_html = loaded.reading_html;
         let has_structured_markdown = loaded.has_structured_markdown;
+        let pdf_geometry_mode = loaded.pdf_geometry_mode;
+        let pdf_sync_strategy = loaded.pdf_sync_strategy;
 
         let mut session = Self {
             source_path,
@@ -65,6 +67,8 @@ impl ReaderSession {
             reading_markdown,
             reading_html,
             has_structured_markdown,
+            pdf_geometry_mode,
+            pdf_sync_strategy,
             images: loaded
                 .images
                 .into_iter()

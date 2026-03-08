@@ -33,6 +33,7 @@ use source_pipeline::{
     ensure_not_cancelled, is_epub, is_markdown, load_source_content, record_markdown_availability,
     source_type_label,
 };
+use ts_rs::TS;
 
 #[derive(Debug, Clone)]
 pub struct BookImage {
@@ -48,7 +49,28 @@ pub struct LoadedBook {
     pub reading_markdown: Option<String>,
     pub reading_html: Option<String>,
     pub has_structured_markdown: bool,
+    pub pdf_geometry_mode: Option<PdfGeometryMode>,
+    pub pdf_sync_strategy: Option<PdfSyncStrategy>,
     pub images: Vec<BookImage>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfGeometryMode {
+    HighTextTrust,
+    MixedTextTrust,
+    OcrRequired,
+    RenderOnlyNoSync,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfSyncStrategy {
+    SentenceSpans,
+    ParagraphFallback,
+    RenderOnly,
 }
 
 /// Load a supported source file and return plain text plus extracted image paths.
@@ -103,6 +125,8 @@ pub fn load_book_content_with_cancel(
         reading_markdown: content.reading_markdown,
         reading_html: content.reading_html,
         has_structured_markdown: content.has_structured_markdown,
+        pdf_geometry_mode: content.pdf_geometry_mode,
+        pdf_sync_strategy: content.pdf_sync_strategy,
         images,
     })
 }
@@ -113,6 +137,8 @@ struct SourceContent {
     reading_markdown: Option<String>,
     reading_html: Option<String>,
     has_structured_markdown: bool,
+    pdf_geometry_mode: Option<PdfGeometryMode>,
+    pdf_sync_strategy: Option<PdfSyncStrategy>,
 }
 
 fn collect_images(path: &Path) -> Result<Vec<BookImage>> {

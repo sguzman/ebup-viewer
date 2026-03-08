@@ -785,6 +785,8 @@ pub fn export_ts_bindings(out_dir: &Path) -> Result<(), String> {
     export_single_type::<session::ReaderSnapshot>(out_dir)?;
     export_single_type::<session::PrettyKind>(out_dir)?;
     export_single_type::<session::TtsPlaybackState>(out_dir)?;
+    export_single_type::<epub_loader::PdfGeometryMode>(out_dir)?;
+    export_single_type::<epub_loader::PdfSyncStrategy>(out_dir)?;
     export_single_type::<config::ThemeMode>(out_dir)?;
     export_single_type::<config::FontFamily>(out_dir)?;
     export_single_type::<config::FontWeight>(out_dir)?;
@@ -815,6 +817,8 @@ export type { ReaderStats } from "./ReaderStats";
 export type { ReaderSnapshot } from "./ReaderSnapshot";
 export type { PrettyKind } from "./PrettyKind";
 export type { TtsPlaybackState } from "./TtsPlaybackState";
+export type { PdfGeometryMode } from "./PdfGeometryMode";
+export type { PdfSyncStrategy } from "./PdfSyncStrategy";
 export type { ThemeMode } from "./ThemeMode";
 export type { FontFamily } from "./FontFamily";
 export type { FontWeight } from "./FontWeight";
@@ -2182,6 +2186,8 @@ mod tests {
                 text_only_mode: false,
                 has_structured_markdown: false,
                 pretty_kind: session::PrettyKind::None,
+                pdf_geometry_mode: None,
+                pdf_sync_strategy: None,
                 images: Vec::new(),
                 tts_text_page: "hello".to_string(),
                 reading_markdown_page: None,

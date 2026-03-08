@@ -64,6 +64,8 @@ function makeReader(html: string, text: string): ReaderSnapshot {
     text_only_mode: false,
     has_structured_markdown: true,
     pretty_kind: "html",
+    pdf_geometry_mode: null,
+    pdf_sync_strategy: null,
     images: [],
     tts_text_page: text,
     reading_markdown_page: null,

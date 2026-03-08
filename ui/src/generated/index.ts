@@ -23,6 +23,8 @@ export type { ReaderStats } from "./ReaderStats";
 export type { ReaderSnapshot } from "./ReaderSnapshot";
 export type { PrettyKind } from "./PrettyKind";
 export type { TtsPlaybackState } from "./TtsPlaybackState";
+export type { PdfGeometryMode } from "./PdfGeometryMode";
+export type { PdfSyncStrategy } from "./PdfSyncStrategy";
 export type { ThemeMode } from "./ThemeMode";
 export type { FontFamily } from "./FontFamily";
 export type { FontWeight } from "./FontWeight";

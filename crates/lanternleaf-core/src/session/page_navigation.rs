@@ -125,8 +125,32 @@ impl ReaderSession {
         let page = bookmark
             .page
             .min(self.page_sentence_counts.len().saturating_sub(1));
+        let page_sentence_count = self.page_sentence_counts.get(page).copied().unwrap_or(0);
+        if sentence_idx >= page_sentence_count {
+            return None;
+        }
         let base: usize = self.page_sentence_counts.iter().take(page).sum();
         Some(base + sentence_idx)
+    }
+
+    fn global_idx_for_bookmark_text(&self, bookmark: &crate::cache::Bookmark) -> Option<usize> {
+        let target = bookmark.sentence_text.as_deref()?.trim();
+        if target.is_empty() {
+            return None;
+        }
+        let target_lower = target.to_ascii_lowercase();
+        let mut global_idx = 0usize;
+        for sentences in &self.raw_page_sentences {
+            for sentence in sentences {
+                if sentence.trim().eq_ignore_ascii_case(target)
+                    || sentence.to_ascii_lowercase().contains(&target_lower)
+                {
+                    return Some(global_idx);
+                }
+                global_idx += 1;
+            }
+        }
+        None
     }
 
     pub(super) fn restore_bookmark_position(
@@ -147,7 +171,10 @@ impl ReaderSession {
         self.current_page = clamped_page;
 
         self.highlighted_display_idx =
-            if let Some(global_idx) = self.global_idx_for_bookmark(bookmark) {
+            if let Some(global_idx) = self
+                .global_idx_for_bookmark(bookmark)
+                .or_else(|| self.global_idx_for_bookmark_text(bookmark))
+            {
                 let (page, idx) = self.page_idx_for_global_sentence(global_idx);
                 self.current_page = page;
                 Some(idx)

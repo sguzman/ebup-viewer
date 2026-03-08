@@ -1154,4 +1154,18 @@ mod tests {
             vec![Some(4), Some(5)]
         );
     }
+
+    #[test]
+    fn restore_bookmark_position_falls_back_to_sentence_text_match() {
+        let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
+        let bookmark = crate::cache::Bookmark {
+            page: 0,
+            sentence_idx: Some(99),
+            sentence_text: Some("Gamma.".to_string()),
+            scroll_y: 0.0,
+        };
+        session.restore_bookmark_position(&bookmark, &normalizer::TextNormalizer::default());
+        assert_eq!(session.current_page, 1);
+        assert_eq!(session.highlighted_display_idx, Some(0));
+    }
 }

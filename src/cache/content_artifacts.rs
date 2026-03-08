@@ -6,6 +6,15 @@ use super::{
     CONTENT_LAYOUT_VERSION, CONTENT_LAYOUT_VERSION_FILE, CONTENT_READING_HTML_FILE,
     CONTENT_READING_MARKDOWN_FILE, CONTENT_TTS_TEXT_FILE, hash_dir,
 };
+use crate::epub_loader::{PdfGeometryMode, PdfSyncStrategy};
+
+const CONTENT_PDF_SYNC_META_FILE: &str = "content/pdf-sync-meta.toml";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PdfSyncMeta {
+    pdf_geometry_mode: PdfGeometryMode,
+    pdf_sync_strategy: PdfSyncStrategy,
+}
 
 pub(super) fn persist_dual_view_artifacts(
     source_path: &Path,
@@ -132,6 +141,47 @@ pub(super) fn tts_dir(source_path: &Path) -> PathBuf {
 
 pub(super) fn normalized_dir(source_path: &Path) -> PathBuf {
     hash_dir(source_path).join("normalized")
+}
+
+pub(super) fn persist_pdf_sync_meta(
+    source_path: &Path,
+    pdf_geometry_mode: PdfGeometryMode,
+    pdf_sync_strategy: PdfSyncStrategy,
+) {
+    ensure_content_layout(source_path);
+    let meta_path = hash_dir(source_path).join(CONTENT_PDF_SYNC_META_FILE);
+    if let Some(parent) = meta_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let serialized = match toml::to_string(&PdfSyncMeta {
+        pdf_geometry_mode,
+        pdf_sync_strategy,
+    }) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!("Failed to serialize PDF sync metadata: {err}");
+            return;
+        }
+    };
+    if let Err(err) = fs::write(&meta_path, serialized) {
+        warn!(path = %meta_path.display(), "Failed to persist PDF sync metadata: {err}");
+    } else {
+        debug!(
+            path = %meta_path.display(),
+            ?pdf_geometry_mode,
+            ?pdf_sync_strategy,
+            "Persisted PDF sync metadata"
+        );
+    }
+}
+
+pub(super) fn load_pdf_sync_meta(
+    source_path: &Path,
+) -> Option<(PdfGeometryMode, PdfSyncStrategy)> {
+    let meta_path = hash_dir(source_path).join(CONTENT_PDF_SYNC_META_FILE);
+    let raw = fs::read_to_string(&meta_path).ok()?;
+    let parsed: PdfSyncMeta = toml::from_str(&raw).ok()?;
+    Some((parsed.pdf_geometry_mode, parsed.pdf_sync_strategy))
 }
 
 fn ensure_content_layout(source_path: &Path) {

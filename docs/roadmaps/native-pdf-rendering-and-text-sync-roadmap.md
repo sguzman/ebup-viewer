@@ -132,14 +132,14 @@
 ## Phase 8: Search, Navigation, and Resume Semantics
 - [ ] Ensure search in Text-only mode uses `tts_text` and can jump to mapped PDF locations.
 - [ ] Ensure bookmarks and resume positions remain owned by `tts_text` indices plus mapped PDF location metadata.
-- [ ] Preserve deterministic behavior when reopening a PDF after cache reuse or rebuild.
+- [x] Preserve deterministic behavior when reopening a PDF after cache reuse or rebuild.
 - [ ] Keep page navigation and TTS seek operations synchronized across PDF and text-only views.
 - [x] Support reverse navigation from native PDF interactions back to `tts_text` ownership:
 - [x] click or selection in Pretty Text PDF view can resolve to nearest `tts_text` sentence
 - [ ] page jump in PDF view can restore the nearest canonical playback/search cursor
 
 ## Phase 9: Cache, Recovery, and Migration
-- [ ] Extend cache layout to store extracted `tts_text`, PDF sync maps, page geometry metadata, and render descriptors.
+- [x] Extend cache layout to store extracted `tts_text`, PDF sync maps, page geometry metadata, and render descriptors.
 - [ ] Add cache versioning for PDF dual-payload entries.
 - [ ] Recover cleanly from missing or corrupted PDF text/sync artifacts by rebuilding them non-destructively.
 - [ ] Ensure recent-delete clears extracted text, mapping artifacts, thumbnails, and PDF sidecar cache entries consistently.

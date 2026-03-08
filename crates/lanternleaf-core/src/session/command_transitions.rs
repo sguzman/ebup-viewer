@@ -72,10 +72,16 @@ impl ReaderSession {
     }
 
     pub fn to_bookmark(&self) -> crate::cache::Bookmark {
+        let sentence_text = self.highlighted_display_idx.and_then(|idx| {
+            self.raw_page_sentences
+                .get(self.current_page)
+                .and_then(|sentences| sentences.get(idx))
+                .cloned()
+        });
         crate::cache::Bookmark {
             page: self.current_page,
             sentence_idx: self.current_highlight_idx(),
-            sentence_text: None,
+            sentence_text,
             scroll_y: 0.0,
         }
     }

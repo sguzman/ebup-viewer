@@ -93,6 +93,11 @@ pub fn load_book_content_with_cancel(
         content.reading_markdown.as_deref(),
         content.reading_html.as_deref(),
     );
+    if let (Some(pdf_geometry_mode), Some(pdf_sync_strategy)) =
+        (content.pdf_geometry_mode, content.pdf_sync_strategy)
+    {
+        crate::cache::persist_pdf_sync_meta(path, pdf_geometry_mode, pdf_sync_strategy);
+    }
     record_markdown_availability(path, content.has_structured_markdown);
     ensure_not_cancelled(cancel, "after_load_source_text")?;
     let images = match collect_images(path) {
@@ -702,13 +707,14 @@ mod tests {
         let structured = source_pipeline::resolve_pdf_dual_view_content(
             "Line one.\nLine two.",
             "# Heading\n\nLine one.",
+            None,
         );
         assert!(structured.has_structured_markdown);
         assert!(structured.reading_markdown.is_some());
         assert!(structured.tts_text.contains("Line one."));
 
         let scan_fallback =
-            source_pipeline::resolve_pdf_dual_view_content("Scanned OCR text", "   ");
+            source_pipeline::resolve_pdf_dual_view_content("Scanned OCR text", "   ", None);
         assert!(!scan_fallback.has_structured_markdown);
         assert!(scan_fallback.reading_markdown.is_none());
         assert!(scan_fallback.tts_text.contains("Scanned OCR text"));

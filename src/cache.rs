@@ -253,6 +253,23 @@ pub fn load_sentence_anchor_map(source_path: &Path, page: usize) -> Option<Vec<O
     content_artifacts::load_sentence_anchor_map(source_path, page)
 }
 
+pub fn persist_pdf_sync_meta(
+    source_path: &Path,
+    pdf_geometry_mode: crate::epub_loader::PdfGeometryMode,
+    pdf_sync_strategy: crate::epub_loader::PdfSyncStrategy,
+) {
+    content_artifacts::persist_pdf_sync_meta(source_path, pdf_geometry_mode, pdf_sync_strategy)
+}
+
+pub fn load_pdf_sync_meta(
+    source_path: &Path,
+) -> Option<(
+    crate::epub_loader::PdfGeometryMode,
+    crate::epub_loader::PdfSyncStrategy,
+)> {
+    content_artifacts::load_pdf_sync_meta(source_path)
+}
+
 pub fn remember_source_path(source_path: &Path) {
     let hint_path = hash_dir(source_path).join(SOURCE_PATH_FILE);
     if let Some(parent) = hint_path.parent() {
@@ -888,6 +905,23 @@ sentence_text = "legacy bookmark entry"
             Some("legacy bookmark entry")
         );
         assert!((loaded.scroll_y - 0.0).abs() < f32::EPSILON);
+
+        cleanup_source_and_cache(&source);
+    }
+
+    #[test]
+    fn pdf_sync_meta_roundtrip_preserves_geometry_mode_and_strategy() {
+        let source = unique_source_path("pdf");
+        write_source_file(&source);
+
+        persist_pdf_sync_meta(
+            &source,
+            crate::epub_loader::PdfGeometryMode::MixedTextTrust,
+            crate::epub_loader::PdfSyncStrategy::ParagraphFallback,
+        );
+        let loaded = load_pdf_sync_meta(&source).expect("pdf sync meta should load");
+        assert_eq!(loaded.0, crate::epub_loader::PdfGeometryMode::MixedTextTrust);
+        assert_eq!(loaded.1, crate::epub_loader::PdfSyncStrategy::ParagraphFallback);
 
         cleanup_source_and_cache(&source);
     }

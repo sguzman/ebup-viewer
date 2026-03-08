@@ -45,6 +45,7 @@ cache_dir = ".cache"
 browser_tabs_enabled = true
 browsr_base_url = "http://127.0.0.1:17373"
 browsr_timeout_ms = 8000
+close_browser_tab_on_recent_delete = true
 
 [tts]
 tts_model_path = "/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx"

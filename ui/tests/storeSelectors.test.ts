@@ -140,6 +140,7 @@ function makeState(): AppStore {
     openBrowserTab: async () => {},
     refreshCurrentBrowserTab: async () => {},
     deleteRecent: async () => {},
+    closeRecentBrowserTab: async () => {},
     returnToStarter: async () => {},
     closeReaderSession: async () => {},
     refreshReaderSnapshot: async () => {},

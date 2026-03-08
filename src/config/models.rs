@@ -71,6 +71,8 @@ pub struct AppConfig {
     pub browsr_base_url: String,
     #[serde(default = "crate::config::defaults::default_browsr_timeout_ms")]
     pub browsr_timeout_ms: u64,
+    #[serde(default = "crate::config::defaults::default_close_browser_tab_on_recent_delete")]
+    pub close_browser_tab_on_recent_delete: bool,
     #[serde(default = "crate::config::defaults::default_lines_per_page")]
     pub lines_per_page: usize,
     #[serde(default = "crate::config::defaults::default_pause_after_sentence")]
@@ -143,6 +145,8 @@ impl Default for AppConfig {
             browser_tabs_enabled: crate::config::defaults::default_browser_tabs_enabled(),
             browsr_base_url: crate::config::defaults::default_browsr_base_url(),
             browsr_timeout_ms: crate::config::defaults::default_browsr_timeout_ms(),
+            close_browser_tab_on_recent_delete:
+                crate::config::defaults::default_close_browser_tab_on_recent_delete(),
             lines_per_page: crate::config::defaults::default_lines_per_page(),
             pause_after_sentence: crate::config::defaults::default_pause_after_sentence(),
             auto_scroll_tts: crate::config::defaults::default_auto_scroll_tts(),

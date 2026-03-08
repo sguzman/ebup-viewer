@@ -115,6 +115,10 @@ pub(crate) fn default_browsr_timeout_ms() -> u64 {
     8000
 }
 
+pub(crate) fn default_close_browser_tab_on_recent_delete() -> bool {
+    true
+}
+
 pub(crate) fn default_lines_per_page() -> usize {
     700
 }

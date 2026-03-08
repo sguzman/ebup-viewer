@@ -179,7 +179,8 @@ export interface AppStore {
   openClipboardText: () => Promise<void>;
   openBrowserTab: (tabId: number, windowId?: number) => Promise<void>;
   refreshCurrentBrowserTab: () => Promise<void>;
-  deleteRecent: (path: string) => Promise<void>;
+  deleteRecent: (path: string, closeBrowserTab?: boolean) => Promise<void>;
+  closeRecentBrowserTab: (path: string) => Promise<void>;
   returnToStarter: () => Promise<void>;
   closeReaderSession: () => Promise<void>;
   refreshReaderSnapshot: () => Promise<void>;

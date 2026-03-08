@@ -49,6 +49,7 @@ export const selectSessionSlice = (state: AppStore) => ({
   openBrowserTab: state.openBrowserTab,
   refreshCurrentBrowserTab: state.refreshCurrentBrowserTab,
   deleteRecent: state.deleteRecent,
+  closeRecentBrowserTab: state.closeRecentBrowserTab,
   returnToStarter: state.returnToStarter,
   closeReaderSession: state.closeReaderSession
 });
@@ -374,6 +375,7 @@ export function useStarterActionState() {
       openClipboardText: state.openClipboardText,
       openBrowserTab: state.openBrowserTab,
       deleteRecent: state.deleteRecent,
+      closeRecentBrowserTab: state.closeRecentBrowserTab,
       refreshRecents: state.refreshRecents,
       loadCalibreBooks: state.loadCalibreBooks,
       openCalibreBook: state.openCalibreBook,

@@ -9,15 +9,17 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  FormControlLabel,
   FormControl,
   InputLabel,
   MenuItem,
   Select,
   Stack,
+  Switch,
   TextField,
   Typography
 } from "@mui/material";
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 
 import type { BrowserTabInfo, BrowserWindowInfo, BrowsrHealth } from "../api/tauri";
 import type { CalibreBook, RecentBook } from "../types";
@@ -368,16 +370,29 @@ export function StarterBrowserTabsPanel({
 
 const StarterRecentRow = memo(function StarterRecentRow({
   busy,
+  defaultCloseBrowserTabOnDelete,
+  onCloseRecentBrowserTab,
   onDeleteRecent,
   onOpenPath,
   recent
 }: {
   busy: boolean;
-  onDeleteRecent: (path: string) => Promise<void>;
+  defaultCloseBrowserTabOnDelete: boolean;
+  onCloseRecentBrowserTab: (path: string) => Promise<void>;
+  onDeleteRecent: (path: string, closeBrowserTab?: boolean) => Promise<void>;
   onOpenPath: (path: string) => Promise<void>;
   recent: RecentBook;
 }) {
   const recentThumbnailSrc = toThumbnailSrc(recent.thumbnail_path);
+  const isBrowserTab = recent.browser_tab_id !== null;
+  const [closeBrowserTabOnDelete, setCloseBrowserTabOnDelete] = useState(
+    defaultCloseBrowserTabOnDelete
+  );
+
+  useEffect(() => {
+    setCloseBrowserTabOnDelete(defaultCloseBrowserTabOnDelete);
+  }, [defaultCloseBrowserTabOnDelete, recent.source_path]);
+
   return (
     <div style={{ height: 132 }}>
       <div
@@ -401,9 +416,39 @@ const StarterRecentRow = memo(function StarterRecentRow({
             <Typography variant="caption" color="text.secondary" noWrap className="truncate">
               {recent.snippet}
             </Typography>
+            {isBrowserTab ? (
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={closeBrowserTabOnDelete}
+                    onChange={(event) => setCloseBrowserTabOnDelete(event.target.checked)}
+                    disabled={busy}
+                  />
+                }
+                label={
+                  <Typography variant="caption" color="text.secondary">
+                    Close tab on delete
+                  </Typography>
+                }
+                sx={{ m: 0 }}
+              />
+            ) : null}
           </Stack>
         </Stack>
         <Stack direction="row" spacing={1}>
+          {isBrowserTab ? (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => void onCloseRecentBrowserTab(recent.source_path)}
+              disabled={busy}
+              data-testid="starter-recent-close-tab-button"
+              data-recent-path={recent.source_path}
+            >
+              Close Tab
+            </Button>
+          ) : null}
           <Button
             size="small"
             variant="contained"
@@ -419,7 +464,7 @@ const StarterRecentRow = memo(function StarterRecentRow({
             color="error"
             variant="outlined"
             startIcon={<DeleteOutlineIcon />}
-            onClick={() => void onDeleteRecent(recent.source_path)}
+            onClick={() => void onDeleteRecent(recent.source_path, closeBrowserTabOnDelete)}
             disabled={busy}
             data-testid="starter-recent-delete-button"
             data-recent-path={recent.source_path}
@@ -434,10 +479,12 @@ const StarterRecentRow = memo(function StarterRecentRow({
 
 export function StarterRecentsPanel({
   busy,
+  defaultCloseBrowserTabOnDelete,
   filteredRecents,
   hasFilteredRecents,
   hasRecents,
   loadingRecents,
+  onCloseRecentBrowserTab,
   onDeleteRecent,
   onOpenPath,
   onRefreshRecents,
@@ -452,11 +499,13 @@ export function StarterRecentsPanel({
   recentsViewportHeight
 }: {
   busy: boolean;
+  defaultCloseBrowserTabOnDelete: boolean;
   filteredRecents: RecentBook[];
   hasFilteredRecents: boolean;
   hasRecents: boolean;
   loadingRecents: boolean;
-  onDeleteRecent: (path: string) => Promise<void>;
+  onCloseRecentBrowserTab: (path: string) => Promise<void>;
+  onDeleteRecent: (path: string, closeBrowserTab?: boolean) => Promise<void>;
   onOpenPath: (path: string) => Promise<void>;
   onRefreshRecents: () => Promise<void>;
   recents: RecentBook[];
@@ -560,6 +609,8 @@ export function StarterRecentsPanel({
               <StarterRecentRow
                 key={recent.source_path}
                 busy={busy}
+                defaultCloseBrowserTabOnDelete={defaultCloseBrowserTabOnDelete}
+                onCloseRecentBrowserTab={onCloseRecentBrowserTab}
                 onDeleteRecent={onDeleteRecent}
                 onOpenPath={onOpenPath}
                 recent={recent}

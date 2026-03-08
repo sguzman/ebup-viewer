@@ -26,7 +26,7 @@ pub(crate) use app_shell_commands::{
     session_toggle_theme,
 };
 pub(crate) use browser_tab_commands::{
-    browser_tabs_health, browser_tabs_list_tabs, browser_tabs_list_windows,
+    browser_tabs_health, browser_tabs_list_tabs, browser_tabs_list_windows, recent_close_browser_tab,
     source_open_browser_tab, source_refresh_browser_tab,
 };
 pub(crate) use reader_commands::{
@@ -97,6 +97,7 @@ struct BootstrapConfig {
     key_toggle_stats: String,
     key_toggle_tts: String,
     browser_tabs_enabled: bool,
+    close_browser_tab_on_recent_delete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -132,6 +133,10 @@ struct RecentBook {
     thumbnail_path: Option<String>,
     #[ts(type = "number")]
     last_opened_unix_secs: u64,
+    #[ts(type = "number | null")]
+    browser_tab_id: Option<u64>,
+    #[ts(type = "number | null")]
+    browser_window_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -357,6 +362,9 @@ fn bootstrap_state_from_backend(guard: &BackendState) -> BootstrapState {
             key_toggle_stats: guard.base_config.key_toggle_stats.clone(),
             key_toggle_tts: guard.base_config.key_toggle_tts.clone(),
             browser_tabs_enabled: guard.base_config.browser_tabs_enabled,
+            close_browser_tab_on_recent_delete: guard
+                .base_config
+                .close_browser_tab_on_recent_delete,
         },
     }
 }
@@ -1854,6 +1862,7 @@ macro_rules! bridge_command_idents {
             panel_toggle_tts,
             recent_list,
             recent_delete,
+            recent_close_browser_tab,
             source_open_path,
             source_open_clipboard,
             source_open_clipboard_text,
@@ -2004,7 +2013,7 @@ mod tests {
 
     #[test]
     fn bridge_command_surface_remains_stable() {
-        assert_eq!(BRIDGE_COMMAND_NAMES.len(), 45);
+        assert_eq!(BRIDGE_COMMAND_NAMES.len(), 46);
         assert_eq!(BRIDGE_COMMAND_NAMES[0], "session_get_bootstrap");
         assert_eq!(
             BRIDGE_COMMAND_NAMES[BRIDGE_COMMAND_NAMES.len() - 1],
@@ -2017,6 +2026,7 @@ mod tests {
         assert!(BRIDGE_COMMAND_NAMES.contains(&"browser_tabs_health"));
         assert!(BRIDGE_COMMAND_NAMES.contains(&"browser_tabs_list_windows"));
         assert!(BRIDGE_COMMAND_NAMES.contains(&"browser_tabs_list_tabs"));
+        assert!(BRIDGE_COMMAND_NAMES.contains(&"recent_close_browser_tab"));
         assert!(BRIDGE_COMMAND_NAMES.contains(&"source_open_browser_tab"));
         assert!(BRIDGE_COMMAND_NAMES.contains(&"source_refresh_browser_tab"));
         assert!(BRIDGE_COMMAND_NAMES.contains(&"reader_tts_play"));
@@ -2078,6 +2088,7 @@ mod tests {
                 key_toggle_stats: "ctrl+g".to_string(),
                 key_toggle_tts: "ctrl+y".to_string(),
                 browser_tabs_enabled: true,
+                close_browser_tab_on_recent_delete: true,
             },
         };
 

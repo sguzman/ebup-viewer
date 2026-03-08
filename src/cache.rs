@@ -69,6 +69,8 @@ pub struct RecentBook {
     pub snippet: String,
     pub thumbnail_path: Option<PathBuf>,
     pub last_opened_unix_secs: u64,
+    pub browser_tab_id: Option<u64>,
+    pub browser_window_id: Option<u64>,
 }
 
 pub fn cache_root() -> PathBuf {
@@ -501,6 +503,7 @@ pub fn list_recent_books(limit: usize) -> Vec<RecentBook> {
                 .and_then(|ts| ts.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
+            let browser_tab_manifest = load_browser_tab_manifest(&source_path);
             let display_title = infer_recent_title(&source_path);
             let snippet = infer_recent_snippet(&source_path, &display_title);
             let thumbnail_path = infer_recent_thumbnail(&source_path);
@@ -510,6 +513,8 @@ pub fn list_recent_books(limit: usize) -> Vec<RecentBook> {
                 snippet,
                 thumbnail_path,
                 last_opened_unix_secs,
+                browser_tab_id: browser_tab_manifest.as_ref().map(|manifest| manifest.tab_id),
+                browser_window_id: browser_tab_manifest.and_then(|manifest| manifest.window_id),
             })
         })
         .collect();

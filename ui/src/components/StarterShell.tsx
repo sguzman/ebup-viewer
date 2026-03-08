@@ -42,7 +42,8 @@ interface StarterShellProps {
   onOpenPath: (path: string) => Promise<void>;
   onOpenClipboardText: () => Promise<void>;
   onOpenBrowserTab: (tabId: number, windowId?: number) => Promise<void>;
-  onDeleteRecent: (path: string) => Promise<void>;
+  onDeleteRecent: (path: string, closeBrowserTab?: boolean) => Promise<void>;
+  onCloseRecentBrowserTab: (path: string) => Promise<void>;
   onRefreshRecents: () => Promise<void>;
   onLoadCalibre: (forceRefresh?: boolean) => Promise<void>;
   onOpenCalibreBook: (bookId: number) => Promise<void>;
@@ -65,6 +66,7 @@ export function StarterShell({
   onOpenClipboardText,
   onOpenBrowserTab,
   onDeleteRecent,
+  onCloseRecentBrowserTab,
   onRefreshRecents,
   onLoadCalibre,
   onOpenCalibreBook,
@@ -301,6 +303,10 @@ export function StarterShell({
               hasFilteredRecents={hasFilteredRecents}
               hasRecents={hasRecents}
               loadingRecents={loadingRecents}
+              defaultCloseBrowserTabOnDelete={
+                bootstrap?.config.close_browser_tab_on_recent_delete ?? true
+              }
+              onCloseRecentBrowserTab={onCloseRecentBrowserTab}
               onDeleteRecent={onDeleteRecent}
               onOpenPath={onOpenPath}
               onRefreshRecents={onRefreshRecents}

@@ -45,7 +45,8 @@ function makeBootstrapState(): BootstrapState {
       key_toggle_settings: "ctrl+t",
       key_toggle_stats: "ctrl+g",
       key_toggle_tts: "ctrl+y",
-      browser_tabs_enabled: true
+      browser_tabs_enabled: true,
+      close_browser_tab_on_recent_delete: true
     }
   };
 }
@@ -156,6 +157,7 @@ function createBackend(overrides: Partial<BackendApi> = {}) {
     panelToggleTts: async () => makeSessionState("reader"),
     recentList: async () => [] as RecentBook[],
     recentDelete: async () => {},
+    recentCloseBrowserTab: async () => {},
     browserTabsHealth: async () => ({ ok: true, extension_connected: true, now: null }),
     browserTabsListWindows: async () => [],
     browserTabsListTabs: async () => [],

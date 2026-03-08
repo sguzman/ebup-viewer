@@ -387,6 +387,7 @@ function StarterScreen() {
       onOpenClipboardText={actions.openClipboardText}
       onOpenBrowserTab={actions.openBrowserTab}
       onDeleteRecent={actions.deleteRecent}
+      onCloseRecentBrowserTab={actions.closeRecentBrowserTab}
       onRefreshRecents={actions.refreshRecents}
       onLoadCalibre={actions.loadCalibreBooks}
       onOpenCalibreBook={actions.openCalibreBook}

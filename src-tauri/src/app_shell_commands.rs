@@ -134,6 +134,8 @@ pub(crate) fn recent_list(limit: Option<usize>) -> Vec<RecentBook> {
                 .as_deref()
                 .and_then(thumbnail_path_to_data_url),
             last_opened_unix_secs: recent.last_opened_unix_secs,
+            browser_tab_id: recent.browser_tab_id,
+            browser_window_id: recent.browser_window_id,
         })
         .collect()
 }

@@ -20,6 +20,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
   | "openBrowserTab"
   | "refreshCurrentBrowserTab"
   | "deleteRecent"
+  | "closeRecentBrowserTab"
   | "returnToStarter"
   | "closeReaderSession"
 > {
@@ -224,14 +225,24 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
       });
     },
 
-    deleteRecent: async (path) => {
+    deleteRecent: async (path, closeBrowserTab = false) => {
       await withBusy(set, get, "deleteRecent", "starterCommand", async () => {
+        let closeError: string | null = null;
         try {
+          if (closeBrowserTab) {
+            try {
+              await backend.recentCloseBrowserTab(path);
+            } catch (error) {
+              closeError = toMessage(error);
+            }
+          }
           await backend.recentDelete(path);
           const recents = await backend.recentList();
           set({
             recents,
-            toast: buildToast("success", "Recent entry deleted")
+            toast: closeError
+              ? buildToast("error", `Recent entry deleted, but close-tab request failed: ${closeError}`)
+              : buildToast("success", "Recent entry deleted")
           });
         } catch (error) {
           const bridgeError = toBridgeError(error);
@@ -244,6 +255,25 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
           set({
             error: bridgeError.message,
             toast: buildToast("error", bridgeError.message)
+          });
+          throw bridgeError;
+        }
+      });
+    },
+
+    closeRecentBrowserTab: async (path) => {
+      await withBusy(set, get, "closeRecentBrowserTab", "starterCommand", async () => {
+        try {
+          await backend.recentCloseBrowserTab(path);
+          set({
+            toast: buildToast("success", "Browser tab close request sent")
+          });
+        } catch (error) {
+          const bridgeError = toBridgeError(error);
+          const detailed = `[closeRecentBrowserTab:${bridgeError.code}] ${bridgeError.message}`;
+          set({
+            error: detailed,
+            toast: buildToast("error", detailed)
           });
           throw bridgeError;
         }

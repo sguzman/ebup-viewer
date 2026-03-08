@@ -369,7 +369,8 @@ const mockState: MockBackendState = {
       key_toggle_settings: "ctrl+t",
       key_toggle_stats: "ctrl+g",
       key_toggle_tts: "ctrl+y",
-      browser_tabs_enabled: true
+      browser_tabs_enabled: true,
+      close_browser_tab_on_recent_delete: true
     }
   },
   session: {
@@ -499,6 +500,16 @@ async function mockRecentList(limit?: number): Promise<RecentBook[]> {
 
 async function mockRecentDelete(path: string): Promise<void> {
   mockState.recents = mockState.recents.filter((book) => book.source_path !== path);
+}
+
+async function mockRecentCloseBrowserTab(path: string): Promise<void> {
+  const recent = mockState.recents.find((book) => book.source_path === path);
+  if (!recent?.browser_tab_id) {
+    throw {
+      code: "invalid_input",
+      message: `Recent source is not an imported browser tab: ${path}`
+    } satisfies BridgeError;
+  }
 }
 
 async function mockSourceOpenPath(path: string): Promise<OpenSourceResult> {
@@ -825,6 +836,7 @@ export interface BackendApi {
   panelToggleTts: () => Promise<SessionState>;
   recentList: (limit?: number) => Promise<RecentBook[]>;
   recentDelete: (path: string) => Promise<void>;
+  recentCloseBrowserTab: (path: string) => Promise<void>;
   browserTabsHealth: () => Promise<BrowsrHealth>;
   browserTabsListWindows: () => Promise<BrowserWindowInfo[]>;
   browserTabsListTabs: (
@@ -887,6 +899,7 @@ function createTauriBackendApi(): BackendApi {
     recentList: (limit) =>
       invokeCommand<RecentBook[]>("recent_list", { limit: normalizeRecentLimit(limit) }),
     recentDelete: (path) => invokeCommand<void>("recent_delete", { path }),
+    recentCloseBrowserTab: (path) => invokeCommand<void>("recent_close_browser_tab", { path }),
     browserTabsHealth: () => invokeCommand<BrowsrHealth>("browser_tabs_health"),
     browserTabsListWindows: () =>
       invokeCommand<BrowserWindowInfo[]>("browser_tabs_list_windows"),
@@ -972,6 +985,7 @@ function createMockBackendApi(): BackendApi {
     panelToggleTts: mockPanelToggleTts,
     recentList: mockRecentList,
     recentDelete: mockRecentDelete,
+    recentCloseBrowserTab: mockRecentCloseBrowserTab,
     browserTabsHealth: mockBrowserTabsHealth,
     browserTabsListWindows: mockBrowserTabsListWindows,
     browserTabsListTabs: mockBrowserTabsListTabs,

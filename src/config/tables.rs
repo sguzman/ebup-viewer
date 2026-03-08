@@ -68,6 +68,9 @@ impl From<ConfigTables> for AppConfig {
             browser_tabs_enabled: tables.integration.browser_tabs_enabled,
             browsr_base_url: tables.integration.browsr_base_url,
             browsr_timeout_ms: tables.integration.browsr_timeout_ms,
+            close_browser_tab_on_recent_delete: tables
+                .integration
+                .close_browser_tab_on_recent_delete,
             tts_model_path: tables.tts.tts_model_path,
             tts_espeak_path: tables.tts.tts_espeak_path,
             tts_speed: tables.tts.tts_speed,
@@ -127,6 +130,7 @@ impl From<&AppConfig> for ConfigTables {
                 browser_tabs_enabled: config.browser_tabs_enabled,
                 browsr_base_url: config.browsr_base_url.clone(),
                 browsr_timeout_ms: config.browsr_timeout_ms,
+                close_browser_tab_on_recent_delete: config.close_browser_tab_on_recent_delete,
             },
             tts: TtsConfig {
                 tts_model_path: config.tts_model_path.clone(),
@@ -313,6 +317,8 @@ struct IntegrationConfig {
     browsr_base_url: String,
     #[serde(default = "defaults::default_browsr_timeout_ms")]
     browsr_timeout_ms: u64,
+    #[serde(default = "defaults::default_close_browser_tab_on_recent_delete")]
+    close_browser_tab_on_recent_delete: bool,
 }
 
 impl Default for IntegrationConfig {
@@ -321,6 +327,8 @@ impl Default for IntegrationConfig {
             browser_tabs_enabled: defaults::default_browser_tabs_enabled(),
             browsr_base_url: defaults::default_browsr_base_url(),
             browsr_timeout_ms: defaults::default_browsr_timeout_ms(),
+            close_browser_tab_on_recent_delete:
+                defaults::default_close_browser_tab_on_recent_delete(),
         }
     }
 }

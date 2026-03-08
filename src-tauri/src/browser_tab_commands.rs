@@ -167,3 +167,44 @@ pub(crate) async fn source_refresh_browser_tab(
     );
     open_resolved_source(&app, &state, refreshed_source_path).await
 }
+
+#[tauri::command]
+pub(crate) async fn recent_close_browser_tab(
+    state: State<'_, Mutex<BackendState>>,
+    path: String,
+) -> Result<(), BridgeError> {
+    let source_path = resolve_source_path(&path)?;
+    let manifest = cache::load_browser_tab_manifest(&source_path).ok_or_else(|| {
+        bridge_error(
+            "invalid_input",
+            format!(
+                "Source is not a browser-tab manifest: {}",
+                source_path.display()
+            ),
+        )
+    })?;
+    let cfg = {
+        let guard = state
+            .lock()
+            .map_err(|_| bridge_error("lock_poisoned", "Backend state lock poisoned"))?;
+        guard.base_config.clone()
+    };
+    if !cfg.browser_tabs_enabled {
+        return Err(bridge_error(
+            "browser_tabs_disabled",
+            "Browser tabs import is disabled in config",
+        ));
+    }
+    let client = browsr_client_from_config(&cfg)?;
+    client
+        .close_tab(manifest.tab_id)
+        .await
+        .map_err(|err| bridge_error("browsr_close_failed", err.to_string()))?;
+    info!(
+        source_path = %source_path.display(),
+        tab_id = manifest.tab_id,
+        window_id = manifest.window_id,
+        "Closed browser tab for recent imported source"
+    );
+    Ok(())
+}

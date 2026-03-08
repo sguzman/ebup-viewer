@@ -54,7 +54,8 @@ function makeBootstrap(): BootstrapState {
       key_toggle_settings: "ctrl+t",
       key_toggle_stats: "ctrl+g",
       key_toggle_tts: "ctrl+y",
-      browser_tabs_enabled: true
+      browser_tabs_enabled: true,
+      close_browser_tab_on_recent_delete: true
     }
   };
 }
@@ -137,6 +138,7 @@ describe("StarterShell browser tabs", () => {
           onOpenClipboardText={async () => {}}
           onOpenBrowserTab={onOpenBrowserTab}
           onDeleteRecent={async () => {}}
+          onCloseRecentBrowserTab={async () => {}}
           onRefreshRecents={async () => {}}
           onLoadCalibre={async () => {}}
           onOpenCalibreBook={async () => {}}

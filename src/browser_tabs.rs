@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::time::Duration;
 use tracing::{info, warn};
 use ts_rs::TS;
@@ -207,6 +208,24 @@ impl BrowsrClient {
             "Browsr snapshot completed"
         );
         Ok(snapshot)
+    }
+
+    pub async fn close_tab(&self, tab_id: u64) -> Result<()> {
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .post(format!("{}/v1/tabs/{tab_id}/close", self.base_url))
+            .send()
+            .await
+            .with_context(|| format!("failed to request browsr close for tab {tab_id}"))?;
+        let _: Value = parse_json_response(response).await?;
+        info!(
+            base_url = %self.base_url,
+            tab_id,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr close-tab completed"
+        );
+        Ok(())
     }
 }
 

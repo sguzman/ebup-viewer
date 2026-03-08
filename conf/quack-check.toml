@@ -113,7 +113,7 @@ light_markdown = false
 #   1) $DOCLING_PYTHON (if set)
 #   2) ~/Code/AI/docling/.venv/bin/python
 #   3) python3 on PATH
-python_exe = "auto"
+python_exe = "/win/linux/Code/AI/docling/.venv/bin/python"
 # Hard limits passed to DocumentConverter.convert
 max_num_pages = 1000
 max_file_size_bytes = 500000000

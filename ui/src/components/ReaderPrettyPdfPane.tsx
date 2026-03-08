@@ -6,12 +6,13 @@ import type { ReaderSnapshot } from "../types";
 import { recordPerfMeasure } from "../perf/debug";
 import { toReaderImageSrc } from "./readerDom";
 import { clamp, normalizeNumber } from "./readerShared";
-import { buildPdfSentenceSpanMap, type PdfTextSpan } from "./pdfTextSync";
+import { buildPdfSentenceSpanMap, findNearestSentenceForSpanIndex, type PdfSentenceMatch, type PdfTextSpan } from "./pdfTextSync";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 let pdfJsWorkerConfigured = false;
 
 interface ReaderPrettyPdfPaneProps {
+  onSentenceClick: (idx: number) => Promise<void>;
   reader: ReaderSnapshot;
   sourcePath: string;
 }
@@ -37,11 +38,12 @@ function applyPdfHighlightColor(root: HTMLElement, reader: ReaderSnapshot): void
 }
 
 export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderPrettyPdfPaneProps>(
-  function ReaderPrettyPdfPane({ reader, sourcePath }, ref) {
+  function ReaderPrettyPdfPane({ onSentenceClick, reader, sourcePath }, ref) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const renderedPagesRef = useRef<RenderedPdfPage[]>([]);
     const highlightedNodesRef = useRef<HTMLElement[]>([]);
     const highlightedSentenceRef = useRef<number | null>(null);
+    const sentenceMatchesRef = useRef<PdfSentenceMatch[]>([]);
     const [zoom, setZoom] = useState(1.2);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -51,6 +53,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       fallback: number;
       missing: number;
     } | null>(null);
+    const [activeMatch, setActiveMatch] = useState<PdfSentenceMatch | null>(null);
 
     const pdfUrl = useMemo(() => toReaderImageSrc(sourcePath), [sourcePath]);
     const canSyncHighlights = reader.pdf_sync_strategy !== "render_only";
@@ -76,12 +79,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
 
         const spans = renderedPagesRef.current.flatMap((page) => page.spans);
         const { matches, diagnostics } = buildPdfSentenceSpanMap(spans, reader.sentences);
+        sentenceMatchesRef.current = matches;
         setMappingSummary({
           exact: diagnostics.exactMatches,
           fallback: diagnostics.fallbackMatches,
           missing: diagnostics.missingMatches
         });
         const match = matches[idx];
+        setActiveMatch(match ?? null);
         if (!match || match.spanIndexes.length === 0) {
           highlightedSentenceRef.current = idx;
           return;
@@ -187,6 +192,27 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       applyHighlight("auto");
     }, [applyHighlight, loading, reader.current_page, renderVersion]);
 
+    const handlePdfClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+      if (!canSyncHighlights) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const span = target?.closest("[data-ll-pdf-span-idx]") as HTMLElement | null;
+      if (!span) {
+        return;
+      }
+      const raw = span.getAttribute("data-ll-pdf-span-idx");
+      const spanIdx = raw === null ? Number.NaN : Number.parseInt(raw, 10);
+      if (!Number.isFinite(spanIdx)) {
+        return;
+      }
+      const sentenceIdx = findNearestSentenceForSpanIndex(sentenceMatchesRef.current, spanIdx);
+      if (sentenceIdx === null) {
+        return;
+      }
+      void onSentenceClick(sentenceIdx);
+    }, [canSyncHighlights, onSentenceClick]);
+
     return (
       <div className="reader-pdf-pane-shell">
         <Stack
@@ -222,6 +248,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         {!error && canSyncHighlights && mappingSummary ? (
           <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-summary">
             Exact: {mappingSummary.exact} | Fallback: {mappingSummary.fallback} | Missing: {mappingSummary.missing}
+            {activeMatch ? ` | Active: ${activeMatch.confidence} (${activeMatch.reason.replaceAll("_", " ")})` : ""}
           </Typography>
         ) : null}
         {loading ? (
@@ -236,6 +263,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           ref={containerRef}
           className="reader-pdf-document"
           data-testid="reader-pretty-pdf"
+          onClick={handlePdfClick}
           style={{ opacity: loading ? 0.35 : 1 }}
         />
       </div>
@@ -251,6 +279,7 @@ async function renderPdfPages(
   cancelled: boolean,
   renderedPagesRef: React.MutableRefObject<RenderedPdfPage[]>
 ): Promise<void> {
+  let globalSpanIndex = 0;
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     if (cancelled) {
       return;
@@ -295,11 +324,15 @@ async function renderPdfPages(
 
     const spanElements = Array.from(textLayerDiv.querySelectorAll("span")) as HTMLElement[];
     const spans: PdfTextSpan[] = spanElements
-      .map((element) => ({
-        pageIndex: pageNumber - 1,
-        text: element.textContent ?? "",
-        element
-      }))
+      .map((element) => {
+        element.setAttribute("data-ll-pdf-span-idx", String(globalSpanIndex));
+        globalSpanIndex += 1;
+        return {
+          pageIndex: pageNumber - 1,
+          text: element.textContent ?? "",
+          element
+        };
+      })
       .filter((span) => span.text.trim().length > 0);
 
     renderedPagesRef.current.push({

@@ -306,6 +306,7 @@ export const ReaderShell = memo(function ReaderShell({
                   {hasPrettyPdf ? (
                     <ReaderPrettyPdfPane
                       ref={pdfPaneRef}
+                      onSentenceClick={onSentenceClick}
                       reader={reader}
                       sourcePath={reader.source_path}
                     />

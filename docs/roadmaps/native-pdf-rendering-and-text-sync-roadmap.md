@@ -14,19 +14,19 @@
 - [x] `ocr_required`: no reliable embedded text layer; OCR is required for meaningful sync
 - [x] `render_only_no_sync`: the PDF can be rendered, but no trustworthy text/geometry mapping is available for cursor sync
 - [x] Persist the detected geometry mode and confidence summary in cache so reopen behavior is deterministic.
-- [ ] Never present low-confidence geometry as exact sentence sync.
-- [ ] Require every highlight/scroll decision to carry an explicit confidence tier and fallback reason.
+- [x] Never present low-confidence geometry as exact sentence sync.
+- [x] Require every highlight/scroll decision to carry an explicit confidence tier and fallback reason.
 
 ## Geometry Guarantees by PDF Class
-- [ ] For `high_text_trust` PDFs:
-- [ ] target sentence-level mapping as the primary contract
-- [ ] allow multi-rect highlights for a single sentence across wrapped lines or split spans
-- [ ] keep playback, search, and click-jump behavior sentence-accurate
+- [x] For `high_text_trust` PDFs:
+- [x] target sentence-level mapping as the primary contract
+- [x] allow multi-rect highlights for a single sentence across wrapped lines or split spans
+- [x] keep playback, search, and click-jump behavior sentence-accurate
 - [x] For `mixed_text_trust` PDFs:
 - [x] allow fuzzy text alignment and paragraph/block fallback
 - [ ] prefer stable local-region highlighting over visually wrong sentence-level highlight
 - [ ] degrade to block highlight when sentence geometry is ambiguous
-- [ ] preserve `tts_text` ownership even when pretty-view sync becomes approximate
+- [x] preserve `tts_text` ownership even when pretty-view sync becomes approximate
 - [x] For `ocr_required` PDFs:
 - [x] keep native PDF rendering available regardless of OCR readiness
 - [ ] support OCR-backed text-only/TTS only when OCR output reaches minimum confidence thresholds
@@ -37,12 +37,12 @@
 - [ ] expose a clear degraded-mode contract for no-highlight or page-level-only sync
 
 ## Geometry Failure and Fallback Rules
-- [ ] Define strict fallback order for sync resolution:
-- [ ] exact sentence geometry
+- [x] Define strict fallback order for sync resolution:
+- [x] exact sentence geometry
 - [ ] fuzzy sentence geometry
-- [ ] paragraph/block geometry
+- [x] paragraph/block geometry
 - [ ] page-level location only
-- [ ] render-only with no sync overlay
+- [x] render-only with no sync overlay
 - [ ] Require fallback to move only downward in confidence; never jump back to a stronger mode without new evidence.
 - [ ] Reject geometry matches that would place the cursor on the wrong page, wrong column, or visually distant region when a weaker but stable fallback exists.
 - [ ] Add explicit handling for difficult PDF structures:
@@ -134,8 +134,8 @@
 - [ ] Ensure bookmarks and resume positions remain owned by `tts_text` indices plus mapped PDF location metadata.
 - [ ] Preserve deterministic behavior when reopening a PDF after cache reuse or rebuild.
 - [ ] Keep page navigation and TTS seek operations synchronized across PDF and text-only views.
-- [ ] Support reverse navigation from native PDF interactions back to `tts_text` ownership:
-- [ ] click or selection in Pretty Text PDF view can resolve to nearest `tts_text` sentence
+- [x] Support reverse navigation from native PDF interactions back to `tts_text` ownership:
+- [x] click or selection in Pretty Text PDF view can resolve to nearest `tts_text` sentence
 - [ ] page jump in PDF view can restore the nearest canonical playback/search cursor
 
 ## Phase 9: Cache, Recovery, and Migration

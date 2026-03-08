@@ -8,6 +8,7 @@ export interface PdfTextSpan {
 
 export interface PdfSentenceMatch {
   confidence: "exact" | "fallback" | "missing";
+  reason: "exact_geometry" | "paragraph_fallback" | "missing";
   pageIndex: number | null;
   spanIndexes: number[];
 }
@@ -84,6 +85,7 @@ export function buildPdfSentenceSpanMap(
     return {
       matches: sentences.map(() => ({
         confidence: "missing",
+        reason: "missing",
         pageIndex: null,
         spanIndexes: []
       })),
@@ -113,6 +115,7 @@ export function buildPdfSentenceSpanMap(
     if (!sentence) {
       matches.push({
         confidence: "missing",
+        reason: "missing",
         pageIndex: null,
         spanIndexes: []
       });
@@ -135,6 +138,7 @@ export function buildPdfSentenceSpanMap(
         const pageIndex = spans[spanIndexes[0]]?.pageIndex ?? null;
         matches.push({
           confidence: "exact",
+          reason: "exact_geometry",
           pageIndex,
           spanIndexes
         });
@@ -148,6 +152,7 @@ export function buildPdfSentenceSpanMap(
     if (fallbackIdx !== null && fallbackIdx !== undefined && spans[fallbackIdx]) {
       matches.push({
         confidence: "fallback",
+        reason: "paragraph_fallback",
         pageIndex: spans[fallbackIdx].pageIndex,
         spanIndexes: [fallbackIdx]
       });
@@ -157,6 +162,7 @@ export function buildPdfSentenceSpanMap(
 
     matches.push({
       confidence: "missing",
+      reason: "missing",
       pageIndex: null,
       spanIndexes: []
     });
@@ -171,4 +177,31 @@ export function buildPdfSentenceSpanMap(
       missingMatches
     }
   };
+}
+
+export function findNearestSentenceForSpanIndex(
+  matches: PdfSentenceMatch[],
+  spanIndex: number
+): number | null {
+  let bestSentenceIdx: number | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (let sentenceIdx = 0; sentenceIdx < matches.length; sentenceIdx += 1) {
+    const match = matches[sentenceIdx];
+    if (!match || match.spanIndexes.length === 0) {
+      continue;
+    }
+    if (match.spanIndexes.includes(spanIndex)) {
+      return sentenceIdx;
+    }
+    for (const candidate of match.spanIndexes) {
+      const distance = Math.abs(candidate - spanIndex);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestSentenceIdx = sentenceIdx;
+      }
+    }
+  }
+
+  return bestSentenceIdx;
 }

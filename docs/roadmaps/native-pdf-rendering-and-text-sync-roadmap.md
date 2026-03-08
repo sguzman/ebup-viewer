@@ -86,7 +86,7 @@
 - [x] Sentence splitting runs only against `tts_text`.
 - [x] TTS playback plans are generated only from `tts_text`.
 - [x] Pretty Text/Text-only toggles do not alter sentence indices, playback position, bookmarks, or search ownership.
-- [ ] Add explicit tracing proving each playback step originated from `tts_text`.
+- [x] Add explicit tracing proving each playback step originated from `tts_text`.
 
 ## Phase 5: PDF Text Geometry and Sync Map
 - [ ] Build a persistent mapping from `tts_text` sentence indices back to PDF page coordinates.

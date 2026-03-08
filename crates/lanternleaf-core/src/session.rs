@@ -637,6 +637,20 @@ impl ReaderSession {
         }
     }
 
+    fn reselect_search_match_for_current_highlight(&mut self) {
+        let Some(highlight_idx) = self.current_highlight_idx() else {
+            return;
+        };
+        let Some(position) = self
+            .search_matches
+            .iter()
+            .position(|candidate| *candidate == highlight_idx)
+        else {
+            return;
+        };
+        self.selected_search_match = Some(position);
+    }
+
     fn apply_selected_match_as_highlight(&mut self, normalizer: &normalizer::TextNormalizer) {
         let Some(selected_idx) = self.selected_search_match else {
             return;
@@ -1087,6 +1101,27 @@ mod tests {
 
         session.toggle_text_only(&normalizer);
         assert_eq!(session.current_highlight_idx(), Some(2));
+    }
+
+    #[test]
+    fn search_selection_continuity_is_preserved_across_view_toggles() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let mut session = build_test_session(&[&["Alpha.", "Needle sentence.", "Omega."]]);
+
+        session.set_search_query("Needle".to_string(), &normalizer);
+        assert_eq!(session.highlighted_display_idx, Some(1));
+        assert_eq!(session.selected_search_match, Some(0));
+        assert_eq!(session.search_matches, vec![1]);
+
+        session.toggle_text_only(&normalizer);
+        assert_eq!(session.current_highlight_idx(), Some(1));
+        assert_eq!(session.selected_search_match, Some(0));
+        assert_eq!(session.search_matches, vec![1]);
+
+        session.toggle_text_only(&normalizer);
+        assert_eq!(session.highlighted_display_idx, Some(1));
+        assert_eq!(session.selected_search_match, Some(0));
+        assert_eq!(session.search_matches, vec![1]);
     }
 
     #[test]

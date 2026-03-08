@@ -9,6 +9,14 @@ impl ReaderSession {
             }
             self.highlighted_audio_idx = Some(sentence_idx);
             self.highlighted_display_idx = self.map_audio_to_display_idx(normalizer, sentence_idx);
+            tracing::trace!(
+                path = %self.source_path.display(),
+                mode = "text_only",
+                owner = "tts_text",
+                highlighted_audio_idx = self.highlighted_audio_idx,
+                highlighted_display_idx = self.highlighted_display_idx,
+                "Updated reader highlight from text-only sentence click"
+            );
             return;
         }
 
@@ -17,6 +25,14 @@ impl ReaderSession {
         }
         self.highlighted_display_idx = Some(sentence_idx);
         self.highlighted_audio_idx = self.map_display_to_audio_idx(normalizer, sentence_idx);
+        tracing::trace!(
+            path = %self.source_path.display(),
+            mode = "pretty_text",
+            owner = "tts_text",
+            highlighted_audio_idx = self.highlighted_audio_idx,
+            highlighted_display_idx = self.highlighted_display_idx,
+            "Updated reader highlight from pretty-text sentence click"
+        );
     }
 
     pub fn select_next_sentence(&mut self, normalizer: &normalizer::TextNormalizer) {
@@ -46,6 +62,7 @@ impl ReaderSession {
     }
 
     pub fn toggle_text_only(&mut self, normalizer: &normalizer::TextNormalizer) {
+        let previous_mode = self.text_only_mode;
         self.text_only_mode = !self.text_only_mode;
         if self.text_only_mode {
             let display_idx = self.highlighted_display_idx.unwrap_or(0);
@@ -54,6 +71,18 @@ impl ReaderSession {
             self.highlighted_display_idx = self.map_audio_to_display_idx(normalizer, audio_idx);
         }
         self.update_search_matches(normalizer);
+        self.reselect_search_match_for_current_highlight();
+        tracing::debug!(
+            path = %self.source_path.display(),
+            from_mode = if previous_mode { "text_only" } else { "pretty_text" },
+            to_mode = if self.text_only_mode { "text_only" } else { "pretty_text" },
+            owner = "tts_text",
+            highlighted_audio_idx = self.highlighted_audio_idx,
+            highlighted_display_idx = self.highlighted_display_idx,
+            selected_search_match = self.selected_search_match,
+            search_match_count = self.search_matches.len(),
+            "Toggled reader view mode while preserving canonical TTS cursor ownership"
+        );
     }
 
     pub fn tts_play(&mut self, normalizer: &normalizer::TextNormalizer) {
@@ -66,6 +95,16 @@ impl ReaderSession {
             let _ = self.set_audio_highlight_idx(normalizer, 0);
         }
         self.tts_state = TtsPlaybackState::Playing;
+        let highlighted_audio_idx = self.current_audio_highlight_idx(normalizer);
+        let highlighted_display_idx = self.highlighted_display_idx;
+        tracing::debug!(
+            path = %self.source_path.display(),
+            owner = "tts_text",
+            highlighted_audio_idx,
+            highlighted_display_idx,
+            audio_sentence_count = count,
+            "Started TTS playback from canonical text-only sentence plan"
+        );
     }
 
     pub fn tts_pause(&mut self) {
@@ -102,6 +141,15 @@ impl ReaderSession {
 
     pub fn tts_seek_next(&mut self, normalizer: &normalizer::TextNormalizer) {
         if self.move_highlight_relative(1, normalizer) {
+            let highlighted_audio_idx = self.current_audio_highlight_idx(normalizer);
+            let highlighted_display_idx = self.highlighted_display_idx;
+            tracing::trace!(
+                path = %self.source_path.display(),
+                owner = "tts_text",
+                highlighted_audio_idx,
+                highlighted_display_idx,
+                "Advanced TTS cursor to next canonical sentence"
+            );
             return;
         }
         if self.tts_state == TtsPlaybackState::Playing {
@@ -111,6 +159,15 @@ impl ReaderSession {
 
     pub fn tts_seek_prev(&mut self, normalizer: &normalizer::TextNormalizer) {
         let _ = self.move_highlight_relative(-1, normalizer);
+        let highlighted_audio_idx = self.current_audio_highlight_idx(normalizer);
+        let highlighted_display_idx = self.highlighted_display_idx;
+        tracing::trace!(
+            path = %self.source_path.display(),
+            owner = "tts_text",
+            highlighted_audio_idx,
+            highlighted_display_idx,
+            "Moved TTS cursor to previous canonical sentence"
+        );
     }
 
     pub fn tts_repeat_current_sentence(&mut self, normalizer: &normalizer::TextNormalizer) {

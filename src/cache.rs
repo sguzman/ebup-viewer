@@ -308,6 +308,12 @@ pub fn delete_recent_source_and_cache(source_path: &Path) -> Result<(), String> 
     let canonical_source =
         fs::canonicalize(source_path).unwrap_or_else(|_| source_path.to_path_buf());
     let cache_path = hash_dir(source_path);
+    debug!(
+        source_path = %source_path.display(),
+        canonical_source = %canonical_source.display(),
+        cache_path = %cache_path.display(),
+        "Deleting recent source and cached reader artifacts"
+    );
     if is_browser_tab_manifest(source_path) {
         let browser_tab_dir = source_path
             .parent()
@@ -322,6 +328,12 @@ pub fn delete_recent_source_and_cache(source_path: &Path) -> Result<(), String> 
     if canonical_source != source_path {
         delete_recent_entry_dirs_for_source(source_path)?;
     }
+
+    debug!(
+        source_path = %source_path.display(),
+        cache_path = %cache_path.display(),
+        "Finished deleting recent source and cached reader artifacts"
+    );
 
     Ok(())
 }
@@ -960,15 +972,21 @@ sentence_text = "legacy bookmark entry"
     fn delete_recent_source_and_cache_removes_pdf_sidecar_artifacts() {
         let source = unique_source_path("pdf");
         write_source_file(&source);
+        persist_dual_view_artifacts(&source, "Alpha. Beta.", Some("# Alpha"), None);
         persist_pdf_sync_meta(
             &source,
             crate::epub_loader::PdfGeometryMode::HighTextTrust,
             crate::epub_loader::PdfSyncStrategy::SentenceSpans,
         );
         let meta_path = hash_dir(&source).join("content").join("pdf-sync-meta.toml");
+        let tts_text_path = hash_dir(&source).join("content").join("tts-text.txt");
         assert!(
             meta_path.exists(),
             "pdf sync meta should exist before delete"
+        );
+        assert!(
+            tts_text_path.exists(),
+            "tts text artifact should exist before delete"
         );
 
         delete_recent_source_and_cache(&source).expect("delete source and cache");
@@ -976,6 +994,10 @@ sentence_text = "legacy bookmark entry"
         assert!(
             !meta_path.exists(),
             "pdf sync meta should be removed with the cache directory"
+        );
+        assert!(
+            !tts_text_path.exists(),
+            "tts text artifact should be removed with the cache directory"
         );
     }
 

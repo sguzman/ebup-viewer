@@ -142,8 +142,8 @@
 - [x] Extend cache layout to store extracted `tts_text`, PDF sync maps, page geometry metadata, and render descriptors.
 - [x] Add cache versioning for PDF dual-payload entries.
 - [x] Recover cleanly from missing or corrupted PDF text/sync artifacts by rebuilding them non-destructively.
-- [ ] Ensure recent-delete clears extracted text, mapping artifacts, thumbnails, and PDF sidecar cache entries consistently.
-- [ ] Add tracing around cache reads, writes, invalidation, rebuilds, and delete outcomes.
+- [x] Ensure recent-delete clears extracted text, mapping artifacts, thumbnails, and PDF sidecar cache entries consistently.
+- [x] Add tracing around cache reads, writes, invalidation, rebuilds, and delete outcomes.
 
 ## Phase 10: OCR and Degraded PDF Strategy
 - [ ] Define behavior for scanned or image-only PDFs where no reliable embedded text exists.
@@ -164,7 +164,7 @@
 - [ ] Regression tests for multi-column PDFs, footnotes, repeated headers, tables, figures, and long captions.
 - [ ] Regression tests ensuring highlight overlays remain aligned during zoom and page changes.
 - [ ] Regression tests for ligatures, hyphenated line wraps, rotated pages, OCR text layers, and hidden/duplicated embedded text.
-- [ ] Manual QA checklist covering native rendering fidelity, text cleanliness, playback sync, resume, and delete/reopen behavior.
+- [x] Manual QA checklist covering native rendering fidelity, text cleanliness, playback sync, resume, and delete/reopen behavior.
 
 ## Acceptance Criteria
 - [ ] Pretty Text mode renders the actual PDF natively.

@@ -880,6 +880,15 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
             });
         }
     };
+    info!(
+        path = %path.display(),
+        cache_text_path = %text_path.display(),
+        meta_path = %meta_path.display(),
+        total_chars = text.len(),
+        pdf_geometry_mode = ?cached_meta.pdf_geometry_mode,
+        pdf_sync_strategy = ?cached_meta.pdf_sync_strategy,
+        "PDF transcript cache hit"
+    );
     Ok(Some(PdfCachedLoad {
         text,
         pdf_geometry_mode: cached_meta
@@ -953,6 +962,16 @@ fn write_pdf_cache(
             meta_path.display()
         )
     })?;
+
+    info!(
+        path = %path.display(),
+        cache_text_path = %text_path.display(),
+        meta_path = %meta_path.display(),
+        total_chars = text.len(),
+        ?pdf_geometry_mode,
+        ?pdf_sync_strategy,
+        "Persisted PDF transcript cache artifacts"
+    );
 
     Ok(())
 }

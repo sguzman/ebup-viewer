@@ -23,6 +23,10 @@
 
 ## Phase 3: Native PDF Pretty View
 - [ ] Render the actual PDF file in Pretty Text mode using a native PDF rendering path.
+- [ ] Choose and document the native PDF renderer contract explicitly:
+- [ ] renderer implementation (`pdf.js`, browser-native embed, or another owned render path)
+- [ ] whether the renderer exposes a trustworthy text layer, selection layer, or only painted pages
+- [ ] which layer owns page metrics, zoom state, and page-to-viewport transforms
 - [ ] Preserve page geometry, embedded images, figures, tables, and document layout.
 - [ ] Support zoom, page navigation, and scroll without converting the PDF into markdown or HTML.
 - [ ] Keep rendering isolated so PDF styles/assets do not affect the surrounding app UI.
@@ -37,11 +41,25 @@
 
 ## Phase 5: PDF Text Geometry and Sync Map
 - [ ] Build a persistent mapping from `tts_text` sentence indices back to PDF page coordinates.
+- [ ] Define the canonical sync artifact shape explicitly:
+- [ ] `sentence_idx -> page_idx + rects[]` or equivalent quad/box list
+- [ ] support one sentence mapping to multiple disjoint rectangles across lines
+- [ ] support one sentence spanning multiple text blocks or column boundaries
 - [ ] Use PDF text geometry when available:
 - [ ] page number
 - [ ] text block or line bounds
 - [ ] glyph/span coordinates where possible
 - [ ] Keep mapping deterministic even when extraction is imperfect or text spans cross line breaks.
+- [ ] Define normalization parity rules between extracted `tts_text` and PDF-visible text:
+- [ ] ligatures (`fi`, `fl`)
+- [ ] soft hyphenation and line-wrap joins
+- [ ] collapsed whitespace and paragraph boundaries
+- [ ] hidden text-layer artifacts, duplicated glyphs, and copy/paste noise
+- [ ] Define mismatch handling when extracted `tts_text` and renderer text-layer text diverge:
+- [ ] exact geometry match
+- [ ] fuzzy span match with confidence downgrade
+- [ ] paragraph/block fallback
+- [ ] unmappable sentence with explicit degraded behavior
 - [ ] Add confidence scoring for each mapped sentence or paragraph.
 - [ ] Persist sync artifacts in cache alongside extracted text.
 - [ ] Add tracing for mapping hits, low-confidence matches, missing spans, and fallback behavior.
@@ -51,6 +69,7 @@
 - [ ] Support paragraph-level highlighting initially if sentence-level PDF geometry is not yet stable.
 - [ ] Allow future refinement to sentence-level highlight without changing `tts_text` ownership.
 - [ ] Keep highlight overlays aligned during zoom, page resize, and scroll.
+- [ ] Keep highlight overlays aligned during rotation, DPI changes, and viewport transform updates.
 - [ ] Remove stale overlays cleanly when page/view state changes.
 - [ ] Add tracing for highlight target resolution, page changes, and overlay lifecycle.
 
@@ -66,6 +85,9 @@
 - [ ] Ensure bookmarks and resume positions remain owned by `tts_text` indices plus mapped PDF location metadata.
 - [ ] Preserve deterministic behavior when reopening a PDF after cache reuse or rebuild.
 - [ ] Keep page navigation and TTS seek operations synchronized across PDF and text-only views.
+- [ ] Support reverse navigation from native PDF interactions back to `tts_text` ownership:
+- [ ] click or selection in Pretty Text PDF view can resolve to nearest `tts_text` sentence
+- [ ] page jump in PDF view can restore the nearest canonical playback/search cursor
 
 ## Phase 9: Cache, Recovery, and Migration
 - [ ] Extend cache layout to store extracted `tts_text`, PDF sync maps, page geometry metadata, and render descriptors.
@@ -79,6 +101,11 @@
 - [ ] Keep native PDF rendering available even when text extraction quality is poor.
 - [ ] Decide whether OCR is deferred, optional, or first-class for scanned PDFs.
 - [ ] If OCR is unavailable, present a clear degraded-mode contract for Text-only/TTS support.
+- [ ] Define degraded behavior by distinct runtime mode:
+- [ ] renderable PDF + trustworthy text geometry
+- [ ] renderable PDF + extracted text but low-confidence geometry
+- [ ] renderable PDF + OCR-derived text/geometry
+- [ ] renderable PDF + no usable mapping for highlight sync
 - [ ] Add tracing distinguishing embedded-text PDFs from OCR-required PDFs.
 
 ## Phase 11: Validation and Regression Coverage
@@ -87,6 +114,7 @@
 - [ ] Integration tests for playback continuity across Pretty Text and Text-only toggles on PDFs.
 - [ ] Regression tests for multi-column PDFs, footnotes, repeated headers, tables, figures, and long captions.
 - [ ] Regression tests ensuring highlight overlays remain aligned during zoom and page changes.
+- [ ] Regression tests for ligatures, hyphenated line wraps, rotated pages, OCR text layers, and hidden/duplicated embedded text.
 - [ ] Manual QA checklist covering native rendering fidelity, text cleanliness, playback sync, resume, and delete/reopen behavior.
 
 ## Acceptance Criteria

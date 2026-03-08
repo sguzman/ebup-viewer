@@ -6,6 +6,55 @@
 - [ ] Ensure TTS, normalization, sentence splitting, and playback control are driven only by extracted plain text.
 - [ ] Synchronize the Text-only/TTS cursor back onto the native PDF render with stable visual highlight and scroll behavior.
 
+## Geometry Robustness Contract
+- [ ] Treat PDF text geometry as a quality-classified signal, not as an always-correct source of truth.
+- [ ] Classify each opened PDF into one of these runtime geometry modes:
+- [ ] `high_text_trust`: embedded text is clean, ordered, and geometrically mappable at sentence level
+- [ ] `mixed_text_trust`: embedded text exists but requires fuzzy matching, block fallback, or partial sentence mapping
+- [ ] `ocr_required`: no reliable embedded text layer; OCR is required for meaningful sync
+- [ ] `render_only_no_sync`: the PDF can be rendered, but no trustworthy text/geometry mapping is available for cursor sync
+- [ ] Persist the detected geometry mode and confidence summary in cache so reopen behavior is deterministic.
+- [ ] Never present low-confidence geometry as exact sentence sync.
+- [ ] Require every highlight/scroll decision to carry an explicit confidence tier and fallback reason.
+
+## Geometry Guarantees by PDF Class
+- [ ] For `high_text_trust` PDFs:
+- [ ] target sentence-level mapping as the primary contract
+- [ ] allow multi-rect highlights for a single sentence across wrapped lines or split spans
+- [ ] keep playback, search, and click-jump behavior sentence-accurate
+- [ ] For `mixed_text_trust` PDFs:
+- [ ] allow fuzzy text alignment and paragraph/block fallback
+- [ ] prefer stable local-region highlighting over visually wrong sentence-level highlight
+- [ ] degrade to block highlight when sentence geometry is ambiguous
+- [ ] preserve `tts_text` ownership even when pretty-view sync becomes approximate
+- [ ] For `ocr_required` PDFs:
+- [ ] keep native PDF rendering available regardless of OCR readiness
+- [ ] support OCR-backed text-only/TTS only when OCR output reaches minimum confidence thresholds
+- [ ] distinguish OCR text confidence from embedded-text confidence in logs and cache
+- [ ] For `render_only_no_sync` PDFs:
+- [ ] show the native PDF in Pretty Text mode without pretending highlight sync is available
+- [ ] keep Text-only/TTS functionality gated by available extracted text quality
+- [ ] expose a clear degraded-mode contract for no-highlight or page-level-only sync
+
+## Geometry Failure and Fallback Rules
+- [ ] Define strict fallback order for sync resolution:
+- [ ] exact sentence geometry
+- [ ] fuzzy sentence geometry
+- [ ] paragraph/block geometry
+- [ ] page-level location only
+- [ ] render-only with no sync overlay
+- [ ] Require fallback to move only downward in confidence; never jump back to a stronger mode without new evidence.
+- [ ] Reject geometry matches that would place the cursor on the wrong page, wrong column, or visually distant region when a weaker but stable fallback exists.
+- [ ] Add explicit handling for difficult PDF structures:
+- [ ] dense academic two-column layouts
+- [ ] repeated headers and footers
+- [ ] footnotes and sidenotes
+- [ ] tables with interleaved text order
+- [ ] figures and long captions
+- [ ] rotated pages or rotated text blocks
+- [ ] hidden OCR layers, invisible text, duplicated glyph streams, and malformed copy/paste order
+- [ ] large heavy-text PDFs where mapping must remain incremental and cacheable rather than recomputed on every view update
+
 ## Phase 1: Source Contracts and Ownership
 - [ ] Define PDF source contract with two canonical payloads:
 - [ ] `pretty_pdf: PdfRenderHandle` or equivalent native render descriptor for Pretty Text mode.

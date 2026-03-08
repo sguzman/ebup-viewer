@@ -26,8 +26,8 @@ pub(crate) use app_shell_commands::{
     session_toggle_theme,
 };
 pub(crate) use browser_tab_commands::{
-    browser_tabs_health, browser_tabs_list_tabs, browser_tabs_list_windows, recent_close_browser_tab,
-    source_open_browser_tab, source_refresh_browser_tab,
+    browser_tabs_health, browser_tabs_list_tabs, browser_tabs_list_windows,
+    recent_close_browser_tab, source_open_browser_tab, source_refresh_browser_tab,
 };
 pub(crate) use reader_commands::{
     reader_apply_settings, reader_close_session, reader_get_snapshot, reader_next_page,

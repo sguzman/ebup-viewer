@@ -24,8 +24,8 @@
 - [x] keep playback, search, and click-jump behavior sentence-accurate
 - [x] For `mixed_text_trust` PDFs:
 - [x] allow fuzzy text alignment and paragraph/block fallback
-- [ ] prefer stable local-region highlighting over visually wrong sentence-level highlight
-- [ ] degrade to block highlight when sentence geometry is ambiguous
+- [x] prefer stable local-region highlighting over visually wrong sentence-level highlight
+- [x] degrade to block highlight when sentence geometry is ambiguous
 - [x] preserve `tts_text` ownership even when pretty-view sync becomes approximate
 - [x] For `ocr_required` PDFs:
 - [x] keep native PDF rendering available regardless of OCR readiness
@@ -34,17 +34,17 @@
 - [x] For `render_only_no_sync` PDFs:
 - [x] show the native PDF in Pretty Text mode without pretending highlight sync is available
 - [ ] keep Text-only/TTS functionality gated by available extracted text quality
-- [ ] expose a clear degraded-mode contract for no-highlight or page-level-only sync
+- [x] expose a clear degraded-mode contract for no-highlight or page-level-only sync
 
 ## Geometry Failure and Fallback Rules
 - [x] Define strict fallback order for sync resolution:
 - [x] exact sentence geometry
-- [ ] fuzzy sentence geometry
+- [x] fuzzy sentence geometry
 - [x] paragraph/block geometry
-- [ ] page-level location only
+- [x] page-level location only
 - [x] render-only with no sync overlay
-- [ ] Require fallback to move only downward in confidence; never jump back to a stronger mode without new evidence.
-- [ ] Reject geometry matches that would place the cursor on the wrong page, wrong column, or visually distant region when a weaker but stable fallback exists.
+- [x] Require fallback to move only downward in confidence; never jump back to a stronger mode without new evidence.
+- [x] Reject geometry matches that would place the cursor on the wrong page, wrong column, or visually distant region when a weaker but stable fallback exists.
 - [ ] Add explicit handling for difficult PDF structures:
 - [ ] dense academic two-column layouts
 - [ ] repeated headers and footers
@@ -56,26 +56,26 @@
 - [ ] large heavy-text PDFs where mapping must remain incremental and cacheable rather than recomputed on every view update
 
 ## Phase 1: Source Contracts and Ownership
-- [ ] Define PDF source contract with two canonical payloads:
-- [ ] `pretty_pdf: PdfRenderHandle` or equivalent native render descriptor for Pretty Text mode.
-- [ ] `tts_text: String` for Text-only rendering and TTS ownership.
-- [ ] Document that `tts_text` is the only input to normalization, sentence planning, bookmarks, and audio playback.
-- [ ] Add tracing fields showing source type, extraction mode, render mode, and sync strategy.
+- [x] Define PDF source contract with two canonical payloads:
+- [x] `pretty_pdf: PdfRenderHandle` or equivalent native render descriptor for Pretty Text mode.
+- [x] `tts_text: String` for Text-only rendering and TTS ownership.
+- [x] Document that `tts_text` is the only input to normalization, sentence planning, bookmarks, and audio playback.
+- [x] Add tracing fields showing source type, extraction mode, render mode, and sync strategy.
 
 ## Phase 2: PDF Ingestion and Text Extraction
-- [ ] Build a dedicated PDF ingest path that outputs native PDF render metadata plus extracted `tts_text`.
-- [ ] Support structured PDFs with selectable/extractable text as the primary happy path.
+- [x] Build a dedicated PDF ingest path that outputs native PDF render metadata plus extracted `tts_text`.
+- [x] Support structured PDFs with selectable/extractable text as the primary happy path.
 - [ ] Preserve page boundaries, block order, and reading order metadata during extraction when available.
-- [ ] Normalize extracted text into stable `tts_text` with reliable whitespace and paragraph boundaries.
+- [x] Normalize extracted text into stable `tts_text` with reliable whitespace and paragraph boundaries.
 - [ ] Add explicit fallback handling for low-quality extraction, duplicated glyphs, headers/footers, and multi-column layouts.
-- [ ] Add tracing spans for extraction duration, detected PDF text quality, and fallback decisions.
+- [x] Add tracing spans for extraction duration, detected PDF text quality, and fallback decisions.
 
 ## Phase 3: Native PDF Pretty View
 - [x] Render the actual PDF file in Pretty Text mode using a native PDF rendering path.
-- [ ] Choose and document the native PDF renderer contract explicitly:
-- [ ] renderer implementation (`pdf.js`, browser-native embed, or another owned render path)
-- [ ] whether the renderer exposes a trustworthy text layer, selection layer, or only painted pages
-- [ ] which layer owns page metrics, zoom state, and page-to-viewport transforms
+- [x] Choose and document the native PDF renderer contract explicitly:
+- [x] renderer implementation (`pdf.js`, browser-native embed, or another owned render path)
+- [x] whether the renderer exposes a trustworthy text layer, selection layer, or only painted pages
+- [x] which layer owns page metrics, zoom state, and page-to-viewport transforms
 - [x] Preserve page geometry, embedded images, figures, tables, and document layout.
 - [x] Support zoom, page navigation, and scroll without converting the PDF into markdown or HTML.
 - [x] Keep rendering isolated so PDF styles/assets do not affect the surrounding app UI.
@@ -140,8 +140,8 @@
 
 ## Phase 9: Cache, Recovery, and Migration
 - [x] Extend cache layout to store extracted `tts_text`, PDF sync maps, page geometry metadata, and render descriptors.
-- [ ] Add cache versioning for PDF dual-payload entries.
-- [ ] Recover cleanly from missing or corrupted PDF text/sync artifacts by rebuilding them non-destructively.
+- [x] Add cache versioning for PDF dual-payload entries.
+- [x] Recover cleanly from missing or corrupted PDF text/sync artifacts by rebuilding them non-destructively.
 - [ ] Ensure recent-delete clears extracted text, mapping artifacts, thumbnails, and PDF sidecar cache entries consistently.
 - [ ] Add tracing around cache reads, writes, invalidation, rebuilds, and delete outcomes.
 
@@ -155,10 +155,10 @@
 - [x] renderable PDF + extracted text but low-confidence geometry
 - [x] renderable PDF + OCR-derived text/geometry
 - [x] renderable PDF + no usable mapping for highlight sync
-- [ ] Add tracing distinguishing embedded-text PDFs from OCR-required PDFs.
+- [x] Add tracing distinguishing embedded-text PDFs from OCR-required PDFs.
 
 ## Phase 11: Validation and Regression Coverage
-- [ ] Unit tests for PDF text extraction normalization.
+- [x] Unit tests for PDF text extraction normalization.
 - [x] Unit tests for sentence-to-PDF coordinate mapping and confidence scoring.
 - [ ] Integration tests for playback continuity across Pretty Text and Text-only toggles on PDFs.
 - [ ] Regression tests for multi-column PDFs, footnotes, repeated headers, tables, figures, and long captions.

@@ -36,7 +36,9 @@ describe("buildPdfSentenceSpanMap", () => {
     expect(result.diagnostics).toEqual({
       exactMatches: 2,
       fallbackMatches: 0,
-      missingMatches: 0
+      pageOnlyMatches: 0,
+      missingMatches: 0,
+      cappedLeaps: 0
     });
   });
 
@@ -47,7 +49,7 @@ describe("buildPdfSentenceSpanMap", () => {
       createSpan(1, "Appendix")
     ];
 
-    const result = buildPdfSentenceSpanMap(spans, ["Missing sentence", "Appendix"]);
+    const result = buildPdfSentenceSpanMap(spans, ["Alpha missing"]);
 
     expect(result.matches[0]).toMatchObject({
       confidence: "fallback",
@@ -55,12 +57,48 @@ describe("buildPdfSentenceSpanMap", () => {
       pageIndex: 0,
       spanIndexes: [0]
     });
-    expect(result.matches[1]).toMatchObject({
-      confidence: "exact",
-      pageIndex: 1,
-      spanIndexes: [2]
+    expect(result.diagnostics.fallbackMatches).toBe(1);
+  });
+
+  it("uses fuzzy sentence geometry before paragraph fallback when local tokens align", () => {
+    const spans = [
+      createSpan(0, "Alpha heading"),
+      createSpan(0, "The quick"),
+      createSpan(0, "brown fox"),
+      createSpan(0, "jumps today"),
+      createSpan(1, "Appendix")
+    ];
+
+    const result = buildPdfSentenceSpanMap(spans, ["The quick brown fox leaps.", "Appendix"]);
+
+    expect(result.matches[0]).toMatchObject({
+      confidence: "fallback",
+      reason: "fuzzy_sentence_geometry",
+      pageIndex: 0,
+      spanIndexes: [0, 1, 2]
     });
     expect(result.diagnostics.fallbackMatches).toBe(1);
+  });
+
+  it("degrades to page-only location when neither exact nor stable local fallback exists", () => {
+    const spans = [
+      createSpan(0, "Cover page"),
+      createSpan(1, "Appendix"),
+      createSpan(2, "References")
+    ];
+
+    const result = buildPdfSentenceSpanMap(spans, [
+      "References",
+      "A sentence that does not exist anywhere in the PDF text layer"
+    ]);
+
+    expect(result.matches[1]).toMatchObject({
+      confidence: "page",
+      reason: "page_location_only",
+      pageIndex: 2,
+      spanIndexes: []
+    });
+    expect(result.diagnostics.pageOnlyMatches).toBe(1);
   });
 
   it("finds the nearest sentence for a clicked span index", () => {

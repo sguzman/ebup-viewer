@@ -143,7 +143,9 @@ pub struct ReaderSnapshot {
     pub text_only_mode: bool,
     pub has_structured_markdown: bool,
     pub pretty_kind: PrettyKind,
-    #[ts(type = "\"high_text_trust\" | \"mixed_text_trust\" | \"ocr_required\" | \"render_only_no_sync\" | null")]
+    #[ts(
+        type = "\"high_text_trust\" | \"mixed_text_trust\" | \"ocr_required\" | \"render_only_no_sync\" | null"
+    )]
     pub pdf_geometry_mode: Option<crate::epub_loader::PdfGeometryMode>,
     #[ts(type = "\"sentence_spans\" | \"paragraph_fallback\" | \"render_only\" | null")]
     pub pdf_sync_strategy: Option<crate::epub_loader::PdfSyncStrategy>,
@@ -1137,9 +1139,8 @@ mod tests {
     fn build_sentence_anchor_map_for_native_html_uses_current_page_sentence_counts() {
         let mut session = build_test_session(&[&["A1.", "A2."], &["B1.", "B2."], &["C1.", "C2."]]);
         session.config.native_html_pretty_enabled = true;
-        session.reading_html = Some(
-            "<p>A1.</p><p>A2.</p><p>B1.</p><p>B2.</p><p>C1.</p><p>C2.</p>".to_string(),
-        );
+        session.reading_html =
+            Some("<p>A1.</p><p>A2.</p><p>B1.</p><p>B2.</p><p>C1.</p><p>C2.</p>".to_string());
 
         assert_eq!(
             session.build_sentence_anchor_map_for_page(0, 2),

@@ -327,6 +327,15 @@ fn load_pdf_with_quack_check(
     let resolved = resolve_pdf_dual_view_content(&run.text, &run.markdown, report.as_ref());
     let tts_text = resolved.tts_text;
     let reading_markdown = resolved.reading_markdown;
+    let extraction_mode = pdf_extraction_mode_label(report.as_ref());
+    let ocr_enabled = report
+        .as_ref()
+        .map(|value| value.decision.do_ocr)
+        .unwrap_or(false);
+    let quality_tier = report
+        .as_ref()
+        .map(|value| format!("{:?}", value.decision.tier))
+        .unwrap_or_else(|| "Unknown".to_string());
 
     write_pdf_cache(
         path,
@@ -343,6 +352,11 @@ fn load_pdf_with_quack_check(
         path = %path.display(),
         total_chars = tts_text.len(),
         markdown_chars = reading_markdown.as_ref().map(|v| v.len()).unwrap_or(0),
+        extraction_mode,
+        quality_tier,
+        ocr_enabled,
+        pdf_geometry_mode = ?resolved.pdf_geometry_mode,
+        pdf_sync_strategy = ?resolved.pdf_sync_strategy,
         job_id = %run.job_id,
         job_dir = %run.job_dir.display(),
         elapsed_ms = start.elapsed().as_millis(),
@@ -452,7 +466,7 @@ fn load_epub_native_html(path: &Path, cancel: Option<&CancellationToken>) -> Res
     }
 }
 
-fn normalize_pdf_text_for_reader(input: &str) -> String {
+pub(super) fn normalize_pdf_text_for_reader(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let normalized = input.replace("\r\n", "\n").replace('\r', "\n");
     let mut paragraph = String::new();
@@ -498,6 +512,22 @@ fn flush_pdf_paragraph(out: &mut String, paragraph: &mut String) {
     }
     out.push_str(paragraph.trim());
     paragraph.clear();
+}
+
+fn pdf_extraction_mode_label(
+    report: Option<&crate::quack_check::report::JobReport>,
+) -> &'static str {
+    let Some(report) = report else {
+        return "unknown";
+    };
+    match (report.decision.tier.clone(), report.decision.do_ocr) {
+        (crate::quack_check::policy::QualityTier::HighText, false) => "embedded_text",
+        (crate::quack_check::policy::QualityTier::MixedText, false) => "mixed_embedded_text",
+        (crate::quack_check::policy::QualityTier::MixedText, true) => "mixed_text_with_ocr",
+        (crate::quack_check::policy::QualityTier::Scan, true) => "ocr_scan",
+        (crate::quack_check::policy::QualityTier::Scan, false) => "scan_without_ocr",
+        (crate::quack_check::policy::QualityTier::HighText, true) => "high_text_with_ocr",
+    }
 }
 
 fn load_with_pandoc(
@@ -933,20 +963,30 @@ fn derive_pdf_runtime_metadata(
     markdown: &str,
 ) -> (PdfGeometryMode, PdfSyncStrategy) {
     if transcript_text.trim().is_empty() {
-        return (PdfGeometryMode::RenderOnlyNoSync, PdfSyncStrategy::RenderOnly);
+        return (
+            PdfGeometryMode::RenderOnlyNoSync,
+            PdfSyncStrategy::RenderOnly,
+        );
     }
     let Some(report) = report else {
         return if markdown.trim().is_empty() {
-            (PdfGeometryMode::MixedTextTrust, PdfSyncStrategy::ParagraphFallback)
+            (
+                PdfGeometryMode::MixedTextTrust,
+                PdfSyncStrategy::ParagraphFallback,
+            )
         } else {
-            (PdfGeometryMode::HighTextTrust, PdfSyncStrategy::SentenceSpans)
+            (
+                PdfGeometryMode::HighTextTrust,
+                PdfSyncStrategy::SentenceSpans,
+            )
         };
     };
 
     match report.decision.tier {
-        crate::quack_check::policy::QualityTier::HighText => {
-            (PdfGeometryMode::HighTextTrust, PdfSyncStrategy::SentenceSpans)
-        }
+        crate::quack_check::policy::QualityTier::HighText => (
+            PdfGeometryMode::HighTextTrust,
+            PdfSyncStrategy::SentenceSpans,
+        ),
         crate::quack_check::policy::QualityTier::MixedText => (
             PdfGeometryMode::MixedTextTrust,
             PdfSyncStrategy::ParagraphFallback,
@@ -962,9 +1002,7 @@ fn derive_pdf_runtime_metadata(
     }
 }
 
-fn load_quack_check_report(
-    job_dir: &Path,
-) -> Result<crate::quack_check::report::JobReport> {
+fn load_quack_check_report(job_dir: &Path) -> Result<crate::quack_check::report::JobReport> {
     let report_path = job_dir.join("final").join("report.json");
     let raw = fs::read_to_string(&report_path).with_context(|| {
         format!(

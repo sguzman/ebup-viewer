@@ -175,12 +175,35 @@ pub(super) fn persist_pdf_sync_meta(
     }
 }
 
-pub(super) fn load_pdf_sync_meta(
-    source_path: &Path,
-) -> Option<(PdfGeometryMode, PdfSyncStrategy)> {
+pub(super) fn load_pdf_sync_meta(source_path: &Path) -> Option<(PdfGeometryMode, PdfSyncStrategy)> {
     let meta_path = hash_dir(source_path).join(CONTENT_PDF_SYNC_META_FILE);
-    let raw = fs::read_to_string(&meta_path).ok()?;
-    let parsed: PdfSyncMeta = toml::from_str(&raw).ok()?;
+    let raw = match fs::read_to_string(&meta_path) {
+        Ok(value) => value,
+        Err(err) => {
+            debug!(
+                path = %meta_path.display(),
+                "PDF sync metadata unavailable: {err}"
+            );
+            return None;
+        }
+    };
+    let parsed: PdfSyncMeta = match toml::from_str(&raw) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(
+                path = %meta_path.display(),
+                "PDF sync metadata was corrupt; removing stale artifact so it can be rebuilt: {err}"
+            );
+            let _ = fs::remove_file(&meta_path);
+            return None;
+        }
+    };
+    debug!(
+        path = %meta_path.display(),
+        ?parsed.pdf_geometry_mode,
+        ?parsed.pdf_sync_strategy,
+        "Loaded cached PDF sync metadata"
+    );
     Some((parsed.pdf_geometry_mode, parsed.pdf_sync_strategy))
 }
 
@@ -195,6 +218,16 @@ fn ensure_content_layout(source_path: &Path) {
         .unwrap_or(false)
     {
         return;
+    }
+    if let Some(previous) = current.as_deref().map(str::trim)
+        && !previous.is_empty()
+    {
+        debug!(
+            path = %hash_root.display(),
+            previous_version = previous,
+            next_version = CONTENT_LAYOUT_VERSION,
+            "Migrating cached content layout version"
+        );
     }
 
     let content_dir = hash_root.join("content");

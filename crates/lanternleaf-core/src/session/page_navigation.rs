@@ -170,17 +170,16 @@ impl ReaderSession {
             .min(self.page_sentence_counts.len().saturating_sub(1));
         self.current_page = clamped_page;
 
-        self.highlighted_display_idx =
-            if let Some(global_idx) = self
-                .global_idx_for_bookmark(bookmark)
-                .or_else(|| self.global_idx_for_bookmark_text(bookmark))
-            {
-                let (page, idx) = self.page_idx_for_global_sentence(global_idx);
-                self.current_page = page;
-                Some(idx)
-            } else {
-                Some(0).filter(|_| self.current_display_len() > 0)
-            };
+        self.highlighted_display_idx = if let Some(global_idx) = self
+            .global_idx_for_bookmark(bookmark)
+            .or_else(|| self.global_idx_for_bookmark_text(bookmark))
+        {
+            let (page, idx) = self.page_idx_for_global_sentence(global_idx);
+            self.current_page = page;
+            Some(idx)
+        } else {
+            Some(0).filter(|_| self.current_display_len() > 0)
+        };
 
         self.highlighted_audio_idx = None;
         if self.text_only_mode {

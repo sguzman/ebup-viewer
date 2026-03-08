@@ -32,7 +32,7 @@ pub const CACHE_DIR: &str = ".cache";
 const CACHE_APP_SUBDIR: &str = "lantern-leaf";
 pub const CACHE_DIR_ENV: &str = "LANTERNLEAF_CACHE_DIR";
 const SOURCE_PATH_FILE: &str = "source-path.txt";
-const CONTENT_LAYOUT_VERSION: &str = "dual-view-v2";
+const CONTENT_LAYOUT_VERSION: &str = "dual-view-v3";
 const CONTENT_LAYOUT_VERSION_FILE: &str = "content/layout-version.txt";
 const CONTENT_TTS_TEXT_FILE: &str = "content/tts-text.txt";
 const CONTENT_READING_MARKDOWN_FILE: &str = "content/reading-markdown.md";
@@ -305,7 +305,8 @@ pub fn persist_clipboard_text_source(text: &str) -> Result<PathBuf, String> {
 }
 
 pub fn delete_recent_source_and_cache(source_path: &Path) -> Result<(), String> {
-    let canonical_source = fs::canonicalize(source_path).unwrap_or_else(|_| source_path.to_path_buf());
+    let canonical_source =
+        fs::canonicalize(source_path).unwrap_or_else(|_| source_path.to_path_buf());
     let cache_path = hash_dir(source_path);
     if is_browser_tab_manifest(source_path) {
         let browser_tab_dir = source_path
@@ -530,7 +531,9 @@ pub fn list_recent_books(limit: usize) -> Vec<RecentBook> {
                 snippet,
                 thumbnail_path,
                 last_opened_unix_secs,
-                browser_tab_id: browser_tab_manifest.as_ref().map(|manifest| manifest.tab_id),
+                browser_tab_id: browser_tab_manifest
+                    .as_ref()
+                    .map(|manifest| manifest.tab_id),
                 browser_window_id: browser_tab_manifest.and_then(|manifest| manifest.window_id),
             })
         })
@@ -920,10 +923,60 @@ sentence_text = "legacy bookmark entry"
             crate::epub_loader::PdfSyncStrategy::ParagraphFallback,
         );
         let loaded = load_pdf_sync_meta(&source).expect("pdf sync meta should load");
-        assert_eq!(loaded.0, crate::epub_loader::PdfGeometryMode::MixedTextTrust);
-        assert_eq!(loaded.1, crate::epub_loader::PdfSyncStrategy::ParagraphFallback);
+        assert_eq!(
+            loaded.0,
+            crate::epub_loader::PdfGeometryMode::MixedTextTrust
+        );
+        assert_eq!(
+            loaded.1,
+            crate::epub_loader::PdfSyncStrategy::ParagraphFallback
+        );
 
         cleanup_source_and_cache(&source);
+    }
+
+    #[test]
+    fn load_pdf_sync_meta_removes_corrupt_artifact() {
+        let source = unique_source_path("pdf");
+        write_source_file(&source);
+
+        let meta_path = hash_dir(&source).join("content").join("pdf-sync-meta.toml");
+        if let Some(parent) = meta_path.parent() {
+            fs::create_dir_all(parent).expect("create pdf sync meta dir");
+        }
+        fs::write(&meta_path, "not = [valid").expect("write corrupt pdf sync meta");
+
+        let loaded = load_pdf_sync_meta(&source);
+        assert!(loaded.is_none());
+        assert!(
+            !meta_path.exists(),
+            "corrupt pdf sync meta should be removed"
+        );
+
+        cleanup_source_and_cache(&source);
+    }
+
+    #[test]
+    fn delete_recent_source_and_cache_removes_pdf_sidecar_artifacts() {
+        let source = unique_source_path("pdf");
+        write_source_file(&source);
+        persist_pdf_sync_meta(
+            &source,
+            crate::epub_loader::PdfGeometryMode::HighTextTrust,
+            crate::epub_loader::PdfSyncStrategy::SentenceSpans,
+        );
+        let meta_path = hash_dir(&source).join("content").join("pdf-sync-meta.toml");
+        assert!(
+            meta_path.exists(),
+            "pdf sync meta should exist before delete"
+        );
+
+        delete_recent_source_and_cache(&source).expect("delete source and cache");
+
+        assert!(
+            !meta_path.exists(),
+            "pdf sync meta should be removed with the cache directory"
+        );
     }
 
     #[test]

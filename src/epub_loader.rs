@@ -121,6 +121,8 @@ pub fn load_book_content_with_cancel(
         markdown_chars = content.reading_markdown.as_ref().map(|v| v.len()).unwrap_or(0),
         html_chars = content.reading_html.as_ref().map(|v| v.len()).unwrap_or(0),
         tts_chars = content.tts_text.len(),
+        pdf_geometry_mode = ?content.pdf_geometry_mode,
+        pdf_sync_strategy = ?content.pdf_sync_strategy,
         image_count = images.len(),
         elapsed_ms = start.elapsed().as_millis(),
         "Source load complete"
@@ -718,6 +720,21 @@ mod tests {
         assert!(!scan_fallback.has_structured_markdown);
         assert!(scan_fallback.reading_markdown.is_none());
         assert!(scan_fallback.tts_text.contains("Scanned OCR text"));
+    }
+
+    #[test]
+    fn normalize_pdf_text_for_reader_collapses_wrapped_lines_and_hyphenation() {
+        let normalized = source_pipeline::normalize_pdf_text_for_reader(
+            "Alpha para-\n graph line\nnext line\n\nBeta block",
+        );
+        assert_eq!(normalized, "Alpha paragraph line next line\n\nBeta block");
+    }
+
+    #[test]
+    fn normalize_pdf_text_for_reader_preserves_paragraph_breaks() {
+        let normalized =
+            source_pipeline::normalize_pdf_text_for_reader("First line\nSecond line\n\nThird line");
+        assert_eq!(normalized, "First line Second line\n\nThird line");
     }
 
     #[test]

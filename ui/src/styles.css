@@ -109,6 +109,9 @@ body {
   border-radius: 14px;
   background: white;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  outline: 2px solid transparent;
+  outline-offset: 4px;
+  transition: outline-color 120ms ease;
 }
 
 .reader-pdf-page-canvas {
@@ -140,4 +143,8 @@ body {
     var(--reader-pdf-highlight-a, 0.18)
   ) !important;
   outline: 1.5px solid var(--reader-highlight-border) !important;
+}
+
+.reader-pdf-page.reader-pdf-page-active {
+  outline-color: var(--reader-highlight-border);
 }

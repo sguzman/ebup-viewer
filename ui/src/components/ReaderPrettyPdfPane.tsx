@@ -27,6 +27,13 @@ interface RenderedPdfPage {
   spans: PdfTextSpan[];
 }
 
+function logPdfDebug(event: string, payload: Record<string, unknown>): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  console.debug(`ReaderPrettyPdfPane.${event}`, payload);
+}
+
 function applyPdfHighlightColor(root: HTMLElement, reader: ReaderSnapshot): void {
   const color = reader.settings.theme === "night"
     ? reader.settings.night_highlight
@@ -102,9 +109,20 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         if (!match) {
           highlightedSentenceRef.current = idx;
           lastScrollTargetRef.current = null;
+          logPdfDebug("highlightMissing", {
+            sentenceIdx: idx,
+            sentenceCount: reader.sentences.length
+          });
           recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
           return;
         }
+        logPdfDebug("highlightResolved", {
+          sentenceIdx: idx,
+          confidence: match.confidence,
+          reason: match.reason,
+          pageIndex: match.pageIndex,
+          spanCount: match.spanIndexes.length
+        });
         if (match.reason === "page_location_only" && match.pageIndex !== null) {
           const page = renderedPagesRef.current.find((candidate) => candidate.pageIndex === match.pageIndex)?.container;
           if (page) {
@@ -122,12 +140,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
                 block: reader.settings.center_spoken_sentence ? "center" : "nearest",
                 inline: "nearest"
               });
-              if (import.meta.env.DEV) {
-                console.debug("ReaderPrettyPdfPane.scrollTarget", {
-                  reason: force ? "manual_jump" : "page_location_change",
-                  target: resolvedScrollTarget
-                });
-              }
+              logPdfDebug("scrollTarget", {
+                reason: force ? "manual_jump" : "page_location_change",
+                target: resolvedScrollTarget
+              });
             }
             lastScrollTargetRef.current = resolvedScrollTarget;
             recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
@@ -167,13 +183,11 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           inline: "nearest"
         });
         lastScrollTargetRef.current = resolvedScrollTarget;
-        if (import.meta.env.DEV) {
-          console.debug("ReaderPrettyPdfPane.scrollTarget", {
-            reason: force ? "manual_jump" : "sentence_location_change",
-            target: resolvedScrollTarget,
-            matchReason: match.reason
-          });
-        }
+        logPdfDebug("scrollTarget", {
+          reason: force ? "manual_jump" : "sentence_location_change",
+          target: resolvedScrollTarget,
+          matchReason: match.reason
+        });
         recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
       },
       [canSyncHighlights, reader.highlighted_sentence_idx, reader.sentences, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence, reader.tts.state]
@@ -209,6 +223,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         root.innerHTML = "";
         applyPdfHighlightColor(root, reader);
         const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+        logPdfDebug("renderStart", {
+          sourcePath,
+          zoom,
+          mode: reader.pdf_geometry_mode,
+          strategy: reader.pdf_sync_strategy
+        });
 
         try {
           const pdfjs = await import("pdfjs-dist");
@@ -221,6 +241,11 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             isEvalSupported: false
           });
           const pdf = await loadingTask.promise;
+          logPdfDebug("documentLoaded", {
+            sourcePath,
+            numPages: pdf.numPages,
+            zoom
+          });
           if (cancelled) {
             void pdf.destroy();
             return;
@@ -231,17 +256,20 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             return;
           }
           recordPerfMeasure("ReaderPrettyPdfPane.renderDocument", startedAt);
+          logPdfDebug("renderComplete", {
+            sourcePath,
+            zoom,
+            numPages: pdf.numPages
+          });
           setRenderVersion((value) => value + 1);
         } catch (cause) {
           if (!cancelled) {
             setError(cause instanceof Error ? cause.message : String(cause));
-            if (import.meta.env.DEV) {
-              console.debug("ReaderPrettyPdfPane.renderError", {
-                sourcePath,
-                zoom,
-                error: cause instanceof Error ? cause.message : String(cause)
-              });
-            }
+            logPdfDebug("renderError", {
+              sourcePath,
+              zoom,
+              error: cause instanceof Error ? cause.message : String(cause)
+            });
           }
         } finally {
           if (!cancelled) {
@@ -414,5 +442,12 @@ async function renderPdfPages(
       spans
     });
     recordPerfMeasure("ReaderPrettyPdfPane.renderPage", startedAt);
+    logPdfDebug("renderPage", {
+      pageIndex: pageNumber - 1,
+      zoom,
+      width: Math.round(viewport.width),
+      height: Math.round(viewport.height),
+      textSpanCount: spans.length
+    });
   }
 }

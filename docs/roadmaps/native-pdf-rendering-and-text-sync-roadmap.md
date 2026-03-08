@@ -79,7 +79,7 @@
 - [x] Preserve page geometry, embedded images, figures, tables, and document layout.
 - [x] Support zoom, page navigation, and scroll without converting the PDF into markdown or HTML.
 - [x] Keep rendering isolated so PDF styles/assets do not affect the surrounding app UI.
-- [ ] Add tracing for PDF page render timing, viewport state, and render errors.
+- [x] Add tracing for PDF page render timing, viewport state, and render errors.
 
 ## Phase 4: Text-only View and TTS Ownership
 - [x] Text-only mode renders only extracted `tts_text`.
@@ -120,14 +120,14 @@
 - [ ] Keep highlight overlays aligned during zoom, page resize, and scroll.
 - [ ] Keep highlight overlays aligned during rotation, DPI changes, and viewport transform updates.
 - [ ] Remove stale overlays cleanly when page/view state changes.
-- [ ] Add tracing for highlight target resolution, page changes, and overlay lifecycle.
+- [x] Add tracing for highlight target resolution, page changes, and overlay lifecycle.
 
 ## Phase 7: Scroll and Cursor Behavior
 - [x] Auto-scroll the native PDF view to the active highlighted location during playback.
 - [x] Keep scroll stable within the same mapped paragraph or region.
 - [x] Only force scroll when playback advances to a new mapped location, page, or explicit jump target.
 - [ ] Keep Text-only and native PDF views aligned to the same `tts_text` cursor.
-- [ ] Add tracing for scroll trigger reasons and viewport adjustments.
+- [x] Add tracing for scroll trigger reasons and viewport adjustments.
 
 ## Phase 8: Search, Navigation, and Resume Semantics
 - [ ] Ensure search in Text-only mode uses `tts_text` and can jump to mapped PDF locations.

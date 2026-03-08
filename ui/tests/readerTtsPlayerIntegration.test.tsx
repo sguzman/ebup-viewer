@@ -135,6 +135,40 @@ describe("ReaderShell TTS player integration", () => {
     expect(html).toContain('data-testid="reader-pretty-markdown"');
   });
 
+  it("preserves playback labels across text-only and native-pdf pretty-text views", () => {
+    const pdfReader = makeReaderSnapshot({
+      source_path: "/tmp/book.pdf",
+      source_name: "book.pdf",
+      text_only_mode: false,
+      pretty_kind: "pdf",
+      pdf_geometry_mode: "high_text_trust",
+      pdf_sync_strategy: "sentence_spans",
+      highlighted_sentence_idx: 1,
+      tts: {
+        state: "playing",
+        current_sentence_idx: 1,
+        sentence_count: 2,
+        can_seek_prev: true,
+        can_seek_next: false,
+        progress_pct: 50
+      }
+    });
+    const textOnlyReader = {
+      ...pdfReader,
+      text_only_mode: true,
+      pretty_kind: "none" as const
+    };
+
+    const prettyHtml = renderReader(pdfReader);
+    const textOnlyHtml = renderReader(textOnlyReader);
+
+    expect(prettyHtml).toContain('data-testid="reader-pretty-pdf"');
+    expect(prettyHtml).toContain("Sentence 2/2");
+    expect(prettyHtml).toContain("Progress 50.000% | playing");
+    expect(textOnlyHtml).toContain("Sentence 2/2");
+    expect(textOnlyHtml).toContain("Progress 50.000% | playing");
+  });
+
   it("hides the player widget when TTS controls are disabled", () => {
     const html = renderReader(
       makeReaderSnapshot({

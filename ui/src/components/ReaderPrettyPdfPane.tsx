@@ -44,6 +44,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const highlightedNodesRef = useRef<HTMLElement[]>([]);
     const highlightedPagesRef = useRef<HTMLDivElement[]>([]);
     const highlightedSentenceRef = useRef<number | null>(null);
+    const lastScrollTargetRef = useRef<string | null>(null);
     const sentenceMatchesRef = useRef<PdfSentenceMatch[]>([]);
     const [zoom, setZoom] = useState(1.2);
     const [loading, setLoading] = useState(true);
@@ -74,6 +75,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           page.classList.remove("reader-pdf-page-active");
         }
         highlightedPagesRef.current = [];
+        let resolvedScrollTarget: string | null = null;
 
         if (idx === null || idx === undefined) {
           highlightedSentenceRef.current = null;
@@ -99,6 +101,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         setActiveMatch(match ?? null);
         if (!match) {
           highlightedSentenceRef.current = idx;
+          lastScrollTargetRef.current = null;
+          recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
           return;
         }
         if (match.reason === "page_location_only" && match.pageIndex !== null) {
@@ -109,19 +113,30 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             highlightedSentenceRef.current = idx;
             const shouldAutoScroll =
               force || (reader.settings.auto_scroll_tts && reader.tts.state === "playing");
-            if (shouldAutoScroll) {
+            resolvedScrollTarget = `page:${match.pageIndex}`;
+            const shouldScrollTarget =
+              force || (shouldAutoScroll && lastScrollTargetRef.current !== resolvedScrollTarget);
+            if (shouldScrollTarget) {
               page.scrollIntoView({
                 behavior,
                 block: reader.settings.center_spoken_sentence ? "center" : "nearest",
                 inline: "nearest"
               });
+              if (import.meta.env.DEV) {
+                console.debug("ReaderPrettyPdfPane.scrollTarget", {
+                  reason: force ? "manual_jump" : "page_location_change",
+                  target: resolvedScrollTarget
+                });
+              }
             }
+            lastScrollTargetRef.current = resolvedScrollTarget;
             recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
             return;
           }
         }
         if (match.spanIndexes.length === 0) {
           highlightedSentenceRef.current = idx;
+          lastScrollTargetRef.current = null;
           recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
           return;
         }
@@ -138,7 +153,11 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         const shouldAutoScroll =
           force || (reader.settings.auto_scroll_tts && reader.tts.state === "playing");
         const anchor = elements[0];
-        if (!anchor || !shouldAutoScroll) {
+        resolvedScrollTarget = match.spanIndexes.join(",");
+        const shouldScrollTarget =
+          force || (shouldAutoScroll && lastScrollTargetRef.current !== resolvedScrollTarget);
+        if (!anchor || !shouldScrollTarget) {
+          lastScrollTargetRef.current = resolvedScrollTarget;
           recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
           return;
         }
@@ -147,6 +166,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           block: reader.settings.center_spoken_sentence ? "center" : "nearest",
           inline: "nearest"
         });
+        lastScrollTargetRef.current = resolvedScrollTarget;
+        if (import.meta.env.DEV) {
+          console.debug("ReaderPrettyPdfPane.scrollTarget", {
+            reason: force ? "manual_jump" : "sentence_location_change",
+            target: resolvedScrollTarget,
+            matchReason: match.reason
+          });
+        }
         recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
       },
       [canSyncHighlights, reader.highlighted_sentence_idx, reader.sentences, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence, reader.tts.state]
@@ -178,6 +205,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         setError(null);
         renderedPagesRef.current = [];
         highlightedPagesRef.current = [];
+        lastScrollTargetRef.current = null;
         root.innerHTML = "";
         applyPdfHighlightColor(root, reader);
         const startedAt = typeof performance !== "undefined" ? performance.now() : 0;

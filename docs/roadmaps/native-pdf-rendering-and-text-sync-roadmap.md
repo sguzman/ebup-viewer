@@ -85,7 +85,7 @@
 - [x] Text-only mode renders only extracted `tts_text`.
 - [x] Sentence splitting runs only against `tts_text`.
 - [x] TTS playback plans are generated only from `tts_text`.
-- [ ] Pretty Text/Text-only toggles do not alter sentence indices, playback position, bookmarks, or search ownership.
+- [x] Pretty Text/Text-only toggles do not alter sentence indices, playback position, bookmarks, or search ownership.
 - [ ] Add explicit tracing proving each playback step originated from `tts_text`.
 
 ## Phase 5: PDF Text Geometry and Sync Map
@@ -123,9 +123,9 @@
 - [ ] Add tracing for highlight target resolution, page changes, and overlay lifecycle.
 
 ## Phase 7: Scroll and Cursor Behavior
-- [ ] Auto-scroll the native PDF view to the active highlighted location during playback.
-- [ ] Keep scroll stable within the same mapped paragraph or region.
-- [ ] Only force scroll when playback advances to a new mapped location, page, or explicit jump target.
+- [x] Auto-scroll the native PDF view to the active highlighted location during playback.
+- [x] Keep scroll stable within the same mapped paragraph or region.
+- [x] Only force scroll when playback advances to a new mapped location, page, or explicit jump target.
 - [ ] Keep Text-only and native PDF views aligned to the same `tts_text` cursor.
 - [ ] Add tracing for scroll trigger reasons and viewport adjustments.
 
@@ -160,7 +160,7 @@
 ## Phase 11: Validation and Regression Coverage
 - [x] Unit tests for PDF text extraction normalization.
 - [x] Unit tests for sentence-to-PDF coordinate mapping and confidence scoring.
-- [ ] Integration tests for playback continuity across Pretty Text and Text-only toggles on PDFs.
+- [x] Integration tests for playback continuity across Pretty Text and Text-only toggles on PDFs.
 - [ ] Regression tests for multi-column PDFs, footnotes, repeated headers, tables, figures, and long captions.
 - [ ] Regression tests ensuring highlight overlays remain aligned during zoom and page changes.
 - [ ] Regression tests for ligatures, hyphenated line wraps, rotated pages, OCR text layers, and hidden/duplicated embedded text.
@@ -171,5 +171,5 @@
 - [ ] Text-only mode shows only clean extracted text.
 - [ ] TTS, normalization, and playback indexing are fully owned by extracted `tts_text`.
 - [ ] Native PDF view highlights the currently spoken text at the correct PDF location.
-- [ ] Auto-scroll in Pretty Text mode follows playback without jitter or premature repositioning.
+- [x] Auto-scroll in Pretty Text mode follows playback without jitter or premature repositioning.
 - [x] Full project build verification passes after implementation, excluding `deb`, `rpm`, and AppImage packaging targets.

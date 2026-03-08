@@ -32,6 +32,7 @@ import { computeReaderTypographyLayout } from "./readerTypography";
 import { TtsPlayerWidget } from "./TtsPlayerWidget";
 import { useReaderHighlightSync } from "./useReaderHighlightSync";
 import { useReaderSessionStats } from "./useReaderSessionStats";
+import { ReaderPrettyPdfPane, type ReaderPrettyPdfPaneHandle } from "./ReaderPrettyPdfPane";
 
 interface ReaderShellProps {
   reader: ReaderSnapshot;
@@ -124,6 +125,7 @@ export const ReaderShell = memo(function ReaderShell({
   const sentenceRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   const sentenceScrollRef = useRef<HTMLDivElement | null>(null);
   const nativeHtmlCacheRef = useRef<{ key: string; html: string }>({ key: "", html: "" });
+  const pdfPaneRef = useRef<ReaderPrettyPdfPaneHandle | null>(null);
 
   useEffect(() => {
     setPageInput(String(reader.current_page + 1));
@@ -169,9 +171,11 @@ export const ReaderShell = memo(function ReaderShell({
     isPrettyTextMode && reader.pretty_kind === "markdown" && Boolean(reader.reading_markdown_page);
   const hasPrettyHtml =
     isPrettyTextMode && reader.pretty_kind === "html" && Boolean(reader.reading_html_page);
+  const hasPrettyPdf =
+    isPrettyTextMode && reader.pretty_kind === "pdf" && reader.source_path.toLowerCase().endsWith(".pdf");
   const isBrowserTabPrettyHtml =
     hasPrettyHtml && reader.source_path.toLowerCase().endsWith(".lltab");
-  const prettyUnavailable = isPrettyTextMode && !hasPrettyMarkdown && !hasPrettyHtml;
+  const prettyUnavailable = isPrettyTextMode && !hasPrettyMarkdown && !hasPrettyHtml && !hasPrettyPdf;
   const showSentenceList = reader.text_only_mode || prettyUnavailable;
   const ttsSentenceLabel = useMemo(
     () =>
@@ -209,7 +213,7 @@ export const ReaderShell = memo(function ReaderShell({
   const {
     handleNativeHtmlFrameLoad,
     handlePrettyContentClick,
-    jumpToHighlightedSentence,
+    jumpToHighlightedSentence: jumpToHighlightedSentenceBase,
     nativeHtmlFrameRef
   } =
     useReaderHighlightSync({
@@ -221,6 +225,13 @@ export const ReaderShell = memo(function ReaderShell({
       sentenceRefs,
       sentenceScrollRef
     });
+  const jumpToHighlightedSentence = () => {
+    if (hasPrettyPdf) {
+      pdfPaneRef.current?.jumpToHighlightedSentence();
+      return;
+    }
+    jumpToHighlightedSentenceBase();
+  };
   const themeLabel = reader.settings.theme === "night" ? "Day" : "Night";
 
   return (
@@ -290,6 +301,13 @@ export const ReaderShell = memo(function ReaderShell({
                       nativeHtmlFrameRef={nativeHtmlFrameRef}
                       renderedNativeHtml={renderedNativeHtml}
                       showSentenceList={showSentenceList}
+                    />
+                  ) : null}
+                  {hasPrettyPdf ? (
+                    <ReaderPrettyPdfPane
+                      ref={pdfPaneRef}
+                      reader={reader}
+                      sourcePath={reader.source_path}
                     />
                   ) : null}
                   {hasPrettyMarkdown ? (

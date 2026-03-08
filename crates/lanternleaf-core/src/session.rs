@@ -174,6 +174,7 @@ pub enum PrettyKind {
     None,
     Markdown,
     Html,
+    Pdf,
 }
 
 #[derive(Debug, Clone)]
@@ -333,7 +334,15 @@ impl ReaderSession {
         } else {
             None
         };
-        let pretty_kind = if reading_html_page.is_some() {
+        let source_is_pdf = self
+            .source_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("pdf"))
+            .unwrap_or(false);
+        let pretty_kind = if source_is_pdf {
+            PrettyKind::Pdf
+        } else if reading_html_page.is_some() {
             PrettyKind::Html
         } else if reading_markdown_page.is_some() {
             PrettyKind::Markdown

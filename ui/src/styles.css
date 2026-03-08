@@ -90,3 +90,54 @@ body {
   color: #9a3412;
   font-style: italic;
 }
+
+.reader-pdf-pane-shell {
+  width: 100%;
+}
+
+.reader-pdf-document {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: center;
+  padding-bottom: 16px;
+}
+
+.reader-pdf-page {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+
+.reader-pdf-page-canvas {
+  display: block;
+}
+
+.reader-pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  opacity: 1;
+}
+
+.reader-pdf-text-layer span {
+  position: absolute;
+  color: transparent;
+  transform-origin: 0 0;
+  white-space: pre;
+  cursor: text;
+  border-radius: 0.22rem;
+}
+
+.reader-pdf-text-layer .reader-pdf-highlight {
+  background: rgba(
+    var(--reader-pdf-highlight-r, 95),
+    var(--reader-pdf-highlight-g, 143),
+    var(--reader-pdf-highlight-b, 47),
+    var(--reader-pdf-highlight-a, 0.18)
+  ) !important;
+  outline: 1.5px solid var(--reader-highlight-border) !important;
+}

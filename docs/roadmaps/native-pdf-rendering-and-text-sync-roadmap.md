@@ -1,9 +1,9 @@
 # Native PDF Rendering and Text Sync Roadmap
 
 ## Objective
-- [ ] Render PDF sources natively in Pretty Text mode as the actual PDF document, not a converted HTML/markdown approximation.
-- [ ] Keep Text-only mode strictly bound to extracted plain text from the PDF.
-- [ ] Ensure TTS, normalization, sentence splitting, and playback control are driven only by extracted plain text.
+- [x] Render PDF sources natively in Pretty Text mode as the actual PDF document, not a converted HTML/markdown approximation.
+- [x] Keep Text-only mode strictly bound to extracted plain text from the PDF.
+- [x] Ensure TTS, normalization, sentence splitting, and playback control are driven only by extracted plain text.
 - [ ] Synchronize the Text-only/TTS cursor back onto the native PDF render with stable visual highlight and scroll behavior.
 
 ## Geometry Robustness Contract
@@ -71,20 +71,20 @@
 - [ ] Add tracing spans for extraction duration, detected PDF text quality, and fallback decisions.
 
 ## Phase 3: Native PDF Pretty View
-- [ ] Render the actual PDF file in Pretty Text mode using a native PDF rendering path.
+- [x] Render the actual PDF file in Pretty Text mode using a native PDF rendering path.
 - [ ] Choose and document the native PDF renderer contract explicitly:
 - [ ] renderer implementation (`pdf.js`, browser-native embed, or another owned render path)
 - [ ] whether the renderer exposes a trustworthy text layer, selection layer, or only painted pages
 - [ ] which layer owns page metrics, zoom state, and page-to-viewport transforms
-- [ ] Preserve page geometry, embedded images, figures, tables, and document layout.
-- [ ] Support zoom, page navigation, and scroll without converting the PDF into markdown or HTML.
-- [ ] Keep rendering isolated so PDF styles/assets do not affect the surrounding app UI.
+- [x] Preserve page geometry, embedded images, figures, tables, and document layout.
+- [x] Support zoom, page navigation, and scroll without converting the PDF into markdown or HTML.
+- [x] Keep rendering isolated so PDF styles/assets do not affect the surrounding app UI.
 - [ ] Add tracing for PDF page render timing, viewport state, and render errors.
 
 ## Phase 4: Text-only View and TTS Ownership
-- [ ] Text-only mode renders only extracted `tts_text`.
-- [ ] Sentence splitting runs only against `tts_text`.
-- [ ] TTS playback plans are generated only from `tts_text`.
+- [x] Text-only mode renders only extracted `tts_text`.
+- [x] Sentence splitting runs only against `tts_text`.
+- [x] TTS playback plans are generated only from `tts_text`.
 - [ ] Pretty Text/Text-only toggles do not alter sentence indices, playback position, bookmarks, or search ownership.
 - [ ] Add explicit tracing proving each playback step originated from `tts_text`.
 
@@ -159,7 +159,7 @@
 
 ## Phase 11: Validation and Regression Coverage
 - [ ] Unit tests for PDF text extraction normalization.
-- [ ] Unit tests for sentence-to-PDF coordinate mapping and confidence scoring.
+- [x] Unit tests for sentence-to-PDF coordinate mapping and confidence scoring.
 - [ ] Integration tests for playback continuity across Pretty Text and Text-only toggles on PDFs.
 - [ ] Regression tests for multi-column PDFs, footnotes, repeated headers, tables, figures, and long captions.
 - [ ] Regression tests ensuring highlight overlays remain aligned during zoom and page changes.
@@ -172,4 +172,4 @@
 - [ ] TTS, normalization, and playback indexing are fully owned by extracted `tts_text`.
 - [ ] Native PDF view highlights the currently spoken text at the correct PDF location.
 - [ ] Auto-scroll in Pretty Text mode follows playback without jitter or premature repositioning.
-- [ ] Full project build verification passes after implementation, excluding `deb`, `rpm`, and AppImage packaging targets.
+- [x] Full project build verification passes after implementation, excluding `deb`, `rpm`, and AppImage packaging targets.

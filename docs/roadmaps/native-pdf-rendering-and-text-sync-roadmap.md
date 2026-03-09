@@ -49,9 +49,9 @@
 - [x] dense academic two-column layouts
 - [x] repeated headers and footers
 - [ ] footnotes and sidenotes
-- [ ] tables with interleaved text order
+- [x] tables with interleaved text order
 - [x] figures and long captions
-- [ ] rotated pages or rotated text blocks
+- [x] rotated pages or rotated text blocks
 - [x] hidden OCR layers, invisible text, duplicated glyph streams, and malformed copy/paste order
 - [ ] large heavy-text PDFs where mapping must remain incremental and cacheable rather than recomputed on every view update
 
@@ -161,9 +161,9 @@
 - [x] Unit tests for PDF text extraction normalization.
 - [x] Unit tests for sentence-to-PDF coordinate mapping and confidence scoring.
 - [x] Integration tests for playback continuity across Pretty Text and Text-only toggles on PDFs.
-- [ ] Regression tests for tables.
+- [x] Regression tests for tables.
 - [x] Regression tests ensuring highlight overlays remain aligned during zoom and page changes.
-- [ ] Regression tests for rotated pages.
+- [x] Regression tests for rotated pages.
 - [x] Manual QA checklist covering native rendering fidelity, text cleanliness, playback sync, resume, and delete/reopen behavior.
 
 ## Acceptance Criteria

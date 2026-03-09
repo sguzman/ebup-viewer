@@ -494,7 +494,8 @@ async function renderPdfPages(
     const spanElements = Array.from(textLayerDiv.querySelectorAll("span")) as HTMLElement[];
     const spans: PdfTextSpan[] = orderPdfTextLayerSpans(
       spanElements.filter((element) => isVisiblePdfTextSpan(element)),
-      pageNumber - 1
+      pageNumber - 1,
+      viewport.rotation
     ).map((span) => {
       span.element.setAttribute("data-ll-pdf-span-idx", String(globalSpanIndex));
       globalSpanIndex += 1;

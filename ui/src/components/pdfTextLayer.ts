@@ -14,6 +14,7 @@ interface MeasuredPdfSpan {
 const MIN_COLUMN_SPAN_COUNT = 3;
 const MIN_COLUMN_GAP = 72;
 const ROW_TOLERANCE = 8;
+const TABLE_ROW_ALIGNMENT_TOLERANCE = 2;
 const FOOTNOTE_BAND_START = 0.78;
 const FULL_WIDTH_BAND_GAP_FRACTION = 0.3;
 const FULL_WIDTH_BAND_WIDTH_FRACTION = 0.6;
@@ -82,6 +83,17 @@ interface TwoColumnLayout {
   bands: MeasuredPdfSpan[];
 }
 
+function hasStrongRowAlignment(leftColumn: MeasuredPdfSpan[], rightColumn: MeasuredPdfSpan[]): boolean {
+  let alignedRows = 0;
+  for (const left of leftColumn) {
+    if (rightColumn.some((right) => Math.abs(right.top - left.top) <= TABLE_ROW_ALIGNMENT_TOLERANCE)) {
+      alignedRows += 1;
+    }
+  }
+  const comparableRows = Math.min(leftColumn.length, rightColumn.length);
+  return comparableRows >= 3 && alignedRows / comparableRows >= 0.6;
+}
+
 function tryBuildTwoColumnLayout(spans: MeasuredPdfSpan[]): TwoColumnLayout | null {
   const columns = bucketByColumn(spans);
   if (columns.length < 2) {
@@ -117,6 +129,9 @@ function tryBuildTwoColumnLayout(spans: MeasuredPdfSpan[]): TwoColumnLayout | nu
   }
 
   if (leftColumn.length < MIN_COLUMN_SPAN_COUNT || rightColumn.length < MIN_COLUMN_SPAN_COUNT) {
+    return null;
+  }
+  if (hasStrongRowAlignment(leftColumn, rightColumn)) {
     return null;
   }
 
@@ -197,21 +212,46 @@ function orderTwoColumnLayout(layout: TwoColumnLayout): MeasuredPdfSpan[] {
 }
 
 function sortSingleColumn(spans: MeasuredPdfSpan[]): MeasuredPdfSpan[] {
-  return [...spans].sort((left, right) => {
-    const topDelta = left.top - right.top;
-    if (Math.abs(topDelta) > ROW_TOLERANCE) {
-      return topDelta;
+  const sorted = [...spans].sort((left, right) => {
+    if (left.top !== right.top) {
+      return left.top - right.top;
     }
     if (left.left !== right.left) {
       return left.left - right.left;
     }
     return left.index - right.index;
   });
+  const rows: MeasuredPdfSpan[][] = [];
+  for (const span of sorted) {
+    const current = rows.at(-1);
+    if (!current) {
+      rows.push([span]);
+      continue;
+    }
+    const rowTop = current[0]?.top ?? span.top;
+    if (Math.abs(span.top - rowTop) <= ROW_TOLERANCE) {
+      current.push(span);
+      continue;
+    }
+    rows.push([span]);
+  }
+  return rows.flatMap((row) =>
+    [...row].sort((left, right) => {
+      if (left.left !== right.left) {
+        return left.left - right.left;
+      }
+      if (left.top !== right.top) {
+        return left.top - right.top;
+      }
+      return left.index - right.index;
+    })
+  );
 }
 
 export function orderPdfTextLayerSpans(
   elements: HTMLElement[],
-  pageIndex: number
+  pageIndex: number,
+  rotationDegrees = 0
 ): PdfTextSpan[] {
   const measured = elements
     .map((element, index) => ({
@@ -223,10 +263,20 @@ export function orderPdfTextLayerSpans(
     .filter((span) => span.text.trim().length > 0)
     .map((span) => measurePdfSpan(span.element, span.text, span.pageIndex, span.index));
 
-  const twoColumnLayout = tryBuildTwoColumnLayout(measured);
+  const normalizedRotation = ((rotationDegrees % 360) + 360) % 360;
+  const normalizedMeasured =
+    normalizedRotation === 90 || normalizedRotation === 270
+      ? measured.map((span) => ({
+        ...span,
+        top: span.left,
+        left: span.top
+      }))
+      : measured;
+
+  const twoColumnLayout = tryBuildTwoColumnLayout(normalizedMeasured);
   const ordered = twoColumnLayout
     ? orderTwoColumnLayout(twoColumnLayout)
-    : sortSingleColumn(measured);
+    : sortSingleColumn(normalizedMeasured);
 
   return ordered.map((span) => ({
     pageIndex: span.pageIndex,

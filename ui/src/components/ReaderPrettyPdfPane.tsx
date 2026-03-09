@@ -1,5 +1,5 @@
 import { Button, ButtonGroup, CircularProgress, Stack, Typography } from "@mui/material";
-import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
+import type { PDFDocumentProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 import { backendApi, type PdfSentenceLocation } from "../api/tauri";
@@ -15,7 +15,7 @@ import {
 } from "./pdfTextSync";
 import { applyPdfHighlightDom } from "./pdfHighlightDom";
 import { orderPdfTextLayerSpans } from "./pdfTextLayer";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 let pdfJsWorkerConfigured = false;
 
@@ -387,7 +387,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         try {
           ensurePromiseWithResolvers();
           const pdfBytes = await backendApi.readerLoadPdfBytes(sourcePath);
-          const pdfjs = await import("pdfjs-dist");
+          const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
           if (!pdfJsWorkerConfigured) {
             pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
             pdfJsWorkerConfigured = true;
@@ -712,7 +712,7 @@ function mergeLineRectsIntoBlocks(lineRects: PdfSentenceLocation["line_rects"]):
 }
 
 async function renderPdfPages(
-  TextLayerImpl: typeof import("pdfjs-dist")["TextLayer"],
+  TextLayerImpl: typeof import("pdfjs-dist/legacy/build/pdf.mjs")["TextLayer"],
   pdf: PDFDocumentProxy,
   root: HTMLDivElement,
   zoom: number,

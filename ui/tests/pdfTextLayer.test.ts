@@ -77,4 +77,38 @@ describe("orderPdfTextLayerSpans", () => {
       "right-footnote-2"
     ]);
   });
+
+  it("keeps full-width caption bands between two-column body sections", () => {
+    const spans = orderPdfTextLayerSpans([
+      createElement("right-top-1", { top: 10, left: 260 }),
+      createElement("left-top-1", { top: 10, left: 24 }),
+      createElement("right-top-2", { top: 30, left: 260 }),
+      createElement("left-top-2", { top: 30, left: 24 }),
+      createElement("right-top-3", { top: 50, left: 260 }),
+      createElement("left-top-3", { top: 50, left: 24 }),
+      createElement("Figure 1. Full width caption", { top: 72, left: 120, width: 160 }),
+      createElement("right-bottom-1", { top: 92, left: 260 }),
+      createElement("left-bottom-1", { top: 92, left: 24 }),
+      createElement("right-bottom-2", { top: 112, left: 260 }),
+      createElement("left-bottom-2", { top: 112, left: 24 }),
+      createElement("right-bottom-3", { top: 132, left: 260 }),
+      createElement("left-bottom-3", { top: 132, left: 24 })
+    ], 0);
+
+    expect(spans.map((span) => span.text)).toEqual([
+      "left-top-1",
+      "left-top-2",
+      "left-top-3",
+      "right-top-1",
+      "right-top-2",
+      "right-top-3",
+      "Figure 1. Full width caption",
+      "left-bottom-1",
+      "left-bottom-2",
+      "left-bottom-3",
+      "right-bottom-1",
+      "right-bottom-2",
+      "right-bottom-3"
+    ]);
+  });
 });

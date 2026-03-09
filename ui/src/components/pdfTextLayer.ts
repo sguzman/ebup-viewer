@@ -15,6 +15,8 @@ const MIN_COLUMN_SPAN_COUNT = 3;
 const MIN_COLUMN_GAP = 72;
 const ROW_TOLERANCE = 8;
 const FOOTNOTE_BAND_START = 0.78;
+const FULL_WIDTH_BAND_GAP_FRACTION = 0.3;
+const FULL_WIDTH_BAND_WIDTH_FRACTION = 0.6;
 
 function measurePdfSpan(
   element: HTMLElement,
@@ -74,6 +76,57 @@ function hasStrongTwoColumnLayout(columns: MeasuredPdfSpan[][]): boolean {
   return gap >= MIN_COLUMN_GAP;
 }
 
+interface TwoColumnLayout {
+  leftColumn: MeasuredPdfSpan[];
+  rightColumn: MeasuredPdfSpan[];
+  bands: MeasuredPdfSpan[];
+}
+
+function tryBuildTwoColumnLayout(spans: MeasuredPdfSpan[]): TwoColumnLayout | null {
+  const columns = bucketByColumn(spans);
+  if (columns.length < 2) {
+    return null;
+  }
+  const leftAnchor = columns[0]?.[0]?.left;
+  const rightAnchor = columns.at(-1)?.[0]?.left;
+  if (leftAnchor === undefined || rightAnchor === undefined) {
+    return null;
+  }
+  const gap = rightAnchor - leftAnchor;
+  if (gap < MIN_COLUMN_GAP) {
+    return null;
+  }
+
+  const leftColumn: MeasuredPdfSpan[] = [];
+  const rightColumn: MeasuredPdfSpan[] = [];
+  const bands: MeasuredPdfSpan[] = [];
+
+  for (const span of spans) {
+    const spansGap = span.left > leftAnchor + gap * FULL_WIDTH_BAND_GAP_FRACTION
+      && span.left < rightAnchor - gap * FULL_WIDTH_BAND_GAP_FRACTION;
+    const spansWidth = span.width >= gap * FULL_WIDTH_BAND_WIDTH_FRACTION;
+    if (spansGap || spansWidth) {
+      bands.push(span);
+      continue;
+    }
+    if (Math.abs(span.left - leftAnchor) <= Math.abs(span.left - rightAnchor)) {
+      leftColumn.push(span);
+    } else {
+      rightColumn.push(span);
+    }
+  }
+
+  if (leftColumn.length < MIN_COLUMN_SPAN_COUNT || rightColumn.length < MIN_COLUMN_SPAN_COUNT) {
+    return null;
+  }
+
+  return {
+    leftColumn,
+    rightColumn,
+    bands: sortSingleColumn(bands)
+  };
+}
+
 function splitBottomNoteBand(spans: MeasuredPdfSpan[]): {
   main: MeasuredPdfSpan[];
   bottomBand: MeasuredPdfSpan[];
@@ -95,6 +148,52 @@ function splitBottomNoteBand(spans: MeasuredPdfSpan[]): {
     return { main: spans, bottomBand: [] };
   }
   return { main, bottomBand };
+}
+
+function orderTwoColumnLayout(layout: TwoColumnLayout): MeasuredPdfSpan[] {
+  const orderedLeft = sortSingleColumn(layout.leftColumn);
+  const orderedRight = sortSingleColumn(layout.rightColumn);
+  if (layout.bands.length === 0) {
+    const leftSplit = splitBottomNoteBand(orderedLeft);
+    const rightSplit = splitBottomNoteBand(orderedRight);
+    return [
+      ...sortSingleColumn(leftSplit.main),
+      ...sortSingleColumn(leftSplit.bottomBand),
+      ...sortSingleColumn(rightSplit.main),
+      ...sortSingleColumn(rightSplit.bottomBand)
+    ];
+  }
+
+  const ordered: MeasuredPdfSpan[] = [];
+  let previousBandTop = Number.NEGATIVE_INFINITY;
+
+  for (const band of layout.bands) {
+    const leftSegment = orderedLeft.filter((span) => span.top < band.top && span.top >= previousBandTop);
+    const rightSegment = orderedRight.filter((span) => span.top < band.top && span.top >= previousBandTop);
+    const leftSplit = splitBottomNoteBand(leftSegment);
+    const rightSplit = splitBottomNoteBand(rightSegment);
+    ordered.push(
+      ...sortSingleColumn(leftSplit.main),
+      ...sortSingleColumn(leftSplit.bottomBand),
+      ...sortSingleColumn(rightSplit.main),
+      ...sortSingleColumn(rightSplit.bottomBand),
+      band
+    );
+    previousBandTop = band.top;
+  }
+
+  const remainingLeft = orderedLeft.filter((span) => span.top >= previousBandTop);
+  const remainingRight = orderedRight.filter((span) => span.top >= previousBandTop);
+  const leftSplit = splitBottomNoteBand(remainingLeft);
+  const rightSplit = splitBottomNoteBand(remainingRight);
+  ordered.push(
+    ...sortSingleColumn(leftSplit.main),
+    ...sortSingleColumn(leftSplit.bottomBand),
+    ...sortSingleColumn(rightSplit.main),
+    ...sortSingleColumn(rightSplit.bottomBand)
+  );
+
+  return ordered;
 }
 
 function sortSingleColumn(spans: MeasuredPdfSpan[]): MeasuredPdfSpan[] {
@@ -124,12 +223,9 @@ export function orderPdfTextLayerSpans(
     .filter((span) => span.text.trim().length > 0)
     .map((span) => measurePdfSpan(span.element, span.text, span.pageIndex, span.index));
 
-  const columns = bucketByColumn(measured);
-  const ordered = hasStrongTwoColumnLayout(columns)
-    ? columns.flatMap((column) => {
-      const { main, bottomBand } = splitBottomNoteBand(column);
-      return [...sortSingleColumn(main), ...sortSingleColumn(bottomBand)];
-    })
+  const twoColumnLayout = tryBuildTwoColumnLayout(measured);
+  const ordered = twoColumnLayout
+    ? orderTwoColumnLayout(twoColumnLayout)
     : sortSingleColumn(measured);
 
   return ordered.map((span) => ({

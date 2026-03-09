@@ -40,6 +40,37 @@ function ensurePromiseWithResolvers(): void {
   };
 }
 
+function ensureReadableStreamAsyncIterator(): void {
+  const readableStreamCtor = globalThis.ReadableStream as
+    | (typeof ReadableStream & {
+        prototype: ReadableStream<unknown> & {
+          [Symbol.asyncIterator]?: () => AsyncIterableIterator<unknown>;
+        };
+      })
+    | undefined;
+  if (!readableStreamCtor?.prototype || typeof readableStreamCtor.prototype[Symbol.asyncIterator] === "function") {
+    return;
+  }
+  Object.defineProperty(readableStreamCtor.prototype, Symbol.asyncIterator, {
+    configurable: true,
+    writable: true,
+    value: async function* readableStreamAsyncIterator(this: ReadableStream<unknown>) {
+      const reader = this.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            return;
+          }
+          yield value;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    }
+  });
+}
+
 async function importPdfJsBrowserSafe(): Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> {
   if (pdfJsImportPromise) {
     return pdfJsImportPromise;
@@ -454,6 +485,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
 
         try {
           ensurePromiseWithResolvers();
+          ensureReadableStreamAsyncIterator();
           await ensurePdfJsFakeWorkerGlobal();
           const pdfBytes = await backendApi.readerLoadPdfBytes(sourcePath);
           const pdfjs = await importPdfJsBrowserSafe();

@@ -13,6 +13,7 @@ import {
   type PdfSentenceMatch,
   type PdfTextSpan
 } from "./pdfTextSync";
+import { orderPdfTextLayerSpans } from "./pdfTextLayer";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 let pdfJsWorkerConfigured = false;
@@ -478,17 +479,14 @@ async function renderPdfPages(
     await textLayer.render();
 
     const spanElements = Array.from(textLayerDiv.querySelectorAll("span")) as HTMLElement[];
-    const spans: PdfTextSpan[] = spanElements
-      .map((element) => {
-        element.setAttribute("data-ll-pdf-span-idx", String(globalSpanIndex));
-        globalSpanIndex += 1;
-        return {
-          pageIndex: pageNumber - 1,
-          text: element.textContent ?? "",
-          element
-        };
-      })
-      .filter((span) => span.text.trim().length > 0 && isVisiblePdfTextSpan(span.element));
+    const spans: PdfTextSpan[] = orderPdfTextLayerSpans(
+      spanElements.filter((element) => isVisiblePdfTextSpan(element)),
+      pageNumber - 1
+    ).map((span) => {
+      span.element.setAttribute("data-ll-pdf-span-idx", String(globalSpanIndex));
+      globalSpanIndex += 1;
+      return span;
+    });
 
     renderedPagesRef.current.push({
       container: pageContainer,

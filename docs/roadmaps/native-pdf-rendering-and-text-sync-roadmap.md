@@ -46,7 +46,7 @@
 - [x] Require fallback to move only downward in confidence; never jump back to a stronger mode without new evidence.
 - [x] Reject geometry matches that would place the cursor on the wrong page, wrong column, or visually distant region when a weaker but stable fallback exists.
 - [ ] Add explicit handling for difficult PDF structures:
-- [ ] dense academic two-column layouts
+- [x] dense academic two-column layouts
 - [x] repeated headers and footers
 - [ ] footnotes and sidenotes
 - [ ] tables with interleaved text order
@@ -161,7 +161,7 @@
 - [x] Unit tests for PDF text extraction normalization.
 - [x] Unit tests for sentence-to-PDF coordinate mapping and confidence scoring.
 - [x] Integration tests for playback continuity across Pretty Text and Text-only toggles on PDFs.
-- [ ] Regression tests for multi-column PDFs, footnotes, repeated headers, tables, figures, and long captions.
+- [ ] Regression tests for footnotes, repeated headers, tables, figures, and long captions.
 - [ ] Regression tests ensuring highlight overlays remain aligned during zoom and page changes.
 - [ ] Regression tests for ligatures, hyphenated line wraps, rotated pages, OCR text layers, and hidden/duplicated embedded text.
 - [x] Manual QA checklist covering native rendering fidelity, text cleanliness, playback sync, resume, and delete/reopen behavior.

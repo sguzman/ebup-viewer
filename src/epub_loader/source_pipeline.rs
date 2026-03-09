@@ -298,6 +298,10 @@ fn load_pdf_with_quack_check(
         info!(
             path = %path.display(),
             total_chars = tts_text.len(),
+            extraction_mode = cached.extraction_mode,
+            ocr_enabled = cached.ocr_enabled,
+            pdf_geometry_mode = ?cached.pdf_geometry_mode,
+            pdf_sync_strategy = ?cached.pdf_sync_strategy,
             "Using cached quack-check PDF transcript"
         );
         return Ok(SourceContent {
@@ -347,6 +351,8 @@ fn load_pdf_with_quack_check(
         resolved
             .pdf_sync_strategy
             .unwrap_or(PdfSyncStrategy::ParagraphFallback),
+        extraction_mode,
+        ocr_enabled,
     )?;
     info!(
         path = %path.display(),
@@ -665,6 +671,10 @@ struct PdfCacheMeta {
     pdf_geometry_mode: Option<PdfGeometryMode>,
     #[serde(default)]
     pdf_sync_strategy: Option<PdfSyncStrategy>,
+    #[serde(default)]
+    extraction_mode: String,
+    #[serde(default)]
+    ocr_enabled: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -721,6 +731,8 @@ fn pdf_signature(path: &Path, config_sha256: &str, text_filename: &str) -> Resul
         quack_text_filename: text_filename.to_string(),
         pdf_geometry_mode: None,
         pdf_sync_strategy: None,
+        extraction_mode: String::new(),
+        ocr_enabled: false,
     })
 }
 
@@ -820,6 +832,8 @@ struct PdfCachedLoad {
     text: String,
     pdf_geometry_mode: PdfGeometryMode,
     pdf_sync_strategy: PdfSyncStrategy,
+    extraction_mode: String,
+    ocr_enabled: bool,
 }
 
 fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<PdfCachedLoad>> {
@@ -887,6 +901,8 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
         total_chars = text.len(),
         pdf_geometry_mode = ?cached_meta.pdf_geometry_mode,
         pdf_sync_strategy = ?cached_meta.pdf_sync_strategy,
+        extraction_mode = cached_meta.extraction_mode,
+        ocr_enabled = cached_meta.ocr_enabled,
         "PDF transcript cache hit"
     );
     Ok(Some(PdfCachedLoad {
@@ -897,6 +913,8 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
         pdf_sync_strategy: cached_meta
             .pdf_sync_strategy
             .unwrap_or(PdfSyncStrategy::ParagraphFallback),
+        extraction_mode: cached_meta.extraction_mode,
+        ocr_enabled: cached_meta.ocr_enabled,
     }))
 }
 
@@ -937,6 +955,8 @@ fn write_pdf_cache(
     text: &str,
     pdf_geometry_mode: PdfGeometryMode,
     pdf_sync_strategy: PdfSyncStrategy,
+    extraction_mode: &str,
+    ocr_enabled: bool,
 ) -> Result<()> {
     let (text_path, meta_path, _) = pdf_cache_paths(path);
     if let Some(parent) = text_path.parent() {
@@ -954,6 +974,8 @@ fn write_pdf_cache(
     let mut signature = signature.clone();
     signature.pdf_geometry_mode = Some(pdf_geometry_mode);
     signature.pdf_sync_strategy = Some(pdf_sync_strategy);
+    signature.extraction_mode = extraction_mode.to_string();
+    signature.ocr_enabled = ocr_enabled;
     let meta_toml =
         toml::to_string(&signature).context("Failed to serialize PDF transcript cache metadata")?;
     fs::write(&meta_path, meta_toml).with_context(|| {
@@ -970,6 +992,8 @@ fn write_pdf_cache(
         total_chars = text.len(),
         ?pdf_geometry_mode,
         ?pdf_sync_strategy,
+        extraction_mode,
+        ocr_enabled,
         "Persisted PDF transcript cache artifacts"
     );
 

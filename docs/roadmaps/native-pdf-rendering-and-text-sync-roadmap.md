@@ -30,7 +30,7 @@
 - [x] For `ocr_required` PDFs:
 - [x] keep native PDF rendering available regardless of OCR readiness
 - [ ] support OCR-backed text-only/TTS only when OCR output reaches minimum confidence thresholds
-- [ ] distinguish OCR text confidence from embedded-text confidence in logs and cache
+- [x] distinguish OCR text confidence from embedded-text confidence in logs and cache
 - [x] For `render_only_no_sync` PDFs:
 - [x] show the native PDF in Pretty Text mode without pretending highlight sync is available
 - [ ] keep Text-only/TTS functionality gated by available extracted text quality
@@ -130,7 +130,7 @@
 - [x] Add tracing for scroll trigger reasons and viewport adjustments.
 
 ## Phase 8: Search, Navigation, and Resume Semantics
-- [ ] Ensure search in Text-only mode uses `tts_text` and can jump to mapped PDF locations.
+- [x] Ensure search in Text-only mode uses `tts_text` and can jump to mapped PDF locations.
 - [ ] Ensure bookmarks and resume positions remain owned by `tts_text` indices plus mapped PDF location metadata.
 - [x] Preserve deterministic behavior when reopening a PDF after cache reuse or rebuild.
 - [x] Keep page navigation and TTS seek operations synchronized across PDF and text-only views.

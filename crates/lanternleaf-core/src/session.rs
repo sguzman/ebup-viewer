@@ -1147,6 +1147,24 @@ mod tests {
     }
 
     #[test]
+    fn text_only_search_uses_canonical_tts_sentences() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let mut session = build_test_session(&[&[
+            "This intentionally long sentence contains an uncommon sync token quetzalcoatlus so audio chunking can target it precisely."
+        ]]);
+
+        session.toggle_text_only(&normalizer);
+        session.set_search_query("quetzalcoatlus".to_string(), &normalizer);
+
+        assert_eq!(session.selected_search_match, Some(0));
+        assert_eq!(session.search_matches.len(), 1);
+        assert_eq!(session.current_highlight_idx(), session.search_matches.first().copied());
+
+        session.toggle_text_only(&normalizer);
+        assert_eq!(session.highlighted_display_idx, Some(0));
+    }
+
+    #[test]
     fn markdown_anchor_count_detects_blocks() {
         let markdown = "# Title\n\nParagraph one.\n\n- Item one\n- Item two\n\n## Next";
         assert_eq!(count_markdown_anchors(markdown), 5);

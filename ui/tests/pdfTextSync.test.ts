@@ -105,6 +105,19 @@ describe("buildPdfSentenceSpanMap", () => {
     expect(result.diagnostics.pageOnlyMatches).toBe(1);
   });
 
+  it("marks a sentence missing when no PDF geometry is available at all", () => {
+    const result = buildPdfSentenceSpanMap([], ["A sentence with no PDF spans"]);
+
+    expect(result.matches[0]).toMatchObject({
+      confidence: "missing",
+      reason: "missing",
+      pageIndex: null,
+      spanIndexes: [],
+      score: 0
+    });
+    expect(result.diagnostics.missingMatches).toBe(1);
+  });
+
   it("normalizes ligatures and soft hyphenation before matching PDF spans", () => {
     const spans = [
       createSpan(0, "The of\uFB01ce co\u00AD"),

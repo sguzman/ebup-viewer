@@ -105,10 +105,10 @@
 - [x] collapsed whitespace and paragraph boundaries
 - [x] hidden text-layer artifacts, duplicated glyphs, and copy/paste noise
 - [ ] Define mismatch handling when extracted `tts_text` and renderer text-layer text diverge:
-- [ ] exact geometry match
-- [ ] fuzzy span match with confidence downgrade
-- [ ] paragraph/block fallback
-- [ ] unmappable sentence with explicit degraded behavior
+- [x] exact geometry match
+- [x] fuzzy span match with confidence downgrade
+- [x] paragraph/block fallback
+- [x] unmappable sentence with explicit degraded behavior
 - [x] Add confidence scoring for each mapped sentence or paragraph.
 - [ ] Persist sync artifacts in cache alongside extracted text.
 - [x] Add tracing for mapping hits, low-confidence matches, missing spans, and fallback behavior.

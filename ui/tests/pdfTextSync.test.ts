@@ -198,6 +198,42 @@ describe("buildPdfSentenceSpanMap", () => {
     expect(result.matches[0]?.score).toBeGreaterThanOrEqual(0.34);
   });
 
+  it("uses sentence anchor hints to keep fallback matches near the expected page position", () => {
+    const spans = [
+      createSpan(0, "Opening note"),
+      createSpan(0, "Alpha body lead"),
+      createSpan(0, "Spacer one"),
+      createSpan(0, "Spacer two"),
+      createSpan(0, "Spacer three"),
+      createSpan(0, "Middle caption"),
+      createSpan(0, "Spacer four"),
+      createSpan(0, "Target body section"),
+      createSpan(0, "Closing note")
+    ];
+
+    const earlyHint = buildPdfSentenceSpanMap(
+      spans,
+      ["Target section missing exact text"],
+      [0]
+    );
+    const lateHint = buildPdfSentenceSpanMap(
+      spans,
+      ["Target section missing exact text"],
+      [8]
+    );
+
+    expect(earlyHint.matches[0]).toMatchObject({
+      confidence: "page",
+      reason: "page_location_only",
+      spanIndexes: []
+    });
+    expect(lateHint.matches[0]).toMatchObject({
+      confidence: "fallback",
+      reason: "paragraph_fallback",
+      spanIndexes: [7]
+    });
+  });
+
   it("finds the nearest sentence for a clicked span index", () => {
     const spans = [
       createSpan(0, "Alpha"),

@@ -259,8 +259,16 @@ function findParagraphFallbackSpan(
   if (tokens.length === 0) {
     return null;
   }
-  const startIdx = Math.max(0, previousSpanIdx, fallbackHintIdx ?? 0);
-  const endIdx = Math.min(spans.length - 1, startIdx + 8);
+  const monotonicStart = Math.max(0, previousSpanIdx + 1);
+  const hintedCenter = fallbackHintIdx === null || fallbackHintIdx === undefined
+    ? monotonicStart
+    : Math.max(monotonicStart, fallbackHintIdx);
+  const startIdx = fallbackHintIdx === null || fallbackHintIdx === undefined
+    ? monotonicStart
+    : Math.max(monotonicStart, hintedCenter - 4);
+  const endIdx = fallbackHintIdx === null || fallbackHintIdx === undefined
+    ? Math.min(spans.length - 1, startIdx + 8)
+    : Math.min(spans.length - 1, hintedCenter + 4);
   let bestIdx: number | null = null;
   let bestScore = 0;
   for (let idx = startIdx; idx <= endIdx; idx += 1) {
@@ -356,7 +364,8 @@ function findFuzzySentenceCandidate(
 
 export function buildPdfSentenceSpanMap(
   spans: PdfTextSpan[],
-  sentences: string[]
+  sentences: string[],
+  sentenceAnchorMap?: Array<number | null>
 ): {
   matches: PdfSentenceMatch[];
   diagnostics: PdfSentenceMatchDiagnostics;
@@ -382,11 +391,26 @@ export function buildPdfSentenceSpanMap(
 
   const { normalized, ranges, normalizedSpanTexts, suppressedSpanIndexes } = buildNormalizedDocument(spans);
   const spanTexts = normalizedSpanTexts;
-  const fallbackMap = buildHtmlSentenceAnchorMap(
+  const contentFallbackMap = buildHtmlSentenceAnchorMap(
     spans.map((span) => span.text),
     sentences,
     sentences.map((_, idx) => idx)
   ).map;
+  const maxAnchorValue = sentenceAnchorMap?.reduce<number>(
+    (max, value) => (value !== null && value > max ? value : max),
+    -1
+  ) ?? -1;
+  const fallbackMap = contentFallbackMap.map((fallbackIdx, sentenceIdx) => {
+    const anchorHint = sentenceAnchorMap?.[sentenceIdx];
+    if (anchorHint === null || anchorHint === undefined || spans.length <= 1) {
+      return fallbackIdx;
+    }
+    const normalizedAnchor = maxAnchorValue > 0
+      ? anchorHint / maxAnchorValue
+      : sentenceIdx / Math.max(sentences.length - 1, 1);
+    const hintedSpanIdx = Math.round(normalizedAnchor * (spans.length - 1));
+    return Number.isFinite(hintedSpanIdx) ? hintedSpanIdx : fallbackIdx;
+  });
   const pageFallbackMap = buildPageFallbackMap(spans);
 
   const matches: PdfSentenceMatch[] = [];

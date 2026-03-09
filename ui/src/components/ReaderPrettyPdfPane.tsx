@@ -238,7 +238,11 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         };
       }
 
-      const { matches, diagnostics } = buildPdfSentenceSpanMap(spans, reader.sentences);
+      const { matches, diagnostics } = buildPdfSentenceSpanMap(
+        spans,
+        reader.sentences,
+        reader.sentence_anchor_map
+      );
       const summary = {
         exact: diagnostics.exactMatches,
         fallback: diagnostics.fallbackMatches,
@@ -510,7 +514,15 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             void pdf.destroy();
             return;
           }
-          await renderPdfPages(pdfjs.TextLayer, pdf, root, zoom, cancelled, renderedPagesRef);
+          await renderPdfPage(
+            pdfjs.TextLayer,
+            pdf,
+            root,
+            zoom,
+            reader.current_page,
+            cancelled,
+            renderedPagesRef
+          );
           if (cancelled) {
             void pdf.destroy();
             return;
@@ -519,6 +531,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           logPdfDebug("renderComplete", {
             sourcePath,
             zoom,
+            renderedPage: reader.current_page + 1,
             numPages: pdf.numPages
           });
           setRenderVersion((value) => value + 1);
@@ -543,7 +556,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         cancelled = true;
       };
-    }, [reader.pdf_geometry_mode, reader.pdf_sync_strategy, sourcePath, viewportVersion, zoom]);
+    }, [reader.current_page, reader.pdf_geometry_mode, reader.pdf_sync_strategy, sourcePath, viewportVersion, zoom]);
 
     useEffect(() => {
       if (loading) {
@@ -812,83 +825,81 @@ function mergeLineRectsIntoBlocks(lineRects: PdfSentenceLocation["line_rects"]):
   return blocks;
 }
 
-async function renderPdfPages(
+async function renderPdfPage(
   TextLayerImpl: typeof import("pdfjs-dist/legacy/build/pdf.mjs")["TextLayer"],
   pdf: PDFDocumentProxy,
   root: HTMLDivElement,
   zoom: number,
+  pageIndex: number,
   cancelled: boolean,
   renderedPagesRef: React.MutableRefObject<RenderedPdfPage[]>
 ): Promise<void> {
-  let globalSpanIndex = 0;
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    if (cancelled) {
-      return;
-    }
-    const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-    const page = await pdf.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: clamp(zoom, 0.7, 2.5) });
-
-    const pageContainer = document.createElement("div");
-    pageContainer.className = "reader-pdf-page";
-    pageContainer.dataset.pageIndex = String(pageNumber - 1);
-    pageContainer.style.width = `${viewport.width}px`;
-    pageContainer.style.height = `${viewport.height}px`;
-
-    const canvas = document.createElement("canvas");
-    canvas.className = "reader-pdf-page-canvas";
-    const context = canvas.getContext("2d");
-    if (!context) {
-      throw new Error("Canvas 2D context unavailable for PDF rendering");
-    }
-    const outputScale = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    canvas.width = Math.floor(viewport.width * outputScale);
-    canvas.height = Math.floor(viewport.height * outputScale);
-    canvas.style.width = `${viewport.width}px`;
-    canvas.style.height = `${viewport.height}px`;
-    context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
-    pageContainer.appendChild(canvas);
-
-    const textLayerDiv = document.createElement("div");
-    textLayerDiv.className = "reader-pdf-text-layer";
-    pageContainer.appendChild(textLayerDiv);
-
-    root.appendChild(pageContainer);
-    await page.render({ canvas, canvasContext: context, viewport }).promise;
-
-    const textContent = await page.getTextContent();
-    const textLayer = new TextLayerImpl({
-      textContentSource: textContent,
-      container: textLayerDiv,
-      viewport
-    });
-    await textLayer.render();
-
-    const spanElements = Array.from(textLayerDiv.querySelectorAll("span")) as HTMLElement[];
-    const spans: PdfTextSpan[] = orderPdfTextLayerSpans(
-      spanElements.filter((element) => isVisiblePdfTextSpan(element)),
-      pageNumber - 1,
-      viewport.rotation
-    ).map((span) => {
-      span.element.setAttribute("data-ll-pdf-span-idx", String(globalSpanIndex));
-      globalSpanIndex += 1;
-      return span;
-    });
-
-    renderedPagesRef.current.push({
-      container: pageContainer,
-      pageIndex: pageNumber - 1,
-      spans
-    });
-    recordPerfMeasure("ReaderPrettyPdfPane.renderPage", startedAt);
-    logPdfDebug("renderPage", {
-      pageIndex: pageNumber - 1,
-      zoom,
-      width: Math.round(viewport.width),
-      height: Math.round(viewport.height),
-      textSpanCount: spans.length
-    });
+  if (cancelled) {
+    return;
   }
+  const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+  const pageNumber = pageIndex + 1;
+  const page = await pdf.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: clamp(zoom, 0.7, 2.5) });
+
+  const pageContainer = document.createElement("div");
+  pageContainer.className = "reader-pdf-page";
+  pageContainer.dataset.pageIndex = String(pageIndex);
+  pageContainer.style.width = `${viewport.width}px`;
+  pageContainer.style.height = `${viewport.height}px`;
+
+  const canvas = document.createElement("canvas");
+  canvas.className = "reader-pdf-page-canvas";
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas 2D context unavailable for PDF rendering");
+  }
+  const outputScale = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  canvas.width = Math.floor(viewport.width * outputScale);
+  canvas.height = Math.floor(viewport.height * outputScale);
+  canvas.style.width = `${viewport.width}px`;
+  canvas.style.height = `${viewport.height}px`;
+  context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+  pageContainer.appendChild(canvas);
+
+  const textLayerDiv = document.createElement("div");
+  textLayerDiv.className = "reader-pdf-text-layer";
+  pageContainer.appendChild(textLayerDiv);
+
+  root.appendChild(pageContainer);
+  await page.render({ canvas, canvasContext: context, viewport }).promise;
+
+  const textContent = await page.getTextContent();
+  const textLayer = new TextLayerImpl({
+    textContentSource: textContent,
+    container: textLayerDiv,
+    viewport
+  });
+  await textLayer.render();
+
+  const spanElements = Array.from(textLayerDiv.querySelectorAll("span")) as HTMLElement[];
+  const spans: PdfTextSpan[] = orderPdfTextLayerSpans(
+    spanElements.filter((element) => isVisiblePdfTextSpan(element)),
+    pageIndex,
+    viewport.rotation
+  ).map((span, spanIndex) => {
+    span.element.setAttribute("data-ll-pdf-span-idx", String(spanIndex));
+    return span;
+  });
+
+  renderedPagesRef.current.push({
+    container: pageContainer,
+    pageIndex,
+    spans
+  });
+  recordPerfMeasure("ReaderPrettyPdfPane.renderPage", startedAt);
+  logPdfDebug("renderPage", {
+    pageIndex,
+    zoom,
+    width: Math.round(viewport.width),
+    height: Math.round(viewport.height),
+    textSpanCount: spans.length
+  });
 }
 
 function isVisiblePdfTextSpan(element: HTMLElement): boolean {

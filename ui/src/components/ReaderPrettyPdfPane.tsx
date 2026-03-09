@@ -5,7 +5,6 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { backendApi, type PdfSentenceLocation } from "../api/tauri";
 import type { ReaderSnapshot } from "../types";
 import { recordPerfMeasure } from "../perf/debug";
-import { toReaderImageSrc } from "./readerDom";
 import { clamp, normalizeNumber } from "./readerShared";
 import {
   buildPdfSentenceSpanMap,
@@ -19,6 +18,28 @@ import { orderPdfTextLayerSpans } from "./pdfTextLayer";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 let pdfJsWorkerConfigured = false;
+
+function ensurePromiseWithResolvers(): void {
+  const promiseCtor = Promise as PromiseConstructor & {
+    withResolvers?: <T>() => {
+      promise: Promise<T>;
+      resolve: (value: T | PromiseLike<T>) => void;
+      reject: (reason?: unknown) => void;
+    };
+  };
+  if (typeof promiseCtor.withResolvers === "function") {
+    return;
+  }
+  promiseCtor.withResolvers = function withResolvers<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
 
 interface ReaderPrettyPdfPaneProps {
   onSentenceClick: (idx: number) => Promise<void>;
@@ -89,7 +110,6 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     } | null>(null);
     const [activeMatch, setActiveMatch] = useState<PdfSentenceMatch | null>(null);
 
-    const pdfUrl = useMemo(() => toReaderImageSrc(sourcePath), [sourcePath]);
     const canSyncHighlights = reader.pdf_sync_strategy !== "render_only";
     const modeLabel = reader.pdf_geometry_mode ? reader.pdf_geometry_mode.replaceAll("_", " ") : "unknown";
     const strategyLabel = reader.pdf_sync_strategy ? reader.pdf_sync_strategy.replaceAll("_", " ") : "unknown";
@@ -357,21 +377,26 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         root.innerHTML = "";
         applyPdfHighlightColor(root, reader);
         const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-        logPdfDebug("renderStart", {
-          sourcePath,
-          zoom,
-          mode: reader.pdf_geometry_mode,
-          strategy: reader.pdf_sync_strategy
-        });
+          logPdfDebug("renderStart", {
+            sourcePath,
+            zoom,
+            mode: reader.pdf_geometry_mode,
+            strategy: reader.pdf_sync_strategy
+          });
 
         try {
+          ensurePromiseWithResolvers();
+          const pdfBytes = await backendApi.readerLoadPdfBytes(sourcePath);
           const pdfjs = await import("pdfjs-dist");
           if (!pdfJsWorkerConfigured) {
             pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
             pdfJsWorkerConfigured = true;
           }
           const loadingTask = pdfjs.getDocument({
-            url: pdfUrl,
+            data: pdfBytes,
+            disableRange: true,
+            disableStream: true,
+            disableAutoFetch: true,
             isEvalSupported: false
           });
           const pdf = await loadingTask.promise;
@@ -417,7 +442,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         cancelled = true;
       };
-    }, [pdfUrl, reader.pdf_geometry_mode, reader.pdf_sync_strategy, viewportVersion, zoom]);
+    }, [reader.pdf_geometry_mode, reader.pdf_sync_strategy, sourcePath, viewportVersion, zoom]);
 
     useEffect(() => {
       if (loading) {

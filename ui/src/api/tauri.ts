@@ -892,6 +892,7 @@ export interface BackendApi {
   readerTtsSeekPrev: () => Promise<ReaderSnapshot>;
   readerTtsRepeatSentence: () => Promise<ReaderSnapshot>;
   readerTtsPrecomputePage: () => Promise<ReaderSnapshot>;
+  readerLoadPdfBytes: (path: string) => Promise<Uint8Array>;
   readerPersistPdfSyncMap: (path: string, locations: PdfSentenceLocation[]) => Promise<void>;
   readerCloseSession: () => Promise<SessionState>;
   loggingSetLevel: (level: string) => Promise<string>;
@@ -959,6 +960,8 @@ function createTauriBackendApi(): BackendApi {
     readerTtsSeekPrev: () => invokeCommand<ReaderSnapshot>("reader_tts_seek_prev"),
     readerTtsRepeatSentence: () => invokeCommand<ReaderSnapshot>("reader_tts_repeat_sentence"),
     readerTtsPrecomputePage: () => invokeCommand<ReaderSnapshot>("reader_tts_precompute_page"),
+    readerLoadPdfBytes: async (path) =>
+      Uint8Array.from(await invokeCommand<number[]>("reader_load_pdf_bytes", { path })),
     readerPersistPdfSyncMap: (path, locations) =>
       invokeCommand<void>("reader_persist_pdf_sync_map", { path, locations }),
     readerCloseSession: () => invokeCommand<SessionState>("reader_close_session"),
@@ -1040,6 +1043,7 @@ function createMockBackendApi(): BackendApi {
     readerTtsSeekPrev: mockReaderTtsSeekPrev,
     readerTtsRepeatSentence: mockReaderTtsRepeatSentence,
     readerTtsPrecomputePage: mockReaderTtsPrecomputePage,
+    readerLoadPdfBytes: async () => new Uint8Array(),
     readerPersistPdfSyncMap: async () => {},
     readerCloseSession: mockSessionReturnToStarter,
     loggingSetLevel: mockLoggingSetLevel,

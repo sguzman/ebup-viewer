@@ -603,6 +603,16 @@ fn infer_recent_title(source_path: &Path) -> String {
     if source_path
         .extension()
         .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("pdf"))
+        .unwrap_or(false)
+        && let Some(title) = infer_pdf_recent_title(source_path)
+    {
+        return title;
+    }
+
+    if source_path
+        .extension()
+        .and_then(|ext| ext.to_str())
         .map(|ext| ext.eq_ignore_ascii_case("epub"))
         .unwrap_or(false)
         && let Ok(doc) = EpubDoc::new(source_path)
@@ -692,6 +702,15 @@ fn infer_recent_preview_lines(source_path: &Path) -> Vec<String> {
     if source_path
         .extension()
         .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("pdf"))
+        .unwrap_or(false)
+    {
+        return preview_lines_from_text(&cached_recent_pdf_text(source_path).unwrap_or_default());
+    }
+
+    if source_path
+        .extension()
+        .and_then(|ext| ext.to_str())
         .map(|ext| {
             ext.eq_ignore_ascii_case("txt")
                 || ext.eq_ignore_ascii_case("md")
@@ -752,6 +771,19 @@ fn truncate_preview_line(line: &str, max_chars: usize) -> String {
         .collect::<String>();
     truncated = truncated.trim_end().to_string();
     format!("{truncated}...")
+}
+
+fn infer_pdf_recent_title(source_path: &Path) -> Option<String> {
+    let preview_lines = preview_lines_from_text(&cached_recent_pdf_text(source_path)?);
+    let first_line = preview_lines.into_iter().find(|line| line.chars().count() >= 8)?;
+    Some(truncate_preview_line(&first_line, 96))
+}
+
+fn cached_recent_pdf_text(source_path: &Path) -> Option<String> {
+    let tts_text_path = hash_dir(source_path).join(CONTENT_TTS_TEXT_FILE);
+    fs::read_to_string(tts_text_path)
+        .ok()
+        .filter(|text| !text.trim().is_empty())
 }
 
 fn infer_recent_thumbnail(source_path: &Path) -> Option<PathBuf> {

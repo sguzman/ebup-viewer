@@ -1,6 +1,21 @@
 use super::*;
 
 #[tauri::command]
+pub(crate) fn reader_load_pdf_bytes(path: String) -> Result<Vec<u8>, BridgeError> {
+    let source_path = PathBuf::from(path.trim());
+    if source_path.as_os_str().is_empty() {
+        return Err(bridge_error("invalid_input", "Path cannot be empty"));
+    }
+    tracing::debug!(path = %source_path.display(), "Loading native PDF bytes for renderer");
+    fs::read(&source_path).map_err(|err| {
+        bridge_error(
+            "io_error",
+            format!("Failed to read PDF bytes at {}: {err}", source_path.display()),
+        )
+    })
+}
+
+#[tauri::command]
 pub(crate) fn reader_persist_pdf_sync_map(
     path: String,
     locations: Vec<cache::PdfSentenceLocation>,

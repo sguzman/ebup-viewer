@@ -76,9 +76,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const sentenceMatchesRef = useRef<PdfSentenceMatch[]>([]);
     const matchCacheRef = useRef<CachedPdfMatchResult | null>(null);
     const persistedSyncKeyRef = useRef<string | null>(null);
-  const [zoom, setZoom] = useState(1.2);
-  const [viewportVersion, setViewportVersion] = useState(0);
-  const [loading, setLoading] = useState(true);
+    const [zoom, setZoom] = useState(1.2);
+    const [viewportVersion, setViewportVersion] = useState(0);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [renderVersion, setRenderVersion] = useState(0);
     const [mappingSummary, setMappingSummary] = useState<{
@@ -291,8 +291,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (!root) {
         return;
       }
+      const observedElement = root.parentElement ?? root;
+      let lastObservedWidth = observedElement.getBoundingClientRect().width;
       let frame = 0;
-      const scheduleViewportRefresh = (reason: string) => {
+      const scheduleViewportRefresh = (reason: string, nextWidth: number) => {
+        if (Math.abs(nextWidth - lastObservedWidth) < 1) {
+          return;
+        }
+        lastObservedWidth = nextWidth;
         if (frame !== 0) {
           cancelAnimationFrame(frame);
         }
@@ -306,12 +312,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           setViewportVersion((value) => value + 1);
         });
       };
-      const resizeObserver = new ResizeObserver(() => {
-        scheduleViewportRefresh("resize_observer");
+      const resizeObserver = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        const nextWidth = entry?.contentRect.width ?? observedElement.getBoundingClientRect().width;
+        scheduleViewportRefresh("resize_observer", nextWidth);
       });
-      resizeObserver.observe(root);
+      resizeObserver.observe(observedElement);
       const onWindowResize = () => {
-        scheduleViewportRefresh("window_resize");
+        scheduleViewportRefresh("window_resize", observedElement.getBoundingClientRect().width);
       };
       window.addEventListener("resize", onWindowResize);
       return () => {
@@ -409,7 +417,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         cancelled = true;
       };
-    }, [pdfUrl, reader, viewportVersion, zoom]);
+    }, [pdfUrl, reader.pdf_geometry_mode, reader.pdf_sync_strategy, viewportVersion, zoom]);
 
     useEffect(() => {
       if (loading) {

@@ -103,15 +103,15 @@
 - [x] ligatures (`fi`, `fl`)
 - [x] soft hyphenation and line-wrap joins
 - [x] collapsed whitespace and paragraph boundaries
-- [ ] hidden text-layer artifacts, duplicated glyphs, and copy/paste noise
+- [x] hidden text-layer artifacts, duplicated glyphs, and copy/paste noise
 - [ ] Define mismatch handling when extracted `tts_text` and renderer text-layer text diverge:
 - [ ] exact geometry match
 - [ ] fuzzy span match with confidence downgrade
 - [ ] paragraph/block fallback
 - [ ] unmappable sentence with explicit degraded behavior
-- [ ] Add confidence scoring for each mapped sentence or paragraph.
+- [x] Add confidence scoring for each mapped sentence or paragraph.
 - [ ] Persist sync artifacts in cache alongside extracted text.
-- [ ] Add tracing for mapping hits, low-confidence matches, missing spans, and fallback behavior.
+- [x] Add tracing for mapping hits, low-confidence matches, missing spans, and fallback behavior.
 
 ## Phase 6: Playback Highlight in Native PDF View
 - [ ] Highlight the currently spoken unit directly on top of the native PDF render.

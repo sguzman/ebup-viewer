@@ -16,6 +16,7 @@ export interface PdfSentenceMatch {
     | "missing";
   pageIndex: number | null;
   spanIndexes: number[];
+  score: number;
 }
 
 export interface PdfSentenceMatchDiagnostics {
@@ -253,7 +254,7 @@ function findParagraphFallbackSpan(
   previousSpanIdx: number,
   normalizedSpanTexts: string[],
   suppressedSpanIndexes: Set<number>
-): number | null {
+): { spanIndex: number; score: number } | null {
   const tokens = buildSentenceTokens(sentence);
   if (tokens.length === 0) {
     return null;
@@ -272,7 +273,9 @@ function findParagraphFallbackSpan(
       bestIdx = idx;
     }
   }
-  return bestScore >= 0.34 ? bestIdx : null;
+  return bestIdx !== null && bestScore >= 0.34
+    ? { spanIndex: bestIdx, score: bestScore }
+    : null;
 }
 
 function findFuzzySentenceCandidate(
@@ -364,7 +367,8 @@ export function buildPdfSentenceSpanMap(
         confidence: "missing",
         reason: "missing",
         pageIndex: null,
-        spanIndexes: []
+        spanIndexes: [],
+        score: 0
       })),
       diagnostics: {
         exactMatches: 0,
@@ -401,7 +405,8 @@ export function buildPdfSentenceSpanMap(
         confidence: "missing",
         reason: "missing",
         pageIndex: null,
-        spanIndexes: []
+        spanIndexes: [],
+        score: 0
       });
       missingMatches += 1;
       continue;
@@ -424,7 +429,8 @@ export function buildPdfSentenceSpanMap(
           confidence: "exact",
           reason: "exact_geometry",
           pageIndex,
-          spanIndexes
+          spanIndexes,
+          score: 1
         });
         scanStart = Math.max(scanStart, end);
         previousPageIndex = pageIndex;
@@ -452,7 +458,8 @@ export function buildPdfSentenceSpanMap(
           confidence: "fallback",
           reason: "fuzzy_sentence_geometry",
           pageIndex: fuzzyCandidate.pageIndex,
-          spanIndexes: fuzzyCandidate.spanIndexes
+          spanIndexes: fuzzyCandidate.spanIndexes,
+          score: Number(fuzzyCandidate.score.toFixed(2))
         });
         scanStart = Math.max(scanStart, fuzzyCandidate.end);
         previousPageIndex = fuzzyCandidate.pageIndex;
@@ -470,10 +477,10 @@ export function buildPdfSentenceSpanMap(
       normalizedSpanTexts,
       suppressedSpanIndexes
     );
-    if (fallbackIdx !== null && fallbackIdx !== undefined && spans[fallbackIdx]) {
-      const fallbackPageIndex = spans[fallbackIdx].pageIndex;
+    if (fallbackIdx !== null && fallbackIdx !== undefined && spans[fallbackIdx.spanIndex]) {
+      const fallbackPageIndex = spans[fallbackIdx.spanIndex].pageIndex;
       const previousSpanIdx = matches.at(-1)?.spanIndexes.at(-1) ?? -1;
-      const leapDistance = fallbackIdx - previousSpanIdx;
+      const leapDistance = fallbackIdx.spanIndex - previousSpanIdx;
       const allowFallback =
         (
           previousSpanIdx < 0
@@ -487,10 +494,11 @@ export function buildPdfSentenceSpanMap(
           confidence: "fallback",
           reason: "paragraph_fallback",
           pageIndex: fallbackPageIndex,
-          spanIndexes: [fallbackIdx]
+          spanIndexes: [fallbackIdx.spanIndex],
+          score: Number(fallbackIdx.score.toFixed(2))
         });
         previousPageIndex = fallbackPageIndex;
-        scanStart = Math.max(scanStart, ranges[fallbackIdx]?.end ?? scanStart);
+        scanStart = Math.max(scanStart, ranges[fallbackIdx.spanIndex]?.end ?? scanStart);
         fallbackMatches += 1;
         continue;
       }
@@ -505,7 +513,8 @@ export function buildPdfSentenceSpanMap(
         confidence: "page",
         reason: "page_location_only",
         pageIndex: spans[pageFallbackIdx].pageIndex,
-        spanIndexes: []
+        spanIndexes: [],
+        score: 0.2
       });
       previousPageIndex = spans[pageFallbackIdx].pageIndex;
       pageOnlyMatches += 1;
@@ -516,7 +525,8 @@ export function buildPdfSentenceSpanMap(
       confidence: "missing",
       reason: "missing",
       pageIndex: null,
-      spanIndexes: []
+      spanIndexes: [],
+      score: 0
     });
     missingMatches += 1;
   }

@@ -112,6 +112,15 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         });
         const match = matches[idx];
         setActiveMatch(match ?? null);
+        logPdfDebug("mappingSummary", {
+          sentenceCount: reader.sentences.length,
+          exactMatches: diagnostics.exactMatches,
+          fallbackMatches: diagnostics.fallbackMatches,
+          pageOnlyMatches: diagnostics.pageOnlyMatches,
+          missingMatches: diagnostics.missingMatches,
+          cappedLeaps: diagnostics.cappedLeaps,
+          lowConfidenceMatches: matches.filter((candidate) => candidate.score > 0 && candidate.score < 0.88).length
+        });
         if (!match) {
           highlightedSentenceRef.current = idx;
           lastScrollTargetRef.current = null;
@@ -125,6 +134,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         logPdfDebug("highlightResolved", {
           sentenceIdx: idx,
           confidence: match.confidence,
+          score: match.score,
           reason: match.reason,
           pageIndex: match.pageIndex,
           spanCount: match.spanIndexes.length
@@ -391,7 +401,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         {!error && canSyncHighlights && mappingSummary ? (
           <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-summary">
             Exact: {mappingSummary.exact} | Fallback: {mappingSummary.fallback} | Page-only: {mappingSummary.pageOnly} | Missing: {mappingSummary.missing}
-            {activeMatch ? ` | Active: ${activeMatch.confidence} (${activeMatch.reason.replaceAll("_", " ")})` : ""}
+            {activeMatch ? ` | Active: ${activeMatch.confidence} ${activeMatch.score.toFixed(2)} (${activeMatch.reason.replaceAll("_", " ")})` : ""}
           </Typography>
         ) : null}
         {loading ? (

@@ -119,6 +119,23 @@ describe("buildPdfSentenceSpanMap", () => {
       pageIndex: 0,
       spanIndexes: [0, 1]
     });
+    expect(result.matches[0]?.score).toBe(1);
+  });
+
+  it("strips zero-width text-layer noise before matching", () => {
+    const spans = [
+      createSpan(0, "Alpha\u200B beta"),
+      createSpan(0, "gamma.")
+    ];
+
+    const result = buildPdfSentenceSpanMap(spans, ["Alpha beta gamma."]);
+
+    expect(result.matches[0]).toMatchObject({
+      confidence: "exact",
+      reason: "exact_geometry",
+      pageIndex: 0,
+      spanIndexes: [0, 1]
+    });
   });
 
   it("ignores duplicated hidden text-layer spans on the same page", () => {
@@ -165,6 +182,7 @@ describe("buildPdfSentenceSpanMap", () => {
       pageIndex: 1,
       spanIndexes: [4]
     });
+    expect(result.matches[0]?.score).toBeGreaterThanOrEqual(0.34);
   });
 
   it("finds the nearest sentence for a clicked span index", () => {
@@ -192,5 +210,6 @@ describe("buildPdfSentenceSpanMap", () => {
     expect(findNearestSentenceForPageIndex(matches, 1)).toBe(1);
     expect(findNearestSentenceForPageIndex(matches, 2)).toBe(2);
     expect(findNearestSentenceForPageIndex(matches, 3)).toBe(2);
+    expect(matches[1]?.score).toBe(1);
   });
 });

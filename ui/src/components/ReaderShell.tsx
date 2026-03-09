@@ -186,6 +186,26 @@ export const ReaderShell = memo(function ReaderShell({
     () => `Progress ${reader.tts.progress_pct.toFixed(3)}% | ${reader.tts.state}`,
     [reader.tts.progress_pct, reader.tts.state]
   );
+  const pdfTtsDisabledReason = useMemo(() => {
+    if (reader.pretty_kind !== "pdf") {
+      return null;
+    }
+    const hasUsableSentenceText = reader.sentences.some((sentence) => sentence.trim().length > 0);
+    const hasUsablePageText = reader.page_text.trim().length > 0 || reader.tts_text_page.trim().length > 0;
+    if (hasUsableSentenceText || hasUsablePageText) {
+      return null;
+    }
+    if (reader.pdf_geometry_mode === "ocr_required") {
+      return "TTS is disabled for this PDF until OCR produces usable text.";
+    }
+    return "TTS is disabled for this PDF because no usable extracted text is available.";
+  }, [
+    reader.page_text,
+    reader.pdf_geometry_mode,
+    reader.pretty_kind,
+    reader.sentences,
+    reader.tts_text_page
+  ]);
   const renderedMarkdownHtml = useMemo(() => {
     if (!hasPrettyMarkdown || !reader.reading_markdown_page) {
       return "";
@@ -334,6 +354,7 @@ export const ReaderShell = memo(function ReaderShell({
                 visible={reader.panels.show_tts}
                 busy={busy}
                 isPlaying={reader.tts.state === "playing"}
+                disabledReason={pdfTtsDisabledReason}
                 canPrevPage={reader.current_page > 0}
                 canNextPage={reader.current_page + 1 < reader.total_pages}
                 canPrevSentence={reader.tts.can_seek_prev}

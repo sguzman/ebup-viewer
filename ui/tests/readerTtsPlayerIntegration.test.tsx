@@ -181,4 +181,29 @@ describe("ReaderShell TTS player integration", () => {
     );
     expect(html).not.toContain('data-testid="reader-tts-player-widget"');
   });
+
+  it("disables PDF TTS controls when OCR text is unavailable", () => {
+    const html = renderReader(
+      makeReaderSnapshot({
+        source_path: "/tmp/scan.pdf",
+        source_name: "scan.pdf",
+        text_only_mode: false,
+        pretty_kind: "pdf",
+        pdf_geometry_mode: "ocr_required",
+        pdf_sync_strategy: "render_only",
+        page_text: "",
+        tts_text_page: "",
+        sentences: [],
+        panels: {
+          show_settings: false,
+          show_stats: false,
+          show_tts: true
+        }
+      })
+    );
+
+    expect(html).toContain('data-testid="reader-pretty-pdf"');
+    expect(html).toContain('data-testid="reader-tts-player-disabled-reason"');
+    expect(html).toContain("TTS is disabled for this PDF until OCR produces usable text.");
+  });
 });

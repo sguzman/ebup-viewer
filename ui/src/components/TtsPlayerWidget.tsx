@@ -11,6 +11,7 @@ interface TtsPlayerWidgetProps {
   visible: boolean;
   busy: boolean;
   isPlaying: boolean;
+  disabledReason?: string | null;
   canPrevPage: boolean;
   canNextPage: boolean;
   canPrevSentence: boolean;
@@ -37,6 +38,7 @@ export const TtsPlayerWidget = memo(function TtsPlayerWidget({
   visible,
   busy,
   isPlaying,
+  disabledReason,
   canPrevPage,
   canNextPage,
   canPrevSentence,
@@ -49,20 +51,21 @@ export const TtsPlayerWidget = memo(function TtsPlayerWidget({
   onNextSentence,
   onNextPage
 }: TtsPlayerWidgetProps) {
+  const controlsDisabled = busy || Boolean(disabledReason);
   const actions = useMemo<PlayerAction[]>(
     () => [
       {
         key: "prev-page",
         label: "Previous page",
         icon: <KeyboardDoubleArrowLeftRoundedIcon fontSize="medium" />,
-        disabled: busy || !canPrevPage,
+        disabled: controlsDisabled || !canPrevPage,
         onClick: onPrevPage
       },
       {
         key: "prev-sentence",
         label: "Previous sentence",
         icon: <SkipPreviousRoundedIcon fontSize="medium" />,
-        disabled: busy || !canPrevSentence,
+        disabled: controlsDisabled || !canPrevSentence,
         onClick: onPrevSentence
       },
       {
@@ -73,7 +76,7 @@ export const TtsPlayerWidget = memo(function TtsPlayerWidget({
         ) : (
           <PlayArrowRoundedIcon sx={{ fontSize: 34 }} />
         ),
-        disabled: busy,
+        disabled: controlsDisabled,
         prominent: true,
         onClick: onTogglePlayPause
       },
@@ -81,19 +84,19 @@ export const TtsPlayerWidget = memo(function TtsPlayerWidget({
         key: "next-sentence",
         label: "Next sentence",
         icon: <SkipNextRoundedIcon fontSize="medium" />,
-        disabled: busy || !canNextSentence,
+        disabled: controlsDisabled || !canNextSentence,
         onClick: onNextSentence
       },
       {
         key: "next-page",
         label: "Next page",
         icon: <KeyboardDoubleArrowRightRoundedIcon fontSize="medium" />,
-        disabled: busy || !canNextPage,
+        disabled: controlsDisabled || !canNextPage,
         onClick: onNextPage
       }
     ],
     [
-      busy,
+      controlsDisabled,
       canNextPage,
       canNextSentence,
       canPrevPage,
@@ -132,6 +135,15 @@ export const TtsPlayerWidget = memo(function TtsPlayerWidget({
           justifyContent="center"
           sx={{ width: "100%", minHeight: 22 }}
         >
+          {disabledReason ? (
+            <Typography
+              variant="caption"
+              color="warning.main"
+              data-testid="reader-tts-player-disabled-reason"
+            >
+              {disabledReason}
+            </Typography>
+          ) : null}
           <Typography
             variant="caption"
             color="text.secondary"

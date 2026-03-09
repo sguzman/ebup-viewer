@@ -49,4 +49,32 @@ describe("orderPdfTextLayerSpans", () => {
       "right-3"
     ]);
   });
+
+  it("pushes bottom note bands after each column body in strong two-column layouts", () => {
+    const spans = orderPdfTextLayerSpans([
+      createElement("right-body-1", { top: 10, left: 260 }),
+      createElement("left-body-1", { top: 10, left: 24 }),
+      createElement("right-body-2", { top: 32, left: 260 }),
+      createElement("left-body-2", { top: 32, left: 24 }),
+      createElement("right-body-3", { top: 54, left: 260 }),
+      createElement("left-body-3", { top: 54, left: 24 }),
+      createElement("left-footnote", { top: 120, left: 24 }),
+      createElement("left-footnote-2", { top: 132, left: 24 }),
+      createElement("right-footnote", { top: 120, left: 260 }),
+      createElement("right-footnote-2", { top: 132, left: 260 })
+    ], 0);
+
+    expect(spans.map((span) => span.text)).toEqual([
+      "left-body-1",
+      "left-body-2",
+      "left-body-3",
+      "left-footnote",
+      "left-footnote-2",
+      "right-body-1",
+      "right-body-2",
+      "right-body-3",
+      "right-footnote",
+      "right-footnote-2"
+    ]);
+  });
 });

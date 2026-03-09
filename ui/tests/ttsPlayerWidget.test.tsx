@@ -13,6 +13,7 @@ function renderWidget(
       visible={visible}
       busy={false}
       isPlaying={false}
+      disabledReason={null}
       canPrevPage={true}
       canNextPage={true}
       canPrevSentence={true}
@@ -69,5 +70,15 @@ describe("TtsPlayerWidget", () => {
     expect(html).toContain('data-testid="reader-tts-player-next-sentence"');
     expect(html).toContain('data-testid="reader-tts-player-next-page"');
     expect(html.match(/disabled=""/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+  });
+
+  it("disables all controls and renders a reason when playback is unavailable", () => {
+    const html = renderWidget(true, {
+      disabledReason: "TTS is disabled for this PDF until OCR produces usable text."
+    });
+
+    expect(html).toContain('data-testid="reader-tts-player-disabled-reason"');
+    expect(html).toContain("TTS is disabled for this PDF until OCR produces usable text.");
+    expect(html.match(/disabled=""/g)?.length ?? 0).toBeGreaterThanOrEqual(5);
   });
 });

@@ -29,11 +29,11 @@
 - [x] preserve `tts_text` ownership even when pretty-view sync becomes approximate
 - [x] For `ocr_required` PDFs:
 - [x] keep native PDF rendering available regardless of OCR readiness
-- [ ] support OCR-backed text-only/TTS only when OCR output reaches minimum confidence thresholds
+- [x] support OCR-backed text-only/TTS only when OCR output reaches minimum confidence thresholds
 - [x] distinguish OCR text confidence from embedded-text confidence in logs and cache
 - [x] For `render_only_no_sync` PDFs:
 - [x] show the native PDF in Pretty Text mode without pretending highlight sync is available
-- [ ] keep Text-only/TTS functionality gated by available extracted text quality
+- [x] keep Text-only/TTS functionality gated by available extracted text quality
 - [x] expose a clear degraded-mode contract for no-highlight or page-level-only sync
 
 ## Geometry Failure and Fallback Rules
@@ -149,7 +149,7 @@
 - [ ] Define behavior for scanned or image-only PDFs where no reliable embedded text exists.
 - [ ] Keep native PDF rendering available even when text extraction quality is poor.
 - [ ] Decide whether OCR is deferred, optional, or first-class for scanned PDFs.
-- [ ] If OCR is unavailable, present a clear degraded-mode contract for Text-only/TTS support.
+- [x] If OCR is unavailable, present a clear degraded-mode contract for Text-only/TTS support.
 - [x] Define degraded behavior by distinct runtime mode:
 - [x] renderable PDF + trustworthy text geometry
 - [x] renderable PDF + extracted text but low-confidence geometry

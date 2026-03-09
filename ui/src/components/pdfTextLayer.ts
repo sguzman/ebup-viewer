@@ -14,6 +14,7 @@ interface MeasuredPdfSpan {
 const MIN_COLUMN_SPAN_COUNT = 3;
 const MIN_COLUMN_GAP = 72;
 const ROW_TOLERANCE = 8;
+const FOOTNOTE_BAND_START = 0.78;
 
 function measurePdfSpan(
   element: HTMLElement,
@@ -73,6 +74,29 @@ function hasStrongTwoColumnLayout(columns: MeasuredPdfSpan[][]): boolean {
   return gap >= MIN_COLUMN_GAP;
 }
 
+function splitBottomNoteBand(spans: MeasuredPdfSpan[]): {
+  main: MeasuredPdfSpan[];
+  bottomBand: MeasuredPdfSpan[];
+} {
+  if (spans.length === 0) {
+    return { main: [], bottomBand: [] };
+  }
+  const tops = spans.map((span) => span.top);
+  const minTop = Math.min(...tops);
+  const maxTop = Math.max(...tops);
+  const heightRange = maxTop - minTop;
+  if (heightRange <= 0) {
+    return { main: spans, bottomBand: [] };
+  }
+  const threshold = minTop + heightRange * FOOTNOTE_BAND_START;
+  const bottomBand = spans.filter((span) => span.top >= threshold);
+  const main = spans.filter((span) => span.top < threshold);
+  if (bottomBand.length < 2 || main.length < 2) {
+    return { main: spans, bottomBand: [] };
+  }
+  return { main, bottomBand };
+}
+
 function sortSingleColumn(spans: MeasuredPdfSpan[]): MeasuredPdfSpan[] {
   return [...spans].sort((left, right) => {
     const topDelta = left.top - right.top;
@@ -102,7 +126,10 @@ export function orderPdfTextLayerSpans(
 
   const columns = bucketByColumn(measured);
   const ordered = hasStrongTwoColumnLayout(columns)
-    ? columns.flatMap((column) => sortSingleColumn(column))
+    ? columns.flatMap((column) => {
+      const { main, bottomBand } = splitBottomNoteBand(column);
+      return [...sortSingleColumn(main), ...sortSingleColumn(bottomBand)];
+    })
     : sortSingleColumn(measured);
 
   return ordered.map((span) => ({

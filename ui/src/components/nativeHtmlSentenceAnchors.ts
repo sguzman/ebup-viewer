@@ -11,6 +11,42 @@ interface SentenceRange {
   start: number;
 }
 
+const STRUCTURAL_BOUNDARY_TAGS = new Set([
+  "article",
+  "aside",
+  "blockquote",
+  "br",
+  "div",
+  "figcaption",
+  "figure",
+  "footer",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hr",
+  "img",
+  "li",
+  "main",
+  "nav",
+  "ol",
+  "p",
+  "picture",
+  "pre",
+  "section",
+  "svg",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "tr",
+  "ul"
+]);
+
 interface SentenceAnchorDiagnostics {
   matchedSentences: number;
   totalSentences: number;
@@ -20,6 +56,83 @@ export interface NativeHtmlSentenceAnchorResult {
   diagnostics: SentenceAnchorDiagnostics;
   firstAnchors: Map<number, HTMLElement>;
   sentenceAnchors: Map<number, HTMLElement[]>;
+}
+
+function isStructuralBoundaryElement(node: Node | null): node is Element {
+  return node instanceof Element && STRUCTURAL_BOUNDARY_TAGS.has(node.tagName.toLowerCase());
+}
+
+function nearestStructuralAncestor(node: Node | null): Element | null {
+  let cursor: Node | null = node instanceof Text ? node.parentElement : node;
+  while (cursor) {
+    if (cursor instanceof Element && isStructuralBoundaryElement(cursor)) {
+      return cursor;
+    }
+    cursor = cursor.parentNode;
+  }
+  return null;
+}
+
+function lowestCommonAncestor(left: Node, right: Node): Node | null {
+  const lineage = new Set<Node>();
+  let current: Node | null = left;
+  while (current) {
+    lineage.add(current);
+    current = current.parentNode;
+  }
+  current = right;
+  while (current) {
+    if (lineage.has(current)) {
+      return current;
+    }
+    current = current.parentNode;
+  }
+  return null;
+}
+
+function childUnderAncestor(ancestor: Node, node: Node): Node | null {
+  let current: Node | null = node;
+  let child: Node | null = node;
+  while (current && current !== ancestor) {
+    child = current;
+    current = current.parentNode;
+  }
+  return current === ancestor ? child : null;
+}
+
+function hasStructuralBoundaryBetween(previousNode: Text | null, currentNode: Text): boolean {
+  if (!previousNode) {
+    return false;
+  }
+  const previousBoundary = nearestStructuralAncestor(previousNode);
+  const currentBoundary = nearestStructuralAncestor(currentNode);
+  if (previousBoundary && currentBoundary && previousBoundary !== currentBoundary) {
+    return true;
+  }
+
+  const commonAncestor = lowestCommonAncestor(previousNode, currentNode);
+  if (!commonAncestor) {
+    return false;
+  }
+  const previousBranch = childUnderAncestor(commonAncestor, previousNode);
+  const currentBranch = childUnderAncestor(commonAncestor, currentNode);
+  if (!previousBranch || !currentBranch || previousBranch === currentBranch) {
+    return false;
+  }
+  if (isStructuralBoundaryElement(previousBranch) || isStructuralBoundaryElement(currentBranch)) {
+    return true;
+  }
+  let cursor = previousBranch.nextSibling;
+  while (cursor && cursor !== currentBranch) {
+    if (cursor.nodeType === Node.TEXT_NODE && (cursor.textContent ?? "").trim().length > 0) {
+      return true;
+    }
+    if (isStructuralBoundaryElement(cursor)) {
+      return true;
+    }
+    cursor = cursor.nextSibling;
+  }
+  return false;
 }
 
 function normalizeWithPositions(root: ParentNode): {
@@ -55,9 +168,20 @@ function normalizeWithPositions(root: ParentNode): {
   const chars: string[] = [];
   const positions: NormalizedCharPosition[] = [];
   let lastWasSpace = true;
+  let previousTextNode: Text | null = null;
   let current = walker.nextNode();
   while (current) {
     const textNode = current as Text;
+    if (
+      previousTextNode
+      && chars.length > 0
+      && !lastWasSpace
+      && hasStructuralBoundaryBetween(previousTextNode, textNode)
+    ) {
+      chars.push(" ");
+      positions.push({ node: textNode, offset: 0, length: 0 });
+      lastWasSpace = true;
+    }
     const value = textNode.data;
     for (let offset = 0; offset < value.length; ) {
       const char = value.slice(offset, offset + 2).match(/^[\uD800-\uDBFF][\uDC00-\uDFFF]/)
@@ -77,6 +201,7 @@ function normalizeWithPositions(root: ParentNode): {
       }
       offset += char.length || 1;
     }
+    previousTextNode = textNode;
     current = walker.nextNode();
   }
 

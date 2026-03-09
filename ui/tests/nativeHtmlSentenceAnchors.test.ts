@@ -45,4 +45,32 @@ describe("nativeHtmlSentenceAnchors", () => {
     expect(result.firstAnchors.get(0)?.textContent).toContain("Alpha");
     expect(doc.querySelectorAll("[data-ll-html-sentence]").length).toBe(2);
   });
+
+  it("keeps the first sentence after headings and images alignable", () => {
+    const doc = document.implementation.createHTMLDocument("");
+    doc.body.innerHTML = `
+      <article>
+        <h2><em>Chapter One</em></h2>
+        <p>First body sentence. Second body sentence.</p>
+        <figure><img src="cover.jpg" alt="cover"></figure>
+        <p>Sentence after image. Final sentence.</p>
+      </article>
+    `;
+
+    const result = annotateNativeHtmlSentences(doc, [
+      "Chapter One",
+      "First body sentence.",
+      "Second body sentence.",
+      "Sentence after image.",
+      "Final sentence."
+    ]);
+
+    expect(result.diagnostics.matchedSentences).toBe(5);
+    expect(result.sentenceAnchors.get(1)?.map((node) => node.textContent).join("")).toBe(
+      "First body sentence"
+    );
+    expect(result.sentenceAnchors.get(3)?.map((node) => node.textContent).join("")).toBe(
+      "Sentence after image"
+    );
+  });
 });

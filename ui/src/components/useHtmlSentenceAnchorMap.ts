@@ -163,19 +163,6 @@ export function useHtmlSentenceAnchorMap({
       htmlSentenceAnchorCacheRef.current = { key: "", map: [] };
       return;
     }
-    if (prettyAnchorElementsRef.current.htmlSentenceSpans.size > 0) {
-      htmlSentenceAnchorCacheRef.current = {
-        key: [
-          reader.source_path,
-          reader.current_page,
-          renderedNativeHtml,
-          sentencesKey,
-          "sentence-spans"
-        ].join("\n"),
-        map: reader.sentences.map((_, idx) => idx)
-      };
-      return;
-    }
     const cacheKey = [
       reader.source_path,
       reader.current_page,
@@ -187,8 +174,15 @@ export function useHtmlSentenceAnchorMap({
       return;
     }
     const anchors = Array.from(prettyAnchorElementsRef.current.html.values());
-    if (anchors.length === 0 || reader.sentences.length === 0) {
+    if (reader.sentences.length === 0) {
       htmlSentenceAnchorCacheRef.current = { key: cacheKey, map: [] };
+      return;
+    }
+    if (anchors.length === 0) {
+      htmlSentenceAnchorCacheRef.current = {
+        key: cacheKey,
+        map: reader.sentences.map((_, idx) => idx)
+      };
       return;
     }
     const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
@@ -203,6 +197,7 @@ export function useHtmlSentenceAnchorMap({
         cappedLeaps: diagnostics.cappedLeaps,
         confidentMatches: diagnostics.confidentMatches,
         fallbackMatches: diagnostics.fallbackMatches,
+        sentenceSpanMatches: prettyAnchorElementsRef.current.htmlSentenceSpans.size,
         sentences: reader.sentences.length
       });
     }

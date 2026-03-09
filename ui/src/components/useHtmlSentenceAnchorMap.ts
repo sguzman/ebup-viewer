@@ -225,6 +225,11 @@ export function useHtmlSentenceAnchorMap({
       if (prettyAnchorElementsRef.current.htmlSentenceSpans.has(idx)) {
         return idx;
       }
+      const anchors = htmlSentenceAnchorCacheRef.current.map;
+      const exactAnchorIdx = anchors[idx] ?? null;
+      if (exactAnchorIdx !== null && exactAnchorIdx !== undefined) {
+        return exactAnchorIdx;
+      }
       for (let offset = 1; offset < reader.sentences.length; offset += 1) {
         const prev = idx - offset;
         const next = idx + offset;
@@ -235,7 +240,6 @@ export function useHtmlSentenceAnchorMap({
           return next;
         }
       }
-      const anchors = htmlSentenceAnchorCacheRef.current.map;
       let anchorIdx = anchors[idx] ?? null;
       if (anchorIdx === null || anchorIdx === undefined) {
         for (let offset = 1; offset < anchors.length; offset += 1) {

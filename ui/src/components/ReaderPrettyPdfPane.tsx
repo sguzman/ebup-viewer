@@ -324,6 +324,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const modeLabel = reader.pdf_geometry_mode ? reader.pdf_geometry_mode.replaceAll("_", " ") : "unknown";
     const strategyLabel = reader.pdf_sync_strategy ? reader.pdf_sync_strategy.replaceAll("_", " ") : "unknown";
     const globalSentenceStart = globalSentenceStartForReader(reader);
+    const highlightedSentenceIdx = reader.highlighted_sentence_idx ?? null;
+    const pageStartPercent = reader.stats.page_start_percent;
+    const pageEndPercent = reader.stats.page_end_percent;
 
     const resetRenderedPdfDocument = useCallback(() => {
       clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
@@ -494,6 +497,19 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       setRenderVersion((value) => value + 1);
     }, []);
 
+    const ensureTargetPagesRendered = useCallback(async () => {
+      const pdf = pdfDocRef.current;
+      const pdfjs = pdfJsModuleRef.current;
+      if (!pdf || !pdfjs || pdfPageCount <= 0) {
+        return;
+      }
+      const generation = renderGenerationRef.current;
+      const targetPage = estimatePdfTargetPage(cachedPdfLocationsRef.current, reader, pdfPageCount);
+      for (const pageIndex of pageIndexesAround(targetPage, pdfPageCount, 1)) {
+        await ensurePageRendered(pdfjs, pdf, pageIndex, zoom, generation);
+      }
+    }, [ensurePageRendered, pdfPageCount, reader, zoom]);
+
     const resolveSentenceMatches = useCallback(() => {
       const candidatePages = resolveLikelyRenderedPages(
         renderedPagesRef.current,
@@ -551,7 +567,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         sentenceCount: reader.sentences.length
       });
       return { spans, matches, summary };
-    }, [globalSentenceStart, reader, reader.sentences, reader.source_path, renderVersion]);
+    }, [globalSentenceStart, pageEndPercent, pageStartPercent, reader.sentences, reader.sentence_anchor_map, reader.source_path, renderVersion]);
 
     const applyHighlight = useCallback(
       (behavior: ScrollBehavior, force = false) => {
@@ -898,7 +914,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         cancelled = true;
       };
-    }, [ensurePageRendered, ensurePageShells, ensurePdfDocumentLoaded, reader, resetRenderedPdfDocument, sourcePath, viewportVersion, zoom]);
+    }, [ensurePageRendered, ensurePageShells, ensurePdfDocumentLoaded, resetRenderedPdfDocument, sourcePath, viewportVersion, zoom]);
 
     useEffect(() => {
       const root = containerRef.current;
@@ -935,24 +951,20 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     }, [ensurePageRendered, renderVersion, zoom]);
 
     useEffect(() => {
-      const pdf = pdfDocRef.current;
-      const pdfjs = pdfJsModuleRef.current;
-      if (!pdf || !pdfjs || pdfPageCount <= 0) {
-        return;
-      }
-      const targetPage = estimatePdfTargetPage(cachedPdfLocationsRef.current, reader, pdfPageCount);
-      const generation = renderGenerationRef.current;
-      for (const pageIndex of pageIndexesAround(targetPage, pdfPageCount, 1)) {
-        void ensurePageRendered(pdfjs, pdf, pageIndex, zoom, generation);
-      }
-    }, [cachedSyncVersion, ensurePageRendered, pdfPageCount, reader, zoom]);
-
-    useEffect(() => {
       if (loading) {
         return;
       }
-      applyHighlight("auto");
-    }, [applyHighlight, loading, reader.current_page, renderVersion]);
+      let cancelled = false;
+      void ensureTargetPagesRendered().then(() => {
+        if (cancelled) {
+          return;
+        }
+        applyHighlight("auto");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [applyHighlight, cachedSyncVersion, ensureTargetPagesRendered, globalSentenceStart, highlightedSentenceIdx, loading, zoom]);
 
     useEffect(() => {
       if (loading || !canSyncHighlights) {

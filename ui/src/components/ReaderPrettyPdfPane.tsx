@@ -214,6 +214,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [renderVersion, setRenderVersion] = useState(0);
+    const [cachedSyncVersion, setCachedSyncVersion] = useState(0);
     const [mappingSummary, setMappingSummary] = useState<{
       exact: number;
       fallback: number;
@@ -424,7 +425,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             return;
           }
         }
-        if (match.spanIndexes.length === 0) {
+        if (match.spanIndexes.length === 0 && !cachedLocation) {
           highlightedSentenceRef.current = idx;
           lastScrollTargetRef.current = null;
           recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
@@ -437,7 +438,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         const shouldAutoScroll =
           force || (reader.settings.auto_scroll_tts && reader.tts.state === "playing");
         const anchor = elements[0];
-        resolvedScrollTarget = match.spanIndexes.join(",");
+        resolvedScrollTarget = cachedLocation
+          ? `cached:${idx}:${cachedLocation.page_idx ?? "none"}`
+          : match.spanIndexes.join(",");
         const shouldScrollTarget =
           force || (shouldAutoScroll && lastScrollTargetRef.current !== resolvedScrollTarget);
         if (!anchor || !shouldScrollTarget) {
@@ -458,7 +461,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         });
         recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
       },
-      [canSyncHighlights, reader.current_page, reader.highlighted_sentence_idx, reader.sentences, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence, reader.tts.state, resolveSentenceMatches]
+      [cachedSyncVersion, canSyncHighlights, reader.current_page, reader.highlighted_sentence_idx, reader.sentences, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence, reader.tts.state, resolveSentenceMatches]
     );
 
     useImperativeHandle(ref, () => ({
@@ -529,6 +532,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             return;
           }
           cachedPdfLocationsRef.current = locations;
+          setCachedSyncVersion((value) => value + 1);
           logPdfDebug("loadedCachedSyncMap", {
             sourcePath,
             count: locations.length,
@@ -540,6 +544,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             return;
           }
           cachedPdfLocationsRef.current = null;
+          setCachedSyncVersion((value) => value + 1);
           logPdfDebug("loadCachedSyncMapError", {
             sourcePath,
             error: cause instanceof Error ? cause.message : String(cause)
@@ -950,6 +955,9 @@ function buildCachedPdfLocationMatchSet(
   if (orderedLocations.some((location) => location === null)) {
     return null;
   }
+  if (orderedLocations.some((location) => location !== null && location.page_idx !== null && location.page_idx !== currentPage)) {
+    return null;
+  }
 
   let exact = 0;
   let fallback = 0;
@@ -958,15 +966,6 @@ function buildCachedPdfLocationMatchSet(
   const matches = orderedLocations.map((location) => {
     if (!location) {
       missing += 1;
-      return {
-        confidence: "missing",
-        reason: "missing",
-        pageIndex: null,
-        spanIndexes: [],
-        score: 0
-      } satisfies PdfSentenceMatch;
-    }
-    if (location.page_idx !== null && location.page_idx !== currentPage) {
       return {
         confidence: "missing",
         reason: "missing",

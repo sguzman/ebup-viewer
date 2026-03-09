@@ -28,6 +28,25 @@ interface ReaderTextOnlyPaneProps {
   sentenceRefs: React.MutableRefObject<Record<number, HTMLButtonElement | null>>;
 }
 
+export const ReaderPdfTextUnavailableNotice = memo(function ReaderPdfTextUnavailableNotice({
+  reader
+}: {
+  reader: ReaderSnapshot;
+}) {
+  const message = reader.pdf_geometry_mode === "ocr_required"
+    ? "Text-only content is unavailable for this PDF until OCR produces usable text."
+    : "Text-only content is unavailable for this PDF because no usable extracted text is available.";
+  return (
+    <Typography
+      variant="caption"
+      color="text.secondary"
+      data-testid="reader-pdf-text-unavailable"
+    >
+      {message}
+    </Typography>
+  );
+});
+
 export const ReaderPrettyHtmlPane = memo(function ReaderPrettyHtmlPane({
   currentPage,
   onFrameLoad,
@@ -155,6 +174,9 @@ export const ReaderTextOnlyPane = memo(function ReaderTextOnlyPane({
   searchMatchSet,
   sentenceRefs
 }: ReaderTextOnlyPaneProps) {
+  if (reader.sentences.length === 0) {
+    return null;
+  }
   return (
     <Stack spacing={0.75}>
       {reader.sentences.map((sentence, idx) => (

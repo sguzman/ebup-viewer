@@ -15,6 +15,7 @@ import {
   renderPrettyNativeHtmlDocument
 } from "./contentRender";
 import {
+  ReaderPdfTextUnavailableNotice,
   ReaderPrettyHtmlPane,
   ReaderPrettyMarkdownPane,
   ReaderPrettyUnavailableNotice,
@@ -177,6 +178,12 @@ export const ReaderShell = memo(function ReaderShell({
     hasPrettyHtml && reader.source_path.toLowerCase().endsWith(".lltab");
   const prettyUnavailable = isPrettyTextMode && !hasPrettyMarkdown && !hasPrettyHtml && !hasPrettyPdf;
   const showSentenceList = reader.text_only_mode || prettyUnavailable;
+  const showPdfTextUnavailableNotice =
+    showSentenceList
+    && reader.pretty_kind === "pdf"
+    && reader.sentences.length === 0
+    && reader.page_text.trim().length === 0
+    && reader.tts_text_page.trim().length === 0;
   const ttsSentenceLabel = useMemo(
     () =>
       `Sentence ${reader.tts.current_sentence_idx !== null ? reader.tts.current_sentence_idx + 1 : 0}/${Math.max(1, reader.tts.sentence_count)}`,
@@ -347,6 +354,9 @@ export const ReaderShell = memo(function ReaderShell({
                       searchMatchSet={searchMatchSet}
                       sentenceRefs={sentenceRefs}
                     />
+                  ) : null}
+                  {showPdfTextUnavailableNotice ? (
+                    <ReaderPdfTextUnavailableNotice reader={reader} />
                   ) : null}
                 </Stack>
               </div>

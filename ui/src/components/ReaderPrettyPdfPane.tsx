@@ -396,7 +396,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         ) : null}
         {!error && !canSyncHighlights ? (
           <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-degraded">
-            This PDF is render-only right now. Text-only/TTS can continue, but precise PDF highlight sync is unavailable.
+            {reader.pdf_geometry_mode === "ocr_required"
+              ? "This PDF is renderable now, but precise highlight sync and text playback will stay gated until OCR produces usable text."
+              : "This PDF is render-only right now. Text-only/TTS can continue, but precise PDF highlight sync is unavailable."}
           </Typography>
         ) : null}
         {!error && canSyncHighlights && mappingSummary ? (

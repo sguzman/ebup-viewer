@@ -203,7 +203,35 @@ describe("ReaderShell TTS player integration", () => {
     );
 
     expect(html).toContain('data-testid="reader-pretty-pdf"');
+    expect(html).toContain('data-testid="reader-pretty-pdf-degraded"');
     expect(html).toContain('data-testid="reader-tts-player-disabled-reason"');
+    expect(html).toContain("This PDF is renderable now, but precise highlight sync and text playback will stay gated until OCR produces usable text.");
     expect(html).toContain("TTS is disabled for this PDF until OCR produces usable text.");
+    expect(html).not.toContain('data-testid="reader-sentence-0"');
+  });
+
+  it("shows an explicit text-only unavailable notice for scanned PDFs with no extracted text", () => {
+    const html = renderReader(
+      makeReaderSnapshot({
+        source_path: "/tmp/scan.pdf",
+        source_name: "scan.pdf",
+        text_only_mode: true,
+        pretty_kind: "pdf",
+        pdf_geometry_mode: "ocr_required",
+        pdf_sync_strategy: "render_only",
+        page_text: "",
+        tts_text_page: "",
+        sentences: [],
+        panels: {
+          show_settings: false,
+          show_stats: false,
+          show_tts: true
+        }
+      })
+    );
+
+    expect(html).toContain('data-testid="reader-pdf-text-unavailable"');
+    expect(html).toContain("Text-only content is unavailable for this PDF until OCR produces usable text.");
+    expect(html).toContain('data-testid="reader-tts-player-disabled-reason"');
   });
 });

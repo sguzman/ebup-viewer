@@ -15,10 +15,8 @@ import {
 } from "./pdfTextSync";
 import { applyPdfHighlightDom } from "./pdfHighlightDom";
 import { orderPdfTextLayerSpans } from "./pdfTextLayer";
-import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
-
-let pdfJsWorkerConfigured = false;
 let pdfJsImportPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null = null;
+let pdfJsWorkerImportPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.worker.mjs")> | null = null;
 
 function ensurePromiseWithResolvers(): void {
   const promiseCtor = Promise as PromiseConstructor & {
@@ -69,6 +67,46 @@ async function importPdfJsBrowserSafe(): Promise<typeof import("pdfjs-dist/legac
       Reflect.deleteProperty(globalScope, "process");
     }
   }
+}
+
+async function importPdfJsWorkerBrowserSafe(): Promise<typeof import("pdfjs-dist/legacy/build/pdf.worker.mjs")> {
+  if (pdfJsWorkerImportPromise) {
+    return pdfJsWorkerImportPromise;
+  }
+  const globalScope = globalThis as typeof globalThis & { process?: unknown };
+  const originalProcess = globalScope.process;
+  const hadOwnProcess = Object.prototype.hasOwnProperty.call(globalThis, "process");
+  try {
+    if (hadOwnProcess) {
+      Reflect.deleteProperty(globalScope, "process");
+    } else {
+      Object.defineProperty(globalThis, "process", {
+        configurable: true,
+        enumerable: false,
+        value: undefined,
+        writable: true
+      });
+    }
+    pdfJsWorkerImportPromise = import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+    return await pdfJsWorkerImportPromise;
+  } finally {
+    if (hadOwnProcess) {
+      globalScope.process = originalProcess;
+    } else {
+      Reflect.deleteProperty(globalScope, "process");
+    }
+  }
+}
+
+async function ensurePdfJsFakeWorkerGlobal(): Promise<void> {
+  const globalScope = globalThis as typeof globalThis & {
+    pdfjsWorker?: { WorkerMessageHandler?: unknown };
+  };
+  if (globalScope.pdfjsWorker?.WorkerMessageHandler) {
+    return;
+  }
+  const workerModule = await importPdfJsWorkerBrowserSafe();
+  globalScope.pdfjsWorker = workerModule as unknown as { WorkerMessageHandler?: unknown };
 }
 
 interface ReaderPrettyPdfPaneProps {
@@ -416,12 +454,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
 
         try {
           ensurePromiseWithResolvers();
+          await ensurePdfJsFakeWorkerGlobal();
           const pdfBytes = await backendApi.readerLoadPdfBytes(sourcePath);
           const pdfjs = await importPdfJsBrowserSafe();
-          if (!pdfJsWorkerConfigured) {
-            pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-            pdfJsWorkerConfigured = true;
-          }
           const loadingTask = pdfjs.getDocument({
             data: pdfBytes,
             disableRange: true,

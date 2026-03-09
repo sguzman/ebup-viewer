@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPdfSentenceSpanMap, findNearestSentenceForSpanIndex } from "../src/components/pdfTextSync";
+import {
+  buildPdfSentenceSpanMap,
+  findNearestSentenceForPageIndex,
+  findNearestSentenceForSpanIndex
+} from "../src/components/pdfTextSync";
 
 function createSpan(pageIndex: number, text: string): { pageIndex: number; text: string; element: HTMLElement } {
   const element = {
@@ -173,5 +177,20 @@ describe("buildPdfSentenceSpanMap", () => {
     const { matches } = buildPdfSentenceSpanMap(spans, ["Alpha beta gamma.", "Delta"]);
     expect(findNearestSentenceForSpanIndex(matches, 1)).toBe(0);
     expect(findNearestSentenceForSpanIndex(matches, 3)).toBe(1);
+  });
+
+  it("finds the nearest sentence for a clicked PDF page", () => {
+    const spans = [
+      createSpan(0, "Alpha"),
+      createSpan(0, "beta"),
+      createSpan(1, "Gamma"),
+      createSpan(1, "delta"),
+      createSpan(2, "Epsilon")
+    ];
+    const { matches } = buildPdfSentenceSpanMap(spans, ["Alpha beta", "Gamma delta", "Epsilon"]);
+
+    expect(findNearestSentenceForPageIndex(matches, 1)).toBe(1);
+    expect(findNearestSentenceForPageIndex(matches, 2)).toBe(2);
+    expect(findNearestSentenceForPageIndex(matches, 3)).toBe(2);
   });
 });

@@ -6,7 +6,13 @@ import type { ReaderSnapshot } from "../types";
 import { recordPerfMeasure } from "../perf/debug";
 import { toReaderImageSrc } from "./readerDom";
 import { clamp, normalizeNumber } from "./readerShared";
-import { buildPdfSentenceSpanMap, findNearestSentenceForSpanIndex, type PdfSentenceMatch, type PdfTextSpan } from "./pdfTextSync";
+import {
+  buildPdfSentenceSpanMap,
+  findNearestSentenceForPageIndex,
+  findNearestSentenceForSpanIndex,
+  type PdfSentenceMatch,
+  type PdfTextSpan
+} from "./pdfTextSync";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 let pdfJsWorkerConfigured = false;
@@ -310,6 +316,43 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (sentenceIdx === null) {
         return;
       }
+      logPdfDebug("clickResolveSentence", {
+        reason: "span_click",
+        spanIdx,
+        sentenceIdx
+      });
+      void onSentenceClick(sentenceIdx);
+    }, [canSyncHighlights, onSentenceClick]);
+
+    const handlePdfPageMouseUp = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+      if (!canSyncHighlights) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        return;
+      }
+      const page = target.closest(".reader-pdf-page") as HTMLElement | null;
+      if (!page) {
+        return;
+      }
+      if (target.closest("[data-ll-pdf-span-idx]")) {
+        return;
+      }
+      const rawPageIndex = page.dataset.pageIndex;
+      const pageIndex = rawPageIndex === undefined ? Number.NaN : Number.parseInt(rawPageIndex, 10);
+      if (!Number.isFinite(pageIndex)) {
+        return;
+      }
+      const sentenceIdx = findNearestSentenceForPageIndex(sentenceMatchesRef.current, pageIndex);
+      if (sentenceIdx === null) {
+        return;
+      }
+      logPdfDebug("clickResolveSentence", {
+        reason: "page_click",
+        pageIndex,
+        sentenceIdx
+      });
       void onSentenceClick(sentenceIdx);
     }, [canSyncHighlights, onSentenceClick]);
 
@@ -364,6 +407,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           className="reader-pdf-document"
           data-testid="reader-pretty-pdf"
           onClick={handlePdfClick}
+          onMouseUp={handlePdfPageMouseUp}
           style={{ opacity: loading ? 0.35 : 1 }}
         />
       </div>
@@ -434,7 +478,7 @@ async function renderPdfPages(
           element
         };
       })
-      .filter((span) => span.text.trim().length > 0);
+      .filter((span) => span.text.trim().length > 0 && isVisiblePdfTextSpan(span.element));
 
     renderedPagesRef.current.push({
       container: pageContainer,
@@ -450,4 +494,31 @@ async function renderPdfPages(
       textSpanCount: spans.length
     });
   }
+}
+
+function isVisiblePdfTextSpan(element: HTMLElement): boolean {
+  if (element.hidden) {
+    return false;
+  }
+  const style = window.getComputedStyle(element);
+  if (
+    style.display === "none"
+    || style.visibility === "hidden"
+    || style.opacity === "0"
+  ) {
+    return false;
+  }
+  const width = Number.parseFloat(style.width || "0");
+  const height = Number.parseFloat(style.height || "0");
+  if (Number.isFinite(width) && Number.isFinite(height) && width <= 0 && height <= 0) {
+    return false;
+  }
+  const rects = element.getClientRects();
+  if (rects.length > 0) {
+    const hasArea = Array.from(rects).some((rect) => rect.width > 0 && rect.height > 0);
+    if (!hasArea) {
+      return false;
+    }
+  }
+  return true;
 }

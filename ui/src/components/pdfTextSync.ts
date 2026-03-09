@@ -559,3 +559,37 @@ export function findNearestSentenceForSpanIndex(
 
   return bestSentenceIdx;
 }
+
+export function findNearestSentenceForPageIndex(
+  matches: PdfSentenceMatch[],
+  pageIndex: number
+): number | null {
+  let nearestOnEarlierPage: number | null = null;
+
+  for (let sentenceIdx = 0; sentenceIdx < matches.length; sentenceIdx += 1) {
+    const match = matches[sentenceIdx];
+    if (!match || match.pageIndex === null) {
+      continue;
+    }
+    if (match.pageIndex === pageIndex) {
+      return sentenceIdx;
+    }
+    if (match.pageIndex < pageIndex) {
+      nearestOnEarlierPage = sentenceIdx;
+    }
+  }
+
+  if (nearestOnEarlierPage !== null) {
+    return nearestOnEarlierPage;
+  }
+
+  for (let sentenceIdx = 0; sentenceIdx < matches.length; sentenceIdx += 1) {
+    const match = matches[sentenceIdx];
+    if (!match || match.pageIndex === null) {
+      continue;
+    }
+    return sentenceIdx;
+  }
+
+  return null;
+}

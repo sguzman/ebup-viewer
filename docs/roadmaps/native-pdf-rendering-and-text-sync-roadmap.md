@@ -136,7 +136,7 @@
 - [x] Keep page navigation and TTS seek operations synchronized across PDF and text-only views.
 - [x] Support reverse navigation from native PDF interactions back to `tts_text` ownership:
 - [x] click or selection in Pretty Text PDF view can resolve to nearest `tts_text` sentence
-- [ ] page jump in PDF view can restore the nearest canonical playback/search cursor
+- [x] page jump in PDF view can restore the nearest canonical playback/search cursor
 
 ## Phase 9: Cache, Recovery, and Migration
 - [x] Extend cache layout to store extracted `tts_text`, PDF sync maps, page geometry metadata, and render descriptors.

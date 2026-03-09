@@ -214,9 +214,11 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const strategyLabel = reader.pdf_sync_strategy ? reader.pdf_sync_strategy.replaceAll("_", " ") : "unknown";
 
     const resolveSentenceMatches = useCallback(() => {
-      const spans = renderedPagesRef.current.flatMap((page) => page.spans);
+      const currentRenderedPage = renderedPagesRef.current.find((page) => page.pageIndex === reader.current_page);
+      const spans = currentRenderedPage?.spans ?? [];
       const cacheKey = [
         reader.source_path,
+        String(reader.current_page),
         String(renderVersion),
         String(spans.length),
         reader.sentences.join("\n")
@@ -224,6 +226,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (matchCacheRef.current?.key === cacheKey) {
         logPdfDebug("mappingCacheHit", {
           sourcePath: reader.source_path,
+          currentPage: reader.current_page,
           renderVersion,
           spanCount: spans.length,
           sentenceCount: reader.sentences.length
@@ -250,12 +253,13 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       };
       logPdfDebug("mappingCacheMiss", {
         sourcePath: reader.source_path,
+        currentPage: reader.current_page,
         renderVersion,
         spanCount: spans.length,
         sentenceCount: reader.sentences.length
       });
       return { spans, matches, summary };
-    }, [reader.sentences, reader.source_path, renderVersion]);
+    }, [reader.current_page, reader.sentences, reader.source_path, renderVersion]);
 
     const applyHighlight = useCallback(
       (behavior: ScrollBehavior, force = false) => {

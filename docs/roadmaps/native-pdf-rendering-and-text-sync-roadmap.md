@@ -53,7 +53,7 @@
 - [x] figures and long captions
 - [x] rotated pages or rotated text blocks
 - [x] hidden OCR layers, invisible text, duplicated glyph streams, and malformed copy/paste order
-- [ ] large heavy-text PDFs where mapping must remain incremental and cacheable rather than recomputed on every view update
+- [x] large heavy-text PDFs where mapping must remain incremental and cacheable rather than recomputed on every view update
 
 ## Phase 1: Source Contracts and Ownership
 - [x] Define PDF source contract with two canonical payloads:

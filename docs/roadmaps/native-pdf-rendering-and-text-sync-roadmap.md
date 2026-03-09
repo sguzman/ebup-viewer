@@ -65,7 +65,7 @@
 ## Phase 2: PDF Ingestion and Text Extraction
 - [x] Build a dedicated PDF ingest path that outputs native PDF render metadata plus extracted `tts_text`.
 - [x] Support structured PDFs with selectable/extractable text as the primary happy path.
-- [ ] Preserve page boundaries, block order, and reading order metadata during extraction when available.
+- [x] Preserve page boundaries, block order, and reading order metadata during extraction when available.
 - [x] Normalize extracted text into stable `tts_text` with reliable whitespace and paragraph boundaries.
 - [x] Add explicit fallback handling for low-quality extraction, duplicated glyphs, headers/footers, and multi-column layouts.
 - [x] Add tracing spans for extraction duration, detected PDF text quality, and fallback decisions.

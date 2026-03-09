@@ -560,15 +560,14 @@ fn pdf_extraction_mode_label(
     }
 }
 
-fn derive_pdf_reading_order_mode(
-    pdf_geometry_mode: PdfGeometryMode,
-    ocr_enabled: bool,
-) -> String {
+fn derive_pdf_reading_order_mode(pdf_geometry_mode: PdfGeometryMode, ocr_enabled: bool) -> String {
     match (pdf_geometry_mode, ocr_enabled) {
         (PdfGeometryMode::HighTextTrust, false) => "embedded_text_order".to_string(),
         (PdfGeometryMode::HighTextTrust, true) => "embedded_text_order_with_ocr".to_string(),
         (PdfGeometryMode::MixedTextTrust, false) => "normalized_extracted_order".to_string(),
-        (PdfGeometryMode::MixedTextTrust, true) => "normalized_extracted_order_with_ocr".to_string(),
+        (PdfGeometryMode::MixedTextTrust, true) => {
+            "normalized_extracted_order_with_ocr".to_string()
+        }
         (PdfGeometryMode::OcrRequired, _) => "ocr_text_order".to_string(),
         (PdfGeometryMode::RenderOnlyNoSync, _) => "render_only".to_string(),
     }
@@ -589,10 +588,7 @@ fn derive_pdf_fallback_strategies(
     ) {
         strategies.push("sentence_sync_degraded".to_string());
     }
-    if report
-        .map(|value| value.decision.do_ocr)
-        .unwrap_or(false)
-    {
+    if report.map(|value| value.decision.do_ocr).unwrap_or(false) {
         strategies.push("ocr_enabled".to_string());
     }
     if report
@@ -776,6 +772,8 @@ struct PdfChunkRangeMeta {
     end_page: u32,
     #[serde(default)]
     warnings: Vec<String>,
+    #[serde(default)]
+    meta: serde_json::Value,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -1112,6 +1110,7 @@ fn write_pdf_cache(
                     start_page: chunk.start_page,
                     end_page: chunk.end_page,
                     warnings: chunk.warnings.clone(),
+                    meta: chunk.meta.clone(),
                 })
                 .collect()
         })
@@ -1193,6 +1192,8 @@ fn derive_pdf_runtime_metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn sample_report() -> crate::quack_check::report::JobReport {
         crate::quack_check::report::JobReport {
@@ -1219,7 +1220,11 @@ mod tests {
                     end_page: 6,
                     ok: true,
                     warnings: vec!["native_text failed; fell back to docling".to_string()],
-                    meta: serde_json::json!({ "engine": "docling" }),
+                    meta: serde_json::json!({
+                        "engine": "docling",
+                        "use_page_range": true,
+                        "applied_flags": ["generate_parsed_pages"]
+                    }),
                 },
                 crate::quack_check::report::ChunkReport {
                     chunk_index: 1,
@@ -1227,10 +1232,22 @@ mod tests {
                     end_page: 12,
                     ok: true,
                     warnings: vec![],
-                    meta: serde_json::json!({ "engine": "docling" }),
+                    meta: serde_json::json!({
+                        "engine": "docling",
+                        "use_page_range": false,
+                        "applied_flags": []
+                    }),
                 },
             ],
         }
+    }
+
+    fn unique_pdf_path() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("lanternleaf_pdf_pipeline_{nanos}.pdf"))
     }
 
     #[test]
@@ -1264,6 +1281,42 @@ mod tests {
             derive_pdf_reading_order_mode(PdfGeometryMode::OcrRequired, true),
             "ocr_text_order"
         );
+    }
+
+    #[test]
+    fn pdf_cache_roundtrip_preserves_chunk_page_ranges_and_meta() {
+        let path = unique_pdf_path();
+        fs::write(&path, b"pdf").expect("write source");
+        let signature = pdf_signature(&path, "cfg", "transcript.txt").expect("signature");
+        let report = sample_report();
+
+        write_pdf_cache(
+            &path,
+            &signature,
+            "Alpha. Beta.",
+            PdfGeometryMode::MixedTextTrust,
+            PdfSyncStrategy::ParagraphFallback,
+            "mixed_text_with_ocr",
+            true,
+            Some(&report),
+        )
+        .expect("write pdf cache");
+
+        let cached = try_read_pdf_cache(&path, &signature)
+            .expect("read pdf cache")
+            .expect("cached value");
+        assert_eq!(cached.page_count, 12);
+        assert_eq!(cached.sampled_pages, 6);
+        assert_eq!(cached.chunk_ranges.len(), 2);
+        assert_eq!(cached.chunk_ranges[0].start_page, 1);
+        assert_eq!(cached.chunk_ranges[0].end_page, 6);
+        assert_eq!(
+            cached.chunk_ranges[0].meta["applied_flags"],
+            serde_json::json!(["generate_parsed_pages"])
+        );
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(hash_dir(&path));
     }
 }
 

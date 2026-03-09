@@ -1065,6 +1065,46 @@ sentence_text = "legacy bookmark entry"
     }
 
     #[test]
+    fn pdf_sentence_map_persist_merges_new_sentence_ranges() {
+        let source = unique_source_path("pdf");
+        write_source_file(&source);
+
+        persist_pdf_sentence_map(
+            &source,
+            &[PdfSentenceLocation {
+                sentence_idx: 2,
+                page_idx: Some(3),
+                rects: vec![],
+                line_rects: vec![],
+                block_rects: vec![],
+                confidence: "fallback".to_string(),
+                reason: "paragraph_fallback".to_string(),
+                score: 0.51,
+            }],
+        );
+        persist_pdf_sentence_map(
+            &source,
+            &[PdfSentenceLocation {
+                sentence_idx: 0,
+                page_idx: Some(1),
+                rects: vec![],
+                line_rects: vec![],
+                block_rects: vec![],
+                confidence: "exact".to_string(),
+                reason: "exact_geometry".to_string(),
+                score: 1.0,
+            }],
+        );
+
+        let loaded = load_pdf_sentence_map(&source).expect("merged pdf sentence map should load");
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].sentence_idx, 0);
+        assert_eq!(loaded[1].sentence_idx, 2);
+
+        cleanup_source_and_cache(&source);
+    }
+
+    #[test]
     fn load_pdf_sync_meta_removes_corrupt_artifact() {
         let source = unique_source_path("pdf");
         write_source_file(&source);

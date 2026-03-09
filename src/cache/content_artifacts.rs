@@ -235,8 +235,24 @@ pub(super) fn persist_pdf_sentence_map(source_path: &Path, locations: &[PdfSente
     if let Some(parent) = map_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
+    let mut merged_locations = load_pdf_sentence_map(source_path).unwrap_or_default();
+    let mut replaced = 0usize;
+    let mut inserted = 0usize;
+    for location in locations {
+        if let Some(existing) = merged_locations
+            .iter_mut()
+            .find(|candidate| candidate.sentence_idx == location.sentence_idx)
+        {
+            *existing = location.clone();
+            replaced += 1;
+        } else {
+            merged_locations.push(location.clone());
+            inserted += 1;
+        }
+    }
+    merged_locations.sort_by_key(|location| location.sentence_idx);
     let serialized = match toml::to_string(&PdfSentenceMap {
-        locations: locations.to_vec(),
+        locations: merged_locations.clone(),
     }) {
         Ok(value) => value,
         Err(err) => {
@@ -249,8 +265,11 @@ pub(super) fn persist_pdf_sentence_map(source_path: &Path, locations: &[PdfSente
     } else {
         debug!(
             path = %map_path.display(),
-            count = locations.len(),
-            "Persisted PDF sentence map"
+            incoming_count = locations.len(),
+            merged_count = merged_locations.len(),
+            replaced,
+            inserted,
+            "Persisted merged PDF sentence map"
         );
     }
 }

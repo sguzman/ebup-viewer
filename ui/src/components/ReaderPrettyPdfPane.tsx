@@ -179,8 +179,6 @@ interface CachedPdfLocationMatchSet {
   locations: Array<PdfSentenceLocation | null>;
 }
 
-const PDF_RENDER_PAGE_WINDOW_RADIUS = 1;
-
 function flattenRenderedPdfSpans(pages: RenderedPdfPage[]): PdfTextSpan[] {
   return pages.flatMap((page) => page.spans);
 }
@@ -195,58 +193,47 @@ function setRenderedPdfSpanIndexes(pages: RenderedPdfPage[]): void {
   }
 }
 
-function buildPdfRenderWindow(targetPageIndex: number, totalPages: number): number[] {
-  if (totalPages <= 0) {
-    return [];
-  }
-  const clampedTarget = clamp(targetPageIndex, 0, totalPages - 1);
-  const pageIndexes = new Set<number>();
-  for (let delta = -PDF_RENDER_PAGE_WINDOW_RADIUS; delta <= PDF_RENDER_PAGE_WINDOW_RADIUS; delta += 1) {
-    pageIndexes.add(clamp(clampedTarget + delta, 0, totalPages - 1));
-  }
-  return Array.from(pageIndexes).sort((left, right) => left - right);
-}
-
-function estimatePdfPageIndex(reader: ReaderSnapshot, totalPdfPages: number): number {
-  if (totalPdfPages <= 1) {
-    return 0;
-  }
-  const startPct = clamp(reader.stats.page_start_percent, 0, 100) / 100;
-  return clamp(Math.round(startPct * (totalPdfPages - 1)), 0, totalPdfPages - 1);
-}
-
 function globalSentenceStartForReader(reader: ReaderSnapshot): number {
   return reader.stats.sentences_read_up_to_page_start;
 }
 
-function resolvePreferredPdfPageIndex(
+function resolveLikelyRenderedPages(
+  pages: RenderedPdfPage[],
   locations: PdfSentenceLocation[] | null,
-  reader: ReaderSnapshot,
-  totalPdfPages: number
-): number {
-  const sentenceCount = reader.sentences.length;
-  const globalSentenceStart = globalSentenceStartForReader(reader);
-  const highlightedSentenceIdx = reader.highlighted_sentence_idx ?? 0;
-  const highlightedGlobalIdx = globalSentenceStart + highlightedSentenceIdx;
-  const directLocation = locations?.find((location) => location.sentence_idx === highlightedGlobalIdx);
-  if (directLocation?.page_idx !== null && directLocation?.page_idx !== undefined) {
-    return clamp(directLocation.page_idx, 0, Math.max(0, totalPdfPages - 1));
+  reader: ReaderSnapshot
+): RenderedPdfPage[] {
+  if (pages.length === 0) {
+    return [];
   }
 
-  const pageLocations = (locations ?? [])
+  const globalSentenceStart = globalSentenceStartForReader(reader);
+  const globalSentenceEnd = globalSentenceStart + reader.sentences.length;
+  const cachedPageIndexes = (locations ?? [])
     .filter((location) => (
       location.sentence_idx >= globalSentenceStart
-      && location.sentence_idx < globalSentenceStart + sentenceCount
+      && location.sentence_idx < globalSentenceEnd
       && location.page_idx !== null
       && location.page_idx !== undefined
     ))
-    .sort((left, right) => left.sentence_idx - right.sentence_idx);
-  if (pageLocations.length > 0) {
-    const midpoint = pageLocations[Math.floor(pageLocations.length / 2)];
-    return clamp(midpoint?.page_idx ?? 0, 0, Math.max(0, totalPdfPages - 1));
+    .map((location) => location.page_idx as number);
+
+  let minPageIndex: number;
+  let maxPageIndex: number;
+  if (cachedPageIndexes.length > 0) {
+    minPageIndex = Math.max(0, Math.min(...cachedPageIndexes) - 1);
+    maxPageIndex = Math.max(...cachedPageIndexes) + 1;
+  } else {
+    const totalPages = pages.length;
+    const startPct = clamp(reader.stats.page_start_percent, 0, 100) / 100;
+    const endPct = clamp(reader.stats.page_end_percent, 0, 100) / 100;
+    const estimatedStart = clamp(Math.floor(startPct * (totalPages - 1)), 0, totalPages - 1);
+    const estimatedEnd = clamp(Math.ceil(endPct * (totalPages - 1)), estimatedStart, totalPages - 1);
+    minPageIndex = Math.max(0, estimatedStart - 1);
+    maxPageIndex = Math.min(totalPages - 1, estimatedEnd + 1);
   }
 
-  return estimatePdfPageIndex(reader, totalPdfPages);
+  const filtered = pages.filter((page) => page.pageIndex >= minPageIndex && page.pageIndex <= maxPageIndex);
+  return filtered.length > 0 ? filtered : pages;
 }
 
 function logPdfDebug(event: string, payload: Record<string, unknown>): void {
@@ -299,10 +286,16 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const globalSentenceStart = globalSentenceStartForReader(reader);
 
     const resolveSentenceMatches = useCallback(() => {
-      const spans = flattenRenderedPdfSpans(renderedPagesRef.current);
+      const candidatePages = resolveLikelyRenderedPages(
+        renderedPagesRef.current,
+        cachedPdfLocationsRef.current,
+        reader
+      );
+      const spans = flattenRenderedPdfSpans(candidatePages);
       const cacheKey = [
         reader.source_path,
-        renderedPagesRef.current.map((page) => page.pageIndex).join(","),
+        String(globalSentenceStart),
+        candidatePages.map((page) => page.pageIndex).join(","),
         String(renderVersion),
         String(spans.length),
         reader.sentences.join("\n")
@@ -310,7 +303,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (matchCacheRef.current?.key === cacheKey) {
         logPdfDebug("mappingCacheHit", {
           sourcePath: reader.source_path,
-          renderedPages: renderedPagesRef.current.map((page) => page.pageIndex),
+          globalSentenceStart,
+          candidatePages: candidatePages.map((page) => page.pageIndex),
           renderVersion,
           spanCount: spans.length,
           sentenceCount: reader.sentences.length
@@ -341,13 +335,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       };
       logPdfDebug("mappingCacheMiss", {
         sourcePath: reader.source_path,
-        renderedPages: renderedPagesRef.current.map((page) => page.pageIndex),
+        globalSentenceStart,
+        candidatePages: candidatePages.map((page) => page.pageIndex),
         renderVersion,
         spanCount: spans.length,
         sentenceCount: reader.sentences.length
       });
       return { spans, matches, summary };
-    }, [reader.sentences, reader.source_path, renderVersion]);
+    }, [globalSentenceStart, reader, reader.sentences, reader.source_path, renderVersion]);
 
     const applyHighlight = useCallback(
       (behavior: ScrollBehavior, force = false) => {
@@ -683,20 +678,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             void pdf.destroy();
             return;
           }
-          const targetPageIndex = resolvePreferredPdfPageIndex(
-            cachedPdfLocationsRef.current,
-            reader,
-            pdf.numPages
-          );
-          const pageWindow = buildPdfRenderWindow(targetPageIndex, pdf.numPages);
-          logPdfDebug("renderWindow", {
-            sourcePath,
-            targetPageIndex,
-            pageWindow,
-            highlightedSentenceIdx: reader.highlighted_sentence_idx,
-            globalSentenceStart
-          });
-          for (const pageIndex of pageWindow) {
+          for (let pageIndex = 0; pageIndex < pdf.numPages; pageIndex += 1) {
             await renderPdfPage(
               pdfjs.TextLayer,
               pdf,
@@ -707,7 +689,6 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
               renderedPagesRef
             );
           }
-          renderedPagesRef.current.sort((left, right) => left.pageIndex - right.pageIndex);
           setRenderedPdfSpanIndexes(renderedPagesRef.current);
           if (cancelled) {
             void pdf.destroy();
@@ -717,7 +698,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           logPdfDebug("renderComplete", {
             sourcePath,
             zoom,
-            renderedPages: renderedPagesRef.current.map((page) => page.pageIndex + 1),
+            renderedPageCount: renderedPagesRef.current.length,
             numPages: pdf.numPages
           });
           setRenderVersion((value) => value + 1);

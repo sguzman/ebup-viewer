@@ -67,7 +67,7 @@
 - [x] Support structured PDFs with selectable/extractable text as the primary happy path.
 - [ ] Preserve page boundaries, block order, and reading order metadata during extraction when available.
 - [x] Normalize extracted text into stable `tts_text` with reliable whitespace and paragraph boundaries.
-- [ ] Add explicit fallback handling for low-quality extraction, duplicated glyphs, headers/footers, and multi-column layouts.
+- [x] Add explicit fallback handling for low-quality extraction, duplicated glyphs, headers/footers, and multi-column layouts.
 - [x] Add tracing spans for extraction duration, detected PDF text quality, and fallback decisions.
 
 ## Phase 3: Native PDF Pretty View

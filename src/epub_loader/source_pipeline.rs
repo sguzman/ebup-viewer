@@ -300,6 +300,11 @@ fn load_pdf_with_quack_check(
             total_chars = tts_text.len(),
             extraction_mode = cached.extraction_mode,
             ocr_enabled = cached.ocr_enabled,
+            page_count = cached.page_count,
+            sampled_pages = cached.sampled_pages,
+            reading_order_mode = cached.reading_order_mode,
+            fallback_strategies = ?cached.fallback_strategies,
+            chunk_ranges = cached.chunk_ranges.len(),
             pdf_geometry_mode = ?cached.pdf_geometry_mode,
             pdf_sync_strategy = ?cached.pdf_sync_strategy,
             "Using cached quack-check PDF transcript"
@@ -353,6 +358,7 @@ fn load_pdf_with_quack_check(
             .unwrap_or(PdfSyncStrategy::ParagraphFallback),
         extraction_mode,
         ocr_enabled,
+        report.as_ref(),
     )?;
     info!(
         path = %path.display(),
@@ -361,6 +367,24 @@ fn load_pdf_with_quack_check(
         extraction_mode,
         quality_tier,
         ocr_enabled,
+        page_count = report.as_ref().map(|value| value.input.page_count).unwrap_or(0),
+        sampled_pages = report.as_ref().map(|value| value.sample.sampled_pages).unwrap_or(0),
+        reading_order_mode = derive_pdf_reading_order_mode(
+            resolved
+                .pdf_geometry_mode
+                .unwrap_or(PdfGeometryMode::MixedTextTrust),
+            ocr_enabled
+        ),
+        fallback_strategies = ?derive_pdf_fallback_strategies(
+            report.as_ref(),
+            resolved
+                .pdf_geometry_mode
+                .unwrap_or(PdfGeometryMode::MixedTextTrust),
+            resolved
+                .pdf_sync_strategy
+                .unwrap_or(PdfSyncStrategy::ParagraphFallback)
+        ),
+        chunk_ranges = report.as_ref().map(|value| value.chunk_reports.len()).unwrap_or(0),
         pdf_geometry_mode = ?resolved.pdf_geometry_mode,
         pdf_sync_strategy = ?resolved.pdf_sync_strategy,
         job_id = %run.job_id,
@@ -536,6 +560,65 @@ fn pdf_extraction_mode_label(
     }
 }
 
+fn derive_pdf_reading_order_mode(
+    pdf_geometry_mode: PdfGeometryMode,
+    ocr_enabled: bool,
+) -> String {
+    match (pdf_geometry_mode, ocr_enabled) {
+        (PdfGeometryMode::HighTextTrust, false) => "embedded_text_order".to_string(),
+        (PdfGeometryMode::HighTextTrust, true) => "embedded_text_order_with_ocr".to_string(),
+        (PdfGeometryMode::MixedTextTrust, false) => "normalized_extracted_order".to_string(),
+        (PdfGeometryMode::MixedTextTrust, true) => "normalized_extracted_order_with_ocr".to_string(),
+        (PdfGeometryMode::OcrRequired, _) => "ocr_text_order".to_string(),
+        (PdfGeometryMode::RenderOnlyNoSync, _) => "render_only".to_string(),
+    }
+}
+
+fn derive_pdf_fallback_strategies(
+    report: Option<&crate::quack_check::report::JobReport>,
+    pdf_geometry_mode: PdfGeometryMode,
+    pdf_sync_strategy: PdfSyncStrategy,
+) -> Vec<String> {
+    let mut strategies = Vec::new();
+    if !matches!(pdf_geometry_mode, PdfGeometryMode::HighTextTrust) {
+        strategies.push("low_quality_extraction".to_string());
+    }
+    if matches!(
+        pdf_sync_strategy,
+        PdfSyncStrategy::ParagraphFallback | PdfSyncStrategy::RenderOnly
+    ) {
+        strategies.push("sentence_sync_degraded".to_string());
+    }
+    if report
+        .map(|value| value.decision.do_ocr)
+        .unwrap_or(false)
+    {
+        strategies.push("ocr_enabled".to_string());
+    }
+    if report
+        .map(|value| value.chunk_reports.len() > 1)
+        .unwrap_or(false)
+    {
+        strategies.push("multi_chunk_page_ranges".to_string());
+    }
+    let has_native_fallback = report
+        .map(|value| {
+            value.chunk_reports.iter().any(|chunk| {
+                chunk.warnings.iter().any(|warning| {
+                    warning.contains("fell back to docling")
+                        || warning.contains("native_text failed")
+                })
+            })
+        })
+        .unwrap_or(false);
+    if has_native_fallback {
+        strategies.push("native_text_to_docling_fallback".to_string());
+    }
+    strategies.sort();
+    strategies.dedup();
+    strategies
+}
+
 fn load_with_pandoc(
     path: &Path,
     target: &str,
@@ -675,6 +758,24 @@ struct PdfCacheMeta {
     extraction_mode: String,
     #[serde(default)]
     ocr_enabled: bool,
+    #[serde(default)]
+    page_count: u32,
+    #[serde(default)]
+    sampled_pages: u32,
+    #[serde(default)]
+    reading_order_mode: String,
+    #[serde(default)]
+    fallback_strategies: Vec<String>,
+    #[serde(default)]
+    chunk_ranges: Vec<PdfChunkRangeMeta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PdfChunkRangeMeta {
+    start_page: u32,
+    end_page: u32,
+    #[serde(default)]
+    warnings: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -733,6 +834,11 @@ fn pdf_signature(path: &Path, config_sha256: &str, text_filename: &str) -> Resul
         pdf_sync_strategy: None,
         extraction_mode: String::new(),
         ocr_enabled: false,
+        page_count: 0,
+        sampled_pages: 0,
+        reading_order_mode: String::new(),
+        fallback_strategies: Vec::new(),
+        chunk_ranges: Vec::new(),
     })
 }
 
@@ -834,6 +940,11 @@ struct PdfCachedLoad {
     pdf_sync_strategy: PdfSyncStrategy,
     extraction_mode: String,
     ocr_enabled: bool,
+    page_count: u32,
+    sampled_pages: u32,
+    reading_order_mode: String,
+    fallback_strategies: Vec<String>,
+    chunk_ranges: Vec<PdfChunkRangeMeta>,
 }
 
 fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<PdfCachedLoad>> {
@@ -903,6 +1014,11 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
         pdf_sync_strategy = ?cached_meta.pdf_sync_strategy,
         extraction_mode = cached_meta.extraction_mode,
         ocr_enabled = cached_meta.ocr_enabled,
+        page_count = cached_meta.page_count,
+        sampled_pages = cached_meta.sampled_pages,
+        reading_order_mode = cached_meta.reading_order_mode,
+        fallback_strategies = ?cached_meta.fallback_strategies,
+        chunk_ranges = cached_meta.chunk_ranges.len(),
         "PDF transcript cache hit"
     );
     Ok(Some(PdfCachedLoad {
@@ -915,6 +1031,11 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
             .unwrap_or(PdfSyncStrategy::ParagraphFallback),
         extraction_mode: cached_meta.extraction_mode,
         ocr_enabled: cached_meta.ocr_enabled,
+        page_count: cached_meta.page_count,
+        sampled_pages: cached_meta.sampled_pages,
+        reading_order_mode: cached_meta.reading_order_mode,
+        fallback_strategies: cached_meta.fallback_strategies,
+        chunk_ranges: cached_meta.chunk_ranges,
     }))
 }
 
@@ -957,6 +1078,7 @@ fn write_pdf_cache(
     pdf_sync_strategy: PdfSyncStrategy,
     extraction_mode: &str,
     ocr_enabled: bool,
+    report: Option<&crate::quack_check::report::JobReport>,
 ) -> Result<()> {
     let (text_path, meta_path, _) = pdf_cache_paths(path);
     if let Some(parent) = text_path.parent() {
@@ -976,6 +1098,24 @@ fn write_pdf_cache(
     signature.pdf_sync_strategy = Some(pdf_sync_strategy);
     signature.extraction_mode = extraction_mode.to_string();
     signature.ocr_enabled = ocr_enabled;
+    signature.page_count = report.map(|value| value.input.page_count).unwrap_or(0);
+    signature.sampled_pages = report.map(|value| value.sample.sampled_pages).unwrap_or(0);
+    signature.reading_order_mode = derive_pdf_reading_order_mode(pdf_geometry_mode, ocr_enabled);
+    signature.fallback_strategies =
+        derive_pdf_fallback_strategies(report, pdf_geometry_mode, pdf_sync_strategy);
+    signature.chunk_ranges = report
+        .map(|value| {
+            value
+                .chunk_reports
+                .iter()
+                .map(|chunk| PdfChunkRangeMeta {
+                    start_page: chunk.start_page,
+                    end_page: chunk.end_page,
+                    warnings: chunk.warnings.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let meta_toml =
         toml::to_string(&signature).context("Failed to serialize PDF transcript cache metadata")?;
     fs::write(&meta_path, meta_toml).with_context(|| {
@@ -994,6 +1134,11 @@ fn write_pdf_cache(
         ?pdf_sync_strategy,
         extraction_mode,
         ocr_enabled,
+        page_count = signature.page_count,
+        sampled_pages = signature.sampled_pages,
+        reading_order_mode = signature.reading_order_mode,
+        fallback_strategies = ?signature.fallback_strategies,
+        chunk_ranges = signature.chunk_ranges.len(),
         "Persisted PDF transcript cache artifacts"
     );
 
@@ -1042,6 +1187,83 @@ fn derive_pdf_runtime_metadata(
                 PdfSyncStrategy::ParagraphFallback
             },
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_report() -> crate::quack_check::report::JobReport {
+        crate::quack_check::report::JobReport {
+            input: crate::quack_check::probe::ProbeInput {
+                path: "/tmp/test.pdf".to_string(),
+                file_bytes: 1024,
+                page_count: 12,
+            },
+            sample: crate::quack_check::probe::ProbeSampleStats {
+                sampled_pages: 6,
+                avg_chars_per_page: 1200,
+                garbage_ratio: 0.02,
+                whitespace_ratio: 0.18,
+            },
+            decision: crate::quack_check::policy::PolicyDecision {
+                tier: crate::quack_check::policy::QualityTier::MixedText,
+                chosen_engine: "native_text".to_string(),
+                do_ocr: true,
+            },
+            chunk_reports: vec![
+                crate::quack_check::report::ChunkReport {
+                    chunk_index: 0,
+                    start_page: 1,
+                    end_page: 6,
+                    ok: true,
+                    warnings: vec!["native_text failed; fell back to docling".to_string()],
+                    meta: serde_json::json!({ "engine": "docling" }),
+                },
+                crate::quack_check::report::ChunkReport {
+                    chunk_index: 1,
+                    start_page: 7,
+                    end_page: 12,
+                    ok: true,
+                    warnings: vec![],
+                    meta: serde_json::json!({ "engine": "docling" }),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn derive_pdf_fallback_strategies_captures_quality_and_engine_fallbacks() {
+        let report = sample_report();
+
+        let strategies = derive_pdf_fallback_strategies(
+            Some(&report),
+            PdfGeometryMode::MixedTextTrust,
+            PdfSyncStrategy::ParagraphFallback,
+        );
+
+        assert!(strategies.contains(&"low_quality_extraction".to_string()));
+        assert!(strategies.contains(&"sentence_sync_degraded".to_string()));
+        assert!(strategies.contains(&"ocr_enabled".to_string()));
+        assert!(strategies.contains(&"multi_chunk_page_ranges".to_string()));
+        assert!(strategies.contains(&"native_text_to_docling_fallback".to_string()));
+    }
+
+    #[test]
+    fn derive_pdf_reading_order_mode_tracks_extraction_path() {
+        assert_eq!(
+            derive_pdf_reading_order_mode(PdfGeometryMode::HighTextTrust, false),
+            "embedded_text_order"
+        );
+        assert_eq!(
+            derive_pdf_reading_order_mode(PdfGeometryMode::MixedTextTrust, true),
+            "normalized_extracted_order_with_ocr"
+        );
+        assert_eq!(
+            derive_pdf_reading_order_mode(PdfGeometryMode::OcrRequired, true),
+            "ocr_text_order"
+        );
     }
 }
 

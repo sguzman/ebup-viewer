@@ -114,12 +114,12 @@
 - [x] Add tracing for mapping hits, low-confidence matches, missing spans, and fallback behavior.
 
 ## Phase 6: Playback Highlight in Native PDF View
-- [ ] Highlight the currently spoken unit directly on top of the native PDF render.
-- [ ] Support paragraph-level highlighting initially if sentence-level PDF geometry is not yet stable.
+- [x] Highlight the currently spoken unit directly on top of the native PDF render.
+- [x] Support paragraph-level highlighting initially if sentence-level PDF geometry is not yet stable.
 - [ ] Allow future refinement to sentence-level highlight without changing `tts_text` ownership.
 - [ ] Keep highlight overlays aligned during zoom, page resize, and scroll.
 - [ ] Keep highlight overlays aligned during rotation, DPI changes, and viewport transform updates.
-- [ ] Remove stale overlays cleanly when page/view state changes.
+- [x] Remove stale overlays cleanly when page/view state changes.
 - [x] Add tracing for highlight target resolution, page changes, and overlay lifecycle.
 
 ## Phase 7: Scroll and Cursor Behavior

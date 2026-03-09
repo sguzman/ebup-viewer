@@ -13,6 +13,7 @@ import {
   type PdfSentenceMatch,
   type PdfTextSpan
 } from "./pdfTextSync";
+import { applyPdfHighlightDom } from "./pdfHighlightDom";
 import { orderPdfTextLayerSpans } from "./pdfTextLayer";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -81,17 +82,18 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       (behavior: ScrollBehavior, force = false) => {
         const idx = reader.highlighted_sentence_idx;
         const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-        for (const node of highlightedNodesRef.current) {
-          node.classList.remove("reader-pdf-highlight");
-        }
-        highlightedNodesRef.current = [];
-        for (const page of highlightedPagesRef.current) {
-          page.classList.remove("reader-pdf-page-active");
-        }
-        highlightedPagesRef.current = [];
         let resolvedScrollTarget: string | null = null;
 
         if (idx === null || idx === undefined) {
+          const cleared = applyPdfHighlightDom(
+            highlightedNodesRef.current,
+            highlightedPagesRef.current,
+            [],
+            [],
+            null
+          );
+          highlightedNodesRef.current = cleared.highlightedNodes;
+          highlightedPagesRef.current = cleared.highlightedPages;
           highlightedSentenceRef.current = null;
           recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
           return;
@@ -140,11 +142,18 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           pageIndex: match.pageIndex,
           spanCount: match.spanIndexes.length
         });
+        const highlighted = applyPdfHighlightDom(
+          highlightedNodesRef.current,
+          highlightedPagesRef.current,
+          spans,
+          renderedPagesRef.current,
+          match
+        );
+        highlightedNodesRef.current = highlighted.highlightedNodes;
+        highlightedPagesRef.current = highlighted.highlightedPages;
         if (match.reason === "page_location_only" && match.pageIndex !== null) {
-          const page = renderedPagesRef.current.find((candidate) => candidate.pageIndex === match.pageIndex)?.container;
+          const page = highlighted.highlightedPages[0];
           if (page) {
-            page.classList.add("reader-pdf-page-active");
-            highlightedPagesRef.current = [page];
             highlightedSentenceRef.current = idx;
             const shouldAutoScroll =
               force || (reader.settings.auto_scroll_tts && reader.tts.state === "playing");
@@ -174,13 +183,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           return;
         }
 
-        const elements = match.spanIndexes
-          .map((spanIdx) => spans[spanIdx]?.element)
-          .filter((value): value is HTMLElement => Boolean(value));
-        for (const element of elements) {
-          element.classList.add("reader-pdf-highlight");
-        }
-        highlightedNodesRef.current = elements;
+        const elements = highlighted.highlightedNodes;
         highlightedSentenceRef.current = idx;
 
         const shouldAutoScroll =

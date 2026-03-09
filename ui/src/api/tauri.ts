@@ -893,6 +893,7 @@ export interface BackendApi {
   readerTtsRepeatSentence: () => Promise<ReaderSnapshot>;
   readerTtsPrecomputePage: () => Promise<ReaderSnapshot>;
   readerLoadPdfBytes: (path: string) => Promise<Uint8Array>;
+  readerLoadPdfSyncMap: (path: string) => Promise<PdfSentenceLocation[]>;
   readerPersistPdfSyncMap: (path: string, locations: PdfSentenceLocation[]) => Promise<void>;
   readerCloseSession: () => Promise<SessionState>;
   loggingSetLevel: (level: string) => Promise<string>;
@@ -962,6 +963,8 @@ function createTauriBackendApi(): BackendApi {
     readerTtsPrecomputePage: () => invokeCommand<ReaderSnapshot>("reader_tts_precompute_page"),
     readerLoadPdfBytes: async (path) =>
       Uint8Array.from(await invokeCommand<number[]>("reader_load_pdf_bytes", { path })),
+    readerLoadPdfSyncMap: (path) =>
+      invokeCommand<PdfSentenceLocation[]>("reader_load_pdf_sync_map", { path }),
     readerPersistPdfSyncMap: (path, locations) =>
       invokeCommand<void>("reader_persist_pdf_sync_map", { path, locations }),
     readerCloseSession: () => invokeCommand<SessionState>("reader_close_session"),
@@ -1044,6 +1047,7 @@ function createMockBackendApi(): BackendApi {
     readerTtsRepeatSentence: mockReaderTtsRepeatSentence,
     readerTtsPrecomputePage: mockReaderTtsPrecomputePage,
     readerLoadPdfBytes: async () => new Uint8Array(),
+    readerLoadPdfSyncMap: async () => [],
     readerPersistPdfSyncMap: async () => {},
     readerCloseSession: mockSessionReturnToStarter,
     loggingSetLevel: mockLoggingSetLevel,

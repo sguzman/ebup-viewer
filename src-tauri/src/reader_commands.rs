@@ -31,6 +31,23 @@ pub(crate) fn reader_persist_pdf_sync_map(
 }
 
 #[tauri::command]
+pub(crate) fn reader_load_pdf_sync_map(
+    path: String,
+) -> Result<Vec<cache::PdfSentenceLocation>, BridgeError> {
+    let source_path = PathBuf::from(path.trim());
+    if source_path.as_os_str().is_empty() {
+        return Err(bridge_error("invalid_input", "Path cannot be empty"));
+    }
+    let locations = cache::load_pdf_sentence_map(&source_path).unwrap_or_default();
+    tracing::debug!(
+        path = %source_path.display(),
+        count = locations.len(),
+        "Loaded cached PDF sentence sync map for native PDF renderer"
+    );
+    Ok(locations)
+}
+
+#[tauri::command]
 pub(crate) fn reader_get_snapshot(
     app: tauri::AppHandle,
     state: State<'_, Mutex<BackendState>>,

@@ -168,6 +168,17 @@ interface CachedPdfMatchResult {
   };
 }
 
+interface CachedPdfLocationMatchSet {
+  matches: PdfSentenceMatch[];
+  summary: {
+    exact: number;
+    fallback: number;
+    pageOnly: number;
+    missing: number;
+  };
+  locations: Array<PdfSentenceLocation | null>;
+}
+
 function logPdfDebug(event: string, payload: Record<string, unknown>): void {
   if (!import.meta.env.DEV) {
     return;
@@ -190,11 +201,13 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const containerRef = useRef<HTMLDivElement | null>(null);
     const renderedPagesRef = useRef<RenderedPdfPage[]>([]);
     const highlightedNodesRef = useRef<HTMLElement[]>([]);
+    const highlightedOverlayNodesRef = useRef<HTMLDivElement[]>([]);
     const highlightedPagesRef = useRef<HTMLDivElement[]>([]);
     const highlightedSentenceRef = useRef<number | null>(null);
     const lastScrollTargetRef = useRef<string | null>(null);
     const sentenceMatchesRef = useRef<PdfSentenceMatch[]>([]);
     const matchCacheRef = useRef<CachedPdfMatchResult | null>(null);
+    const cachedPdfLocationsRef = useRef<PdfSentenceLocation[] | null>(null);
     const persistedSyncKeyRef = useRef<string | null>(null);
     const [zoom, setZoom] = useState(1.2);
     const [viewportVersion, setViewportVersion] = useState(0);
@@ -272,6 +285,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         let resolvedScrollTarget: string | null = null;
 
         if (idx === null || idx === undefined) {
+          clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
+          highlightedOverlayNodesRef.current = [];
           const cleared = applyPdfHighlightDom(
             highlightedNodesRef.current,
             highlightedPagesRef.current,
@@ -286,12 +301,31 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           return;
         }
         if (!canSyncHighlights) {
+          clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
+          highlightedOverlayNodesRef.current = [];
           highlightedSentenceRef.current = idx;
           recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
           return;
         }
 
-        const { spans, matches, summary } = resolveSentenceMatches();
+        const cachedMatchSet = buildCachedPdfLocationMatchSet(
+          cachedPdfLocationsRef.current,
+          reader.current_page,
+          reader.sentences.length
+        );
+        const { spans, matches, summary } = cachedMatchSet
+          ? {
+              spans: [] as PdfTextSpan[],
+              matches: cachedMatchSet.matches,
+              summary: {
+                exact: cachedMatchSet.summary.exact,
+                fallback: cachedMatchSet.summary.fallback,
+                pageOnly: cachedMatchSet.summary.pageOnly,
+                missing: cachedMatchSet.summary.missing,
+                cappedLeaps: 0
+              }
+            }
+          : resolveSentenceMatches();
         sentenceMatchesRef.current = matches;
         setMappingSummary({
           exact: summary.exact,
@@ -307,10 +341,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           fallbackMatches: summary.fallback,
           pageOnlyMatches: summary.pageOnly,
           missingMatches: summary.missing,
-          cappedLeaps: summary.cappedLeaps,
+          cappedLeaps: "cappedLeaps" in summary ? summary.cappedLeaps : 0,
           lowConfidenceMatches: matches.filter((candidate) => candidate.score > 0 && candidate.score < 0.88).length
         });
         if (!match) {
+          clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
+          highlightedOverlayNodesRef.current = [];
           highlightedSentenceRef.current = idx;
           lastScrollTargetRef.current = null;
           logPdfDebug("highlightMissing", {
@@ -328,14 +364,40 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           pageIndex: match.pageIndex,
           spanCount: match.spanIndexes.length
         });
-        const highlighted = applyPdfHighlightDom(
-          highlightedNodesRef.current,
-          highlightedPagesRef.current,
-          spans,
-          renderedPagesRef.current,
-          match
-        );
-        highlightedNodesRef.current = highlighted.highlightedNodes;
+        const cachedLocation = cachedMatchSet?.locations[idx] ?? null;
+        let highlighted: { highlightedNodes: HTMLElement[]; highlightedPages: HTMLDivElement[] };
+        if (cachedLocation) {
+          const overlays = applyPdfLocationHighlightOverlays(
+            highlightedOverlayNodesRef.current,
+            highlightedPagesRef.current,
+            renderedPagesRef.current,
+            cachedLocation
+          );
+          highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
+          highlighted = {
+            highlightedNodes: overlays.highlightedOverlays,
+            highlightedPages: overlays.highlightedPages
+          };
+          const clearedSpans = applyPdfHighlightDom(
+            highlightedNodesRef.current,
+            [],
+            [],
+            [],
+            null
+          );
+          highlightedNodesRef.current = clearedSpans.highlightedNodes;
+        } else {
+          clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
+          highlightedOverlayNodesRef.current = [];
+          highlighted = applyPdfHighlightDom(
+            highlightedNodesRef.current,
+            highlightedPagesRef.current,
+            spans,
+            renderedPagesRef.current,
+            match
+          );
+          highlightedNodesRef.current = highlighted.highlightedNodes;
+        }
         highlightedPagesRef.current = highlighted.highlightedPages;
         if (match.reason === "page_location_only" && match.pageIndex !== null) {
           const page = highlighted.highlightedPages[0];
@@ -396,7 +458,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         });
         recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
       },
-      [canSyncHighlights, reader.highlighted_sentence_idx, reader.sentences, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence, reader.tts.state, resolveSentenceMatches]
+      [canSyncHighlights, reader.current_page, reader.highlighted_sentence_idx, reader.sentences, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence, reader.tts.state, resolveSentenceMatches]
     );
 
     useImperativeHandle(ref, () => ({
@@ -460,6 +522,36 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
 
     useEffect(() => {
       let cancelled = false;
+      cachedPdfLocationsRef.current = null;
+      void backendApi.readerLoadPdfSyncMap(sourcePath)
+        .then((locations) => {
+          if (cancelled) {
+            return;
+          }
+          cachedPdfLocationsRef.current = locations;
+          logPdfDebug("loadedCachedSyncMap", {
+            sourcePath,
+            count: locations.length,
+            currentPage: reader.current_page
+          });
+        })
+        .catch((cause: unknown) => {
+          if (cancelled) {
+            return;
+          }
+          cachedPdfLocationsRef.current = null;
+          logPdfDebug("loadCachedSyncMapError", {
+            sourcePath,
+            error: cause instanceof Error ? cause.message : String(cause)
+          });
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [reader.current_page, sourcePath]);
+
+    useEffect(() => {
+      let cancelled = false;
       const root = containerRef.current;
       if (!root) {
         return;
@@ -468,6 +560,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       const render = async (): Promise<void> => {
         setLoading(true);
         setError(null);
+        clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
+        highlightedOverlayNodesRef.current = [];
         const cleared = applyPdfHighlightDom(
           highlightedNodesRef.current,
           highlightedPagesRef.current,
@@ -569,6 +663,19 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (loading || !canSyncHighlights) {
         return;
       }
+      const cachedMatchSet = buildCachedPdfLocationMatchSet(
+        cachedPdfLocationsRef.current,
+        reader.current_page,
+        reader.sentences.length
+      );
+      if (cachedMatchSet) {
+        logPdfDebug("reuseCachedSyncMap", {
+          sourcePath: reader.source_path,
+          currentPage: reader.current_page,
+          count: cachedMatchSet.locations.filter(Boolean).length
+        });
+        return;
+      }
       const { matches } = resolveSentenceMatches();
       const locations = buildPersistedPdfSentenceLocations(matches, renderedPagesRef.current);
       const persistKey = [
@@ -595,7 +702,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             error: error instanceof Error ? error.message : String(error)
           });
         });
-    }, [canSyncHighlights, loading, reader.source_path, renderVersion, resolveSentenceMatches]);
+    }, [canSyncHighlights, loading, reader.current_page, reader.sentences.length, reader.source_path, renderVersion, resolveSentenceMatches]);
 
     const handlePdfClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
       if (!canSyncHighlights) {
@@ -823,6 +930,128 @@ function mergeLineRectsIntoBlocks(lineRects: PdfSentenceLocation["line_rects"]):
     current.height = Number((bottom - top).toFixed(4));
   }
   return blocks;
+}
+
+function buildCachedPdfLocationMatchSet(
+  locations: PdfSentenceLocation[] | null,
+  currentPage: number,
+  sentenceCount: number
+): CachedPdfLocationMatchSet | null {
+  if (!locations || locations.length !== sentenceCount) {
+    return null;
+  }
+  const orderedLocations: Array<PdfSentenceLocation | null> = Array.from({ length: sentenceCount }, () => null);
+  for (const location of locations) {
+    if (location.sentence_idx >= sentenceCount) {
+      return null;
+    }
+    orderedLocations[location.sentence_idx] = location;
+  }
+  if (orderedLocations.some((location) => location === null)) {
+    return null;
+  }
+
+  let exact = 0;
+  let fallback = 0;
+  let pageOnly = 0;
+  let missing = 0;
+  const matches = orderedLocations.map((location) => {
+    if (!location) {
+      missing += 1;
+      return {
+        confidence: "missing",
+        reason: "missing",
+        pageIndex: null,
+        spanIndexes: [],
+        score: 0
+      } satisfies PdfSentenceMatch;
+    }
+    if (location.page_idx !== null && location.page_idx !== currentPage) {
+      return {
+        confidence: "missing",
+        reason: "missing",
+        pageIndex: null,
+        spanIndexes: [],
+        score: 0
+      } satisfies PdfSentenceMatch;
+    }
+    const confidence = location.confidence;
+    if (confidence === "exact") {
+      exact += 1;
+    } else if (confidence === "fallback") {
+      fallback += 1;
+    } else if (confidence === "page") {
+      pageOnly += 1;
+    } else {
+      missing += 1;
+    }
+    return {
+      confidence: confidence === "exact" || confidence === "fallback" || confidence === "page" ? confidence : "missing",
+      reason: location.reason === "exact_geometry"
+        || location.reason === "fuzzy_sentence_geometry"
+        || location.reason === "paragraph_fallback"
+        || location.reason === "page_location_only"
+        ? location.reason
+        : "missing",
+      pageIndex: location.page_idx,
+      spanIndexes: [],
+      score: location.score
+    } satisfies PdfSentenceMatch;
+  });
+
+  return {
+    matches,
+    summary: { exact, fallback, pageOnly, missing },
+    locations: orderedLocations
+  };
+}
+
+function clearPdfHighlightOverlays(
+  previousOverlays: HTMLDivElement[],
+  previousPages: HTMLDivElement[]
+): void {
+  for (const overlay of previousOverlays) {
+    overlay.remove();
+  }
+  for (const page of previousPages) {
+    page.classList.remove("reader-pdf-page-active");
+  }
+}
+
+function applyPdfLocationHighlightOverlays(
+  previousOverlays: HTMLDivElement[],
+  previousPages: HTMLDivElement[],
+  pages: Array<{ pageIndex: number; container: HTMLDivElement }>,
+  location: PdfSentenceLocation
+): { highlightedOverlays: HTMLDivElement[]; highlightedPages: HTMLDivElement[] } {
+  clearPdfHighlightOverlays(previousOverlays, previousPages);
+  if (location.page_idx === null) {
+    return { highlightedOverlays: [], highlightedPages: [] };
+  }
+  const page = pages.find((candidate) => candidate.pageIndex === location.page_idx)?.container;
+  if (!page) {
+    return { highlightedOverlays: [], highlightedPages: [] };
+  }
+  if (location.reason === "page_location_only") {
+    page.classList.add("reader-pdf-page-active");
+    return { highlightedOverlays: [], highlightedPages: [page] };
+  }
+  const rects = location.line_rects.length > 0
+    ? location.line_rects
+    : location.block_rects.length > 0
+      ? location.block_rects
+      : location.rects;
+  const overlays = rects.map((rect) => {
+    const overlay = document.createElement("div");
+    overlay.className = "reader-pdf-highlight-overlay";
+    overlay.style.left = `${rect.left * 100}%`;
+    overlay.style.top = `${rect.top * 100}%`;
+    overlay.style.width = `${rect.width * 100}%`;
+    overlay.style.height = `${rect.height * 100}%`;
+    page.appendChild(overlay);
+    return overlay;
+  });
+  return { highlightedOverlays: overlays, highlightedPages: [] };
 }
 
 async function renderPdfPage(

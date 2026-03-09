@@ -31,7 +31,7 @@ pub(crate) use browser_tab_commands::{
 };
 pub(crate) use reader_commands::{
     reader_apply_settings, reader_close_session, reader_get_snapshot, reader_load_pdf_bytes,
-    reader_next_page, reader_next_sentence, reader_persist_pdf_sync_map, reader_prev_page, reader_prev_sentence,
+    reader_load_pdf_sync_map, reader_next_page, reader_next_sentence, reader_persist_pdf_sync_map, reader_prev_page, reader_prev_sentence,
     reader_search_next, reader_search_prev, reader_search_set_query, reader_sentence_click,
     reader_set_page, reader_toggle_text_only, reader_tts_pause, reader_tts_play,
     reader_tts_play_from_highlight, reader_tts_play_from_page_start, reader_tts_precompute_page,
@@ -1898,6 +1898,7 @@ macro_rules! bridge_command_idents {
             reader_tts_repeat_sentence,
             reader_tts_precompute_page,
             reader_load_pdf_bytes,
+            reader_load_pdf_sync_map,
             reader_persist_pdf_sync_map,
             reader_close_session,
             app_safe_quit,
@@ -2020,7 +2021,7 @@ mod tests {
 
     #[test]
     fn bridge_command_surface_remains_stable() {
-        assert_eq!(BRIDGE_COMMAND_NAMES.len(), 48);
+        assert_eq!(BRIDGE_COMMAND_NAMES.len(), 49);
         assert_eq!(BRIDGE_COMMAND_NAMES[0], "session_get_bootstrap");
         assert_eq!(
             BRIDGE_COMMAND_NAMES[BRIDGE_COMMAND_NAMES.len() - 1],
@@ -2040,6 +2041,7 @@ mod tests {
         assert!(BRIDGE_COMMAND_NAMES.contains(&"reader_tts_repeat_sentence"));
         assert!(BRIDGE_COMMAND_NAMES.contains(&"reader_tts_precompute_page"));
         assert!(BRIDGE_COMMAND_NAMES.contains(&"reader_load_pdf_bytes"));
+        assert!(BRIDGE_COMMAND_NAMES.contains(&"reader_load_pdf_sync_map"));
         assert!(BRIDGE_COMMAND_NAMES.contains(&"reader_persist_pdf_sync_map"));
         assert!(BRIDGE_COMMAND_NAMES.contains(&"calibre_open_book"));
     }

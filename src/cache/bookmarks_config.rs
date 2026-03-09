@@ -15,6 +15,22 @@ pub struct Bookmark {
     pub sentence_text: Option<String>,
     #[serde(default = "default_scroll")]
     pub scroll_y: f32,
+    #[serde(default)]
+    pub pdf_page_idx: Option<usize>,
+    #[serde(default)]
+    pub pdf_rects: Vec<PdfRect>,
+    #[serde(default)]
+    pub pdf_confidence: Option<String>,
+    #[serde(default)]
+    pub pdf_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfRect {
+    pub left: f32,
+    pub top: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -26,6 +42,14 @@ struct CacheEntry {
     sentence_text: Option<String>,
     #[serde(default)]
     scroll_y: Option<f32>,
+    #[serde(default)]
+    pdf_page_idx: Option<usize>,
+    #[serde(default)]
+    pdf_rects: Vec<PdfRect>,
+    #[serde(default)]
+    pdf_confidence: Option<String>,
+    #[serde(default)]
+    pdf_reason: Option<String>,
 }
 
 fn default_scroll() -> f32 {
@@ -55,6 +79,10 @@ pub(super) fn load_bookmark(source_path: &Path) -> Option<Bookmark> {
         sentence_idx: value.sentence_idx,
         sentence_text: value.sentence_text,
         scroll_y: value.scroll_y.unwrap_or_else(default_scroll),
+        pdf_page_idx: value.pdf_page_idx,
+        pdf_rects: value.pdf_rects,
+        pdf_confidence: value.pdf_confidence,
+        pdf_reason: value.pdf_reason,
     })
 }
 
@@ -68,6 +96,10 @@ pub(super) fn save_bookmark(source_path: &Path, bookmark: &Bookmark) {
         sentence_idx: bookmark.sentence_idx,
         sentence_text: bookmark.sentence_text.clone(),
         scroll_y: Some(bookmark.scroll_y),
+        pdf_page_idx: bookmark.pdf_page_idx,
+        pdf_rects: bookmark.pdf_rects.clone(),
+        pdf_confidence: bookmark.pdf_confidence.clone(),
+        pdf_reason: bookmark.pdf_reason.clone(),
     };
     if let Ok(contents) = toml::to_string(&entry)
         && let Ok(mut file) = fs::File::create(path)

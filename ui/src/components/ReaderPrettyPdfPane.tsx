@@ -2,6 +2,7 @@ import { Button, ButtonGroup, CircularProgress, Stack, Typography } from "@mui/m
 import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
+import { backendApi, type PdfSentenceLocation } from "../api/tauri";
 import type { ReaderSnapshot } from "../types";
 import { recordPerfMeasure } from "../perf/debug";
 import { toReaderImageSrc } from "./readerDom";
@@ -74,6 +75,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const lastScrollTargetRef = useRef<string | null>(null);
     const sentenceMatchesRef = useRef<PdfSentenceMatch[]>([]);
     const matchCacheRef = useRef<CachedPdfMatchResult | null>(null);
+    const persistedSyncKeyRef = useRef<string | null>(null);
     const [zoom, setZoom] = useState(1.2);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -304,6 +306,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         highlightedPagesRef.current = cleared.highlightedPages;
         renderedPagesRef.current = [];
         matchCacheRef.current = null;
+        persistedSyncKeyRef.current = null;
         lastScrollTargetRef.current = null;
         root.innerHTML = "";
         applyPdfHighlightColor(root, reader);
@@ -376,6 +379,38 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       }
       applyHighlight("auto");
     }, [applyHighlight, loading, reader.current_page, renderVersion]);
+
+    useEffect(() => {
+      if (loading || !canSyncHighlights) {
+        return;
+      }
+      const { matches } = resolveSentenceMatches();
+      const locations = buildPersistedPdfSentenceLocations(matches, renderedPagesRef.current);
+      const persistKey = [
+        reader.source_path,
+        String(renderVersion),
+        String(locations.length)
+      ].join("\u241f");
+      if (persistedSyncKeyRef.current === persistKey) {
+        return;
+      }
+      persistedSyncKeyRef.current = persistKey;
+      void backendApi.readerPersistPdfSyncMap(reader.source_path, locations)
+        .then(() => {
+          logPdfDebug("persistedSyncMap", {
+            sourcePath: reader.source_path,
+            count: locations.length,
+            renderVersion
+          });
+        })
+        .catch((error: unknown) => {
+          persistedSyncKeyRef.current = null;
+          logPdfDebug("persistSyncMapError", {
+            sourcePath: reader.source_path,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        });
+    }, [canSyncHighlights, loading, reader.source_path, renderVersion, resolveSentenceMatches]);
 
     const handlePdfClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
       if (!canSyncHighlights) {
@@ -495,6 +530,47 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     );
   }
 );
+
+function buildPersistedPdfSentenceLocations(
+  matches: PdfSentenceMatch[],
+  pages: RenderedPdfPage[]
+): PdfSentenceLocation[] {
+  const pageBounds = new Map<number, DOMRect>();
+  for (const page of pages) {
+    pageBounds.set(page.pageIndex, page.container.getBoundingClientRect());
+  }
+
+  return matches.map((match, sentenceIdx) => {
+    const rects = match.spanIndexes.flatMap((spanIndex) => {
+      for (const page of pages) {
+        const span = page.spans[spanIndex];
+        if (!span) {
+          continue;
+        }
+        const pageRect = pageBounds.get(page.pageIndex);
+        if (!pageRect || pageRect.width <= 0 || pageRect.height <= 0) {
+          return [];
+        }
+        const rect = span.element.getBoundingClientRect();
+        return [{
+          left: Number(((rect.left - pageRect.left) / pageRect.width).toFixed(4)),
+          top: Number(((rect.top - pageRect.top) / pageRect.height).toFixed(4)),
+          width: Number((rect.width / pageRect.width).toFixed(4)),
+          height: Number((rect.height / pageRect.height).toFixed(4))
+        }];
+      }
+      return [];
+    });
+    return {
+      sentence_idx: sentenceIdx,
+      page_idx: match.pageIndex,
+      rects,
+      confidence: match.confidence,
+      reason: match.reason,
+      score: match.score
+    };
+  });
+}
 
 async function renderPdfPages(
   TextLayerImpl: typeof import("pdfjs-dist")["TextLayer"],

@@ -57,10 +57,12 @@ struct SourceDigestEntry {
 }
 
 pub use bookmarks_config::Bookmark;
+pub use bookmarks_config::PdfRect;
 pub use browser_tab_cache::{
     BrowserTabAsset, BrowserTabSourceManifest, is_browser_tab_manifest, load_browser_tab_manifest,
     persist_browser_tab_source, rehydrate_browser_tab_manifest_assets,
 };
+pub use content_artifacts::PdfSentenceLocation;
 
 #[derive(Debug, Clone)]
 pub struct RecentBook {
@@ -268,6 +270,14 @@ pub fn load_pdf_sync_meta(
     crate::epub_loader::PdfSyncStrategy,
 )> {
     content_artifacts::load_pdf_sync_meta(source_path)
+}
+
+pub fn persist_pdf_sentence_map(source_path: &Path, locations: &[PdfSentenceLocation]) {
+    content_artifacts::persist_pdf_sentence_map(source_path, locations)
+}
+
+pub fn load_pdf_sentence_map(source_path: &Path) -> Option<Vec<PdfSentenceLocation>> {
+    content_artifacts::load_pdf_sentence_map(source_path)
 }
 
 pub fn remember_source_path(source_path: &Path) {
@@ -880,6 +890,15 @@ mod tests {
             sentence_idx: Some(7),
             sentence_text: Some("A saved sentence".to_string()),
             scroll_y: 0.37,
+            pdf_page_idx: Some(3),
+            pdf_rects: vec![PdfRect {
+                left: 0.11,
+                top: 0.22,
+                width: 0.33,
+                height: 0.04,
+            }],
+            pdf_confidence: Some("exact".to_string()),
+            pdf_reason: Some("exact_geometry".to_string()),
         };
 
         save_bookmark(&source, &bookmark);
@@ -889,6 +908,18 @@ mod tests {
         assert_eq!(loaded.sentence_idx, Some(7));
         assert_eq!(loaded.sentence_text.as_deref(), Some("A saved sentence"));
         assert!((loaded.scroll_y - 0.37).abs() < f32::EPSILON);
+        assert_eq!(loaded.pdf_page_idx, Some(3));
+        assert_eq!(
+            loaded.pdf_rects,
+            vec![PdfRect {
+                left: 0.11,
+                top: 0.22,
+                width: 0.33,
+                height: 0.04,
+            }]
+        );
+        assert_eq!(loaded.pdf_confidence.as_deref(), Some("exact"));
+        assert_eq!(loaded.pdf_reason.as_deref(), Some("exact_geometry"));
 
         cleanup_source_and_cache(&source);
     }
@@ -920,6 +951,10 @@ sentence_text = "legacy bookmark entry"
             Some("legacy bookmark entry")
         );
         assert!((loaded.scroll_y - 0.0).abs() < f32::EPSILON);
+        assert_eq!(loaded.pdf_page_idx, None);
+        assert!(loaded.pdf_rects.is_empty());
+        assert_eq!(loaded.pdf_confidence, None);
+        assert_eq!(loaded.pdf_reason, None);
 
         cleanup_source_and_cache(&source);
     }
@@ -943,6 +978,42 @@ sentence_text = "legacy bookmark entry"
             loaded.1,
             crate::epub_loader::PdfSyncStrategy::ParagraphFallback
         );
+
+        cleanup_source_and_cache(&source);
+    }
+
+    #[test]
+    fn pdf_sentence_map_roundtrip_preserves_locations() {
+        let source = unique_source_path("pdf");
+        write_source_file(&source);
+
+        let locations = vec![
+            PdfSentenceLocation {
+                sentence_idx: 0,
+                page_idx: Some(1),
+                rects: vec![PdfRect {
+                    left: 0.2,
+                    top: 0.1,
+                    width: 0.5,
+                    height: 0.03,
+                }],
+                confidence: "exact".to_string(),
+                reason: "exact_geometry".to_string(),
+                score: 1.0,
+            },
+            PdfSentenceLocation {
+                sentence_idx: 1,
+                page_idx: Some(1),
+                rects: vec![],
+                confidence: "page".to_string(),
+                reason: "page_location_only".to_string(),
+                score: 0.2,
+            },
+        ];
+
+        persist_pdf_sentence_map(&source, &locations);
+        let loaded = load_pdf_sentence_map(&source).expect("pdf sentence map should load");
+        assert_eq!(loaded, locations);
 
         cleanup_source_and_cache(&source);
     }

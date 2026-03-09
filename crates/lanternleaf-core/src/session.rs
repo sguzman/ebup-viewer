@@ -835,6 +835,8 @@ fn proportional_html_anchor_map(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn build_test_session(page_sentences: &[&[&str]]) -> ReaderSession {
         let pages: Vec<String> = page_sentences
@@ -884,6 +886,14 @@ mod tests {
             current_plan_page: None,
             current_plan: None,
         }
+    }
+
+    fn unique_pdf_source_path() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("lanternleaf_pdf_sync_session_{nanos}.pdf"))
     }
 
     #[test]
@@ -1020,6 +1030,10 @@ mod tests {
             sentence_idx: Some(2),
             sentence_text: None,
             scroll_y: 0.0,
+            pdf_page_idx: None,
+            pdf_rects: Vec::new(),
+            pdf_confidence: None,
+            pdf_reason: None,
         };
         session.restore_bookmark_position(&bookmark, &normalizer);
 
@@ -1150,7 +1164,7 @@ mod tests {
     fn text_only_search_uses_canonical_tts_sentences() {
         let normalizer = normalizer::TextNormalizer::default();
         let mut session = build_test_session(&[&[
-            "This intentionally long sentence contains an uncommon sync token quetzalcoatlus so audio chunking can target it precisely."
+            "This intentionally long sentence contains an uncommon sync token quetzalcoatlus so audio chunking can target it precisely.",
         ]]);
 
         session.toggle_text_only(&normalizer);
@@ -1158,7 +1172,10 @@ mod tests {
 
         assert_eq!(session.selected_search_match, Some(0));
         assert_eq!(session.search_matches.len(), 1);
-        assert_eq!(session.current_highlight_idx(), session.search_matches.first().copied());
+        assert_eq!(
+            session.current_highlight_idx(),
+            session.search_matches.first().copied()
+        );
 
         session.toggle_text_only(&normalizer);
         assert_eq!(session.highlighted_display_idx, Some(0));
@@ -1239,9 +1256,48 @@ mod tests {
             sentence_idx: Some(99),
             sentence_text: Some("Gamma.".to_string()),
             scroll_y: 0.0,
+            pdf_page_idx: None,
+            pdf_rects: Vec::new(),
+            pdf_confidence: None,
+            pdf_reason: None,
         };
         session.restore_bookmark_position(&bookmark, &normalizer::TextNormalizer::default());
         assert_eq!(session.current_page, 1);
         assert_eq!(session.highlighted_display_idx, Some(0));
+    }
+
+    #[test]
+    fn bookmark_carries_cached_pdf_location_metadata_for_current_sentence() {
+        let source_path = unique_pdf_source_path();
+        fs::write(&source_path, b"pdf").expect("write source");
+        let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
+        session.source_path = source_path.clone();
+        session.current_page = 1;
+        session.highlighted_display_idx = Some(0);
+        crate::cache::persist_pdf_sentence_map(
+            &source_path,
+            &[crate::cache::PdfSentenceLocation {
+                sentence_idx: 2,
+                page_idx: Some(7),
+                rects: vec![crate::cache::PdfRect {
+                    left: 0.1,
+                    top: 0.2,
+                    width: 0.4,
+                    height: 0.05,
+                }],
+                confidence: "exact".to_string(),
+                reason: "exact_geometry".to_string(),
+                score: 1.0,
+            }],
+        );
+
+        let bookmark = session.to_bookmark();
+        assert_eq!(bookmark.page, 1);
+        assert_eq!(bookmark.pdf_page_idx, Some(7));
+        assert_eq!(bookmark.pdf_confidence.as_deref(), Some("exact"));
+        assert_eq!(bookmark.pdf_reason.as_deref(), Some("exact_geometry"));
+        assert_eq!(bookmark.pdf_rects.len(), 1);
+
+        let _ = crate::cache::delete_recent_source_and_cache(&source_path);
     }
 }

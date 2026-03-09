@@ -52,6 +52,22 @@ export interface BrowserTabInfo {
   lastAccessed: number | null;
 }
 
+export interface PdfSentenceRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface PdfSentenceLocation {
+  sentence_idx: number;
+  page_idx: number | null;
+  rects: PdfSentenceRect[];
+  confidence: string;
+  reason: string;
+  score: number;
+}
+
 const MAX_RECENT_LIMIT = 512;
 const DEFAULT_RECENT_LIMIT = 64;
 
@@ -874,6 +890,7 @@ export interface BackendApi {
   readerTtsSeekPrev: () => Promise<ReaderSnapshot>;
   readerTtsRepeatSentence: () => Promise<ReaderSnapshot>;
   readerTtsPrecomputePage: () => Promise<ReaderSnapshot>;
+  readerPersistPdfSyncMap: (path: string, locations: PdfSentenceLocation[]) => Promise<void>;
   readerCloseSession: () => Promise<SessionState>;
   loggingSetLevel: (level: string) => Promise<string>;
   calibreLoadCachedBooks: () => Promise<CalibreBook[]>;
@@ -940,6 +957,8 @@ function createTauriBackendApi(): BackendApi {
     readerTtsSeekPrev: () => invokeCommand<ReaderSnapshot>("reader_tts_seek_prev"),
     readerTtsRepeatSentence: () => invokeCommand<ReaderSnapshot>("reader_tts_repeat_sentence"),
     readerTtsPrecomputePage: () => invokeCommand<ReaderSnapshot>("reader_tts_precompute_page"),
+    readerPersistPdfSyncMap: (path, locations) =>
+      invokeCommand<void>("reader_persist_pdf_sync_map", { path, locations }),
     readerCloseSession: () => invokeCommand<SessionState>("reader_close_session"),
     loggingSetLevel: (level) => invokeCommand<string>("logging_set_level", { level }),
     calibreLoadCachedBooks: () => invokeCommand<CalibreBook[]>("calibre_load_cached_books"),
@@ -1019,6 +1038,7 @@ function createMockBackendApi(): BackendApi {
     readerTtsSeekPrev: mockReaderTtsSeekPrev,
     readerTtsRepeatSentence: mockReaderTtsRepeatSentence,
     readerTtsPrecomputePage: mockReaderTtsPrecomputePage,
+    readerPersistPdfSyncMap: async () => {},
     readerCloseSession: mockSessionReturnToStarter,
     loggingSetLevel: mockLoggingSetLevel,
     calibreLoadCachedBooks: mockCalibreLoadBooks,

@@ -1,6 +1,21 @@
 use super::*;
 
 #[tauri::command]
+pub(crate) fn reader_persist_pdf_sync_map(
+    path: String,
+    locations: Vec<cache::PdfSentenceLocation>,
+) -> Result<(), BridgeError> {
+    let source_path = PathBuf::from(&path);
+    tracing::debug!(
+        path = %source_path.display(),
+        count = locations.len(),
+        "Persisting PDF sentence sync map from native PDF renderer"
+    );
+    cache::persist_pdf_sentence_map(&source_path, &locations);
+    Ok(())
+}
+
+#[tauri::command]
 pub(crate) fn reader_get_snapshot(
     app: tauri::AppHandle,
     state: State<'_, Mutex<BackendState>>,

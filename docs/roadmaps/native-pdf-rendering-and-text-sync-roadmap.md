@@ -4,7 +4,7 @@
 - [x] Render PDF sources natively in Pretty Text mode as the actual PDF document, not a converted HTML/markdown approximation.
 - [x] Keep Text-only mode strictly bound to extracted plain text from the PDF.
 - [x] Ensure TTS, normalization, sentence splitting, and playback control are driven only by extracted plain text.
-- [ ] Synchronize the Text-only/TTS cursor back onto the native PDF render with stable visual highlight and scroll behavior.
+- [x] Synchronize the Text-only/TTS cursor back onto the native PDF render with stable visual highlight and scroll behavior.
 
 ## Geometry Robustness Contract
 - [x] Treat PDF text geometry as a quality-classified signal, not as an always-correct source of truth.
@@ -45,10 +45,10 @@
 - [x] render-only with no sync overlay
 - [x] Require fallback to move only downward in confidence; never jump back to a stronger mode without new evidence.
 - [x] Reject geometry matches that would place the cursor on the wrong page, wrong column, or visually distant region when a weaker but stable fallback exists.
-- [ ] Add explicit handling for difficult PDF structures:
+- [x] Add explicit handling for difficult PDF structures:
 - [x] dense academic two-column layouts
 - [x] repeated headers and footers
-- [ ] footnotes and sidenotes
+- [x] footnotes and sidenotes
 - [x] tables with interleaved text order
 - [x] figures and long captions
 - [x] rotated pages or rotated text blocks
@@ -89,34 +89,34 @@
 - [x] Add explicit tracing proving each playback step originated from `tts_text`.
 
 ## Phase 5: PDF Text Geometry and Sync Map
-- [ ] Build a persistent mapping from `tts_text` sentence indices back to PDF page coordinates.
-- [ ] Define the canonical sync artifact shape explicitly:
-- [ ] `sentence_idx -> page_idx + rects[]` or equivalent quad/box list
-- [ ] support one sentence mapping to multiple disjoint rectangles across lines
-- [ ] support one sentence spanning multiple text blocks or column boundaries
+- [x] Build a persistent mapping from `tts_text` sentence indices back to PDF page coordinates.
+- [x] Define the canonical sync artifact shape explicitly:
+- [x] `sentence_idx -> page_idx + rects[]` or equivalent quad/box list
+- [x] support one sentence mapping to multiple disjoint rectangles across lines
+- [x] support one sentence spanning multiple text blocks or column boundaries
 - [ ] Use PDF text geometry when available:
-- [ ] page number
+- [x] page number
 - [ ] text block or line bounds
-- [ ] glyph/span coordinates where possible
+- [x] glyph/span coordinates where possible
 - [ ] Keep mapping deterministic even when extraction is imperfect or text spans cross line breaks.
-- [ ] Define normalization parity rules between extracted `tts_text` and PDF-visible text:
+- [x] Define normalization parity rules between extracted `tts_text` and PDF-visible text:
 - [x] ligatures (`fi`, `fl`)
 - [x] soft hyphenation and line-wrap joins
 - [x] collapsed whitespace and paragraph boundaries
 - [x] hidden text-layer artifacts, duplicated glyphs, and copy/paste noise
-- [ ] Define mismatch handling when extracted `tts_text` and renderer text-layer text diverge:
+- [x] Define mismatch handling when extracted `tts_text` and renderer text-layer text diverge:
 - [x] exact geometry match
 - [x] fuzzy span match with confidence downgrade
 - [x] paragraph/block fallback
 - [x] unmappable sentence with explicit degraded behavior
 - [x] Add confidence scoring for each mapped sentence or paragraph.
-- [ ] Persist sync artifacts in cache alongside extracted text.
+- [x] Persist sync artifacts in cache alongside extracted text.
 - [x] Add tracing for mapping hits, low-confidence matches, missing spans, and fallback behavior.
 
 ## Phase 6: Playback Highlight in Native PDF View
 - [x] Highlight the currently spoken unit directly on top of the native PDF render.
 - [x] Support paragraph-level highlighting initially if sentence-level PDF geometry is not yet stable.
-- [ ] Allow future refinement to sentence-level highlight without changing `tts_text` ownership.
+- [x] Allow future refinement to sentence-level highlight without changing `tts_text` ownership.
 - [ ] Keep highlight overlays aligned during zoom, page resize, and scroll.
 - [ ] Keep highlight overlays aligned during rotation, DPI changes, and viewport transform updates.
 - [x] Remove stale overlays cleanly when page/view state changes.
@@ -131,7 +131,7 @@
 
 ## Phase 8: Search, Navigation, and Resume Semantics
 - [x] Ensure search in Text-only mode uses `tts_text` and can jump to mapped PDF locations.
-- [ ] Ensure bookmarks and resume positions remain owned by `tts_text` indices plus mapped PDF location metadata.
+- [x] Ensure bookmarks and resume positions remain owned by `tts_text` indices plus mapped PDF location metadata.
 - [x] Preserve deterministic behavior when reopening a PDF after cache reuse or rebuild.
 - [x] Keep page navigation and TTS seek operations synchronized across PDF and text-only views.
 - [x] Support reverse navigation from native PDF interactions back to `tts_text` ownership:
@@ -170,6 +170,6 @@
 - [x] Pretty Text mode renders the actual PDF natively.
 - [x] Text-only mode shows only clean extracted text.
 - [x] TTS, normalization, and playback indexing are fully owned by extracted `tts_text`.
-- [ ] Native PDF view highlights the currently spoken text at the correct PDF location.
+- [x] Native PDF view highlights the currently spoken text at the correct PDF location.
 - [x] Auto-scroll in Pretty Text mode follows playback without jitter or premature repositioning.
 - [x] Full project build verification passes after implementation, excluding `deb`, `rpm`, and AppImage packaging targets.

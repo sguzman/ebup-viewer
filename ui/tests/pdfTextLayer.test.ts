@@ -141,4 +141,28 @@ describe("orderPdfTextLayerSpans", () => {
 
     expect(spans.map((span) => span.text)).toEqual(["gamma", "beta", "alpha"]);
   });
+
+  it("defers outer-margin sidenotes until after the main two-column body", () => {
+    const spans = orderPdfTextLayerSpans([
+      createElement("right-body-1", { top: 14, left: 260 }),
+      createElement("left-body-1", { top: 10, left: 24 }),
+      createElement("right-body-2", { top: 36, left: 260 }),
+      createElement("left-body-2", { top: 32, left: 24 }),
+      createElement("right-body-3", { top: 58, left: 260 }),
+      createElement("left-body-3", { top: 54, left: 24 }),
+      createElement("right-sidenote-1", { top: 18, left: 420, width: 52 }),
+      createElement("right-sidenote-2", { top: 44, left: 420, width: 52 })
+    ], 0);
+
+    expect(spans.map((span) => span.text)).toEqual([
+      "left-body-1",
+      "left-body-2",
+      "left-body-3",
+      "right-body-1",
+      "right-body-2",
+      "right-body-3",
+      "right-sidenote-1",
+      "right-sidenote-2"
+    ]);
+  });
 });

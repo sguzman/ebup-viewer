@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
 
+use super::bookmarks_config::PdfRect;
 use super::{
     CONTENT_LAYOUT_VERSION, CONTENT_LAYOUT_VERSION_FILE, CONTENT_READING_HTML_FILE,
     CONTENT_READING_MARKDOWN_FILE, CONTENT_TTS_TEXT_FILE, hash_dir,
@@ -9,11 +10,28 @@ use super::{
 use crate::epub_loader::{PdfGeometryMode, PdfSyncStrategy};
 
 const CONTENT_PDF_SYNC_META_FILE: &str = "content/pdf-sync-meta.toml";
+const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PdfSyncMeta {
     pdf_geometry_mode: PdfGeometryMode,
     pdf_sync_strategy: PdfSyncStrategy,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfSentenceLocation {
+    pub sentence_idx: usize,
+    pub page_idx: Option<usize>,
+    #[serde(default)]
+    pub rects: Vec<PdfRect>,
+    pub confidence: String,
+    pub reason: String,
+    pub score: f32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PdfSentenceMap {
+    locations: Vec<PdfSentenceLocation>,
 }
 
 pub(super) fn persist_dual_view_artifacts(
@@ -205,6 +223,63 @@ pub(super) fn load_pdf_sync_meta(source_path: &Path) -> Option<(PdfGeometryMode,
         "Loaded cached PDF sync metadata"
     );
     Some((parsed.pdf_geometry_mode, parsed.pdf_sync_strategy))
+}
+
+pub(super) fn persist_pdf_sentence_map(source_path: &Path, locations: &[PdfSentenceLocation]) {
+    ensure_content_layout(source_path);
+    let map_path = hash_dir(source_path).join(CONTENT_PDF_SENTENCE_MAP_FILE);
+    if let Some(parent) = map_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let serialized = match toml::to_string(&PdfSentenceMap {
+        locations: locations.to_vec(),
+    }) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!("Failed to serialize PDF sentence map: {err}");
+            return;
+        }
+    };
+    if let Err(err) = fs::write(&map_path, serialized) {
+        warn!(path = %map_path.display(), "Failed to persist PDF sentence map: {err}");
+    } else {
+        debug!(
+            path = %map_path.display(),
+            count = locations.len(),
+            "Persisted PDF sentence map"
+        );
+    }
+}
+
+pub(super) fn load_pdf_sentence_map(source_path: &Path) -> Option<Vec<PdfSentenceLocation>> {
+    let map_path = hash_dir(source_path).join(CONTENT_PDF_SENTENCE_MAP_FILE);
+    let raw = match fs::read_to_string(&map_path) {
+        Ok(value) => value,
+        Err(err) => {
+            debug!(
+                path = %map_path.display(),
+                "PDF sentence map unavailable: {err}"
+            );
+            return None;
+        }
+    };
+    let parsed: PdfSentenceMap = match toml::from_str(&raw) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(
+                path = %map_path.display(),
+                "PDF sentence map was corrupt; removing stale artifact so it can be rebuilt: {err}"
+            );
+            let _ = fs::remove_file(&map_path);
+            return None;
+        }
+    };
+    debug!(
+        path = %map_path.display(),
+        count = parsed.locations.len(),
+        "Loaded cached PDF sentence map"
+    );
+    Some(parsed.locations)
 }
 
 fn ensure_content_layout(source_path: &Path) {

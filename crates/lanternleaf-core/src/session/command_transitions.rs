@@ -78,11 +78,29 @@ impl ReaderSession {
                 .and_then(|sentences| sentences.get(idx))
                 .cloned()
         });
+        let pdf_location = self.global_display_idx().and_then(|global_idx| {
+            crate::cache::load_pdf_sentence_map(&self.source_path).and_then(|locations| {
+                locations
+                    .into_iter()
+                    .find(|location| location.sentence_idx == global_idx)
+            })
+        });
         crate::cache::Bookmark {
             page: self.current_page,
             sentence_idx: self.current_highlight_idx(),
             sentence_text,
             scroll_y: 0.0,
+            pdf_page_idx: pdf_location.as_ref().and_then(|location| location.page_idx),
+            pdf_rects: pdf_location
+                .as_ref()
+                .map(|location| location.rects.clone())
+                .unwrap_or_default(),
+            pdf_confidence: pdf_location
+                .as_ref()
+                .map(|location| location.confidence.clone()),
+            pdf_reason: pdf_location
+                .as_ref()
+                .map(|location| location.reason.clone()),
         }
     }
 }

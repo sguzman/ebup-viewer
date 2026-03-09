@@ -18,6 +18,7 @@ const TABLE_ROW_ALIGNMENT_TOLERANCE = 2;
 const FOOTNOTE_BAND_START = 0.78;
 const FULL_WIDTH_BAND_GAP_FRACTION = 0.3;
 const FULL_WIDTH_BAND_WIDTH_FRACTION = 0.6;
+const SIDENOTE_MARGIN_FRACTION = 0.35;
 
 function measurePdfSpan(
   element: HTMLElement,
@@ -81,6 +82,7 @@ interface TwoColumnLayout {
   leftColumn: MeasuredPdfSpan[];
   rightColumn: MeasuredPdfSpan[];
   bands: MeasuredPdfSpan[];
+  sidenotes: MeasuredPdfSpan[];
 }
 
 function hasStrongRowAlignment(leftColumn: MeasuredPdfSpan[], rightColumn: MeasuredPdfSpan[]): boolean {
@@ -99,8 +101,12 @@ function tryBuildTwoColumnLayout(spans: MeasuredPdfSpan[]): TwoColumnLayout | nu
   if (columns.length < 2) {
     return null;
   }
-  const leftAnchor = columns[0]?.[0]?.left;
-  const rightAnchor = columns.at(-1)?.[0]?.left;
+  const primaryColumns = columns.filter((column) => column.length >= MIN_COLUMN_SPAN_COUNT);
+  if (primaryColumns.length < 2) {
+    return null;
+  }
+  const leftAnchor = primaryColumns[0]?.[0]?.left;
+  const rightAnchor = primaryColumns[1]?.[0]?.left;
   if (leftAnchor === undefined || rightAnchor === undefined) {
     return null;
   }
@@ -112,11 +118,19 @@ function tryBuildTwoColumnLayout(spans: MeasuredPdfSpan[]): TwoColumnLayout | nu
   const leftColumn: MeasuredPdfSpan[] = [];
   const rightColumn: MeasuredPdfSpan[] = [];
   const bands: MeasuredPdfSpan[] = [];
+  const sidenotes: MeasuredPdfSpan[] = [];
 
   for (const span of spans) {
     const spansGap = span.left > leftAnchor + gap * FULL_WIDTH_BAND_GAP_FRACTION
       && span.left < rightAnchor - gap * FULL_WIDTH_BAND_GAP_FRACTION;
     const spansWidth = span.width >= gap * FULL_WIDTH_BAND_WIDTH_FRACTION;
+    const outerMarginNote =
+      span.left < leftAnchor - gap * SIDENOTE_MARGIN_FRACTION
+      || span.left > rightAnchor + gap * SIDENOTE_MARGIN_FRACTION;
+    if (outerMarginNote) {
+      sidenotes.push(span);
+      continue;
+    }
     if (spansGap || spansWidth) {
       bands.push(span);
       continue;
@@ -138,7 +152,8 @@ function tryBuildTwoColumnLayout(spans: MeasuredPdfSpan[]): TwoColumnLayout | nu
   return {
     leftColumn,
     rightColumn,
-    bands: sortSingleColumn(bands)
+    bands: sortSingleColumn(bands),
+    sidenotes: sortSingleColumn(sidenotes)
   };
 }
 
@@ -175,7 +190,8 @@ function orderTwoColumnLayout(layout: TwoColumnLayout): MeasuredPdfSpan[] {
       ...sortSingleColumn(leftSplit.main),
       ...sortSingleColumn(leftSplit.bottomBand),
       ...sortSingleColumn(rightSplit.main),
-      ...sortSingleColumn(rightSplit.bottomBand)
+      ...sortSingleColumn(rightSplit.bottomBand),
+      ...layout.sidenotes
     ];
   }
 
@@ -205,7 +221,8 @@ function orderTwoColumnLayout(layout: TwoColumnLayout): MeasuredPdfSpan[] {
     ...sortSingleColumn(leftSplit.main),
     ...sortSingleColumn(leftSplit.bottomBand),
     ...sortSingleColumn(rightSplit.main),
-    ...sortSingleColumn(rightSplit.bottomBand)
+    ...sortSingleColumn(rightSplit.bottomBand),
+    ...layout.sidenotes
   );
 
   return ordered;

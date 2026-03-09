@@ -72,6 +72,7 @@ function makeReader(html: string, text: string): ReaderSnapshot {
     reading_html_page: html,
     page_text: text,
     sentences,
+    canonical_sentences: sentences,
     sentence_anchor_map: sentences.map((_, idx) => idx),
     highlighted_sentence_idx: 0,
     search_query: "",

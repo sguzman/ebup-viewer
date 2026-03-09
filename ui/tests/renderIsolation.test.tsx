@@ -65,6 +65,7 @@ function makeReaderSnapshot(): ReaderSnapshot {
     reading_html_page: "<p data-ll-html-anchor=\"0\">Alpha.</p><p data-ll-html-anchor=\"1\">Beta.</p>",
     page_text: "Alpha. Beta.",
     sentences: ["Alpha.", "Beta."],
+    canonical_sentences: ["Alpha.", "Beta."],
     sentence_anchor_map: [0, 1],
     highlighted_sentence_idx: 0,
     search_query: "",

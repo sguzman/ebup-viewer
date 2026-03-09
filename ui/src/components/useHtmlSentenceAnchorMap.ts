@@ -40,10 +40,24 @@ export function useHtmlSentenceAnchorMap({
     htmlSentenceSpans: Map<number, HTMLElement[]>;
     markdown: Map<number, HTMLElement>;
   }>({ html: new Map(), htmlSentenceSpans: new Map(), markdown: new Map() });
+  const htmlIndexedAnchorsRef = useRef<Map<number, HTMLElement>>(new Map());
   const htmlSentenceAnchorCacheRef = useRef<{ key: string; map: number[] }>({ key: "", map: [] });
   const prettyAnchorLookupKeyRef = useRef<string>("");
+  const globalSentenceStart = reader.stats.sentences_read_up_to_page_start;
+  const canonicalSentences = useMemo(
+    () => (
+      reader.pretty_kind === "html" && reader.canonical_sentences.length > 0
+        ? reader.canonical_sentences
+        : reader.sentences
+    ),
+    [reader.canonical_sentences, reader.pretty_kind, reader.sentences]
+  );
 
   const sentencesKey = useMemo(() => reader.sentences.join("\n"), [reader.sentences]);
+  const canonicalSentencesKey = useMemo(
+    () => canonicalSentences.join("\n"),
+    [canonicalSentences]
+  );
   const sentenceAnchorHintKey = useMemo(
     () => reader.sentence_anchor_map.map((value) => (value ?? "null")).join(","),
     [reader.sentence_anchor_map]
@@ -71,6 +85,7 @@ export function useHtmlSentenceAnchorMap({
       prettyAnchorElementsRef.current.html.clear();
       prettyAnchorElementsRef.current.htmlSentenceSpans.clear();
       prettyAnchorElementsRef.current.markdown.clear();
+      htmlIndexedAnchorsRef.current.clear();
       prettyAnchorLookupKeyRef.current = "";
       return;
     }
@@ -90,8 +105,9 @@ export function useHtmlSentenceAnchorMap({
       return;
     }
     if (kind === "html") {
-      const result = annotateNativeHtmlSentences(root as Document, reader.sentences);
-      prettyAnchorElementsRef.current.html = result.firstAnchors;
+      const result = annotateNativeHtmlSentences(root as Document, canonicalSentences);
+      htmlIndexedAnchorsRef.current = collectIndexedAnchors(root as Document, attribute);
+      prettyAnchorElementsRef.current.html = new Map(result.firstAnchors);
       prettyAnchorElementsRef.current.htmlSentenceSpans = result.sentenceAnchors;
       prettyAnchorElementsRef.current.markdown.clear();
       if (import.meta.env.DEV) {
@@ -109,7 +125,7 @@ export function useHtmlSentenceAnchorMap({
     nativeHtmlFrameRef,
     nativeHtmlLoadVersion,
     prettyLookupKey,
-    reader.sentences,
+    canonicalSentences,
     sentenceScrollRef
   ]);
 
@@ -124,8 +140,9 @@ export function useHtmlSentenceAnchorMap({
     }
 
     const rebuildHtmlAnchors = (): void => {
-      const result = annotateNativeHtmlSentences(doc, reader.sentences);
-      prettyAnchorElementsRef.current.html = result.firstAnchors;
+      const result = annotateNativeHtmlSentences(doc, canonicalSentences);
+      htmlIndexedAnchorsRef.current = collectIndexedAnchors(doc, "data-ll-html-anchor");
+      prettyAnchorElementsRef.current.html = new Map(result.firstAnchors);
       prettyAnchorElementsRef.current.htmlSentenceSpans = result.sentenceAnchors;
       prettyAnchorLookupKeyRef.current = prettyLookupKey;
     };
@@ -156,7 +173,7 @@ export function useHtmlSentenceAnchorMap({
       frame.removeEventListener("load", handleLoad);
       doc.removeEventListener("click", handleClick);
     };
-  }, [hasPrettyHtml, nativeHtmlFrameRef, nativeHtmlLoadVersion, prettyLookupKey, reader.sentences]);
+  }, [canonicalSentences, hasPrettyHtml, nativeHtmlFrameRef, nativeHtmlLoadVersion, prettyLookupKey]);
 
   useEffect(() => {
     if (!hasPrettyHtml || !renderedNativeHtml) {
@@ -165,93 +182,117 @@ export function useHtmlSentenceAnchorMap({
     }
     const cacheKey = [
       reader.source_path,
-      reader.current_page,
       renderedNativeHtml,
-      sentencesKey,
+      canonicalSentencesKey,
+      String(globalSentenceStart),
       sentenceAnchorHintKey
     ].join("\n");
     if (htmlSentenceAnchorCacheRef.current.key === cacheKey) {
       return;
     }
-    const anchors = Array.from(prettyAnchorElementsRef.current.html.values());
-    if (reader.sentences.length === 0) {
+    const indexedAnchors = htmlIndexedAnchorsRef.current;
+    const anchorElements = Array.from(indexedAnchors.values());
+    if (canonicalSentences.length === 0) {
       htmlSentenceAnchorCacheRef.current = { key: cacheKey, map: [] };
       return;
     }
-    if (anchors.length === 0) {
+    if (anchorElements.length === 0) {
       htmlSentenceAnchorCacheRef.current = {
         key: cacheKey,
-        map: reader.sentences.map((_, idx) => idx)
+        map: canonicalSentences.map((_, idx) => idx)
       };
       return;
     }
+    const hintAnchors = Array.from({ length: canonicalSentences.length }, () => null as number | null);
+    for (let localIdx = 0; localIdx < reader.sentence_anchor_map.length; localIdx += 1) {
+      const globalIdx = globalSentenceStart + localIdx;
+      if (globalIdx >= 0 && globalIdx < hintAnchors.length) {
+        hintAnchors[globalIdx] = reader.sentence_anchor_map[localIdx] ?? null;
+      }
+    }
     const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
     const { map, diagnostics } = buildReaderHtmlSyncMap(
-      anchors,
-      reader.sentences,
-      reader.sentence_anchor_map
+      anchorElements,
+      canonicalSentences,
+      hintAnchors
     );
+    const mergedTargets = new Map<number, HTMLElement>();
+    for (let sentenceIdx = 0; sentenceIdx < canonicalSentences.length; sentenceIdx += 1) {
+      const exact = prettyAnchorElementsRef.current.htmlSentenceSpans.get(sentenceIdx)?.[0]
+        ?? prettyAnchorElementsRef.current.html.get(sentenceIdx)
+        ?? null;
+      if (exact) {
+        mergedTargets.set(sentenceIdx, exact);
+        continue;
+      }
+      const anchorIdx = map[sentenceIdx];
+      const mappedAnchor = anchorIdx === null || anchorIdx === undefined
+        ? null
+        : indexedAnchors.get(anchorIdx) ?? null;
+      if (mappedAnchor) {
+        mergedTargets.set(sentenceIdx, mappedAnchor);
+      }
+    }
+    prettyAnchorElementsRef.current.html = mergedTargets;
     if (import.meta.env.DEV) {
       console.debug("reader pretty html sync map", {
-        anchors: anchors.length,
+        anchors: anchorElements.length,
         cappedLeaps: diagnostics.cappedLeaps,
         confidentMatches: diagnostics.confidentMatches,
         fallbackMatches: diagnostics.fallbackMatches,
         sentenceSpanMatches: prettyAnchorElementsRef.current.htmlSentenceSpans.size,
-        sentences: reader.sentences.length
+        sentences: canonicalSentences.length
       });
     }
     recordPerfMeasure("ReaderShell.buildHtmlSentenceAnchorMap", startedAt);
     htmlSentenceAnchorCacheRef.current = { key: cacheKey, map };
   }, [
+    canonicalSentences,
+    canonicalSentencesKey,
+    globalSentenceStart,
     hasPrettyHtml,
     nativeHtmlLoadVersion,
-    reader.current_page,
-    reader.sentences,
     reader.source_path,
     reader.sentence_anchor_map,
     renderedNativeHtml,
     sentenceAnchorHintKey,
-    sentencesKey
   ]);
 
   const resolvePrettyAnchorIdx = (idx: number): number | null => {
     if (reader.pretty_kind === "html") {
-      if (prettyAnchorElementsRef.current.htmlSentenceSpans.has(idx)) {
-        return idx;
+      const globalIdx = globalSentenceStart + idx;
+      if (
+        prettyAnchorElementsRef.current.htmlSentenceSpans.has(globalIdx)
+        || prettyAnchorElementsRef.current.html.has(globalIdx)
+      ) {
+        return globalIdx;
       }
       const anchors = htmlSentenceAnchorCacheRef.current.map;
-      const exactAnchorIdx = anchors[idx] ?? null;
-      if (exactAnchorIdx !== null && exactAnchorIdx !== undefined) {
-        return exactAnchorIdx;
+      const mappedGlobal = anchors[globalIdx] ?? null;
+      if (mappedGlobal !== null && mappedGlobal !== undefined) {
+        return globalIdx;
       }
       for (let offset = 1; offset < reader.sentences.length; offset += 1) {
-        const prev = idx - offset;
-        const next = idx + offset;
-        if (prev >= 0 && prettyAnchorElementsRef.current.htmlSentenceSpans.has(prev)) {
-          return prev;
+        const prevGlobal = globalIdx - offset;
+        const nextGlobal = globalIdx + offset;
+        if (
+          prevGlobal >= 0
+          && (
+            prettyAnchorElementsRef.current.htmlSentenceSpans.has(prevGlobal)
+            || prettyAnchorElementsRef.current.html.has(prevGlobal)
+          )
+        ) {
+          return prevGlobal;
         }
-        if (next < reader.sentences.length && prettyAnchorElementsRef.current.htmlSentenceSpans.has(next)) {
-          return next;
+        if (
+          nextGlobal < canonicalSentences.length
+          && (
+            prettyAnchorElementsRef.current.htmlSentenceSpans.has(nextGlobal)
+            || prettyAnchorElementsRef.current.html.has(nextGlobal)
+          )
+        ) {
+          return nextGlobal;
         }
-      }
-      let anchorIdx = anchors[idx] ?? null;
-      if (anchorIdx === null || anchorIdx === undefined) {
-        for (let offset = 1; offset < anchors.length; offset += 1) {
-          const prev = idx - offset;
-          const next = idx + offset;
-          if (prev >= 0 && anchors[prev] !== null && anchors[prev] !== undefined) {
-            anchorIdx = anchors[prev];
-            break;
-          }
-          if (next < anchors.length && anchors[next] !== null && anchors[next] !== undefined) {
-            anchorIdx = anchors[next];
-            break;
-          }
-        }
-      }
-      if (anchorIdx !== null && anchorIdx !== undefined) {
-        return anchorIdx;
       }
     }
     const anchors = reader.sentence_anchor_map;

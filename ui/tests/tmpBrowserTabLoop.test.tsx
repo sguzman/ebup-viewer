@@ -18,7 +18,7 @@ function makeReader(html: string, text: string): ReaderSnapshot {
     source_path: '/tmp/browser-tab.lltab', source_name: 'Browser Tab', current_page: 0, total_pages: 1,
     text_only_mode: false, has_structured_markdown: true, pretty_kind: 'html', pdf_geometry_mode: null, pdf_sync_strategy: null, images: [],
     tts_text_page: text, reading_markdown_page: null, reading_html_page: html, page_text: text,
-    sentences, sentence_anchor_map: sentences.map((_, i) => i), highlighted_sentence_idx: 0,
+    sentences, canonical_sentences: sentences, sentence_anchor_map: sentences.map((_, i) => i), highlighted_sentence_idx: 0,
     search_query: '', search_matches: [], selected_search_match: null,
     settings: { theme: 'day', font_family: 'lexend', font_weight: 'bold', day_highlight: { r: 0.2, g: 0.4, b: 0.7, a: 0.15 }, night_highlight: { r: 0.8, g: 0.8, b: 0.5, a: 0.2 }, font_size: 22, line_spacing: 1.2, word_spacing: 0, letter_spacing: 0, margin_horizontal: 100, margin_vertical: 12, lines_per_page: 700, pause_after_sentence: 0.06, auto_scroll_tts: true, center_spoken_sentence: true, time_remaining_display: 'adaptive', tts_speed: 2.5, tts_volume: 1 },
     tts: { state: 'idle', current_sentence_idx: 0, sentence_count: Math.max(1, sentences.length), can_seek_prev: false, can_seek_next: true, progress_pct: 0 },

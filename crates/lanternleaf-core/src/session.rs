@@ -155,6 +155,7 @@ pub struct ReaderSnapshot {
     pub reading_html_page: Option<String>,
     pub page_text: String,
     pub sentences: Vec<String>,
+    pub canonical_sentences: Vec<String>,
     pub sentence_anchor_map: Vec<Option<usize>>,
     pub highlighted_sentence_idx: Option<usize>,
     pub search_query: String,
@@ -315,6 +316,11 @@ impl ReaderSession {
         normalizer: &normalizer::TextNormalizer,
     ) -> ReaderSnapshot {
         let sentences = self.current_sentences(normalizer);
+        let canonical_sentences = self
+            .raw_page_sentences
+            .iter()
+            .flat_map(|page| page.iter().cloned())
+            .collect();
         let sentence_anchor_map = self.current_sentence_anchor_map();
         let anchor_hits = sentence_anchor_map
             .iter()
@@ -387,6 +393,7 @@ impl ReaderSession {
             reading_html_page,
             page_text: tts_text_page,
             sentences,
+            canonical_sentences,
             sentence_anchor_map,
             highlighted_sentence_idx,
             search_query: self.search_query.clone(),

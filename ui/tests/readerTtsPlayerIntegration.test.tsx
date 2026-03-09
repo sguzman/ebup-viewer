@@ -21,6 +21,7 @@ function makeReaderSnapshot(overrides: Partial<ReaderSnapshot> = {}): ReaderSnap
     reading_html_page: null,
     page_text: "Alpha. Beta.",
     sentences: ["Alpha.", "Beta."],
+    canonical_sentences: ["Alpha.", "Beta."],
     sentence_anchor_map: [0, 1],
     highlighted_sentence_idx: 0,
     search_query: "",

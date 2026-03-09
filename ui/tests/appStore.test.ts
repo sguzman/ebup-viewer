@@ -81,6 +81,7 @@ function makeReaderSnapshot(sourcePath: string, sentence: string): ReaderSnapsho
     reading_html_page: null,
     page_text: sentence,
     sentences: [sentence],
+    canonical_sentences: [sentence],
     sentence_anchor_map: [0],
     highlighted_sentence_idx: 0,
     search_query: "",

@@ -18,6 +18,7 @@ import { orderPdfTextLayerSpans } from "./pdfTextLayer";
 import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 let pdfJsWorkerConfigured = false;
+let pdfJsImportPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null = null;
 
 function ensurePromiseWithResolvers(): void {
   const promiseCtor = Promise as PromiseConstructor & {
@@ -39,6 +40,35 @@ function ensurePromiseWithResolvers(): void {
     });
     return { promise, resolve, reject };
   };
+}
+
+async function importPdfJsBrowserSafe(): Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> {
+  if (pdfJsImportPromise) {
+    return pdfJsImportPromise;
+  }
+  const globalScope = globalThis as typeof globalThis & { process?: unknown };
+  const originalProcess = globalScope.process;
+  const hadOwnProcess = Object.prototype.hasOwnProperty.call(globalThis, "process");
+  try {
+    if (hadOwnProcess) {
+      Reflect.deleteProperty(globalScope, "process");
+    } else {
+      Object.defineProperty(globalThis, "process", {
+        configurable: true,
+        enumerable: false,
+        value: undefined,
+        writable: true
+      });
+    }
+    pdfJsImportPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
+    return await pdfJsImportPromise;
+  } finally {
+    if (hadOwnProcess) {
+      globalScope.process = originalProcess;
+    } else {
+      Reflect.deleteProperty(globalScope, "process");
+    }
+  }
 }
 
 interface ReaderPrettyPdfPaneProps {
@@ -387,7 +417,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         try {
           ensurePromiseWithResolvers();
           const pdfBytes = await backendApi.readerLoadPdfBytes(sourcePath);
-          const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+          const pdfjs = await importPdfJsBrowserSafe();
           if (!pdfJsWorkerConfigured) {
             pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
             pdfJsWorkerConfigured = true;

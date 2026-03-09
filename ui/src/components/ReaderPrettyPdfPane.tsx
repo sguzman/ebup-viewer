@@ -237,8 +237,16 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       const render = async (): Promise<void> => {
         setLoading(true);
         setError(null);
+        const cleared = applyPdfHighlightDom(
+          highlightedNodesRef.current,
+          highlightedPagesRef.current,
+          [],
+          [],
+          null
+        );
+        highlightedNodesRef.current = cleared.highlightedNodes;
+        highlightedPagesRef.current = cleared.highlightedPages;
         renderedPagesRef.current = [];
-        highlightedPagesRef.current = [];
         lastScrollTargetRef.current = null;
         root.innerHTML = "";
         applyPdfHighlightColor(root, reader);

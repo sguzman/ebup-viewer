@@ -114,4 +114,23 @@ describe("applyPdfHighlightDom", () => {
     expect(cleared.highlightedNodes).toHaveLength(0);
     expect(cleared.highlightedPages).toHaveLength(0);
   });
+
+  it("rebinds the highlight onto replacement span nodes after a rerender", () => {
+    const initialSpans = [createSpan("Alpha"), createSpan("Beta")];
+    const replacementSpans = [createSpan("Alpha"), createSpan("Beta")];
+    const pages = [createPage(0)];
+    const first = applyPdfHighlightDom([], [], initialSpans, pages, exactMatch([1]));
+
+    const second = applyPdfHighlightDom(
+      first.highlightedNodes,
+      first.highlightedPages,
+      replacementSpans,
+      pages,
+      exactMatch([1])
+    );
+
+    expect((initialSpans[1].element.classList as any).contains("reader-pdf-highlight")).toBe(false);
+    expect((replacementSpans[1].element.classList as any).contains("reader-pdf-highlight")).toBe(true);
+    expect(second.highlightedNodes[0]).toBe(replacementSpans[1].element);
+  });
 });

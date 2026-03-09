@@ -162,14 +162,14 @@
 - [x] Unit tests for sentence-to-PDF coordinate mapping and confidence scoring.
 - [x] Integration tests for playback continuity across Pretty Text and Text-only toggles on PDFs.
 - [ ] Regression tests for tables.
-- [ ] Regression tests ensuring highlight overlays remain aligned during zoom and page changes.
+- [x] Regression tests ensuring highlight overlays remain aligned during zoom and page changes.
 - [ ] Regression tests for rotated pages.
 - [x] Manual QA checklist covering native rendering fidelity, text cleanliness, playback sync, resume, and delete/reopen behavior.
 
 ## Acceptance Criteria
-- [ ] Pretty Text mode renders the actual PDF natively.
-- [ ] Text-only mode shows only clean extracted text.
-- [ ] TTS, normalization, and playback indexing are fully owned by extracted `tts_text`.
+- [x] Pretty Text mode renders the actual PDF natively.
+- [x] Text-only mode shows only clean extracted text.
+- [x] TTS, normalization, and playback indexing are fully owned by extracted `tts_text`.
 - [ ] Native PDF view highlights the currently spoken text at the correct PDF location.
 - [x] Auto-scroll in Pretty Text mode follows playback without jitter or premature repositioning.
 - [x] Full project build verification passes after implementation, excluding `deb`, `rpm`, and AppImage packaging targets.

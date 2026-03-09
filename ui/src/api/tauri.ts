@@ -63,6 +63,8 @@ export interface PdfSentenceLocation {
   sentence_idx: number;
   page_idx: number | null;
   rects: PdfSentenceRect[];
+  line_rects: PdfSentenceRect[];
+  block_rects: PdfSentenceRect[];
   confidence: string;
   reason: string;
   score: number;

@@ -24,6 +24,10 @@ pub struct PdfSentenceLocation {
     pub page_idx: Option<usize>,
     #[serde(default)]
     pub rects: Vec<PdfRect>,
+    #[serde(default)]
+    pub line_rects: Vec<PdfRect>,
+    #[serde(default)]
+    pub block_rects: Vec<PdfRect>,
     pub confidence: String,
     pub reason: String,
     pub score: f32,

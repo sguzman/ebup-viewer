@@ -94,11 +94,11 @@
 - [x] `sentence_idx -> page_idx + rects[]` or equivalent quad/box list
 - [x] support one sentence mapping to multiple disjoint rectangles across lines
 - [x] support one sentence spanning multiple text blocks or column boundaries
-- [ ] Use PDF text geometry when available:
+- [x] Use PDF text geometry when available:
 - [x] page number
-- [ ] text block or line bounds
+- [x] text block or line bounds
 - [x] glyph/span coordinates where possible
-- [ ] Keep mapping deterministic even when extraction is imperfect or text spans cross line breaks.
+- [x] Keep mapping deterministic even when extraction is imperfect or text spans cross line breaks.
 - [x] Define normalization parity rules between extracted `tts_text` and PDF-visible text:
 - [x] ligatures (`fi`, `fl`)
 - [x] soft hyphenation and line-wrap joins
@@ -117,8 +117,8 @@
 - [x] Highlight the currently spoken unit directly on top of the native PDF render.
 - [x] Support paragraph-level highlighting initially if sentence-level PDF geometry is not yet stable.
 - [x] Allow future refinement to sentence-level highlight without changing `tts_text` ownership.
-- [ ] Keep highlight overlays aligned during zoom, page resize, and scroll.
-- [ ] Keep highlight overlays aligned during rotation, DPI changes, and viewport transform updates.
+- [x] Keep highlight overlays aligned during zoom, page resize, and scroll.
+- [x] Keep highlight overlays aligned during rotation, DPI changes, and viewport transform updates.
 - [x] Remove stale overlays cleanly when page/view state changes.
 - [x] Add tracing for highlight target resolution, page changes, and overlay lifecycle.
 

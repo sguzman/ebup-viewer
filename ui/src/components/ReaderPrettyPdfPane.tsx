@@ -76,8 +76,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const sentenceMatchesRef = useRef<PdfSentenceMatch[]>([]);
     const matchCacheRef = useRef<CachedPdfMatchResult | null>(null);
     const persistedSyncKeyRef = useRef<string | null>(null);
-    const [zoom, setZoom] = useState(1.2);
-    const [loading, setLoading] = useState(true);
+  const [zoom, setZoom] = useState(1.2);
+  const [viewportVersion, setViewportVersion] = useState(0);
+  const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [renderVersion, setRenderVersion] = useState(0);
     const [mappingSummary, setMappingSummary] = useState<{
@@ -286,6 +287,43 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     }, [reader]);
 
     useEffect(() => {
+      const root = containerRef.current;
+      if (!root) {
+        return;
+      }
+      let frame = 0;
+      const scheduleViewportRefresh = (reason: string) => {
+        if (frame !== 0) {
+          cancelAnimationFrame(frame);
+        }
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          logPdfDebug("viewportRefresh", {
+            sourcePath,
+            zoom,
+            reason
+          });
+          setViewportVersion((value) => value + 1);
+        });
+      };
+      const resizeObserver = new ResizeObserver(() => {
+        scheduleViewportRefresh("resize_observer");
+      });
+      resizeObserver.observe(root);
+      const onWindowResize = () => {
+        scheduleViewportRefresh("window_resize");
+      };
+      window.addEventListener("resize", onWindowResize);
+      return () => {
+        if (frame !== 0) {
+          cancelAnimationFrame(frame);
+        }
+        resizeObserver.disconnect();
+        window.removeEventListener("resize", onWindowResize);
+      };
+    }, [sourcePath, zoom]);
+
+    useEffect(() => {
       let cancelled = false;
       const root = containerRef.current;
       if (!root) {
@@ -371,7 +409,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         cancelled = true;
       };
-    }, [pdfUrl, reader, zoom]);
+    }, [pdfUrl, reader, viewportVersion, zoom]);
 
     useEffect(() => {
       if (loading) {
@@ -561,15 +599,83 @@ function buildPersistedPdfSentenceLocations(
       }
       return [];
     });
+    const lineRects = mergeRectsIntoLines(rects);
+    const blockRects = mergeLineRectsIntoBlocks(lineRects);
     return {
       sentence_idx: sentenceIdx,
       page_idx: match.pageIndex,
       rects,
+      line_rects: lineRects,
+      block_rects: blockRects,
       confidence: match.confidence,
       reason: match.reason,
       score: match.score
     };
   });
+}
+
+function mergeRectsIntoLines(rects: PdfSentenceLocation["rects"]): PdfSentenceLocation["line_rects"] {
+  if (rects.length <= 1) {
+    return [...rects];
+  }
+  const sorted = [...rects].sort((left, right) => {
+    if (left.top !== right.top) {
+      return left.top - right.top;
+    }
+    return left.left - right.left;
+  });
+  const merged: PdfSentenceLocation["line_rects"] = [];
+  for (const rect of sorted) {
+    const current = merged.at(-1);
+    if (!current) {
+      merged.push({ ...rect });
+      continue;
+    }
+    const sameLine = Math.abs(current.top - rect.top) <= Math.max(current.height, rect.height, 0.012);
+    if (!sameLine) {
+      merged.push({ ...rect });
+      continue;
+    }
+    const left = Math.min(current.left, rect.left);
+    const top = Math.min(current.top, rect.top);
+    const right = Math.max(current.left + current.width, rect.left + rect.width);
+    const bottom = Math.max(current.top + current.height, rect.top + rect.height);
+    current.left = Number(left.toFixed(4));
+    current.top = Number(top.toFixed(4));
+    current.width = Number((right - left).toFixed(4));
+    current.height = Number((bottom - top).toFixed(4));
+  }
+  return merged;
+}
+
+function mergeLineRectsIntoBlocks(lineRects: PdfSentenceLocation["line_rects"]): PdfSentenceLocation["block_rects"] {
+  if (lineRects.length <= 1) {
+    return [...lineRects];
+  }
+  const blocks: PdfSentenceLocation["block_rects"] = [];
+  for (const rect of lineRects) {
+    const current = blocks.at(-1);
+    if (!current) {
+      blocks.push({ ...rect });
+      continue;
+    }
+    const verticalGap = rect.top - (current.top + current.height);
+    const horizontalDrift = Math.abs(rect.left - current.left);
+    const sameBlock = verticalGap <= 0.035 && horizontalDrift <= 0.22;
+    if (!sameBlock) {
+      blocks.push({ ...rect });
+      continue;
+    }
+    const left = Math.min(current.left, rect.left);
+    const top = Math.min(current.top, rect.top);
+    const right = Math.max(current.left + current.width, rect.left + rect.width);
+    const bottom = Math.max(current.top + current.height, rect.top + rect.height);
+    current.left = Number(left.toFixed(4));
+    current.top = Number(top.toFixed(4));
+    current.width = Number((right - left).toFixed(4));
+    current.height = Number((bottom - top).toFixed(4));
+  }
+  return blocks;
 }
 
 async function renderPdfPages(

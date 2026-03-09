@@ -225,4 +225,26 @@ describe("buildPdfSentenceSpanMap", () => {
     expect(findNearestSentenceForPageIndex(matches, 3)).toBe(2);
     expect(matches[1]?.score).toBe(1);
   });
+
+  it("keeps cross-line span mapping deterministic across repeated runs", () => {
+    const spans = [
+      createSpan(0, "Alpha"),
+      createSpan(0, "beta"),
+      createSpan(0, "gamma"),
+      createSpan(0, "Delta"),
+      createSpan(0, "epsilon"),
+      createSpan(0, "zeta.")
+    ];
+
+    const first = buildPdfSentenceSpanMap(spans, ["Alpha beta gamma Delta epsilon zeta."]);
+    const second = buildPdfSentenceSpanMap(spans, ["Alpha beta gamma Delta epsilon zeta."]);
+
+    expect(first.matches).toEqual(second.matches);
+    expect(first.matches[0]).toMatchObject({
+      confidence: "exact",
+      reason: "exact_geometry",
+      pageIndex: 0,
+      spanIndexes: [0, 1, 2, 3, 4, 5]
+    });
+  });
 });

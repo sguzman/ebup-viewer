@@ -1285,6 +1285,18 @@ mod tests {
                     width: 0.4,
                     height: 0.05,
                 }],
+                line_rects: vec![crate::cache::PdfRect {
+                    left: 0.1,
+                    top: 0.2,
+                    width: 0.4,
+                    height: 0.05,
+                }],
+                block_rects: vec![crate::cache::PdfRect {
+                    left: 0.1,
+                    top: 0.2,
+                    width: 0.4,
+                    height: 0.05,
+                }],
                 confidence: "exact".to_string(),
                 reason: "exact_geometry".to_string(),
                 score: 1.0,

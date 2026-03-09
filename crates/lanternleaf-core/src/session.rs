@@ -1125,6 +1125,28 @@ mod tests {
     }
 
     #[test]
+    fn page_navigation_and_seek_state_stay_aligned_across_view_toggles() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let mut session =
+            build_test_session(&[&["Page one alpha.", "Page one beta."], &["Page two gamma."]]);
+
+        session.toggle_text_only(&normalizer);
+        session.tts_seek_next(&normalizer);
+        assert_eq!(session.current_page, 0);
+        assert_eq!(session.current_highlight_idx(), Some(1));
+        assert_eq!(session.highlighted_display_idx, Some(1));
+
+        session.set_page(1, &normalizer);
+        assert_eq!(session.current_page, 1);
+        assert_eq!(session.current_highlight_idx(), Some(0));
+
+        session.toggle_text_only(&normalizer);
+        assert_eq!(session.current_page, 1);
+        assert_eq!(session.highlighted_display_idx, Some(0));
+        assert_eq!(session.current_highlight_idx(), Some(0));
+    }
+
+    #[test]
     fn markdown_anchor_count_detects_blocks() {
         let markdown = "# Title\n\nParagraph one.\n\n- Item one\n- Item two\n\n## Next";
         assert_eq!(count_markdown_anchors(markdown), 5);

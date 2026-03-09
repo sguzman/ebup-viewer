@@ -126,14 +126,14 @@
 - [x] Auto-scroll the native PDF view to the active highlighted location during playback.
 - [x] Keep scroll stable within the same mapped paragraph or region.
 - [x] Only force scroll when playback advances to a new mapped location, page, or explicit jump target.
-- [ ] Keep Text-only and native PDF views aligned to the same `tts_text` cursor.
+- [x] Keep Text-only and native PDF views aligned to the same `tts_text` cursor.
 - [x] Add tracing for scroll trigger reasons and viewport adjustments.
 
 ## Phase 8: Search, Navigation, and Resume Semantics
 - [ ] Ensure search in Text-only mode uses `tts_text` and can jump to mapped PDF locations.
 - [ ] Ensure bookmarks and resume positions remain owned by `tts_text` indices plus mapped PDF location metadata.
 - [x] Preserve deterministic behavior when reopening a PDF after cache reuse or rebuild.
-- [ ] Keep page navigation and TTS seek operations synchronized across PDF and text-only views.
+- [x] Keep page navigation and TTS seek operations synchronized across PDF and text-only views.
 - [x] Support reverse navigation from native PDF interactions back to `tts_text` ownership:
 - [x] click or selection in Pretty Text PDF view can resolve to nearest `tts_text` sentence
 - [ ] page jump in PDF view can restore the nearest canonical playback/search cursor

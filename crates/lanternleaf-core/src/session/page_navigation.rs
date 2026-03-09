@@ -16,6 +16,15 @@ impl ReaderSession {
                 .and_then(|idx| self.map_display_to_audio_idx(normalizer, idx));
         }
         self.update_search_matches(normalizer);
+        self.reselect_search_match_for_current_highlight();
+        tracing::debug!(
+            path = %self.source_path.display(),
+            owner = "tts_text",
+            page = self.current_page + 1,
+            highlighted_audio_idx = self.highlighted_audio_idx,
+            highlighted_display_idx = self.highlighted_display_idx,
+            "Moved to next reader page while preserving canonical cursor ownership"
+        );
     }
 
     pub fn prev_page(&mut self, normalizer: &normalizer::TextNormalizer) {
@@ -33,6 +42,15 @@ impl ReaderSession {
                 .and_then(|idx| self.map_display_to_audio_idx(normalizer, idx));
         }
         self.update_search_matches(normalizer);
+        self.reselect_search_match_for_current_highlight();
+        tracing::debug!(
+            path = %self.source_path.display(),
+            owner = "tts_text",
+            page = self.current_page + 1,
+            highlighted_audio_idx = self.highlighted_audio_idx,
+            highlighted_display_idx = self.highlighted_display_idx,
+            "Moved to previous reader page while preserving canonical cursor ownership"
+        );
     }
 
     pub fn set_page(&mut self, page: usize, normalizer: &normalizer::TextNormalizer) {
@@ -51,6 +69,15 @@ impl ReaderSession {
                 .and_then(|idx| self.map_display_to_audio_idx(normalizer, idx));
         }
         self.update_search_matches(normalizer);
+        self.reselect_search_match_for_current_highlight();
+        tracing::debug!(
+            path = %self.source_path.display(),
+            owner = "tts_text",
+            page = self.current_page + 1,
+            highlighted_audio_idx = self.highlighted_audio_idx,
+            highlighted_display_idx = self.highlighted_display_idx,
+            "Set reader page while preserving canonical cursor ownership"
+        );
     }
 
     pub(super) fn repaginate(

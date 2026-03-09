@@ -101,6 +101,68 @@ describe("buildPdfSentenceSpanMap", () => {
     expect(result.diagnostics.pageOnlyMatches).toBe(1);
   });
 
+  it("normalizes ligatures and soft hyphenation before matching PDF spans", () => {
+    const spans = [
+      createSpan(0, "The of\uFB01ce co\u00AD"),
+      createSpan(0, "operate plan.")
+    ];
+
+    const result = buildPdfSentenceSpanMap(spans, ["The office cooperate plan."]);
+
+    expect(result.matches[0]).toMatchObject({
+      confidence: "exact",
+      reason: "exact_geometry",
+      pageIndex: 0,
+      spanIndexes: [0, 1]
+    });
+  });
+
+  it("ignores duplicated hidden text-layer spans on the same page", () => {
+    const spans = [
+      createSpan(0, "Alpha beta gamma."),
+      createSpan(0, "Alpha beta gamma."),
+      createSpan(0, "Delta epsilon.")
+    ];
+
+    const result = buildPdfSentenceSpanMap(spans, ["Alpha beta gamma.", "Delta epsilon."]);
+
+    expect(result.matches[0]).toMatchObject({
+      confidence: "exact",
+      reason: "exact_geometry",
+      pageIndex: 0,
+      spanIndexes: [0]
+    });
+    expect(result.matches[1]).toMatchObject({
+      confidence: "exact",
+      reason: "exact_geometry",
+      pageIndex: 0,
+      spanIndexes: [2]
+    });
+  });
+
+  it("suppresses repeated page-edge boilerplate during fallback matching", () => {
+    const spans = [
+      createSpan(0, "Journal of Testing"),
+      createSpan(0, "Alpha body opening"),
+      createSpan(0, "Footer 1"),
+      createSpan(1, "Journal of Testing"),
+      createSpan(1, "Beta body target"),
+      createSpan(1, "Footer 2"),
+      createSpan(2, "Journal of Testing"),
+      createSpan(2, "Gamma appendix"),
+      createSpan(2, "Footer 3")
+    ];
+
+    const result = buildPdfSentenceSpanMap(spans, ["Beta target missing exact body text"]);
+
+    expect(result.matches[0]).toMatchObject({
+      confidence: "fallback",
+      reason: "paragraph_fallback",
+      pageIndex: 1,
+      spanIndexes: [4]
+    });
+  });
+
   it("finds the nearest sentence for a clicked span index", () => {
     const spans = [
       createSpan(0, "Alpha"),

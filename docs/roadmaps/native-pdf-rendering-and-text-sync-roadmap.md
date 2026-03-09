@@ -47,7 +47,7 @@
 - [x] Reject geometry matches that would place the cursor on the wrong page, wrong column, or visually distant region when a weaker but stable fallback exists.
 - [ ] Add explicit handling for difficult PDF structures:
 - [ ] dense academic two-column layouts
-- [ ] repeated headers and footers
+- [x] repeated headers and footers
 - [ ] footnotes and sidenotes
 - [ ] tables with interleaved text order
 - [ ] figures and long captions
@@ -100,9 +100,9 @@
 - [ ] glyph/span coordinates where possible
 - [ ] Keep mapping deterministic even when extraction is imperfect or text spans cross line breaks.
 - [ ] Define normalization parity rules between extracted `tts_text` and PDF-visible text:
-- [ ] ligatures (`fi`, `fl`)
-- [ ] soft hyphenation and line-wrap joins
-- [ ] collapsed whitespace and paragraph boundaries
+- [x] ligatures (`fi`, `fl`)
+- [x] soft hyphenation and line-wrap joins
+- [x] collapsed whitespace and paragraph boundaries
 - [ ] hidden text-layer artifacts, duplicated glyphs, and copy/paste noise
 - [ ] Define mismatch handling when extracted `tts_text` and renderer text-layer text diverge:
 - [ ] exact geometry match

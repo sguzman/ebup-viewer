@@ -41,6 +41,18 @@ interface FuzzyCandidate {
 const MIN_FUZZY_TOKENS = 4;
 const MIN_FUZZY_SCORE = 0.58;
 const MAX_LOCAL_LEAP_SPANS = 40;
+const MIN_REPEATABLE_BOILERPLATE_LENGTH = 3;
+const MAX_REPEATABLE_BOILERPLATE_LENGTH = 72;
+
+const PDF_LIGATURES: Record<string, string> = {
+  "\uFB00": "ff",
+  "\uFB01": "fi",
+  "\uFB02": "fl",
+  "\uFB03": "ffi",
+  "\uFB04": "ffl",
+  "\uFB05": "ft",
+  "\uFB06": "st"
+};
 
 function needsJoiner(left: string, right: string): boolean {
   if (!left || !right) {
@@ -51,20 +63,120 @@ function needsJoiner(left: string, right: string): boolean {
   return /\p{L}|\p{N}/u.test(leftChar) && /\p{L}|\p{N}/u.test(rightChar);
 }
 
+function hasWordJoinAcrossBoundary(leftRaw: string, rightRaw: string): boolean {
+  if (!leftRaw || !rightRaw) {
+    return false;
+  }
+  const lastLeft = leftRaw[leftRaw.length - 1] ?? "";
+  const firstRight = rightRaw[0] ?? "";
+  return /[\u00AD\u2010\u2011-]/u.test(lastLeft) && /\p{Ll}/u.test(firstRight);
+}
+
+function normalizePdfSpanText(value: string): string {
+  let normalized = value;
+  for (const [ligature, replacement] of Object.entries(PDF_LIGATURES)) {
+    normalized = normalized.replaceAll(ligature, replacement);
+  }
+  normalized = normalized
+    .replace(/[\u00AD\u200B\u200C\u200D\u2060\uFEFF]/g, "")
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, "-");
+  return normalizeSyncText(normalized);
+}
+
+function buildPageSpanIndexes(spans: PdfTextSpan[]): Map<number, number[]> {
+  const byPage = new Map<number, number[]>();
+  for (let idx = 0; idx < spans.length; idx += 1) {
+    const pageIndex = spans[idx]?.pageIndex ?? -1;
+    const page = byPage.get(pageIndex);
+    if (page) {
+      page.push(idx);
+      continue;
+    }
+    byPage.set(pageIndex, [idx]);
+  }
+  return byPage;
+}
+
+function buildRepeatedBoilerplateIndexes(
+  normalizedSpanTexts: string[],
+  spans: PdfTextSpan[]
+): Set<number> {
+  const byPage = buildPageSpanIndexes(spans);
+  const pageEdgeEntries = new Map<string, number[]>();
+  for (const pageIndexes of byPage.values()) {
+    const edgeIndexes = new Set<number>([
+      ...pageIndexes.slice(0, 3),
+      ...pageIndexes.slice(Math.max(0, pageIndexes.length - 3))
+    ]);
+    for (const spanIdx of edgeIndexes) {
+      const text = normalizedSpanTexts[spanIdx] ?? "";
+      if (
+        text.length < MIN_REPEATABLE_BOILERPLATE_LENGTH
+        || text.length > MAX_REPEATABLE_BOILERPLATE_LENGTH
+      ) {
+        continue;
+      }
+      const hits = pageEdgeEntries.get(text);
+      if (hits) {
+        hits.push(spanIdx);
+        continue;
+      }
+      pageEdgeEntries.set(text, [spanIdx]);
+    }
+  }
+
+  const suppressed = new Set<number>();
+  for (const indexes of pageEdgeEntries.values()) {
+    const pageHits = new Set(indexes.map((idx) => spans[idx]?.pageIndex ?? -1));
+    if (pageHits.size < 3) {
+      continue;
+    }
+    for (const idx of indexes) {
+      suppressed.add(idx);
+    }
+  }
+  return suppressed;
+}
+
+function buildDuplicateSpanIndexes(normalizedSpanTexts: string[], spans: PdfTextSpan[]): Set<number> {
+  const suppressed = new Set<number>();
+  for (let idx = 1; idx < spans.length; idx += 1) {
+    const current = normalizedSpanTexts[idx] ?? "";
+    const previous = normalizedSpanTexts[idx - 1] ?? "";
+    if (!current || current !== previous) {
+      continue;
+    }
+    if (spans[idx]?.pageIndex !== spans[idx - 1]?.pageIndex) {
+      continue;
+    }
+    suppressed.add(idx);
+  }
+  return suppressed;
+}
+
 function buildNormalizedDocument(spans: PdfTextSpan[]): {
   normalized: string;
   ranges: NormalizedRange[];
+  normalizedSpanTexts: string[];
+  suppressedSpanIndexes: Set<number>;
 } {
   let normalized = "";
   const ranges: NormalizedRange[] = [];
+  const normalizedSpanTexts = spans.map((span) => normalizePdfSpanText(span.text));
+  const suppressedSpanIndexes = new Set<number>([
+    ...buildRepeatedBoilerplateIndexes(normalizedSpanTexts, spans),
+    ...buildDuplicateSpanIndexes(normalizedSpanTexts, spans)
+  ]);
 
-  for (const span of spans) {
-    const text = normalizeSyncText(span.text);
-    if (!text) {
+  for (let idx = 0; idx < spans.length; idx += 1) {
+    const text = normalizedSpanTexts[idx] ?? "";
+    if (!text || suppressedSpanIndexes.has(idx)) {
       ranges.push({ start: -1, end: -1 });
       continue;
     }
-    if (normalized && needsJoiner(normalized, text)) {
+    const previousRaw = spans[idx - 1]?.text ?? "";
+    const currentRaw = spans[idx]?.text ?? "";
+    if (normalized && needsJoiner(normalized, text) && !hasWordJoinAcrossBoundary(previousRaw, currentRaw)) {
       normalized += " ";
     }
     const start = normalized.length;
@@ -73,7 +185,12 @@ function buildNormalizedDocument(spans: PdfTextSpan[]): {
     ranges.push({ start, end });
   }
 
-  return { normalized, ranges };
+  return {
+    normalized,
+    ranges,
+    normalizedSpanTexts,
+    suppressedSpanIndexes
+  };
 }
 
 function collectSpanIndexesForRange(
@@ -93,7 +210,7 @@ function collectSpanIndexesForRange(
 }
 
 function buildSentenceTokens(sentence: string): string[] {
-  return normalizeSyncText(sentence)
+  return normalizePdfSpanText(sentence)
     .split(" ")
     .filter((token) => token.length > 0);
 }
@@ -105,7 +222,7 @@ function scoreFuzzyWindow(
   if (sentenceTokens.length === 0) {
     return 0;
   }
-  const normalizedWindow = normalizeSyncText(windowText);
+  const normalizedWindow = normalizePdfSpanText(windowText);
   let hits = 0;
   for (const token of sentenceTokens) {
     if (normalizedWindow.includes(token)) {
@@ -133,7 +250,9 @@ function findParagraphFallbackSpan(
   spans: PdfTextSpan[],
   sentence: string,
   fallbackHintIdx: number | null | undefined,
-  previousSpanIdx: number
+  previousSpanIdx: number,
+  normalizedSpanTexts: string[],
+  suppressedSpanIndexes: Set<number>
 ): number | null {
   const tokens = buildSentenceTokens(sentence);
   if (tokens.length === 0) {
@@ -144,7 +263,10 @@ function findParagraphFallbackSpan(
   let bestIdx: number | null = null;
   let bestScore = 0;
   for (let idx = startIdx; idx <= endIdx; idx += 1) {
-    const score = scoreFuzzyWindow(spans[idx]?.text ?? "", tokens);
+    if (suppressedSpanIndexes.has(idx)) {
+      continue;
+    }
+    const score = scoreFuzzyWindow(normalizedSpanTexts[idx] ?? "", tokens);
     if (score > bestScore) {
       bestScore = score;
       bestIdx = idx;
@@ -159,7 +281,8 @@ function findFuzzySentenceCandidate(
   spans: PdfTextSpan[],
   sentence: string,
   scanStart: number,
-  previousPageIndex: number | null
+  previousPageIndex: number | null,
+  suppressedSpanIndexes: Set<number>
 ): FuzzyCandidate | null {
   const tokens = buildSentenceTokens(sentence);
   if (tokens.length < MIN_FUZZY_TOKENS) {
@@ -172,7 +295,8 @@ function findFuzzySentenceCandidate(
   );
   const localSpanIndexes = spans
     .map((_, idx) => idx)
-    .slice(scanSpanStart, scanSpanStart + MAX_LOCAL_LEAP_SPANS);
+    .slice(scanSpanStart, scanSpanStart + MAX_LOCAL_LEAP_SPANS)
+    .filter((idx) => !suppressedSpanIndexes.has(idx));
   if (localSpanIndexes.length === 0) {
     return null;
   }
@@ -252,8 +376,8 @@ export function buildPdfSentenceSpanMap(
     };
   }
 
-  const { normalized, ranges } = buildNormalizedDocument(spans);
-  const spanTexts = spans.map((span) => normalizeSyncText(span.text));
+  const { normalized, ranges, normalizedSpanTexts, suppressedSpanIndexes } = buildNormalizedDocument(spans);
+  const spanTexts = normalizedSpanTexts;
   const fallbackMap = buildHtmlSentenceAnchorMap(
     spans.map((span) => span.text),
     sentences,
@@ -271,7 +395,7 @@ export function buildPdfSentenceSpanMap(
   let cappedLeaps = 0;
 
   for (let sentenceIdx = 0; sentenceIdx < sentences.length; sentenceIdx += 1) {
-    const sentence = normalizeSyncText(sentences[sentenceIdx] ?? "");
+    const sentence = normalizePdfSpanText(sentences[sentenceIdx] ?? "");
     if (!sentence) {
       matches.push({
         confidence: "missing",
@@ -315,7 +439,8 @@ export function buildPdfSentenceSpanMap(
       spans,
       sentence,
       scanStart,
-      previousPageIndex
+      previousPageIndex,
+      suppressedSpanIndexes
     );
     if (fuzzyCandidate) {
       const leapStart = fuzzyCandidate.spanIndexes[0] ?? 0;
@@ -341,7 +466,9 @@ export function buildPdfSentenceSpanMap(
       spans,
       sentence,
       fallbackMap[sentenceIdx],
-      previousSpanIdx
+      previousSpanIdx,
+      normalizedSpanTexts,
+      suppressedSpanIndexes
     );
     if (fallbackIdx !== null && fallbackIdx !== undefined && spans[fallbackIdx]) {
       const fallbackPageIndex = spans[fallbackIdx].pageIndex;

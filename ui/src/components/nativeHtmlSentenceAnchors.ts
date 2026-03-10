@@ -64,6 +64,22 @@ export interface NativeHtmlSentenceAnchorResult {
   sentenceAnchors: Map<number, HTMLElement[]>;
 }
 
+function isSuperscriptCitationText(node: Text): boolean {
+  const parent = node.parentElement;
+  if (!parent) {
+    return false;
+  }
+  const sup = parent.closest("sup");
+  if (!sup) {
+    return false;
+  }
+  const value = (node.textContent ?? "").trim();
+  if (!value) {
+    return false;
+  }
+  return /^[\[(]?(?:\d+|[ivxlcdm]+|[a-z])[\]).,;:]*$/i.test(value);
+}
+
 function isStructuralBoundaryElement(node: Node | null): node is Element {
   return node instanceof Element && STRUCTURAL_BOUNDARY_TAGS.has(node.tagName.toLowerCase());
 }
@@ -160,7 +176,8 @@ function normalizeWithPositions(root: ParentNode): {
         tag === "script" ||
         tag === "style" ||
         tag === "noscript" ||
-        parent.closest("[data-ll-reader-overlay='1']")
+        parent.closest("[data-ll-reader-overlay='1']") ||
+        isSuperscriptCitationText(node as Text)
       ) {
         return NodeFilter.FILTER_REJECT;
       }
@@ -234,23 +251,80 @@ function normalizeSentence(value: string): string {
     .trim();
 }
 
+function expandNumericToken(token: string): string {
+  const parsed = Number.parseInt(token, 10);
+  if (!Number.isFinite(parsed)) {
+    return token;
+  }
+  const numericWords: Record<number, string> = {
+    0: "zero",
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+    10: "ten",
+    11: "eleven",
+    12: "twelve",
+    13: "thirteen",
+    14: "fourteen",
+    15: "fifteen",
+    16: "sixteen",
+    17: "seventeen",
+    18: "eighteen",
+    19: "nineteen",
+    20: "twenty"
+  };
+  return numericWords[parsed] ?? token;
+}
+
+function buildTokenSequences(normalizedSentence: string): string[][] {
+  const tokens = normalizedSentence.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return [];
+  }
+  const sequences = [tokens];
+  const expanded = tokens.map((token) => expandNumericToken(token));
+  if (expanded.join(" ") !== tokens.join(" ")) {
+    sequences.push(expanded);
+  }
+  return sequences;
+}
+
 function buildTokenFragments(
   normalizedSentence: string,
   fromEnd = false
 ): string[] {
-  const tokens = normalizedSentence.split(/\s+/).filter(Boolean);
   const fragments: string[] = [];
-  for (const tokenCount of [8, 6, 5, 4, 3]) {
-    if (tokens.length < tokenCount) {
-      continue;
+  for (const tokens of buildTokenSequences(normalizedSentence)) {
+    for (const tokenCount of [8, 6, 5, 4, 3]) {
+      if (tokens.length < tokenCount) {
+        continue;
+      }
+      const fragmentTokens = fromEnd ? tokens.slice(-tokenCount) : tokens.slice(0, tokenCount);
+      const fragment = fragmentTokens.join(" ").trim();
+      if (fragment.length >= 12 && !fragments.includes(fragment)) {
+        fragments.push(fragment);
+      }
     }
-    const fragmentTokens = fromEnd ? tokens.slice(-tokenCount) : tokens.slice(0, tokenCount);
-    const fragment = fragmentTokens.join(" ").trim();
-    if (fragment.length >= 12 && !fragments.includes(fragment)) {
-      fragments.push(fragment);
+    for (const tokenCount of [2, 1]) {
+      if (tokens.length < tokenCount) {
+        continue;
+      }
+      const fragmentTokens = fromEnd ? tokens.slice(-tokenCount) : tokens.slice(0, tokenCount);
+      const fragment = fragmentTokens.join(" ").trim();
+      if (fragment.length >= 4 && !fragments.includes(fragment)) {
+        fragments.push(fragment);
+      }
     }
   }
   if (fragments.length === 0 && normalizedSentence.length >= 12) {
+    fragments.push(normalizedSentence);
+  } else if (fragments.length === 0 && normalizedSentence.length >= 4) {
     fragments.push(normalizedSentence);
   }
   return fragments;

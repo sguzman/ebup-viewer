@@ -101,4 +101,49 @@ describe("nativeHtmlSentenceAnchors", () => {
       "Sentence after image"
     );
   });
+
+  it("ignores superscript citations when matching sentence highlights", () => {
+    const doc = document.implementation.createHTMLDocument("");
+    doc.body.innerHTML = `
+      <article>
+        <p>
+          This claim remains disputed<sup><a href="#fn1">1</a></sup>.
+          The next sentence should still align.
+        </p>
+      </article>
+    `;
+
+    const result = annotateNativeHtmlSentences(doc, [
+      "This claim remains disputed.",
+      "The next sentence should still align."
+    ]);
+
+    expect(result.diagnostics.matchedSentences).toBe(2);
+    expect(result.sentenceAnchors.get(0)?.map((node) => node.textContent).join("")).toContain(
+      "This claim remains disputed"
+    );
+    expect(result.sentenceAnchors.get(1)?.map((node) => node.textContent).join("")).toContain(
+      "The next sentence should still align"
+    );
+  });
+
+  it("keeps short chapter titles alignable when the canonical title drifts slightly", () => {
+    const doc = document.implementation.createHTMLDocument("");
+    doc.body.innerHTML = `
+      <article>
+        <h2><span>Chapter One</span></h2>
+        <p>Body sentence follows.</p>
+      </article>
+    `;
+
+    const result = annotateNativeHtmlSentences(doc, [
+      "Chapter 1",
+      "Body sentence follows."
+    ]);
+
+    expect(result.diagnostics.matchedSentences).toBe(2);
+    expect(result.sentenceAnchors.get(0)?.map((node) => node.textContent).join("")).toContain(
+      "Chapter One"
+    );
+  });
 });

@@ -189,6 +189,25 @@ describe("renderNativePrettyHtml", () => {
     );
   });
 
+  it("preserves comma-bearing Substack srcset URLs while rewriting them", () => {
+    const html = `
+      <div data-ll-base-url="https://www.weekendreading.net/p/how-trump-won">
+        <img
+          src="https://substackcdn.com/image/fetch/$s_!kTyf!,w_36,h_36,c_fill,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F94d0dad6-94cd-4133-b994-50f8f56cfc1e_513x528.jpeg"
+          srcset="https://substackcdn.com/image/fetch/$s_!kTyf!, w_36, h_36, c_fill, f_auto, q_auto:good, fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F94d0dad6-94cd-4133-b994-50f8f56cfc1e_513x528.jpeg 36w, https://substackcdn.com/image/fetch/$s_!kTyf!, w_72, h_72, c_fill, f_auto, q_auto:good, fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F94d0dad6-94cd-4133-b994-50f8f56cfc1e_513x528.jpeg 72w"
+          alt="Avatar"
+        />
+      </div>
+    `;
+    const out = renderPrettyNativeHtmlDocument(html, []);
+    expect(out).toContain(
+      'src="https://substackcdn.com/image/fetch/$s_!kTyf!,w_36,h_36,c_fill,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F94d0dad6-94cd-4133-b994-50f8f56cfc1e_513x528.jpeg"',
+    );
+    expect(out).toContain(
+      'srcset="https://substackcdn.com/image/fetch/$s_!kTyf!, w_36, h_36, c_fill, f_auto, q_auto:good, fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F94d0dad6-94cd-4133-b994-50f8f56cfc1e_513x528.jpeg 36w, https://substackcdn.com/image/fetch/$s_!kTyf!, w_72, h_72, c_fill, f_auto, q_auto:good, fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F94d0dad6-94cd-4133-b994-50f8f56cfc1e_513x528.jpeg 72w"',
+    );
+  });
+
   it("preserves full browser-tab documents instead of extracting a focused subtree", () => {
     const html = `
       <div data-ll-base-url="https://en.wikipedia.org/wiki/Example" data-ll-browser-tab="1">

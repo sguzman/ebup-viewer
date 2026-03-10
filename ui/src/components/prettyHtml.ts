@@ -99,6 +99,35 @@ function injectReaderHighlightOverlay(doc: Document): void {
   doc.head.appendChild(style);
 }
 
+function parseSrcsetCandidates(raw: string): Array<{ target: string; descriptor: string }> {
+  const candidates: Array<{ target: string; descriptor: string }> = [];
+  const descriptorPattern = /\s+(-?(?:\d+|\d*\.\d+)(?:w|x))\s*(,|$)/g;
+  let cursor = 0;
+  let matchedDescriptor = false;
+  while (cursor < raw.length) {
+    descriptorPattern.lastIndex = cursor;
+    const match = descriptorPattern.exec(raw);
+    if (!match) {
+      break;
+    }
+    const target = raw.slice(cursor, match.index).trim().replace(/,$/, "").trim();
+    const descriptor = (match[1] ?? "").trim();
+    if (target && descriptor) {
+      candidates.push({ target, descriptor });
+      matchedDescriptor = true;
+    }
+    cursor = descriptorPattern.lastIndex;
+    while (cursor < raw.length && /\s/.test(raw[cursor] ?? "")) {
+      cursor += 1;
+    }
+  }
+  if (matchedDescriptor) {
+    return candidates;
+  }
+  const fallback = raw.trim();
+  return fallback ? [{ target: fallback, descriptor: "" }] : [];
+}
+
 export function renderNativePrettyHtml(
   html: string,
   imageCandidates: Array<{ rawPath: string; src: string }>
@@ -296,14 +325,8 @@ export function renderNativePrettyHtml(
     return null;
   };
   const rewriteSrcset = (raw: string): string => {
-    return raw
-      .split(",")
-      .map((part) => {
-        const trimmed = part.trim();
-        if (!trimmed) {
-          return "";
-        }
-        const [target, descriptor] = trimmed.split(/\s+/, 2);
+    return parseSrcsetCandidates(raw)
+      .map(({ target, descriptor }) => {
         const resolved = resolveResourceTarget(target) ?? target;
         return descriptor ? `${resolved} ${descriptor}` : resolved;
       })

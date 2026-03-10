@@ -387,6 +387,8 @@ impl BrowsrClient {
         &self,
         tab_id: u64,
     ) -> Result<BrowsrImportBundleWaitResponse> {
+        const BUNDLE_SETTLE_TIMEOUT_MS: u64 = 90_000;
+        const BUNDLE_WAIT_TIMEOUT_MS: u64 = 180_000;
         let started = std::time::Instant::now();
         let response = self
             .client
@@ -394,6 +396,7 @@ impl BrowsrClient {
                 "{}/v1/tabs/{tab_id}/import-bundles/wait",
                 self.base_url
             ))
+            .timeout(Duration::from_millis(BUNDLE_WAIT_TIMEOUT_MS + 10_000))
             .header(CONTENT_TYPE, "application/json")
             .body(
                 serde_json::json!({
@@ -404,10 +407,10 @@ impl BrowsrClient {
                     "capture_selection": true,
                     "capture_screenshot": false,
                     "wait_for_network_idle_ms": 1500,
-                    "settle_timeout_ms": 30_000,
+                    "settle_timeout_ms": BUNDLE_SETTLE_TIMEOUT_MS,
                     "max_asset_bytes": 5_000_000,
                     "max_total_bytes": 75_000_000,
-                    "wait_timeout_ms": 120_000,
+                    "wait_timeout_ms": BUNDLE_WAIT_TIMEOUT_MS,
                     "poll_interval_ms": 500,
                     "include_manifest": true
                 })

@@ -15,6 +15,8 @@ import { useReaderScrollSync } from "./useReaderScrollSync";
 interface UseReaderHighlightSyncArgs {
   hasPrettyHtml: boolean;
   hasPrettyMarkdown: boolean;
+  onSentenceClick: (sentenceIdx: number) => Promise<void>;
+  onSetPage: (page: number) => Promise<void>;
   reader: ReaderSnapshot;
   renderedMarkdownHtml: string;
   renderedNativeHtml: string;
@@ -32,6 +34,8 @@ export interface ReaderHighlightSyncState {
 export function useReaderHighlightSync({
   hasPrettyHtml,
   hasPrettyMarkdown,
+  onSentenceClick,
+  onSetPage,
   reader,
   renderedMarkdownHtml,
   renderedNativeHtml,
@@ -78,6 +82,61 @@ export function useReaderHighlightSync({
     sentenceRefs,
     sentenceScrollRef
   });
+
+  const jumpToGlobalSentence = useCallback(async (globalSentenceIdx: number): Promise<void> => {
+    if (!Number.isFinite(globalSentenceIdx) || globalSentenceIdx < 0) {
+      return;
+    }
+    let pageStart = 0;
+    for (let pageIdx = 0; pageIdx < reader.page_sentence_counts.length; pageIdx += 1) {
+      const count = reader.page_sentence_counts[pageIdx] ?? 0;
+      const pageEnd = pageStart + count;
+      if (globalSentenceIdx < pageEnd) {
+        const localSentenceIdx = globalSentenceIdx - pageStart;
+        if (localSentenceIdx < 0 || localSentenceIdx >= count) {
+          return;
+        }
+        if (pageIdx !== reader.current_page) {
+          await onSetPage(pageIdx);
+        }
+        await onSentenceClick(localSentenceIdx);
+        return;
+      }
+      pageStart = pageEnd;
+    }
+  }, [onSentenceClick, onSetPage, reader.current_page, reader.page_sentence_counts]);
+
+  const resolveHtmlGlobalSentenceIdxFromTarget = useCallback((target: HTMLElement): number | null => {
+    const sentenceElement = target.closest("[data-ll-html-sentence]");
+    if (sentenceElement) {
+      const raw = sentenceElement.getAttribute("data-ll-html-sentence");
+      const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    const anchorElement = target.closest("[data-ll-html-anchor]");
+    if (!anchorElement) {
+      return null;
+    }
+    let bestSentenceIdx: number | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    const currentGlobalIdx =
+      reader.stats.sentences_read_up_to_page_start + (reader.highlighted_sentence_idx ?? 0);
+    for (const [sentenceIdx, element] of prettyAnchorElementsRef.current.html.entries()) {
+      if (element !== anchorElement) {
+        continue;
+      }
+      const distance = Math.abs(sentenceIdx - currentGlobalIdx);
+      if (distance < bestDistance) {
+        bestSentenceIdx = sentenceIdx;
+        bestDistance = distance;
+      }
+    }
+    return bestSentenceIdx;
+  }, [
+    prettyAnchorElementsRef,
+    reader.highlighted_sentence_idx,
+    reader.stats.sentences_read_up_to_page_start
+  ]);
 
   const handlePrettyContentClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;
@@ -181,6 +240,35 @@ export function useReaderHighlightSync({
     });
     return () => cancelAnimationFrame(frame);
   }, [applyPrettyHighlight, nativeHtmlLoadVersion, reader.current_page]);
+
+  useEffect(() => {
+    if (!hasPrettyHtml) {
+      return;
+    }
+    const doc = nativeHtmlFrameRef.current?.contentDocument;
+    if (!doc) {
+      return;
+    }
+    const handleDblClick = (event: globalThis.MouseEvent): void => {
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        return;
+      }
+      if (target.closest("a")) {
+        return;
+      }
+      const globalSentenceIdx = resolveHtmlGlobalSentenceIdxFromTarget(target);
+      if (globalSentenceIdx === null || globalSentenceIdx === undefined) {
+        return;
+      }
+      event.preventDefault();
+      void jumpToGlobalSentence(globalSentenceIdx);
+    };
+    doc.addEventListener("dblclick", handleDblClick);
+    return () => {
+      doc.removeEventListener("dblclick", handleDblClick);
+    };
+  }, [hasPrettyHtml, jumpToGlobalSentence, nativeHtmlLoadVersion, resolveHtmlGlobalSentenceIdxFromTarget]);
 
   return {
     handlePrettyContentClick,

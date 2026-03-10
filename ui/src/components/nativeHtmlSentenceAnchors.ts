@@ -11,6 +11,12 @@ interface SentenceRange {
   start: number;
 }
 
+interface SentenceMatchCandidate {
+  end: number;
+  score: number;
+  start: number;
+}
+
 const STRUCTURAL_BOUNDARY_TAGS = new Set([
   "article",
   "aside",
@@ -228,6 +234,87 @@ function normalizeSentence(value: string): string {
     .trim();
 }
 
+function buildTokenFragments(
+  normalizedSentence: string,
+  fromEnd = false
+): string[] {
+  const tokens = normalizedSentence.split(/\s+/).filter(Boolean);
+  const fragments: string[] = [];
+  for (const tokenCount of [8, 6, 5, 4, 3]) {
+    if (tokens.length < tokenCount) {
+      continue;
+    }
+    const fragmentTokens = fromEnd ? tokens.slice(-tokenCount) : tokens.slice(0, tokenCount);
+    const fragment = fragmentTokens.join(" ").trim();
+    if (fragment.length >= 12 && !fragments.includes(fragment)) {
+      fragments.push(fragment);
+    }
+  }
+  if (fragments.length === 0 && normalizedSentence.length >= 12) {
+    fragments.push(normalizedSentence);
+  }
+  return fragments;
+}
+
+function findApproximateSentenceRange(
+  normalizedText: string,
+  normalizedSentence: string,
+  cursor: number
+): SentenceRange | null {
+  if (!normalizedSentence) {
+    return null;
+  }
+  const prefixFragments = buildTokenFragments(normalizedSentence);
+  const suffixFragments = buildTokenFragments(normalizedSentence, true);
+  const searchStart = Math.max(0, cursor - 48);
+  const searchEnd = Math.min(
+    normalizedText.length,
+    Math.max(cursor + Math.max(normalizedSentence.length * 8, 2048), searchStart + normalizedSentence.length)
+  );
+  let best: SentenceMatchCandidate | null = null;
+
+  for (const prefix of prefixFragments) {
+    if (!prefix) {
+      continue;
+    }
+    let hits = 0;
+    let start = normalizedText.indexOf(prefix, searchStart);
+    while (start >= 0 && start < searchEnd && hits < 12) {
+      hits += 1;
+      const estimatedEnd = Math.min(normalizedText.length, start + normalizedSentence.length);
+      let end = estimatedEnd;
+      let score = prefix.length / normalizedSentence.length;
+      for (const suffix of suffixFragments) {
+        if (!suffix) {
+          continue;
+        }
+        const suffixWindowStart = Math.max(start, estimatedEnd - Math.max(48, suffix.length * 2));
+        const suffixWindowEnd = Math.min(searchEnd, estimatedEnd + Math.max(96, suffix.length * 3));
+        const suffixIdx = normalizedText.indexOf(suffix, suffixWindowStart);
+        if (suffixIdx >= 0 && suffixIdx < suffixWindowEnd) {
+          end = suffixIdx + suffix.length;
+          score += suffix.length / normalizedSentence.length;
+          break;
+        }
+      }
+      const distancePenalty = Math.abs(start - cursor) / Math.max(normalizedSentence.length * 2, 160);
+      const candidateScore = score - distancePenalty;
+      if (!best || candidateScore > best.score) {
+        best = { start, end, score: candidateScore };
+      }
+      start = normalizedText.indexOf(prefix, start + 1);
+    }
+  }
+
+  if (!best || best.score < 0.45) {
+    return null;
+  }
+  return {
+    start: best.start,
+    end: Math.max(best.start + 1, best.end)
+  };
+}
+
 function locateSentenceRanges(
   normalizedText: string,
   sentences: string[]
@@ -244,6 +331,11 @@ function locateSentenceRanges(
       start = normalizedText.indexOf(normalizedSentence, Math.max(0, cursor - 16));
     }
     if (start < 0) {
+      const approximate = findApproximateSentenceRange(normalizedText, normalizedSentence, cursor);
+      if (approximate) {
+        ranges.set(idx, approximate);
+        cursor = approximate.end;
+      }
       continue;
     }
     const end = start + normalizedSentence.length;

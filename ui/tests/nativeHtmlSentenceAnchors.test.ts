@@ -73,4 +73,32 @@ describe("nativeHtmlSentenceAnchors", () => {
       "Sentence after image"
     );
   });
+
+  it("tolerates minor canonical-vs-dom drift at heading and image boundaries", () => {
+    const doc = document.implementation.createHTMLDocument("");
+    doc.body.innerHTML = `
+      <article>
+        <h2><span>Chapter One</span></h2>
+        <p>First sentence after heading now begins. Second sentence stays stable.</p>
+        <figure><img src="cover.jpg" alt="cover"></figure>
+        <p>Sentence after image now resumes here. Final sentence stays stable.</p>
+      </article>
+    `;
+
+    const result = annotateNativeHtmlSentences(doc, [
+      "Chapter One",
+      "First sentence after heading begins.",
+      "Second sentence stays stable.",
+      "Sentence after image resumes here.",
+      "Final sentence stays stable."
+    ]);
+
+    expect(result.diagnostics.matchedSentences).toBe(5);
+    expect(result.sentenceAnchors.get(1)?.map((node) => node.textContent).join("")).toContain(
+      "First sentence after heading"
+    );
+    expect(result.sentenceAnchors.get(3)?.map((node) => node.textContent).join("")).toContain(
+      "Sentence after image"
+    );
+  });
 });

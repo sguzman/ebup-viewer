@@ -246,6 +246,8 @@ export const ReaderShell = memo(function ReaderShell({
     useReaderHighlightSync({
       hasPrettyHtml,
       hasPrettyMarkdown,
+      onSentenceClick,
+      onSetPage,
       reader,
       renderedMarkdownHtml,
       renderedNativeHtml,

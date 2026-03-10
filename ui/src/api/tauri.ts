@@ -308,6 +308,7 @@ const mockReaderSnapshot = (): ReaderSnapshot => ({
   page_text: MOCK_PAGES[0].text,
   sentences: MOCK_PAGES[0].sentences,
   canonical_sentences: MOCK_PAGES.flatMap((page) => page.sentences),
+  page_sentence_counts: MOCK_PAGES.map((page) => page.sentences.length),
   sentence_anchor_map: [0],
   highlighted_sentence_idx: 0,
   search_query: "",

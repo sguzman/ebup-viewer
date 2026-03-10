@@ -161,6 +161,34 @@ describe("renderNativePrettyHtml", () => {
     expect(out).toContain('src="asset:/cache/browser-tabs/assets/cover.jpg"');
   });
 
+  it("rewrites bundle-local hashed browser-tab asset filenames to persisted asset urls", () => {
+    const html = `
+      <div data-ll-base-url="https://academic.oup.com/hwj/article/93/1/47/6568867?login=false">
+        <img src="assets/m_dbac012f1-d4ba9f2ea0f81320826b0d514267fa4397eb1a9157936f2d13db15df6b44abf6.jpeg" alt="Figure"/>
+        <img src="assets/oxford-academic-logo-7c17c26c68c8522bdb293890feea3db773b0e87ac71622189149dc358273d3f2.svg" alt="Logo"/>
+      </div>
+    `;
+    const out = renderPrettyNativeHtmlDocument(html, [
+      {
+        rawPath:
+          "https://oup.silverchair-cdn.com/oup/backfile/Content_public/Journal/hwj/93/1/10.1093_hwj_dbac012/1/m_dbac012f1.jpeg?Expires=1775776186&Signature=test",
+        src:
+          "asset:/cache/browser-tabs/assets/m_dbac012f1-d4ba9f2ea0f81320826b0d514267fa4397eb1a9157936f2d13db15df6b44abf6.jpeg",
+      },
+      {
+        rawPath: "https://oup.silverchair-cdn.com/UI/app/svg/umbrella/oxford-academic-logo.svg",
+        src:
+          "asset:/cache/browser-tabs/assets/oxford-academic-logo-7c17c26c68c8522bdb293890feea3db773b0e87ac71622189149dc358273d3f2.svg",
+      },
+    ]);
+    expect(out).toContain(
+      'src="asset:/cache/browser-tabs/assets/m_dbac012f1-d4ba9f2ea0f81320826b0d514267fa4397eb1a9157936f2d13db15df6b44abf6.jpeg"',
+    );
+    expect(out).toContain(
+      'src="asset:/cache/browser-tabs/assets/oxford-academic-logo-7c17c26c68c8522bdb293890feea3db773b0e87ac71622189149dc358273d3f2.svg"',
+    );
+  });
+
   it("preserves full browser-tab documents instead of extracting a focused subtree", () => {
     const html = `
       <div data-ll-base-url="https://en.wikipedia.org/wiki/Example" data-ll-browser-tab="1">

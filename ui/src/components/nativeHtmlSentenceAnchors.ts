@@ -17,6 +17,11 @@ interface SentenceMatchCandidate {
   start: number;
 }
 
+interface SafeTextBoundary {
+  node: Text;
+  offset: number;
+}
+
 const STRUCTURAL_BOUNDARY_TAGS = new Set([
   "article",
   "aside",
@@ -425,15 +430,36 @@ function wrapTextRange(
   end: NormalizedCharPosition,
   sentenceIdx: number
 ): HTMLElement[] {
+  const clampBoundary = (position: NormalizedCharPosition, inclusiveEnd: boolean): SafeTextBoundary | null => {
+    const node = position.node;
+    if (!node.isConnected) {
+      return null;
+    }
+    const maxOffset = node.data.length;
+    const rawOffset = inclusiveEnd ? position.offset + position.length : position.offset;
+    return {
+      node,
+      offset: Math.max(0, Math.min(maxOffset, rawOffset))
+    };
+  };
+
   const wrapped: HTMLElement[] = [];
-  if (start.node === end.node) {
-    let node = start.node;
-    const segmentEnd = end.offset + end.length;
+  const safeStart = clampBoundary(start, false);
+  const safeEnd = clampBoundary(end, true);
+  if (!safeStart || !safeEnd) {
+    return wrapped;
+  }
+  if (
+    safeStart.node === safeEnd.node
+    && safeStart.offset <= safeEnd.offset
+  ) {
+    let node = safeStart.node;
+    const segmentEnd = safeEnd.offset;
     if (segmentEnd < node.data.length) {
       node.splitText(segmentEnd);
     }
-    if (start.offset > 0) {
-      node = node.splitText(start.offset);
+    if (safeStart.offset > 0) {
+      node = node.splitText(safeStart.offset);
     }
     if (!(node.data ?? "").trim()) {
       return wrapped;
@@ -447,8 +473,12 @@ function wrapTextRange(
     return wrapped;
   }
   const range = doc.createRange();
-  range.setStart(start.node, start.offset);
-  range.setEnd(end.node, end.offset + end.length);
+  try {
+    range.setStart(safeStart.node, safeStart.offset);
+    range.setEnd(safeEnd.node, safeEnd.offset);
+  } catch {
+    return wrapped;
+  }
   const textNodes: Text[] = [];
   const walker = doc.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
@@ -475,11 +505,11 @@ function wrapTextRange(
     let node = originalNode;
     let segmentStart = 0;
     let segmentEnd = node.data.length;
-    if (node === start.node) {
-      segmentStart = start.offset;
+    if (node === safeStart.node) {
+      segmentStart = Math.max(0, Math.min(node.data.length, safeStart.offset));
     }
-    if (node === end.node) {
-      segmentEnd = end.offset + end.length;
+    if (node === safeEnd.node) {
+      segmentEnd = Math.max(0, Math.min(node.data.length, safeEnd.offset));
     }
     if (segmentStart >= segmentEnd) {
       continue;

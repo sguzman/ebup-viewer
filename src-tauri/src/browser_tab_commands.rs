@@ -14,54 +14,6 @@ async fn lookup_browser_tab_metadata(
         .and_then(|tabs| tabs.into_iter().find(|tab| tab.id == tab_id))
 }
 
-async fn wait_for_import_bundle_completion(
-    client: &browser_tabs::BrowsrClient,
-    started_job: browser_tabs::BrowsrImportBundleJob,
-) -> Result<browser_tabs::BrowsrImportBundleJob, BridgeError> {
-    let mut last_status = started_job;
-    for attempt in 0..120_u32 {
-        if matches!(
-            last_status.status.as_str(),
-            "completed" | "failed" | "cancelled"
-        ) {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        last_status = client
-            .get_import_bundle_status(&last_status.job_id)
-            .await
-            .map_err(|err| bridge_error("browsr_import_bundle_failed", err.to_string()))?;
-        info!(
-            job_id = %last_status.job_id,
-            tab_id = last_status.tab_id,
-            attempt,
-            status = %last_status.status,
-            "Polled browsr import bundle status"
-        );
-    }
-
-    match last_status.status.as_str() {
-        "completed" => Ok(last_status),
-        "failed" | "cancelled" => {
-            let message = last_status
-                .error
-                .as_ref()
-                .and_then(|value| value.message.clone())
-                .unwrap_or_else(|| {
-                    format!(
-                        "bundle import {} for tab {}",
-                        last_status.status, last_status.tab_id
-                    )
-                });
-            Err(bridge_error("browsr_import_bundle_failed", message))
-        }
-        other => Err(bridge_error(
-            "browsr_import_bundle_timeout",
-            format!("Browser bundle import did not finish before timeout; last status was {other}"),
-        )),
-    }
-}
-
 #[tauri::command]
 pub(crate) async fn browser_tabs_health(
     state: State<'_, Mutex<BackendState>>,
@@ -195,21 +147,48 @@ pub(crate) async fn source_open_browser_tab_bundle(
     }
     let client = browsr_client_from_config(&cfg)?;
     let tab_meta = lookup_browser_tab_metadata(&client, tab_id, window_id, false).await;
-    let started_job = client
-        .start_import_bundle(tab_id)
+    let waited = client
+        .start_import_bundle_and_wait(tab_id)
         .await
         .map_err(|err| bridge_error("browsr_import_bundle_failed", err.to_string()))?;
+    let completed_job = waited.result.job;
     info!(
-        job_id = %started_job.job_id,
+        job_id = %completed_job.job_id,
         tab_id,
         window_id,
-        "Started browser-tab bundle import"
+        status = %completed_job.status,
+        "Completed browser-tab bundle import wait request"
     );
-    let completed_job = wait_for_import_bundle_completion(&client, started_job).await?;
-    let manifest = client
-        .get_import_bundle_manifest(&completed_job.job_id)
-        .await
-        .map_err(|err| bridge_error("browsr_import_bundle_failed", err.to_string()))?;
+    let manifest = match completed_job.status.as_str() {
+        "completed" => waited.result.manifest.ok_or_else(|| {
+            bridge_error(
+                "browsr_import_bundle_failed",
+                format!(
+                    "Import bundle {} completed without an attached manifest",
+                    completed_job.job_id
+                ),
+            )
+        })?,
+        "failed" | "cancelled" => {
+            let message = completed_job
+                .error
+                .as_ref()
+                .and_then(|value| value.message.clone())
+                .unwrap_or_else(|| {
+                    format!(
+                        "bundle import {} for tab {}",
+                        completed_job.status, completed_job.tab_id
+                    )
+                });
+            return Err(bridge_error("browsr_import_bundle_failed", message));
+        }
+        other => {
+            return Err(bridge_error(
+                "browsr_import_bundle_failed",
+                format!("Unexpected terminal import bundle status: {other}"),
+            ));
+        }
+    };
     let document = manifest.bundle.document.as_ref().ok_or_else(|| {
         bridge_error(
             "browsr_import_bundle_failed",

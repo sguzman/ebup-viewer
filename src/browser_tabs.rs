@@ -110,6 +110,21 @@ pub struct BrowsrImportBundleManifestResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BrowsrImportBundleWaitResult {
+    pub job: BrowsrImportBundleJob,
+    #[serde(default)]
+    pub manifest: Option<BrowsrImportBundleManifestResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowsrImportBundleWaitResponse {
+    pub started: BrowsrImportBundleJob,
+    pub result: BrowsrImportBundleWaitResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BrowsrImportBundleManifest {
     pub tab: BrowsrImportBundleTab,
     pub document: Option<BrowsrImportBundleDocument>,
@@ -368,11 +383,17 @@ impl BrowsrClient {
         Ok(())
     }
 
-    pub async fn start_import_bundle(&self, tab_id: u64) -> Result<BrowsrImportBundleJob> {
+    pub async fn start_import_bundle_and_wait(
+        &self,
+        tab_id: u64,
+    ) -> Result<BrowsrImportBundleWaitResponse> {
         let started = std::time::Instant::now();
         let response = self
             .client
-            .post(format!("{}/v1/tabs/{tab_id}/import-bundles", self.base_url))
+            .post(format!(
+                "{}/v1/tabs/{tab_id}/import-bundles/wait",
+                self.base_url
+            ))
             .header(CONTENT_TYPE, "application/json")
             .body(
                 serde_json::json!({
@@ -385,42 +406,28 @@ impl BrowsrClient {
                     "wait_for_network_idle_ms": 1500,
                     "settle_timeout_ms": 30_000,
                     "max_asset_bytes": 5_000_000,
-                    "max_total_bytes": 75_000_000
+                    "max_total_bytes": 75_000_000,
+                    "wait_timeout_ms": 120_000,
+                    "poll_interval_ms": 500,
+                    "include_manifest": true
                 })
                 .to_string(),
             )
             .send()
             .await
-            .with_context(|| format!("failed to start browsr import bundle for tab {tab_id}"))?;
-        let job = parse_json_response::<BrowsrImportBundleJob>(response).await?;
+            .with_context(|| {
+                format!("failed to start/wait browsr import bundle for tab {tab_id}")
+            })?;
+        let waited = parse_json_response::<BrowsrImportBundleWaitResponse>(response).await?;
         info!(
             base_url = %self.base_url,
             tab_id,
-            job_id = %job.job_id,
-            status = %job.status,
+            job_id = %waited.result.job.job_id,
+            status = %waited.result.job.status,
             elapsed_ms = started.elapsed().as_millis(),
-            "Browsr import bundle started"
+            "Browsr import bundle start/wait completed"
         );
-        Ok(job)
-    }
-
-    pub async fn get_import_bundle_status(&self, job_id: &str) -> Result<BrowsrImportBundleJob> {
-        let started = std::time::Instant::now();
-        let response = self
-            .client
-            .get(format!("{}/v1/import-bundles/{job_id}", self.base_url))
-            .send()
-            .await
-            .with_context(|| format!("failed to get browsr import bundle status for {job_id}"))?;
-        let job = parse_json_response::<BrowsrImportBundleJob>(response).await?;
-        debug!(
-            base_url = %self.base_url,
-            job_id,
-            status = %job.status,
-            elapsed_ms = started.elapsed().as_millis(),
-            "Browsr import bundle status fetched"
-        );
-        Ok(job)
+        Ok(waited)
     }
 
     pub async fn get_import_bundle_manifest(

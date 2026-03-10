@@ -29,6 +29,14 @@ export interface ReaderHighlightSyncState {
   handleNativeHtmlFrameLoad: () => void;
   jumpToHighlightedSentence: () => void;
   nativeHtmlFrameRef: MutableRefObject<HTMLIFrameElement | null>;
+  prettyHtmlContextMenu: {
+    open: boolean;
+    x: number;
+    y: number;
+    canJump: boolean;
+  };
+  closePrettyHtmlContextMenu: () => void;
+  jumpToPrettyHtmlContextTarget: () => Promise<void>;
 }
 
 export function useReaderHighlightSync({
@@ -45,7 +53,14 @@ export function useReaderHighlightSync({
   const nativeHtmlFrameRef = useRef<HTMLIFrameElement | null>(null);
   const prettyHighlightedNodeRef = useRef<HTMLElement | null>(null);
   const prettyHighlightedHtmlNodesRef = useRef<HTMLElement[]>([]);
+  const contextTargetSentenceIdxRef = useRef<number | null>(null);
   const [nativeHtmlLoadVersion, setNativeHtmlLoadVersion] = useState(0);
+  const [prettyHtmlContextMenu, setPrettyHtmlContextMenu] = useState({
+    open: false,
+    x: 0,
+    y: 0,
+    canJump: false
+  });
   const { prettyAnchorElementsRef, resolvePrettyAnchorIdx } = useHtmlSentenceAnchorMap({
     hasPrettyHtml,
     hasPrettyMarkdown,
@@ -170,6 +185,24 @@ export function useReaderHighlightSync({
     setNativeHtmlLoadVersion((current) => current + 1);
   }, []);
 
+  const closePrettyHtmlContextMenu = useCallback(() => {
+    contextTargetSentenceIdxRef.current = null;
+    setPrettyHtmlContextMenu((current) => (
+      current.open
+        ? { ...current, open: false, canJump: false }
+        : current
+    ));
+  }, []);
+
+  const jumpToPrettyHtmlContextTarget = useCallback(async (): Promise<void> => {
+    const sentenceIdx = contextTargetSentenceIdxRef.current;
+    closePrettyHtmlContextMenu();
+    if (sentenceIdx === null || sentenceIdx === undefined) {
+      return;
+    }
+    await jumpToGlobalSentence(sentenceIdx);
+  }, [closePrettyHtmlContextMenu, jumpToGlobalSentence]);
+
   const applyPrettyHighlight = useCallback((): boolean => {
     if (reader.text_only_mode) {
       if (prettyHighlightedHtmlNodesRef.current.length > 0) {
@@ -246,34 +279,54 @@ export function useReaderHighlightSync({
       return;
     }
     const doc = nativeHtmlFrameRef.current?.contentDocument;
+    const frame = nativeHtmlFrameRef.current;
     if (!doc) {
       return;
     }
-    const handleDblClick = (event: globalThis.MouseEvent): void => {
+    const handleContextMenu = (event: globalThis.MouseEvent): void => {
       const target = event.target as HTMLElement | null;
       if (!target) {
         return;
       }
-      if (target.closest("a")) {
-        return;
-      }
       const globalSentenceIdx = resolveHtmlGlobalSentenceIdxFromTarget(target);
-      if (globalSentenceIdx === null || globalSentenceIdx === undefined) {
-        return;
-      }
       event.preventDefault();
-      void jumpToGlobalSentence(globalSentenceIdx);
+      const frameRect = frame?.getBoundingClientRect();
+      const offsetX = frameRect ? frameRect.left : 0;
+      const offsetY = frameRect ? frameRect.top : 0;
+      contextTargetSentenceIdxRef.current = globalSentenceIdx;
+      setPrettyHtmlContextMenu({
+        open: true,
+        x: Math.round(offsetX + event.clientX),
+        y: Math.round(offsetY + event.clientY),
+        canJump: globalSentenceIdx !== null && globalSentenceIdx !== undefined
+      });
     };
-    doc.addEventListener("dblclick", handleDblClick);
+    const handlePointerDown = (): void => {
+      if (prettyHtmlContextMenu.open) {
+        closePrettyHtmlContextMenu();
+      }
+    };
+    doc.addEventListener("contextmenu", handleContextMenu);
+    doc.addEventListener("pointerdown", handlePointerDown);
     return () => {
-      doc.removeEventListener("dblclick", handleDblClick);
+      doc.removeEventListener("contextmenu", handleContextMenu);
+      doc.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [hasPrettyHtml, jumpToGlobalSentence, nativeHtmlLoadVersion, resolveHtmlGlobalSentenceIdxFromTarget]);
+  }, [
+    closePrettyHtmlContextMenu,
+    hasPrettyHtml,
+    nativeHtmlLoadVersion,
+    prettyHtmlContextMenu.open,
+    resolveHtmlGlobalSentenceIdxFromTarget
+  ]);
 
   return {
+    closePrettyHtmlContextMenu,
     handlePrettyContentClick,
     handleNativeHtmlFrameLoad,
     jumpToHighlightedSentence,
-    nativeHtmlFrameRef
+    jumpToPrettyHtmlContextTarget,
+    nativeHtmlFrameRef,
+    prettyHtmlContextMenu
   };
 }

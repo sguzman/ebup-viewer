@@ -2,6 +2,8 @@ import {
   Card,
   CardContent,
   Divider,
+  Menu,
+  MenuItem,
   Stack,
   Typography,
 } from "@mui/material";
@@ -238,10 +240,13 @@ export const ReaderShell = memo(function ReaderShell({
     readerImageCandidates
   ]);
   const {
+    closePrettyHtmlContextMenu,
     handleNativeHtmlFrameLoad,
     handlePrettyContentClick,
     jumpToHighlightedSentence: jumpToHighlightedSentenceBase,
-    nativeHtmlFrameRef
+    jumpToPrettyHtmlContextTarget,
+    nativeHtmlFrameRef,
+    prettyHtmlContextMenu
   } =
     useReaderHighlightSync({
       hasPrettyHtml,
@@ -419,6 +424,23 @@ export const ReaderShell = memo(function ReaderShell({
           </Stack>
         </Stack>
       </CardContent>
+      <Menu
+        open={prettyHtmlContextMenu.open}
+        onClose={closePrettyHtmlContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          prettyHtmlContextMenu.open
+            ? { top: prettyHtmlContextMenu.y, left: prettyHtmlContextMenu.x }
+            : undefined
+        }
+      >
+        <MenuItem
+          onClick={() => void jumpToPrettyHtmlContextTarget()}
+          disabled={!prettyHtmlContextMenu.canJump}
+        >
+          Jump to here
+        </MenuItem>
+      </Menu>
     </Card>
   );
 });

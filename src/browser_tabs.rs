@@ -1,9 +1,10 @@
 use anyhow::{Context, Result, anyhow};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -78,6 +79,145 @@ pub struct BrowserTabSnapshot {
     pub selection: Option<String>,
     #[serde(default)]
     pub truncation: SnapshotTruncation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowsrImportBundleJob {
+    pub job_id: String,
+    pub tab_id: u64,
+    pub status: String,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub error: Option<BrowsrImportBundleError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowsrImportBundleError {
+    pub code: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowsrImportBundleManifestResponse {
+    pub job_id: String,
+    pub tab_id: u64,
+    pub status: String,
+    pub bundle: BrowsrImportBundleManifest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowsrImportBundleManifest {
+    pub tab: BrowsrImportBundleTab,
+    pub document: Option<BrowsrImportBundleDocument>,
+    #[serde(default)]
+    pub capture: Option<Value>,
+    #[serde(default)]
+    pub screenshot: Option<Value>,
+    #[serde(default)]
+    pub assets: Vec<BrowsrImportBundleAssetRef>,
+    #[serde(default)]
+    pub export: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowsrImportBundleTab {
+    pub id: u64,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowsrImportBundleDocument {
+    #[serde(default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub html: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub selection: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowsrImportBundleAssetRef {
+    pub asset_id: String,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub document_url: Option<String>,
+    #[serde(default)]
+    pub resource_type: Option<String>,
+    #[serde(default)]
+    pub mime_type: Option<String>,
+    #[serde(default)]
+    pub status: Option<u16>,
+    #[serde(default)]
+    pub asset_ordinal: Option<u32>,
+    #[serde(default)]
+    pub served_from_cache: Option<bool>,
+    #[serde(default)]
+    pub from_disk_cache: Option<bool>,
+    #[serde(default)]
+    pub from_service_worker: Option<bool>,
+    #[serde(default)]
+    pub base64_encoded: Option<bool>,
+    #[serde(default)]
+    pub bytes: Option<usize>,
+    #[serde(default)]
+    pub headers: Option<Value>,
+    #[serde(default)]
+    pub body_available: bool,
+    #[serde(default)]
+    pub error_code: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BrowserTabBundleAssetPayload {
+    pub asset_id: String,
+    pub url: String,
+    pub mime_type: Option<String>,
+    pub resource_type: Option<String>,
+    pub body: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BrowserTabBundleCapture {
+    pub tab_id: u64,
+    pub title: String,
+    pub url: String,
+    pub captured_at: Option<String>,
+    pub html: String,
+    pub text: Option<String>,
+    pub selection: Option<String>,
+    pub assets: Vec<BrowserTabBundleAssetPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowsrImportBundleAssetResponse {
+    pub job_id: String,
+    #[serde(default)]
+    pub asset_id: Option<String>,
+    #[serde(default)]
+    pub asset: Option<BrowsrImportBundleAssetRef>,
+    #[serde(default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub base64_encoded: bool,
+    pub body: String,
 }
 
 #[derive(Debug, Clone)]
@@ -227,6 +367,145 @@ impl BrowsrClient {
         );
         Ok(())
     }
+
+    pub async fn start_import_bundle(&self, tab_id: u64) -> Result<BrowsrImportBundleJob> {
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .post(format!("{}/v1/tabs/{tab_id}/import-bundles", self.base_url))
+            .header(CONTENT_TYPE, "application/json")
+            .body(
+                serde_json::json!({
+                    "reload": true,
+                    "capture_html": true,
+                    "capture_assets": true,
+                    "capture_text": true,
+                    "capture_selection": true,
+                    "capture_screenshot": false,
+                    "wait_for_network_idle_ms": 1500,
+                    "settle_timeout_ms": 30_000,
+                    "max_asset_bytes": 5_000_000,
+                    "max_total_bytes": 75_000_000
+                })
+                .to_string(),
+            )
+            .send()
+            .await
+            .with_context(|| format!("failed to start browsr import bundle for tab {tab_id}"))?;
+        let job = parse_json_response::<BrowsrImportBundleJob>(response).await?;
+        info!(
+            base_url = %self.base_url,
+            tab_id,
+            job_id = %job.job_id,
+            status = %job.status,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr import bundle started"
+        );
+        Ok(job)
+    }
+
+    pub async fn get_import_bundle_status(&self, job_id: &str) -> Result<BrowsrImportBundleJob> {
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .get(format!("{}/v1/import-bundles/{job_id}", self.base_url))
+            .send()
+            .await
+            .with_context(|| format!("failed to get browsr import bundle status for {job_id}"))?;
+        let job = parse_json_response::<BrowsrImportBundleJob>(response).await?;
+        debug!(
+            base_url = %self.base_url,
+            job_id,
+            status = %job.status,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr import bundle status fetched"
+        );
+        Ok(job)
+    }
+
+    pub async fn get_import_bundle_manifest(
+        &self,
+        job_id: &str,
+    ) -> Result<BrowsrImportBundleManifestResponse> {
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .get(format!(
+                "{}/v1/import-bundles/{job_id}/manifest",
+                self.base_url
+            ))
+            .send()
+            .await
+            .with_context(|| format!("failed to get browsr import bundle manifest for {job_id}"))?;
+        let manifest = parse_json_response::<BrowsrImportBundleManifestResponse>(response).await?;
+        info!(
+            base_url = %self.base_url,
+            job_id,
+            asset_count = manifest.bundle.assets.len(),
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr import bundle manifest fetched"
+        );
+        Ok(manifest)
+    }
+
+    pub async fn get_import_bundle_asset(
+        &self,
+        job_id: &str,
+        asset_id: &str,
+    ) -> Result<BrowserTabBundleAssetPayload> {
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .get(format!(
+                "{}/v1/import-bundles/{job_id}/assets/{asset_id}",
+                self.base_url
+            ))
+            .send()
+            .await
+            .with_context(|| {
+                format!("failed to get browsr import bundle asset {asset_id} for {job_id}")
+            })?;
+        let payload = parse_json_response::<BrowsrImportBundleAssetResponse>(response).await?;
+        let asset_ref = payload.asset.clone();
+        let url = asset_ref
+            .as_ref()
+            .map(|value| value.url.clone())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_default();
+        let mime_type = payload
+            .content_type
+            .clone()
+            .or_else(|| asset_ref.as_ref().and_then(|value| value.mime_type.clone()));
+        let resource_type = asset_ref
+            .as_ref()
+            .and_then(|value| value.resource_type.clone());
+        let body = decode_bundle_asset_body(&payload)?;
+        debug!(
+            base_url = %self.base_url,
+            job_id,
+            asset_id,
+            bytes = body.len(),
+            content_type = ?mime_type,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr import bundle asset fetched"
+        );
+        Ok(BrowserTabBundleAssetPayload {
+            asset_id: asset_id.to_string(),
+            url,
+            mime_type,
+            resource_type,
+            body,
+        })
+    }
+}
+
+fn decode_bundle_asset_body(payload: &BrowsrImportBundleAssetResponse) -> Result<Vec<u8>> {
+    if payload.base64_encoded {
+        return BASE64_STANDARD
+            .decode(payload.body.as_bytes())
+            .context("failed to decode browsr import bundle asset body");
+    }
+    Ok(payload.body.as_bytes().to_vec())
 }
 
 async fn parse_json_response<T: for<'de> Deserialize<'de>>(

@@ -374,6 +374,7 @@ export function useStarterActionState() {
       openSourcePath: state.openSourcePath,
       openClipboardText: state.openClipboardText,
       openBrowserTab: state.openBrowserTab,
+      openBrowserTabBundle: state.openBrowserTabBundle,
       deleteRecent: state.deleteRecent,
       closeRecentBrowserTab: state.closeRecentBrowserTab,
       refreshRecents: state.refreshRecents,

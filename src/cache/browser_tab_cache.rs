@@ -3,7 +3,7 @@ use super::{
     BROWSER_TAB_MANIFEST_FILE, BROWSER_TAB_MANIFEST_VERSION, BROWSER_TAB_RAW_HTML_FILE,
     BROWSER_TAB_TEXT_FILE, BROWSER_TABS_SUBDIR, cache_root,
 };
-use crate::browser_tabs::{BrowserTab, BrowserTabSnapshot};
+use crate::browser_tabs::{BrowserTab, BrowserTabBundleCapture, BrowserTabSnapshot};
 use anyhow::Result as AnyhowResult;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -48,6 +48,14 @@ static RE_STYLE_BLOCK: Lazy<Regex> = Lazy::new(|| {
 });
 static RE_CSS_URL: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"(?is)url\(([^)]+)\)"#).expect("valid css url regex"));
+static RE_GENERIC_URL_ATTR: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?is)\b(src|href|poster)\s*=\s*["']([^"']+)["']"#)
+        .expect("valid browser tab url attr regex")
+});
+static RE_GENERIC_SRCSET_ATTR: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?is)\bsrcset\s*=\s*["']([^"']+)["']"#)
+        .expect("valid browser tab srcset attr regex")
+});
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BrowserTabSourceManifest {
@@ -166,6 +174,133 @@ pub fn persist_browser_tab_source(
     );
 
     Ok(manifest_path)
+}
+
+pub fn persist_browser_tab_bundle_source(
+    bundle: &BrowserTabBundleCapture,
+    tab: Option<&BrowserTab>,
+) -> std::result::Result<PathBuf, String> {
+    let stable_key = bundle.tab_id.to_string();
+    let mut hasher = Sha256::new();
+    hasher.update(stable_key.as_bytes());
+    let digest = format!("{:x}", hasher.finalize());
+    let dir = cache_root().join(BROWSER_TABS_SUBDIR).join(&digest);
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+
+    let html_path = dir.join(BROWSER_TAB_HTML_FILE);
+    let raw_html_path = dir.join(BROWSER_TAB_RAW_HTML_FILE);
+    let text_path = dir.join(BROWSER_TAB_TEXT_FILE);
+    let manifest_path = dir.join(BROWSER_TAB_MANIFEST_FILE);
+    let asset_dir = dir.join(BROWSER_TAB_ASSETS_SUBDIR);
+
+    let raw_html = bundle.html.trim().to_string();
+    let mut asset_entries = Vec::<PersistedBundleAsset>::new();
+    for asset in &bundle.assets {
+        if asset.url.trim().is_empty() || asset.body.is_empty() {
+            continue;
+        }
+        let output =
+            browser_tab_asset_output_path(&asset_dir, &asset.url, asset.mime_type.as_deref());
+        asset_entries.push(PersistedBundleAsset {
+            source_url: asset.url.clone(),
+            local_path: output,
+            kind: infer_bundle_asset_kind(asset),
+            mime_type: asset.mime_type.clone(),
+            body: asset.body.clone(),
+        });
+    }
+    let asset_lookup = asset_entries
+        .iter()
+        .map(|entry| {
+            (
+                entry.source_url.clone(),
+                BrowserTabAsset {
+                    raw_path: entry.source_url.clone(),
+                    local_path: entry.local_path.clone(),
+                    kind: entry.kind.clone(),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    fs::write(&raw_html_path, &raw_html).map_err(|err| err.to_string())?;
+
+    for entry in &asset_entries {
+        if let Some(parent) = entry.local_path.parent() {
+            fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        }
+        let bytes = if entry
+            .mime_type
+            .as_deref()
+            .map(browser_tab_is_stylesheet_content_type)
+            .unwrap_or(false)
+        {
+            let css = String::from_utf8_lossy(&entry.body);
+            rewrite_css_urls_to_local(&css, &entry.source_url, &entry.local_path, &asset_lookup)
+                .into_bytes()
+        } else {
+            entry.body.clone()
+        };
+        fs::write(&entry.local_path, bytes).map_err(|err| err.to_string())?;
+    }
+
+    let rewritten_html =
+        rewrite_browser_tab_bundle_html(&raw_html, bundle.url.trim(), &html_path, &asset_lookup);
+    let text = bundle
+        .text
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| browser_tab_text_from_html(&rewritten_html));
+    fs::write(&html_path, rewritten_html).map_err(|err| err.to_string())?;
+    fs::write(&text_path, text.as_bytes()).map_err(|err| err.to_string())?;
+
+    let manifest = BrowserTabSourceManifest {
+        manifest_version: BROWSER_TAB_MANIFEST_VERSION,
+        tab_id: bundle.tab_id,
+        window_id: tab.map(|value| value.window_id),
+        title: bundle.title.trim().to_string(),
+        url: bundle.url.trim().to_string(),
+        lang: None,
+        ready_state: Some("complete".to_string()),
+        captured_at: bundle.captured_at.clone(),
+        favicon_url: tab.and_then(|value| value.fav_icon_url.clone()),
+        active: tab.and_then(|value| value.active),
+        audible: tab.and_then(|value| value.audible),
+        pinned: tab.and_then(|value| value.pinned),
+        raw_html_path: Some(raw_html_path.clone()),
+        html_path: html_path.clone(),
+        text_path: text_path.clone(),
+        asset_dir: (!asset_lookup.is_empty()).then_some(asset_dir.clone()),
+        assets: asset_lookup.into_values().collect(),
+        html_truncated: false,
+        text_truncated: false,
+    };
+    let manifest_raw = toml::to_string(&manifest).map_err(|err| err.to_string())?;
+    fs::write(&manifest_path, manifest_raw).map_err(|err| err.to_string())?;
+
+    info!(
+        path = %manifest_path.display(),
+        tab_id = bundle.tab_id,
+        title = %bundle.title,
+        url = %bundle.url,
+        html_chars = raw_html.len(),
+        text_chars = text.len(),
+        asset_count = manifest.assets.len(),
+        "Persisted browser-tab bundle import"
+    );
+
+    Ok(manifest_path)
+}
+
+#[derive(Debug, Clone)]
+struct PersistedBundleAsset {
+    source_url: String,
+    local_path: PathBuf,
+    kind: String,
+    mime_type: Option<String>,
+    body: Vec<u8>,
 }
 
 #[derive(Debug, Default)]
@@ -603,6 +738,102 @@ fn rewrite_css_urls_for_import(
         .into_owned()
 }
 
+fn rewrite_browser_tab_bundle_html(
+    html: &str,
+    base_url: &str,
+    html_path: &Path,
+    asset_lookup: &HashMap<String, BrowserTabAsset>,
+) -> String {
+    let with_url_attrs = RE_GENERIC_URL_ATTR
+        .replace_all(html, |caps: &regex::Captures<'_>| {
+            let attr = caps.get(1).map(|value| value.as_str()).unwrap_or("src");
+            let raw = caps.get(2).map(|value| value.as_str()).unwrap_or_default();
+            let replacement =
+                resolve_bundle_asset_reference(raw, base_url, html_path, asset_lookup)
+                    .unwrap_or_else(|| raw.to_string());
+            format!(r#"{attr}="{replacement}""#)
+        })
+        .into_owned();
+    let with_srcset = RE_GENERIC_SRCSET_ATTR
+        .replace_all(&with_url_attrs, |caps: &regex::Captures<'_>| {
+            let raw = caps.get(1).map(|value| value.as_str()).unwrap_or_default();
+            format!(
+                r#"srcset="{}""#,
+                rewrite_srcset_to_local(raw, base_url, html_path, asset_lookup)
+            )
+        })
+        .into_owned();
+    let with_style_attrs = RE_STYLE_ATTR
+        .replace_all(&with_srcset, |caps: &regex::Captures<'_>| {
+            let css = caps.get(1).map(|value| value.as_str()).unwrap_or_default();
+            format!(
+                r#"style="{}""#,
+                rewrite_css_urls_to_local(css, base_url, html_path, asset_lookup)
+            )
+        })
+        .into_owned();
+    RE_STYLE_BLOCK
+        .replace_all(&with_style_attrs, |caps: &regex::Captures<'_>| {
+            let css = caps.get(1).map(|value| value.as_str()).unwrap_or_default();
+            let rewritten = rewrite_css_urls_to_local(css, base_url, html_path, asset_lookup);
+            format!("<style>{rewritten}</style>")
+        })
+        .into_owned()
+}
+
+fn rewrite_srcset_to_local(
+    raw: &str,
+    base_url: &str,
+    source_path: &Path,
+    asset_lookup: &HashMap<String, BrowserTabAsset>,
+) -> String {
+    raw.split(',')
+        .map(|part| {
+            let trimmed = part.trim();
+            let mut pieces = trimmed.split_whitespace();
+            let Some(candidate) = pieces.next() else {
+                return trimmed.to_string();
+            };
+            let rewritten =
+                resolve_bundle_asset_reference(candidate, base_url, source_path, asset_lookup)
+                    .unwrap_or_else(|| candidate.to_string());
+            let descriptor = pieces.collect::<Vec<_>>().join(" ");
+            if descriptor.is_empty() {
+                rewritten
+            } else {
+                format!("{rewritten} {descriptor}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn rewrite_css_urls_to_local(
+    css: &str,
+    base_url: &str,
+    source_path: &Path,
+    asset_lookup: &HashMap<String, BrowserTabAsset>,
+) -> String {
+    RE_CSS_URL
+        .replace_all(css, |caps: &regex::Captures<'_>| {
+            let raw = caps
+                .get(1)
+                .map(|value| value.as_str())
+                .unwrap_or_default()
+                .trim()
+                .trim_matches('\'')
+                .trim_matches('"');
+            if raw.is_empty() || raw.starts_with("data:") || raw.starts_with('#') {
+                return format!("url({raw})");
+            }
+            let rewritten =
+                resolve_bundle_asset_reference(raw, base_url, source_path, asset_lookup)
+                    .unwrap_or_else(|| raw.to_string());
+            format!("url(\"{rewritten}\")")
+        })
+        .into_owned()
+}
+
 fn fetch_stylesheet_text(
     client: &reqwest::blocking::Client,
     stylesheet_url: &str,
@@ -773,6 +1004,63 @@ fn browser_tab_extension_from_content_type(content_type: Option<&str>) -> Option
         "image/svg+xml" => Some("svg"),
         _ => None,
     }
+}
+
+fn browser_tab_is_stylesheet_content_type(content_type: &str) -> bool {
+    content_type
+        .split(';')
+        .next()
+        .map(|value| value.trim().eq_ignore_ascii_case("text/css"))
+        .unwrap_or(false)
+}
+
+fn infer_bundle_asset_kind(asset: &crate::browser_tabs::BrowserTabBundleAssetPayload) -> String {
+    let resource_type = asset.resource_type.as_deref().unwrap_or_default();
+    if resource_type.eq_ignore_ascii_case("stylesheet")
+        || asset
+            .mime_type
+            .as_deref()
+            .map(browser_tab_is_stylesheet_content_type)
+            .unwrap_or(false)
+    {
+        return "stylesheet".to_string();
+    }
+    if resource_type.eq_ignore_ascii_case("image")
+        || asset
+            .mime_type
+            .as_deref()
+            .map(|value| value.starts_with("image/"))
+            .unwrap_or(false)
+    {
+        return "image".to_string();
+    }
+    resource_type.to_ascii_lowercase()
+}
+
+fn resolve_bundle_asset_reference(
+    raw: &str,
+    base_url: &str,
+    source_path: &Path,
+    asset_lookup: &HashMap<String, BrowserTabAsset>,
+) -> Option<String> {
+    let absolute = resolve_browser_tab_url(raw, base_url)?;
+    let asset = asset_lookup.get(&absolute)?;
+    let base_dir = source_path.parent().unwrap_or(source_path);
+    let relative = asset
+        .local_path
+        .strip_prefix(base_dir)
+        .unwrap_or(&asset.local_path);
+    Some(
+        relative
+            .components()
+            .fold(String::new(), |mut acc, component| {
+                if !acc.is_empty() {
+                    acc.push('/');
+                }
+                acc.push_str(&component.as_os_str().to_string_lossy());
+                acc
+            }),
+    )
 }
 
 fn escape_html_attr(raw: &str) -> String {

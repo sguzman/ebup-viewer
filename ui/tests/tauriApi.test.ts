@@ -150,6 +150,7 @@ describe("tauri command adapter", () => {
 
     await api.backendApi.sourceOpenPath("/tmp/book.epub");
     await api.backendApi.sourceOpenBrowserTab(42, 7);
+    await api.backendApi.sourceOpenBrowserTabBundle(42, 7);
     await api.backendApi.sourceRefreshBrowserTab("/tmp/browser-tab.lltab");
     await api.backendApi.sourceOpenClipboardText("hello");
     await api.backendApi.readerSentenceClick(7);
@@ -166,6 +167,7 @@ describe("tauri command adapter", () => {
     expect(invokeMock.mock.calls).toEqual([
       ["source_open_path", { path: "/tmp/book.epub" }],
       ["source_open_browser_tab", { tabId: 42, windowId: 7 }],
+      ["source_open_browser_tab_bundle", { tabId: 42, windowId: 7 }],
       ["source_refresh_browser_tab", { path: "/tmp/browser-tab.lltab" }],
       ["source_open_clipboard_text", { text: "hello" }],
       ["reader_sentence_click", { sentenceIdx: 7 }],

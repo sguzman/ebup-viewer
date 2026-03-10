@@ -386,6 +386,7 @@ function StarterScreen() {
       onOpenPath={actions.openSourcePath}
       onOpenClipboardText={actions.openClipboardText}
       onOpenBrowserTab={actions.openBrowserTab}
+      onOpenBrowserTabBundle={actions.openBrowserTabBundle}
       onDeleteRecent={actions.deleteRecent}
       onCloseRecentBrowserTab={actions.closeRecentBrowserTab}
       onRefreshRecents={actions.refreshRecents}

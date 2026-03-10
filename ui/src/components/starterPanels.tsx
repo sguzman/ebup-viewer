@@ -170,11 +170,13 @@ const StarterBrowserTabRow = memo(function StarterBrowserTabRow({
   busy,
   browserTabsLoading,
   onOpenBrowserTab,
+  onOpenBrowserTabBundle,
   tab
 }: {
   busy: boolean;
   browserTabsLoading: boolean;
   onOpenBrowserTab: (tabId: number, windowId?: number) => Promise<void>;
+  onOpenBrowserTabBundle: (tabId: number, windowId?: number) => Promise<void>;
   tab: BrowserTabInfo;
 }) {
   return (
@@ -195,16 +197,26 @@ const StarterBrowserTabRow = memo(function StarterBrowserTabRow({
             {tab.status ? ` · ${tab.status}` : ""}
           </Typography>
         </Stack>
-        <Button
-          size="small"
-          variant="contained"
-          onClick={() => void onOpenBrowserTab(tab.id, tab.windowId)}
-          disabled={busy || browserTabsLoading}
-          data-testid={`starter-browser-tab-open-${tab.id}`}
-          sx={{ flexShrink: 0 }}
-        >
-          Import
-        </Button>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ flexShrink: 0 }}>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => void onOpenBrowserTab(tab.id, tab.windowId)}
+            disabled={busy || browserTabsLoading}
+            data-testid={`starter-browser-tab-open-${tab.id}`}
+          >
+            Quick Snapshot
+          </Button>
+          <Button
+            size="small"
+            variant="contained"
+            onClick={() => void onOpenBrowserTabBundle(tab.id, tab.windowId)}
+            disabled={busy || browserTabsLoading}
+            data-testid={`starter-browser-tab-open-bundle-${tab.id}`}
+          >
+            Import Bundle
+          </Button>
+        </Stack>
       </div>
     </div>
   );
@@ -223,6 +235,7 @@ export function StarterBrowserTabsPanel({
   busy,
   loadBrowserTabs,
   onOpenBrowserTab,
+  onOpenBrowserTabBundle,
   selectedBrowserWindowId,
   setBrowserTabSearch,
   setBrowserTabsScrollTop,
@@ -242,6 +255,7 @@ export function StarterBrowserTabsPanel({
   busy: boolean;
   loadBrowserTabs: (refresh?: boolean) => Promise<void>;
   onOpenBrowserTab: (tabId: number, windowId?: number) => Promise<void>;
+  onOpenBrowserTabBundle: (tabId: number, windowId?: number) => Promise<void>;
   selectedBrowserWindowId: number | "all";
   setBrowserTabSearch: (value: string) => void;
   setBrowserTabsScrollTop: (value: number) => void;
@@ -349,13 +363,14 @@ export function StarterBrowserTabsPanel({
                 </Typography>
               ) : null}
               {browserTabsVirtualWindow.items.map((tab) => (
-                <StarterBrowserTabRow
-                  key={tab.id}
-                  busy={busy}
-                  browserTabsLoading={browserTabsLoading}
-                  onOpenBrowserTab={onOpenBrowserTab}
-                  tab={tab}
-                />
+                  <StarterBrowserTabRow
+                    key={tab.id}
+                    busy={busy}
+                    browserTabsLoading={browserTabsLoading}
+                    onOpenBrowserTab={onOpenBrowserTab}
+                    onOpenBrowserTabBundle={onOpenBrowserTabBundle}
+                    tab={tab}
+                  />
               ))}
               {browserTabsVirtualWindow.bottomSpacerPx > 0 ? (
                 <div style={{ height: browserTabsVirtualWindow.bottomSpacerPx }} />

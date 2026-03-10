@@ -124,6 +124,7 @@ describe("StarterShell browser tabs", () => {
 
   it("loads browser tabs, filters by window and imports a selected tab", async () => {
     const onOpenBrowserTab = vi.fn<(tabId: number, windowId?: number) => Promise<void>>().mockResolvedValue();
+    const onOpenBrowserTabBundle = vi.fn<(tabId: number, windowId?: number) => Promise<void>>().mockResolvedValue();
 
     await act(async () => {
       root.render(
@@ -137,6 +138,7 @@ describe("StarterShell browser tabs", () => {
           onOpenPath={async () => {}}
           onOpenClipboardText={async () => {}}
           onOpenBrowserTab={onOpenBrowserTab}
+          onOpenBrowserTabBundle={onOpenBrowserTabBundle}
           onDeleteRecent={async () => {}}
           onCloseRecentBrowserTab={async () => {}}
           onRefreshRecents={async () => {}}
@@ -177,5 +179,12 @@ describe("StarterShell browser tabs", () => {
       importButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(onOpenBrowserTab).toHaveBeenCalledWith(101, 11);
+
+    const bundleButton = container.querySelector('[data-testid="starter-browser-tab-open-bundle-101"]') as HTMLButtonElement | null;
+    expect(bundleButton).not.toBeNull();
+    await act(async () => {
+      bundleButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onOpenBrowserTabBundle).toHaveBeenCalledWith(101, 11);
   });
 });

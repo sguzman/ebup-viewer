@@ -18,6 +18,7 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
   | "openSourcePath"
   | "openClipboardText"
   | "openBrowserTab"
+  | "openBrowserTabBundle"
   | "refreshCurrentBrowserTab"
   | "deleteRecent"
   | "closeRecentBrowserTab"
@@ -188,6 +189,36 @@ export function createSessionSliceActions({ set, get, backend }: SliceContext): 
             return;
           }
           const detailed = `[openBrowserTab:${bridgeError.code}] ${bridgeError.message}`;
+          set({
+            error: detailed,
+            toast: buildToast("error", detailed)
+          });
+          throw bridgeError;
+        }
+      });
+    },
+
+    openBrowserTabBundle: async (tabId, windowId) => {
+      await withBusy(set, get, "openBrowserTab", "sourceOpen", async () => {
+        try {
+          const result = await backend.sourceOpenBrowserTabBundle(tabId, windowId);
+          const recents = await backend.recentList();
+          set({
+            session: result.session,
+            reader: result.reader,
+            readerPlayback: toReaderPlaybackState(result.reader),
+            recents,
+            toast: buildToast("success", "Browser tab bundle imported")
+          });
+        } catch (error) {
+          const bridgeError = toBridgeError(error);
+          if (bridgeError.code === "open_cancelled") {
+            set({
+              toast: buildToast("info", bridgeError.message)
+            });
+            return;
+          }
+          const detailed = `[openBrowserTabBundle:${bridgeError.code}] ${bridgeError.message}`;
           set({
             error: detailed,
             toast: buildToast("error", detailed)

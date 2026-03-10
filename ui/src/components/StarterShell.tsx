@@ -42,6 +42,7 @@ interface StarterShellProps {
   onOpenPath: (path: string) => Promise<void>;
   onOpenClipboardText: () => Promise<void>;
   onOpenBrowserTab: (tabId: number, windowId?: number) => Promise<void>;
+  onOpenBrowserTabBundle: (tabId: number, windowId?: number) => Promise<void>;
   onDeleteRecent: (path: string, closeBrowserTab?: boolean) => Promise<void>;
   onCloseRecentBrowserTab: (path: string) => Promise<void>;
   onRefreshRecents: () => Promise<void>;
@@ -65,6 +66,7 @@ export function StarterShell({
   onOpenPath,
   onOpenClipboardText,
   onOpenBrowserTab,
+  onOpenBrowserTabBundle,
   onDeleteRecent,
   onCloseRecentBrowserTab,
   onRefreshRecents,
@@ -277,6 +279,7 @@ export function StarterShell({
               busy={busy}
               loadBrowserTabs={loadBrowserTabs}
               onOpenBrowserTab={onOpenBrowserTab}
+              onOpenBrowserTabBundle={onOpenBrowserTabBundle}
               selectedBrowserWindowId={selectedBrowserWindowId}
               setBrowserTabSearch={setBrowserTabSearch}
               setBrowserTabsScrollTop={setBrowserTabsScrollTop}

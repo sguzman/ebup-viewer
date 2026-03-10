@@ -593,6 +593,10 @@ async function mockSourceOpenBrowserTab(tabId: number): Promise<OpenSourceResult
   return mockOpenWithPath(`.cache/browser-tabs/${tab.id}/browser-tab.lltab`);
 }
 
+async function mockSourceOpenBrowserTabBundle(tabId: number): Promise<OpenSourceResult> {
+  return mockSourceOpenBrowserTab(tabId);
+}
+
 async function mockReaderGetSnapshot(): Promise<ReaderSnapshot> {
   return structuredClone(ensureMockReader());
 }
@@ -871,6 +875,7 @@ export interface BackendApi {
   sourceOpenClipboard: () => Promise<OpenSourceResult>;
   sourceOpenClipboardText: (text: string) => Promise<OpenSourceResult>;
   sourceOpenBrowserTab: (tabId: number, windowId?: number) => Promise<OpenSourceResult>;
+  sourceOpenBrowserTabBundle: (tabId: number, windowId?: number) => Promise<OpenSourceResult>;
   sourceRefreshBrowserTab: (path: string) => Promise<OpenSourceResult>;
   readerGetSnapshot: () => Promise<ReaderSnapshot>;
   readerNextPage: () => Promise<ReaderSnapshot>;
@@ -937,6 +942,8 @@ function createTauriBackendApi(): BackendApi {
       invokeCommand<OpenSourceResult>("source_open_clipboard_text", { text }),
     sourceOpenBrowserTab: (tabId, windowId) =>
       invokeCommand<OpenSourceResult>("source_open_browser_tab", { tabId, windowId }),
+    sourceOpenBrowserTabBundle: (tabId, windowId) =>
+      invokeCommand<OpenSourceResult>("source_open_browser_tab_bundle", { tabId, windowId }),
     sourceRefreshBrowserTab: (path) =>
       invokeCommand<OpenSourceResult>("source_refresh_browser_tab", { path }),
     readerGetSnapshot: () => invokeCommand<ReaderSnapshot>("reader_get_snapshot"),
@@ -1025,6 +1032,7 @@ function createMockBackendApi(): BackendApi {
     sourceOpenClipboard: () => mockSourceOpenClipboardText(""),
     sourceOpenClipboardText: mockSourceOpenClipboardText,
     sourceOpenBrowserTab: mockSourceOpenBrowserTab,
+    sourceOpenBrowserTabBundle: mockSourceOpenBrowserTabBundle,
     sourceRefreshBrowserTab: mockOpenWithPath,
     readerGetSnapshot: mockReaderGetSnapshot,
     readerNextPage: mockReaderNextPage,

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
 epub = "2.1.5"
 html2text = "0.16.4"
 serde = { version = "1", features = ["derive"] }

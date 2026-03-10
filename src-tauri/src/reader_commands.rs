@@ -10,7 +10,10 @@ pub(crate) fn reader_load_pdf_bytes(path: String) -> Result<Vec<u8>, BridgeError
     fs::read(&source_path).map_err(|err| {
         bridge_error(
             "io_error",
-            format!("Failed to read PDF bytes at {}: {err}", source_path.display()),
+            format!(
+                "Failed to read PDF bytes at {}: {err}",
+                source_path.display()
+            ),
         )
     })
 }

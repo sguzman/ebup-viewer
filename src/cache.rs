@@ -60,7 +60,8 @@ pub use bookmarks_config::Bookmark;
 pub use bookmarks_config::PdfRect;
 pub use browser_tab_cache::{
     BrowserTabAsset, BrowserTabSourceManifest, is_browser_tab_manifest, load_browser_tab_manifest,
-    persist_browser_tab_source, rehydrate_browser_tab_manifest_assets,
+    persist_browser_tab_bundle_source, persist_browser_tab_source,
+    rehydrate_browser_tab_manifest_assets,
 };
 pub use content_artifacts::PdfSentenceLocation;
 
@@ -775,7 +776,9 @@ fn truncate_preview_line(line: &str, max_chars: usize) -> String {
 
 fn infer_pdf_recent_title(source_path: &Path) -> Option<String> {
     let preview_lines = preview_lines_from_text(&cached_recent_pdf_text(source_path)?);
-    let first_line = preview_lines.into_iter().find(|line| line.chars().count() >= 8)?;
+    let first_line = preview_lines
+        .into_iter()
+        .find(|line| line.chars().count() >= 8)?;
     Some(truncate_preview_line(&first_line, 96))
 }
 

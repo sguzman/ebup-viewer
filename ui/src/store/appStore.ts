@@ -178,6 +178,7 @@ export interface AppStore {
   openSourcePath: (path: string) => Promise<void>;
   openClipboardText: () => Promise<void>;
   openBrowserTab: (tabId: number, windowId?: number) => Promise<void>;
+  openBrowserTabBundle: (tabId: number, windowId?: number) => Promise<void>;
   refreshCurrentBrowserTab: () => Promise<void>;
   deleteRecent: (path: string, closeBrowserTab?: boolean) => Promise<void>;
   closeRecentBrowserTab: (path: string) => Promise<void>;

@@ -1,4 +1,66 @@
 use super::*;
+use tracing::{info, warn};
+
+async fn lookup_browser_tab_metadata(
+    client: &browser_tabs::BrowsrClient,
+    tab_id: u64,
+    window_id: Option<u64>,
+    refresh: bool,
+) -> Option<browser_tabs::BrowserTab> {
+    client
+        .list_tabs(window_id, None, refresh)
+        .await
+        .ok()
+        .and_then(|tabs| tabs.into_iter().find(|tab| tab.id == tab_id))
+}
+
+async fn wait_for_import_bundle_completion(
+    client: &browser_tabs::BrowsrClient,
+    started_job: browser_tabs::BrowsrImportBundleJob,
+) -> Result<browser_tabs::BrowsrImportBundleJob, BridgeError> {
+    let mut last_status = started_job;
+    for attempt in 0..120_u32 {
+        if matches!(
+            last_status.status.as_str(),
+            "completed" | "failed" | "cancelled"
+        ) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        last_status = client
+            .get_import_bundle_status(&last_status.job_id)
+            .await
+            .map_err(|err| bridge_error("browsr_import_bundle_failed", err.to_string()))?;
+        info!(
+            job_id = %last_status.job_id,
+            tab_id = last_status.tab_id,
+            attempt,
+            status = %last_status.status,
+            "Polled browsr import bundle status"
+        );
+    }
+
+    match last_status.status.as_str() {
+        "completed" => Ok(last_status),
+        "failed" | "cancelled" => {
+            let message = last_status
+                .error
+                .as_ref()
+                .and_then(|value| value.message.clone())
+                .unwrap_or_else(|| {
+                    format!(
+                        "bundle import {} for tab {}",
+                        last_status.status, last_status.tab_id
+                    )
+                });
+            Err(bridge_error("browsr_import_bundle_failed", message))
+        }
+        other => Err(bridge_error(
+            "browsr_import_bundle_timeout",
+            format!("Browser bundle import did not finish before timeout; last status was {other}"),
+        )),
+    }
+}
 
 #[tauri::command]
 pub(crate) async fn browser_tabs_health(
@@ -92,11 +154,7 @@ pub(crate) async fn source_open_browser_tab(
         ));
     }
     let client = browsr_client_from_config(&cfg)?;
-    let tab_meta = client
-        .list_tabs(window_id, None, false)
-        .await
-        .ok()
-        .and_then(|tabs| tabs.into_iter().find(|tab| tab.id == tab_id));
+    let tab_meta = lookup_browser_tab_metadata(&client, tab_id, window_id, false).await;
     let snapshot = client
         .snapshot_tab(tab_id)
         .await
@@ -112,6 +170,111 @@ pub(crate) async fn source_open_browser_tab(
         html_truncated = snapshot.truncation.html.truncated,
         text_truncated = snapshot.truncation.text.truncated,
         "Persisted browser-tab snapshot source"
+    );
+    open_resolved_source(&app, &state, source_path).await
+}
+
+#[tauri::command]
+pub(crate) async fn source_open_browser_tab_bundle(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<BackendState>>,
+    tab_id: u64,
+    window_id: Option<u64>,
+) -> Result<OpenSourceResult, BridgeError> {
+    let cfg = {
+        let guard = state
+            .lock()
+            .map_err(|_| bridge_error("lock_poisoned", "Backend state lock poisoned"))?;
+        guard.base_config.clone()
+    };
+    if !cfg.browser_tabs_enabled {
+        return Err(bridge_error(
+            "browser_tabs_disabled",
+            "Browser tabs import is disabled in config",
+        ));
+    }
+    let client = browsr_client_from_config(&cfg)?;
+    let tab_meta = lookup_browser_tab_metadata(&client, tab_id, window_id, false).await;
+    let started_job = client
+        .start_import_bundle(tab_id)
+        .await
+        .map_err(|err| bridge_error("browsr_import_bundle_failed", err.to_string()))?;
+    info!(
+        job_id = %started_job.job_id,
+        tab_id,
+        window_id,
+        "Started browser-tab bundle import"
+    );
+    let completed_job = wait_for_import_bundle_completion(&client, started_job).await?;
+    let manifest = client
+        .get_import_bundle_manifest(&completed_job.job_id)
+        .await
+        .map_err(|err| bridge_error("browsr_import_bundle_failed", err.to_string()))?;
+    let document = manifest.bundle.document.as_ref().ok_or_else(|| {
+        bridge_error(
+            "browsr_import_bundle_failed",
+            format!(
+                "Import bundle {} did not include a document payload",
+                completed_job.job_id
+            ),
+        )
+    })?;
+    let mut assets = Vec::new();
+    for asset_ref in manifest
+        .bundle
+        .assets
+        .iter()
+        .filter(|asset| asset.body_available && !asset.url.trim().is_empty())
+    {
+        match client
+            .get_import_bundle_asset(&completed_job.job_id, &asset_ref.asset_id)
+            .await
+        {
+            Ok(asset) => assets.push(asset),
+            Err(err) => {
+                warn!(
+                    job_id = %completed_job.job_id,
+                    tab_id,
+                    asset_id = %asset_ref.asset_id,
+                    url = %asset_ref.url,
+                    "Skipping bundle asset fetch failure: {err}"
+                );
+            }
+        }
+    }
+    let bundle_capture = browser_tabs::BrowserTabBundleCapture {
+        tab_id,
+        title: manifest
+            .bundle
+            .tab
+            .title
+            .clone()
+            .or_else(|| tab_meta.as_ref().map(|value| value.title.clone()))
+            .unwrap_or_else(|| format!("Browser tab {tab_id}")),
+        url: manifest
+            .bundle
+            .tab
+            .url
+            .clone()
+            .or_else(|| tab_meta.as_ref().map(|value| value.url.clone()))
+            .unwrap_or_default(),
+        captured_at: completed_job.updated_at.clone(),
+        html: document.html.clone().unwrap_or_default(),
+        text: document.text.clone(),
+        selection: document.selection.clone(),
+        assets,
+    };
+    let source_path = cache::persist_browser_tab_bundle_source(&bundle_capture, tab_meta.as_ref())
+        .map_err(|err| bridge_error("browser_tab_cache_error", err))?;
+    info!(
+        job_id = %completed_job.job_id,
+        tab_id,
+        source_path = %source_path.display(),
+        title = %bundle_capture.title,
+        url = %bundle_capture.url,
+        asset_count = bundle_capture.assets.len(),
+        selection_chars = bundle_capture.selection.as_ref().map(|value| value.len()).unwrap_or(0),
+        "Persisted browser-tab bundle source"
     );
     open_resolved_source(&app, &state, source_path).await
 }
@@ -145,11 +308,8 @@ pub(crate) async fn source_refresh_browser_tab(
         ));
     }
     let client = browsr_client_from_config(&cfg)?;
-    let tab_meta = client
-        .list_tabs(manifest.window_id, None, true)
-        .await
-        .ok()
-        .and_then(|tabs| tabs.into_iter().find(|tab| tab.id == manifest.tab_id));
+    let tab_meta =
+        lookup_browser_tab_metadata(&client, manifest.tab_id, manifest.window_id, true).await;
     let snapshot = client
         .snapshot_tab(manifest.tab_id)
         .await

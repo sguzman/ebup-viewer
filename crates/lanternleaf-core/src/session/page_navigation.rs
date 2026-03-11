@@ -125,6 +125,7 @@ impl ReaderSession {
             .iter()
             .map(|page| page.split_whitespace().count())
             .collect();
+        self.refresh_pdf_ocr_alignment_artifact();
 
         self.current_page = self.current_page.min(self.pages.len().saturating_sub(1));
         self.current_plan_page = None;
@@ -180,6 +181,38 @@ impl ReaderSession {
         None
     }
 
+    fn global_idx_for_pdf_ocr_bookmark(&self, bookmark: &crate::cache::Bookmark) -> Option<usize> {
+        let page_idx = bookmark.pdf_page_idx?;
+        let artifact = crate::cache::load_pdf_ocr_alignment_artifact(&self.source_path)?;
+        if let Some(hash) = bookmark.pdf_sentence_text_hash.as_deref()
+            && let Some(alignment) = artifact.alignments.iter().find(|alignment| {
+                alignment.page_idx == Some(page_idx) && alignment.sentence_text_hash == hash
+            })
+        {
+            return Some(alignment.sentence_idx);
+        }
+        if let Some(alignment) = artifact.alignments.iter().find(|alignment| {
+            alignment.page_idx == Some(page_idx)
+                && bookmark
+                    .pdf_confidence
+                    .as_deref()
+                    .map(|value| value == alignment.confidence_tier)
+                    .unwrap_or(true)
+                && bookmark
+                    .pdf_reason
+                    .as_deref()
+                    .map(|value| value == alignment.fallback_reason)
+                    .unwrap_or(true)
+        }) {
+            return Some(alignment.sentence_idx);
+        }
+        artifact
+            .alignments
+            .iter()
+            .find(|alignment| alignment.page_idx == Some(page_idx))
+            .map(|alignment| alignment.sentence_idx)
+    }
+
     pub(super) fn restore_bookmark_position(
         &mut self,
         bookmark: &crate::cache::Bookmark,
@@ -200,6 +233,7 @@ impl ReaderSession {
         self.highlighted_display_idx = if let Some(global_idx) = self
             .global_idx_for_bookmark(bookmark)
             .or_else(|| self.global_idx_for_bookmark_text(bookmark))
+            .or_else(|| self.global_idx_for_pdf_ocr_bookmark(bookmark))
         {
             let (page, idx) = self.page_idx_for_global_sentence(global_idx);
             self.current_page = page;

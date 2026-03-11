@@ -303,6 +303,7 @@ const mockReaderSnapshot = (): ReaderSnapshot => ({
   pdf_sync_strategy: null,
   pdf_classification: null,
   pdf_runtime_policy: null,
+  pdf_ocr_alignment: null,
   images: [],
   tts_text_page: MOCK_PAGES[0].text,
   reading_markdown_page: null,
@@ -495,6 +496,25 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
         exact_sentence_sync: true,
         explanation: "Exact sentence sync is enabled for this PDF.",
         degraded_reasons: []
+      }
+    : null;
+  reader.pdf_ocr_alignment = reader.source_path.toLowerCase().endsWith(".pdf")
+    ? {
+        quality_class: "ocr_high_trust",
+        source_kind: "embedded_text",
+        sentence_count: MOCK_PAGES.flatMap((page) => page.sentences).length,
+        mapped_sentence_count: MOCK_PAGES.flatMap((page) => page.sentences).length,
+        rect_mapped_sentence_count: MOCK_PAGES.flatMap((page) => page.sentences).length,
+        line_mapped_sentence_count: 0,
+        block_mapped_sentence_count: 0,
+        page_only_sentence_count: 0,
+        unmappable_sentence_count: 0,
+        highlightable_sentence_count: MOCK_PAGES.flatMap((page) => page.sentences).length,
+        token_lineage_available: false,
+        deterministic: true,
+        coverage_ratio: 1,
+        degraded_reasons: [],
+        explanation: "Mock OCR alignment artifact indicates stable sentence-level geometry."
       }
     : null;
   reader.page_text = pageData.text;

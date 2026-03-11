@@ -1,4 +1,5 @@
 use crate::config::{AppConfig, parse_config, serialize_config};
+use crate::epub_loader::PdfOcrGeometryQualityClass;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -20,9 +21,19 @@ pub struct Bookmark {
     #[serde(default)]
     pub pdf_rects: Vec<PdfRect>,
     #[serde(default)]
+    pub pdf_line_rects: Vec<PdfRect>,
+    #[serde(default)]
+    pub pdf_block_rects: Vec<PdfRect>,
+    #[serde(default)]
     pub pdf_confidence: Option<String>,
     #[serde(default)]
     pub pdf_reason: Option<String>,
+    #[serde(default)]
+    pub pdf_quality_class: Option<PdfOcrGeometryQualityClass>,
+    #[serde(default)]
+    pub pdf_sentence_text_hash: Option<String>,
+    #[serde(default)]
+    pub pdf_token_lineage: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -47,9 +58,19 @@ struct CacheEntry {
     #[serde(default)]
     pdf_rects: Vec<PdfRect>,
     #[serde(default)]
+    pdf_line_rects: Vec<PdfRect>,
+    #[serde(default)]
+    pdf_block_rects: Vec<PdfRect>,
+    #[serde(default)]
     pdf_confidence: Option<String>,
     #[serde(default)]
     pdf_reason: Option<String>,
+    #[serde(default)]
+    pdf_quality_class: Option<PdfOcrGeometryQualityClass>,
+    #[serde(default)]
+    pdf_sentence_text_hash: Option<String>,
+    #[serde(default)]
+    pdf_token_lineage: Vec<String>,
 }
 
 fn default_scroll() -> f32 {
@@ -81,8 +102,13 @@ pub(super) fn load_bookmark(source_path: &Path) -> Option<Bookmark> {
         scroll_y: value.scroll_y.unwrap_or_else(default_scroll),
         pdf_page_idx: value.pdf_page_idx,
         pdf_rects: value.pdf_rects,
+        pdf_line_rects: value.pdf_line_rects,
+        pdf_block_rects: value.pdf_block_rects,
         pdf_confidence: value.pdf_confidence,
         pdf_reason: value.pdf_reason,
+        pdf_quality_class: value.pdf_quality_class,
+        pdf_sentence_text_hash: value.pdf_sentence_text_hash,
+        pdf_token_lineage: value.pdf_token_lineage,
     })
 }
 
@@ -98,8 +124,13 @@ pub(super) fn save_bookmark(source_path: &Path, bookmark: &Bookmark) {
         scroll_y: Some(bookmark.scroll_y),
         pdf_page_idx: bookmark.pdf_page_idx,
         pdf_rects: bookmark.pdf_rects.clone(),
+        pdf_line_rects: bookmark.pdf_line_rects.clone(),
+        pdf_block_rects: bookmark.pdf_block_rects.clone(),
         pdf_confidence: bookmark.pdf_confidence.clone(),
         pdf_reason: bookmark.pdf_reason.clone(),
+        pdf_quality_class: bookmark.pdf_quality_class,
+        pdf_sentence_text_hash: bookmark.pdf_sentence_text_hash.clone(),
+        pdf_token_lineage: bookmark.pdf_token_lineage.clone(),
     };
     if let Ok(contents) = toml::to_string(&entry)
         && let Ok(mut file) = fs::File::create(path)

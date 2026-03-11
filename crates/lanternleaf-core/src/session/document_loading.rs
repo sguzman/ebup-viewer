@@ -90,6 +90,7 @@ impl ReaderSession {
             pdf_sync_strategy,
             pdf_classification,
             pdf_runtime_policy,
+            pdf_ocr_alignment: None,
             images: loaded
                 .images
                 .into_iter()

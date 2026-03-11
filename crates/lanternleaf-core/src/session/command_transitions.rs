@@ -79,12 +79,15 @@ impl ReaderSession {
                 .cloned()
         });
         let pdf_location = self.global_display_idx().and_then(|global_idx| {
-            crate::cache::load_pdf_sentence_map(&self.source_path).and_then(|locations| {
-                locations
+            crate::cache::load_pdf_ocr_alignment_artifact(&self.source_path).and_then(|artifact| {
+                artifact
+                    .alignments
                     .into_iter()
                     .find(|location| location.sentence_idx == global_idx)
             })
         });
+        let pdf_quality_class = crate::cache::load_pdf_ocr_alignment_artifact(&self.source_path)
+            .map(|artifact| artifact.quality_class);
         crate::cache::Bookmark {
             page: self.current_page,
             sentence_idx: self.current_highlight_idx(),
@@ -95,12 +98,33 @@ impl ReaderSession {
                 .as_ref()
                 .map(|location| location.rects.clone())
                 .unwrap_or_default(),
+            pdf_line_rects: pdf_location
+                .as_ref()
+                .map(|location| location.line_rects.clone())
+                .unwrap_or_default(),
+            pdf_block_rects: pdf_location
+                .as_ref()
+                .map(|location| location.block_rects.clone())
+                .unwrap_or_default(),
             pdf_confidence: pdf_location
                 .as_ref()
-                .map(|location| location.confidence.clone()),
+                .map(|location| location.confidence_tier.clone()),
             pdf_reason: pdf_location
                 .as_ref()
-                .map(|location| location.reason.clone()),
+                .map(|location| location.fallback_reason.clone()),
+            pdf_quality_class,
+            pdf_sentence_text_hash: self
+                .highlighted_display_idx
+                .and_then(|idx| {
+                    self.raw_page_sentences
+                        .get(self.current_page)
+                        .and_then(|page| page.get(idx))
+                })
+                .map(|sentence| crate::cache::stable_sentence_text_hash(sentence)),
+            pdf_token_lineage: pdf_location
+                .as_ref()
+                .map(|location| location.token_lineage.clone())
+                .unwrap_or_default(),
         }
     }
 }

@@ -3,6 +3,7 @@ use crate::{
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -154,6 +155,7 @@ pub struct ReaderSnapshot {
     pub pdf_sync_strategy: Option<crate::epub_loader::PdfSyncStrategy>,
     pub pdf_classification: Option<crate::epub_loader::PdfClassificationSummary>,
     pub pdf_runtime_policy: Option<crate::epub_loader::PdfRuntimePolicySummary>,
+    pub pdf_ocr_alignment: Option<crate::epub_loader::PdfOcrAlignmentSummary>,
     pub images: Vec<ReaderImageRef>,
     pub tts_text_page: String,
     pub reading_markdown_page: Option<String>,
@@ -233,6 +235,7 @@ pub struct ReaderSession {
     pdf_sync_strategy: Option<crate::epub_loader::PdfSyncStrategy>,
     pdf_classification: Option<crate::epub_loader::PdfClassificationSummary>,
     pdf_runtime_policy: Option<crate::epub_loader::PdfRuntimePolicySummary>,
+    pdf_ocr_alignment: Option<crate::epub_loader::PdfOcrAlignmentSummary>,
     images: Vec<SessionImage>,
     pub config: config::AppConfig,
     pages: Vec<String>,
@@ -317,6 +320,222 @@ fn maybe_log_mapping_summary(path: &Path) {
     );
 }
 
+fn build_pdf_ocr_alignment_artifact(
+    source_path: &Path,
+    sentences: &[String],
+    classification: Option<&crate::epub_loader::PdfClassificationSummary>,
+    runtime_policy: Option<&crate::epub_loader::PdfRuntimePolicySummary>,
+) -> crate::cache::PdfOcrAlignmentArtifact {
+    let locations = crate::cache::load_pdf_sentence_map(source_path).unwrap_or_default();
+    let location_map: HashMap<usize, crate::cache::PdfSentenceLocation> = locations
+        .into_iter()
+        .map(|location| (location.sentence_idx, location))
+        .collect();
+    let source_kind = derive_pdf_ocr_source_kind(classification);
+    let mut alignments = Vec::with_capacity(sentences.len());
+    let mut rect_mapped = 0usize;
+    let mut line_mapped = 0usize;
+    let mut block_mapped = 0usize;
+    let mut page_only = 0usize;
+    let mut unmappable = 0usize;
+    let mut degraded_reasons = Vec::new();
+
+    for (sentence_idx, sentence_text) in sentences.iter().enumerate() {
+        let sentence_hash = crate::cache::stable_sentence_text_hash(sentence_text);
+        let location = location_map.get(&sentence_idx);
+        let (page_idx, rects, line_rects, block_rects, score, fallback_reason) = location
+            .map(|value| {
+                (
+                    value.page_idx,
+                    value.rects.clone(),
+                    value.line_rects.clone(),
+                    value.block_rects.clone(),
+                    value.score,
+                    value.reason.clone(),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    0.0,
+                    "missing".to_string(),
+                )
+            });
+        let confidence_tier = if !rects.is_empty() {
+            rect_mapped += 1;
+            "sentence_rects".to_string()
+        } else if !line_rects.is_empty() {
+            line_mapped += 1;
+            "line_fallback".to_string()
+        } else if !block_rects.is_empty() {
+            block_mapped += 1;
+            "block_fallback".to_string()
+        } else if page_idx.is_some() {
+            page_only += 1;
+            "page_only".to_string()
+        } else {
+            unmappable += 1;
+            "missing".to_string()
+        };
+        if fallback_reason != "exact_geometry"
+            && fallback_reason != "missing"
+            && !fallback_reason.is_empty()
+            && !degraded_reasons
+                .iter()
+                .any(|reason| reason == &fallback_reason)
+        {
+            degraded_reasons.push(fallback_reason.clone());
+        }
+        alignments.push(crate::cache::PdfOcrSentenceAlignment {
+            sentence_idx,
+            sentence_text_hash: sentence_hash,
+            page_idx,
+            rects,
+            line_rects,
+            block_rects,
+            confidence_tier,
+            fallback_reason,
+            token_lineage: Vec::new(),
+            score,
+        });
+    }
+
+    let mapped = rect_mapped + line_mapped + block_mapped + page_only;
+    let highlightable = rect_mapped + line_mapped + block_mapped;
+    let quality_class = derive_pdf_ocr_quality_class(
+        sentences.len(),
+        rect_mapped,
+        line_mapped,
+        block_mapped,
+        page_only,
+        classification,
+        runtime_policy,
+    );
+    let explanation = match quality_class {
+        crate::epub_loader::PdfOcrGeometryQualityClass::OcrHighTrust => {
+            "OCR geometry supports sentence-level or near-sentence overlay recovery".to_string()
+        }
+        crate::epub_loader::PdfOcrGeometryQualityClass::OcrMixedTrust => {
+            "OCR geometry is usable, but line/block fallback should be treated as the stable overlay surface".to_string()
+        }
+        crate::epub_loader::PdfOcrGeometryQualityClass::OcrTextOnly => {
+            "OCR text is usable, but geometry remains weak enough that text ownership should stay canonical and native highlights should degrade honestly".to_string()
+        }
+        crate::epub_loader::PdfOcrGeometryQualityClass::OcrFailedOrUnusable => {
+            "OCR geometry is not trustworthy enough for synced native PDF highlights".to_string()
+        }
+    };
+
+    crate::cache::PdfOcrAlignmentArtifact {
+        version: 0,
+        quality_class,
+        source_kind,
+        sentence_count: sentences.len(),
+        mapped_sentence_count: mapped,
+        rect_mapped_sentence_count: rect_mapped,
+        line_mapped_sentence_count: line_mapped,
+        block_mapped_sentence_count: block_mapped,
+        page_only_sentence_count: page_only,
+        unmappable_sentence_count: unmappable,
+        highlightable_sentence_count: highlightable,
+        token_lineage_available: false,
+        deterministic: true,
+        degraded_reasons,
+        explanation,
+        alignments,
+    }
+}
+
+fn derive_pdf_ocr_source_kind(
+    classification: Option<&crate::epub_loader::PdfClassificationSummary>,
+) -> crate::epub_loader::PdfOcrSourceKind {
+    match classification.map(|value| value.document_class) {
+        Some(crate::epub_loader::PdfDocumentClass::EmbeddedClean)
+        | Some(crate::epub_loader::PdfDocumentClass::EmbeddedNoisy)
+        | Some(crate::epub_loader::PdfDocumentClass::EmbeddedSparse) => {
+            crate::epub_loader::PdfOcrSourceKind::EmbeddedText
+        }
+        Some(crate::epub_loader::PdfDocumentClass::HybridMixedDocument)
+        | Some(crate::epub_loader::PdfDocumentClass::LayoutHostileDocument) => {
+            crate::epub_loader::PdfOcrSourceKind::MixedMergedText
+        }
+        _ => crate::epub_loader::PdfOcrSourceKind::OcrText,
+    }
+}
+
+fn derive_pdf_ocr_quality_class(
+    sentence_count: usize,
+    rect_mapped: usize,
+    line_mapped: usize,
+    block_mapped: usize,
+    page_only: usize,
+    classification: Option<&crate::epub_loader::PdfClassificationSummary>,
+    runtime_policy: Option<&crate::epub_loader::PdfRuntimePolicySummary>,
+) -> crate::epub_loader::PdfOcrGeometryQualityClass {
+    if sentence_count == 0 {
+        return crate::epub_loader::PdfOcrGeometryQualityClass::OcrFailedOrUnusable;
+    }
+    let sentence_count_f = sentence_count as f32;
+    let rect_ratio = rect_mapped as f32 / sentence_count_f;
+    let highlightable_ratio = (rect_mapped + line_mapped + block_mapped) as f32 / sentence_count_f;
+    let mapped_ratio =
+        (rect_mapped + line_mapped + block_mapped + page_only) as f32 / sentence_count_f;
+    if runtime_policy
+        .map(|value| !value.tts_allowed)
+        .unwrap_or(false)
+    {
+        return crate::epub_loader::PdfOcrGeometryQualityClass::OcrFailedOrUnusable;
+    }
+    if rect_ratio >= 0.65
+        && runtime_policy
+            .map(|value| value.exact_sentence_sync)
+            .unwrap_or(false)
+    {
+        return crate::epub_loader::PdfOcrGeometryQualityClass::OcrHighTrust;
+    }
+    if highlightable_ratio >= 0.45
+        || matches!(
+            classification.map(|value| value.ocr_recommendation),
+            Some(crate::epub_loader::PdfOcrRecommendation::GeometryOnly)
+        )
+    {
+        return crate::epub_loader::PdfOcrGeometryQualityClass::OcrMixedTrust;
+    }
+    if mapped_ratio >= 0.2 {
+        return crate::epub_loader::PdfOcrGeometryQualityClass::OcrTextOnly;
+    }
+    crate::epub_loader::PdfOcrGeometryQualityClass::OcrFailedOrUnusable
+}
+
+fn pdf_ocr_alignment_summary_from_artifact(
+    artifact: &crate::cache::PdfOcrAlignmentArtifact,
+) -> crate::epub_loader::PdfOcrAlignmentSummary {
+    crate::epub_loader::PdfOcrAlignmentSummary {
+        quality_class: artifact.quality_class,
+        source_kind: artifact.source_kind,
+        sentence_count: artifact.sentence_count as u32,
+        mapped_sentence_count: artifact.mapped_sentence_count as u32,
+        rect_mapped_sentence_count: artifact.rect_mapped_sentence_count as u32,
+        line_mapped_sentence_count: artifact.line_mapped_sentence_count as u32,
+        block_mapped_sentence_count: artifact.block_mapped_sentence_count as u32,
+        page_only_sentence_count: artifact.page_only_sentence_count as u32,
+        unmappable_sentence_count: artifact.unmappable_sentence_count as u32,
+        highlightable_sentence_count: artifact.highlightable_sentence_count as u32,
+        token_lineage_available: artifact.token_lineage_available,
+        deterministic: artifact.deterministic,
+        coverage_ratio: if artifact.sentence_count == 0 {
+            0.0
+        } else {
+            artifact.mapped_sentence_count as f32 / artifact.sentence_count as f32
+        },
+        degraded_reasons: artifact.degraded_reasons.clone(),
+        explanation: artifact.explanation.clone(),
+    }
+}
+
 impl ReaderSession {
     fn is_pdf_source(&self) -> bool {
         self.source_path
@@ -353,6 +572,41 @@ impl ReaderSession {
         self.pdf_runtime_policy_ref()
             .map(|value| value.tts_allowed)
             .unwrap_or(true)
+    }
+
+    fn refresh_pdf_ocr_alignment_artifact(&mut self) {
+        if !self.is_pdf_source() {
+            self.pdf_ocr_alignment = None;
+            return;
+        }
+        let sentences: Vec<String> = self
+            .raw_page_sentences
+            .iter()
+            .flat_map(|page| page.iter().cloned())
+            .collect();
+        let artifact = build_pdf_ocr_alignment_artifact(
+            &self.source_path,
+            &sentences,
+            self.pdf_classification.as_ref(),
+            self.pdf_runtime_policy.as_ref(),
+        );
+        let summary = pdf_ocr_alignment_summary_from_artifact(&artifact);
+        tracing::info!(
+            path = %self.source_path.display(),
+            sentence_count = artifact.sentence_count,
+            mapped_sentence_count = artifact.mapped_sentence_count,
+            rect_mapped_sentence_count = artifact.rect_mapped_sentence_count,
+            line_mapped_sentence_count = artifact.line_mapped_sentence_count,
+            block_mapped_sentence_count = artifact.block_mapped_sentence_count,
+            page_only_sentence_count = artifact.page_only_sentence_count,
+            unmappable_sentence_count = artifact.unmappable_sentence_count,
+            quality_class = ?artifact.quality_class,
+            source_kind = ?artifact.source_kind,
+            coverage_ratio = ((summary.coverage_ratio as f64) * 100.0).round() / 100.0,
+            "Refreshed PDF OCR alignment artifact from canonical sentence stream"
+        );
+        crate::cache::persist_pdf_ocr_alignment_artifact(&self.source_path, &artifact);
+        self.pdf_ocr_alignment = Some(summary);
     }
 
     pub fn snapshot(
@@ -434,6 +688,7 @@ impl ReaderSession {
             pdf_sync_strategy: self.pdf_sync_strategy,
             pdf_classification: self.pdf_classification.clone(),
             pdf_runtime_policy: self.pdf_runtime_policy.clone(),
+            pdf_ocr_alignment: self.pdf_ocr_alignment.clone(),
             images: self.current_page_images(),
             tts_text_page: tts_text_page.clone(),
             reading_markdown_page,
@@ -942,6 +1197,7 @@ mod tests {
             pdf_sync_strategy: None,
             pdf_classification: None,
             pdf_runtime_policy: None,
+            pdf_ocr_alignment: None,
             images: Vec::new(),
             config: config::AppConfig::default(),
             pages,
@@ -1116,8 +1372,13 @@ mod tests {
             scroll_y: 0.0,
             pdf_page_idx: None,
             pdf_rects: Vec::new(),
+            pdf_line_rects: Vec::new(),
+            pdf_block_rects: Vec::new(),
             pdf_confidence: None,
             pdf_reason: None,
+            pdf_quality_class: None,
+            pdf_sentence_text_hash: None,
+            pdf_token_lineage: Vec::new(),
         };
         session.restore_bookmark_position(&bookmark, &normalizer);
 
@@ -1468,12 +1729,66 @@ mod tests {
             scroll_y: 0.0,
             pdf_page_idx: None,
             pdf_rects: Vec::new(),
+            pdf_line_rects: Vec::new(),
+            pdf_block_rects: Vec::new(),
             pdf_confidence: None,
             pdf_reason: None,
+            pdf_quality_class: None,
+            pdf_sentence_text_hash: None,
+            pdf_token_lineage: Vec::new(),
         };
         session.restore_bookmark_position(&bookmark, &normalizer::TextNormalizer::default());
         assert_eq!(session.current_page, 1);
         assert_eq!(session.highlighted_display_idx, Some(0));
+    }
+
+    #[test]
+    fn restore_bookmark_position_falls_back_to_pdf_ocr_alignment_metadata() {
+        let source_path = unique_pdf_source_path();
+        fs::write(&source_path, b"pdf").expect("write source");
+        let normalizer = normalizer::TextNormalizer::default();
+        let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
+        session.source_path = source_path.clone();
+        crate::cache::persist_pdf_sentence_map(
+            &source_path,
+            &[crate::cache::PdfSentenceLocation {
+                sentence_idx: 2,
+                page_idx: Some(7),
+                rects: vec![],
+                line_rects: vec![crate::cache::PdfRect {
+                    left: 0.1,
+                    top: 0.2,
+                    width: 0.4,
+                    height: 0.05,
+                }],
+                block_rects: vec![],
+                confidence: "fallback".to_string(),
+                reason: "line_window_fuzzy_alignment".to_string(),
+                score: 0.63,
+            }],
+        );
+        session.refresh_pdf_ocr_alignment_artifact();
+        let bookmark = crate::cache::Bookmark {
+            page: 0,
+            sentence_idx: None,
+            sentence_text: None,
+            scroll_y: 0.0,
+            pdf_page_idx: Some(7),
+            pdf_rects: Vec::new(),
+            pdf_line_rects: Vec::new(),
+            pdf_block_rects: Vec::new(),
+            pdf_confidence: Some("line_fallback".to_string()),
+            pdf_reason: Some("line_window_fuzzy_alignment".to_string()),
+            pdf_quality_class: Some(crate::epub_loader::PdfOcrGeometryQualityClass::OcrMixedTrust),
+            pdf_sentence_text_hash: Some(crate::cache::stable_sentence_text_hash("Gamma.")),
+            pdf_token_lineage: Vec::new(),
+        };
+
+        session.restore_bookmark_position(&bookmark, &normalizer);
+
+        assert_eq!(session.current_page, 1);
+        assert_eq!(session.highlighted_display_idx, Some(0));
+        let _ = crate::cache::delete_recent_source_and_cache(&source_path);
     }
 
     #[test]
@@ -1512,13 +1827,20 @@ mod tests {
                 score: 1.0,
             }],
         );
+        session.refresh_pdf_ocr_alignment_artifact();
 
         let bookmark = session.to_bookmark();
         assert_eq!(bookmark.page, 1);
         assert_eq!(bookmark.pdf_page_idx, Some(7));
-        assert_eq!(bookmark.pdf_confidence.as_deref(), Some("exact"));
+        assert_eq!(bookmark.pdf_confidence.as_deref(), Some("sentence_rects"));
         assert_eq!(bookmark.pdf_reason.as_deref(), Some("exact_geometry"));
         assert_eq!(bookmark.pdf_rects.len(), 1);
+        assert_eq!(bookmark.pdf_line_rects.len(), 1);
+        assert_eq!(bookmark.pdf_block_rects.len(), 1);
+        assert_eq!(
+            bookmark.pdf_sentence_text_hash.as_deref(),
+            Some(crate::cache::stable_sentence_text_hash("Gamma.").as_str())
+        );
 
         let _ = crate::cache::delete_recent_source_and_cache(&source_path);
     }

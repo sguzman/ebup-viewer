@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
@@ -8,12 +9,15 @@ use super::{
     CONTENT_READING_MARKDOWN_FILE, CONTENT_TTS_TEXT_FILE, hash_dir,
 };
 use crate::epub_loader::{
-    PdfClassificationSummary, PdfGeometryMode, PdfRuntimePolicySummary, PdfSyncStrategy,
+    PdfClassificationSummary, PdfGeometryMode, PdfOcrGeometryQualityClass, PdfOcrSourceKind,
+    PdfRuntimePolicySummary, PdfSyncStrategy,
 };
 
 const CONTENT_PDF_SYNC_META_FILE: &str = "content/pdf-sync-meta.toml";
 const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
+const CONTENT_PDF_OCR_ALIGNMENT_FILE: &str = "content/pdf-ocr-alignment.toml";
 const PDF_SYNC_META_CLASSIFICATION_VERSION: u32 = 3;
+const PDF_OCR_ALIGNMENT_VERSION: u32 = 1;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PdfSyncMeta {
@@ -42,9 +46,61 @@ pub struct PdfSentenceLocation {
     pub score: f32,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfOcrSentenceAlignment {
+    pub sentence_idx: usize,
+    #[serde(default)]
+    pub sentence_text_hash: String,
+    pub page_idx: Option<usize>,
+    #[serde(default)]
+    pub rects: Vec<PdfRect>,
+    #[serde(default)]
+    pub line_rects: Vec<PdfRect>,
+    #[serde(default)]
+    pub block_rects: Vec<PdfRect>,
+    pub confidence_tier: String,
+    pub fallback_reason: String,
+    #[serde(default)]
+    pub token_lineage: Vec<String>,
+    pub score: f32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfOcrAlignmentArtifact {
+    pub version: u32,
+    pub quality_class: PdfOcrGeometryQualityClass,
+    pub source_kind: PdfOcrSourceKind,
+    pub sentence_count: usize,
+    pub mapped_sentence_count: usize,
+    pub rect_mapped_sentence_count: usize,
+    pub line_mapped_sentence_count: usize,
+    pub block_mapped_sentence_count: usize,
+    pub page_only_sentence_count: usize,
+    pub unmappable_sentence_count: usize,
+    pub highlightable_sentence_count: usize,
+    pub token_lineage_available: bool,
+    pub deterministic: bool,
+    #[serde(default)]
+    pub degraded_reasons: Vec<String>,
+    pub explanation: String,
+    #[serde(default)]
+    pub alignments: Vec<PdfOcrSentenceAlignment>,
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PdfSentenceMap {
     locations: Vec<PdfSentenceLocation>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PdfOcrAlignmentEnvelope {
+    artifact: PdfOcrAlignmentArtifact,
+}
+
+pub fn stable_sentence_text_hash(text: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(text.trim().as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 pub(super) fn persist_dual_view_artifacts(
@@ -334,6 +390,88 @@ pub(super) fn load_pdf_sentence_map(source_path: &Path) -> Option<Vec<PdfSentenc
         "Loaded cached PDF sentence map"
     );
     Some(parsed.locations)
+}
+
+pub(super) fn persist_pdf_ocr_alignment_artifact(
+    source_path: &Path,
+    artifact: &PdfOcrAlignmentArtifact,
+) {
+    ensure_content_layout(source_path);
+    let artifact_path = hash_dir(source_path).join(CONTENT_PDF_OCR_ALIGNMENT_FILE);
+    if let Some(parent) = artifact_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let mut persisted = artifact.clone();
+    persisted.version = PDF_OCR_ALIGNMENT_VERSION;
+    let serialized = match toml::to_string(&PdfOcrAlignmentEnvelope {
+        artifact: persisted.clone(),
+    }) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!("Failed to serialize PDF OCR alignment artifact: {err}");
+            return;
+        }
+    };
+    if let Err(err) = fs::write(&artifact_path, serialized) {
+        warn!(
+            path = %artifact_path.display(),
+            "Failed to persist PDF OCR alignment artifact: {err}"
+        );
+    } else {
+        debug!(
+            path = %artifact_path.display(),
+            sentence_count = persisted.sentence_count,
+            mapped_sentence_count = persisted.mapped_sentence_count,
+            quality_class = ?persisted.quality_class,
+            source_kind = ?persisted.source_kind,
+            "Persisted PDF OCR alignment artifact"
+        );
+    }
+}
+
+pub(super) fn load_pdf_ocr_alignment_artifact(
+    source_path: &Path,
+) -> Option<PdfOcrAlignmentArtifact> {
+    let artifact_path = hash_dir(source_path).join(CONTENT_PDF_OCR_ALIGNMENT_FILE);
+    let raw = match fs::read_to_string(&artifact_path) {
+        Ok(value) => value,
+        Err(err) => {
+            debug!(
+                path = %artifact_path.display(),
+                "PDF OCR alignment artifact unavailable: {err}"
+            );
+            return None;
+        }
+    };
+    let parsed: PdfOcrAlignmentEnvelope = match toml::from_str(&raw) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(
+                path = %artifact_path.display(),
+                "PDF OCR alignment artifact was corrupt; removing stale artifact so it can be rebuilt: {err}"
+            );
+            let _ = fs::remove_file(&artifact_path);
+            return None;
+        }
+    };
+    if parsed.artifact.version != PDF_OCR_ALIGNMENT_VERSION {
+        warn!(
+            path = %artifact_path.display(),
+            cached_version = parsed.artifact.version,
+            required_version = PDF_OCR_ALIGNMENT_VERSION,
+            "PDF OCR alignment artifact version changed; removing stale artifact so it can be rebuilt"
+        );
+        let _ = fs::remove_file(&artifact_path);
+        return None;
+    }
+    debug!(
+        path = %artifact_path.display(),
+        sentence_count = parsed.artifact.sentence_count,
+        mapped_sentence_count = parsed.artifact.mapped_sentence_count,
+        quality_class = ?parsed.artifact.quality_class,
+        "Loaded cached PDF OCR alignment artifact"
+    );
+    Some(parsed.artifact)
 }
 
 fn ensure_content_layout(source_path: &Path) {

@@ -900,6 +900,44 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
                   ))}
                 </Stack>
               ) : null}
+              {reader.pdf_ocr_alignment ? (
+                <>
+                  <Typography variant="body2">
+                    OCR geometry quality: {formatPdfTokenLabel(reader.pdf_ocr_alignment.quality_class)}
+                  </Typography>
+                  <Typography variant="body2">
+                    OCR source kind: {formatPdfTokenLabel(reader.pdf_ocr_alignment.source_kind)}
+                  </Typography>
+                  <Typography variant="body2">
+                    Coverage: {formatPercent(reader.pdf_ocr_alignment.coverage_ratio * 100)} | mapped{" "}
+                    {reader.pdf_ocr_alignment.mapped_sentence_count}/{reader.pdf_ocr_alignment.sentence_count} | highlightable{" "}
+                    {reader.pdf_ocr_alignment.highlightable_sentence_count}
+                  </Typography>
+                  <Typography variant="body2">
+                    Sentence rects: {reader.pdf_ocr_alignment.rect_mapped_sentence_count} | line fallback{" "}
+                    {reader.pdf_ocr_alignment.line_mapped_sentence_count} | block fallback{" "}
+                    {reader.pdf_ocr_alignment.block_mapped_sentence_count} | page-only{" "}
+                    {reader.pdf_ocr_alignment.page_only_sentence_count} | missing{" "}
+                    {reader.pdf_ocr_alignment.unmappable_sentence_count}
+                  </Typography>
+                  <Typography variant="body2">
+                    Deterministic rebuild: {reader.pdf_ocr_alignment.deterministic ? "yes" : "no"}
+                    {" | "}Token lineage available: {reader.pdf_ocr_alignment.token_lineage_available ? "yes" : "no"}
+                  </Typography>
+                  <Typography variant="body2">
+                    OCR geometry note: {reader.pdf_ocr_alignment.explanation}
+                  </Typography>
+                  {reader.pdf_ocr_alignment.degraded_reasons.length > 0 ? (
+                    <Typography variant="body2">
+                      OCR degraded reasons:{" "}
+                      {reader.pdf_ocr_alignment.degraded_reasons
+                        .slice(0, 4)
+                        .map(formatPdfTokenLabel)
+                        .join("; ")}
+                    </Typography>
+                  ) : null}
+                </>
+              ) : null}
             </>
           ) : null}
         </Stack>

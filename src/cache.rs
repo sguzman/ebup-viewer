@@ -63,7 +63,10 @@ pub use browser_tab_cache::{
     persist_browser_tab_bundle_source, persist_browser_tab_source,
     rehydrate_browser_tab_manifest_assets,
 };
-pub use content_artifacts::PdfSentenceLocation;
+pub use content_artifacts::{
+    PdfOcrAlignmentArtifact, PdfOcrSentenceAlignment, PdfSentenceLocation,
+    stable_sentence_text_hash,
+};
 
 #[derive(Debug, Clone)]
 pub struct RecentBook {
@@ -282,6 +285,14 @@ pub fn persist_pdf_sentence_map(source_path: &Path, locations: &[PdfSentenceLoca
 
 pub fn load_pdf_sentence_map(source_path: &Path) -> Option<Vec<PdfSentenceLocation>> {
     content_artifacts::load_pdf_sentence_map(source_path)
+}
+
+pub fn persist_pdf_ocr_alignment_artifact(source_path: &Path, artifact: &PdfOcrAlignmentArtifact) {
+    content_artifacts::persist_pdf_ocr_alignment_artifact(source_path, artifact)
+}
+
+pub fn load_pdf_ocr_alignment_artifact(source_path: &Path) -> Option<PdfOcrAlignmentArtifact> {
+    content_artifacts::load_pdf_ocr_alignment_artifact(source_path)
 }
 
 pub fn remember_source_path(source_path: &Path) {
@@ -935,8 +946,23 @@ mod tests {
                 width: 0.33,
                 height: 0.04,
             }],
+            pdf_line_rects: vec![PdfRect {
+                left: 0.11,
+                top: 0.22,
+                width: 0.33,
+                height: 0.04,
+            }],
+            pdf_block_rects: vec![PdfRect {
+                left: 0.1,
+                top: 0.2,
+                width: 0.35,
+                height: 0.08,
+            }],
             pdf_confidence: Some("exact".to_string()),
             pdf_reason: Some("exact_geometry".to_string()),
+            pdf_quality_class: Some(crate::epub_loader::PdfOcrGeometryQualityClass::OcrHighTrust),
+            pdf_sentence_text_hash: Some(stable_sentence_text_hash("A saved sentence")),
+            pdf_token_lineage: vec!["page:3".to_string()],
         };
 
         save_bookmark(&source, &bookmark);
@@ -958,6 +984,15 @@ mod tests {
         );
         assert_eq!(loaded.pdf_confidence.as_deref(), Some("exact"));
         assert_eq!(loaded.pdf_reason.as_deref(), Some("exact_geometry"));
+        assert_eq!(
+            loaded.pdf_quality_class,
+            Some(crate::epub_loader::PdfOcrGeometryQualityClass::OcrHighTrust)
+        );
+        assert_eq!(
+            loaded.pdf_sentence_text_hash.as_deref(),
+            Some(stable_sentence_text_hash("A saved sentence").as_str())
+        );
+        assert_eq!(loaded.pdf_token_lineage, vec!["page:3".to_string()]);
 
         cleanup_source_and_cache(&source);
     }
@@ -991,8 +1026,13 @@ sentence_text = "legacy bookmark entry"
         assert!((loaded.scroll_y - 0.0).abs() < f32::EPSILON);
         assert_eq!(loaded.pdf_page_idx, None);
         assert!(loaded.pdf_rects.is_empty());
+        assert!(loaded.pdf_line_rects.is_empty());
+        assert!(loaded.pdf_block_rects.is_empty());
         assert_eq!(loaded.pdf_confidence, None);
         assert_eq!(loaded.pdf_reason, None);
+        assert_eq!(loaded.pdf_quality_class, None);
+        assert_eq!(loaded.pdf_sentence_text_hash, None);
+        assert!(loaded.pdf_token_lineage.is_empty());
 
         cleanup_source_and_cache(&source);
     }
@@ -1151,6 +1191,59 @@ sentence_text = "legacy bookmark entry"
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded[0].sentence_idx, 0);
         assert_eq!(loaded[1].sentence_idx, 2);
+
+        cleanup_source_and_cache(&source);
+    }
+
+    #[test]
+    fn pdf_ocr_alignment_artifact_roundtrip_preserves_summary_and_alignments() {
+        let source = unique_source_path("pdf");
+        write_source_file(&source);
+
+        let artifact = PdfOcrAlignmentArtifact {
+            version: 0,
+            quality_class: crate::epub_loader::PdfOcrGeometryQualityClass::OcrMixedTrust,
+            source_kind: crate::epub_loader::PdfOcrSourceKind::OcrText,
+            sentence_count: 3,
+            mapped_sentence_count: 2,
+            rect_mapped_sentence_count: 1,
+            line_mapped_sentence_count: 1,
+            block_mapped_sentence_count: 0,
+            page_only_sentence_count: 0,
+            unmappable_sentence_count: 1,
+            highlightable_sentence_count: 2,
+            token_lineage_available: false,
+            deterministic: true,
+            degraded_reasons: vec!["line_window_fuzzy_alignment".to_string()],
+            explanation: "Test OCR alignment".to_string(),
+            alignments: vec![PdfOcrSentenceAlignment {
+                sentence_idx: 1,
+                sentence_text_hash: stable_sentence_text_hash("Example sentence."),
+                page_idx: Some(2),
+                rects: vec![],
+                line_rects: vec![PdfRect {
+                    left: 0.1,
+                    top: 0.2,
+                    width: 0.3,
+                    height: 0.04,
+                }],
+                block_rects: vec![],
+                confidence_tier: "line_fallback".to_string(),
+                fallback_reason: "line_window_fuzzy_alignment".to_string(),
+                token_lineage: Vec::new(),
+                score: 0.74,
+            }],
+        };
+
+        persist_pdf_ocr_alignment_artifact(&source, &artifact);
+        let loaded = load_pdf_ocr_alignment_artifact(&source)
+            .expect("pdf ocr alignment artifact should load");
+
+        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.quality_class, artifact.quality_class);
+        assert_eq!(loaded.source_kind, artifact.source_kind);
+        assert_eq!(loaded.mapped_sentence_count, artifact.mapped_sentence_count);
+        assert_eq!(loaded.alignments, artifact.alignments);
 
         cleanup_source_and_cache(&source);
     }

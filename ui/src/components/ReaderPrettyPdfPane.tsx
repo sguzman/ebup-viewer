@@ -1444,6 +1444,18 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
               : ""}
           </Typography>
         ) : null}
+        {!error && reader.pdf_ocr_alignment ? (
+          <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-ocr-alignment">
+            OCR geometry: {reader.pdf_ocr_alignment.quality_class.replaceAll("_", " ")} | Source:{" "}
+            {reader.pdf_ocr_alignment.source_kind.replaceAll("_", " ")} | Coverage:{" "}
+            {(reader.pdf_ocr_alignment.coverage_ratio * 100).toFixed(1)}% | Rects:{" "}
+            {reader.pdf_ocr_alignment.rect_mapped_sentence_count} | Line:{" "}
+            {reader.pdf_ocr_alignment.line_mapped_sentence_count} | Block:{" "}
+            {reader.pdf_ocr_alignment.block_mapped_sentence_count} | Page-only:{" "}
+            {reader.pdf_ocr_alignment.page_only_sentence_count} | Missing:{" "}
+            {reader.pdf_ocr_alignment.unmappable_sentence_count}
+          </Typography>
+        ) : null}
         {!error && canSyncHighlights && mappingSummary ? (
           <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-summary">
             Exact: {mappingSummary.exact} | Fallback: {mappingSummary.fallback} | Page-only: {mappingSummary.pageOnly} | Missing: {mappingSummary.missing}

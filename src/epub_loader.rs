@@ -275,6 +275,46 @@ pub struct PdfRuntimePolicySummary {
     pub degraded_reasons: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfOcrGeometryQualityClass {
+    OcrHighTrust,
+    OcrMixedTrust,
+    OcrTextOnly,
+    OcrFailedOrUnusable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfOcrSourceKind {
+    EmbeddedText,
+    OcrText,
+    MixedMergedText,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct PdfOcrAlignmentSummary {
+    pub quality_class: PdfOcrGeometryQualityClass,
+    pub source_kind: PdfOcrSourceKind,
+    pub sentence_count: u32,
+    pub mapped_sentence_count: u32,
+    pub rect_mapped_sentence_count: u32,
+    pub line_mapped_sentence_count: u32,
+    pub block_mapped_sentence_count: u32,
+    pub page_only_sentence_count: u32,
+    pub unmappable_sentence_count: u32,
+    pub highlightable_sentence_count: u32,
+    pub token_lineage_available: bool,
+    pub deterministic: bool,
+    pub coverage_ratio: f32,
+    #[serde(default)]
+    pub degraded_reasons: Vec<String>,
+    pub explanation: String,
+}
+
 /// Load a supported source file and return plain text plus extracted image paths.
 pub fn load_book_content(path: &Path) -> Result<LoadedBook> {
     load_book_content_with_cancel(path, None)

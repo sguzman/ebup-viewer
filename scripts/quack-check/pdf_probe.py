@@ -35,6 +35,13 @@ def _page_features(text: str, page_index: int) -> dict:
     total_non_latin = len(NON_LATIN_RE.findall(text))
     tokens = TOKEN_RE.findall(text)
     lines = [line.strip() for line in text.splitlines() if line.strip()]
+    alpha_tokens = sum(1 for token in tokens if any(ch.isalpha() for ch in token))
+    alpha_chars = sum(1 for c in text if c.isalpha())
+    upper_chars = sum(1 for c in text if c.isupper())
+    short_lines = sum(1 for line in lines if len(line) <= 24)
+    hyphenated_lines = sum(1 for line in lines if line.endswith("-"))
+    normalized_lines = [" ".join(line.split()) for line in lines]
+    repeated_lines = len(normalized_lines) - len(set(normalized_lines))
     return {
         "page_index": page_index + 1,
         "char_count": total_chars,
@@ -45,6 +52,13 @@ def _page_features(text: str, page_index: int) -> dict:
         "punctuation_ratio": float(total_punct / max(1, total_chars)),
         "digit_ratio": float(total_digits / max(1, total_chars)),
         "non_latin_ratio": float(total_non_latin / max(1, total_chars)),
+        "alpha_char_ratio": float(alpha_chars / max(1, total_chars)),
+        "uppercase_char_ratio": float(upper_chars / max(1, total_chars)),
+        "alpha_token_ratio": float(alpha_tokens / max(1, len(tokens))),
+        "avg_token_length": float(sum(len(token) for token in tokens) / max(1, len(tokens))),
+        "short_line_ratio": float(short_lines / max(1, len(lines))),
+        "repeated_line_ratio": float(repeated_lines / max(1, len(lines))),
+        "hyphenated_line_ratio": float(hyphenated_lines / max(1, len(lines))),
         "first_line": _normalize_boundary_line(lines[0]) if lines else "",
         "last_line": _normalize_boundary_line(lines[-1]) if lines else "",
     }

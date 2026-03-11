@@ -812,6 +812,13 @@ fn classify_pdf_sample_page(
         punctuation_ratio: page.punctuation_ratio,
         digit_ratio: page.digit_ratio,
         non_latin_ratio: page.non_latin_ratio,
+        alpha_char_ratio: page.alpha_char_ratio,
+        uppercase_char_ratio: page.uppercase_char_ratio,
+        alpha_token_ratio: page.alpha_token_ratio,
+        avg_token_length: page.avg_token_length,
+        short_line_ratio: page.short_line_ratio,
+        repeated_line_ratio: page.repeated_line_ratio,
+        hyphenated_line_ratio: page.hyphenated_line_ratio,
         first_line: page.first_line.clone(),
         last_line: page.last_line.clone(),
     };
@@ -821,6 +828,18 @@ fn classify_pdf_sample_page(
     } else {
         page.char_count as f32 / page.line_count as f32
     };
+    let looks_corrupt = page.garbage_ratio >= 0.04
+        || page.non_latin_ratio >= 0.35
+        || page.alpha_token_ratio <= 0.38
+        || page.avg_token_length >= 14.0;
+    let looks_layout_hostile = (page.short_line_ratio >= 0.65 && page.line_count >= 8)
+        || page.repeated_line_ratio >= 0.25
+        || page.hyphenated_line_ratio >= 0.22
+        || (avg_line_length <= 18.0 && page.line_count >= 10);
+    let looks_hidden_overlay = page.char_count <= 80
+        && page.token_count <= 18
+        && page.alpha_token_ratio >= 0.55
+        && page.short_line_ratio <= 0.60;
 
     let (class, confidence, reasons) = if page.char_count == 0 {
         (
@@ -828,17 +847,23 @@ fn classify_pdf_sample_page(
             0.99,
             vec!["no_extracted_text_detected".to_string()],
         )
-    } else if page.char_count <= 40 && page.line_count <= 3 {
+    } else if looks_hidden_overlay {
         (
             PdfPageClass::HiddenOcrOverlay,
-            0.72,
-            vec!["very_sparse_text_layer_detected".to_string()],
+            0.78,
+            vec![
+                "very_sparse_text_layer_detected".to_string(),
+                "overlay_like_alpha_token_mix".to_string(),
+            ],
         )
-    } else if page.garbage_ratio >= 0.04 || page.non_latin_ratio >= 0.35 {
+    } else if looks_corrupt {
         (
             PdfPageClass::EmbeddedNoisy,
-            0.77,
-            vec!["garbled_or_non_coherent_text_ratio_high".to_string()],
+            0.81,
+            vec![
+                "garbled_or_non_coherent_text_ratio_high".to_string(),
+                "token_continuity_is_unstable".to_string(),
+            ],
         )
     } else if page.char_count < 120 || page.token_count < 25 {
         (
@@ -846,23 +871,48 @@ fn classify_pdf_sample_page(
             0.74,
             vec!["sparse_text_density".to_string()],
         )
-    } else if avg_line_length <= 18.0 && page.line_count >= 10 {
+    } else if looks_layout_hostile {
         (
             PdfPageClass::LayoutHostile,
-            0.68,
-            vec!["short_line_density_suggests_layout_hostility".to_string()],
+            0.76,
+            vec![
+                "short_line_density_suggests_layout_hostility".to_string(),
+                "line_coherence_and_paragraph_reconstruction_are_weak".to_string(),
+            ],
         )
-    } else if page.char_count < 260 && page.digit_ratio >= 0.12 {
+    } else if page.char_count < 260 && (page.digit_ratio >= 0.12 || page.alpha_token_ratio <= 0.55)
+    {
         (
             PdfPageClass::ScanWithWeakOcr,
-            0.61,
-            vec!["weak_ocr_like_text_density".to_string()],
+            0.67,
+            vec![
+                "weak_ocr_like_text_density".to_string(),
+                "token_quality_is_too_thin_for_exact_sync".to_string(),
+            ],
+        )
+    } else if page.alpha_token_ratio >= 0.72
+        && page.avg_token_length >= 3.0
+        && page.avg_token_length <= 9.5
+        && page.short_line_ratio <= 0.45
+        && page.repeated_line_ratio <= 0.12
+        && page.hyphenated_line_ratio <= 0.18
+    {
+        (
+            PdfPageClass::EmbeddedClean,
+            0.9,
+            vec![
+                "dense_low-garbage_embedded_text".to_string(),
+                "token_and_line_coherence_support_exact_sync".to_string(),
+            ],
         )
     } else {
         (
-            PdfPageClass::EmbeddedClean,
-            0.86,
-            vec!["dense_low-garbage_embedded_text".to_string()],
+            PdfPageClass::EmbeddedNoisy,
+            0.64,
+            vec![
+                "embedded_text_exists_but_trust_signals_are_mixed".to_string(),
+                "prefer_degraded_sync".to_string(),
+            ],
         )
     };
 
@@ -1578,6 +1628,13 @@ mod tests {
                         punctuation_ratio: 0.09,
                         digit_ratio: 0.02,
                         non_latin_ratio: 0.0,
+                        alpha_char_ratio: 0.72,
+                        uppercase_char_ratio: 0.04,
+                        alpha_token_ratio: 0.88,
+                        avg_token_length: 5.2,
+                        short_line_ratio: 0.22,
+                        repeated_line_ratio: 0.03,
+                        hyphenated_line_ratio: 0.04,
                         first_line: "chapter #".to_string(),
                         last_line: "publisher footer".to_string(),
                     },
@@ -1591,6 +1648,13 @@ mod tests {
                         punctuation_ratio: 0.08,
                         digit_ratio: 0.01,
                         non_latin_ratio: 0.0,
+                        alpha_char_ratio: 0.73,
+                        uppercase_char_ratio: 0.04,
+                        alpha_token_ratio: 0.87,
+                        avg_token_length: 5.1,
+                        short_line_ratio: 0.21,
+                        repeated_line_ratio: 0.03,
+                        hyphenated_line_ratio: 0.04,
                         first_line: "chapter #".to_string(),
                         last_line: "publisher footer".to_string(),
                     },
@@ -1729,6 +1793,13 @@ mod tests {
                 punctuation_ratio: 0.0,
                 digit_ratio: 0.0,
                 non_latin_ratio: 0.0,
+                alpha_char_ratio: 0.0,
+                uppercase_char_ratio: 0.0,
+                alpha_token_ratio: 0.0,
+                avg_token_length: 0.0,
+                short_line_ratio: 0.0,
+                repeated_line_ratio: 0.0,
+                hyphenated_line_ratio: 0.0,
                 first_line: String::new(),
                 last_line: String::new(),
             },
@@ -1742,6 +1813,13 @@ mod tests {
                 punctuation_ratio: 0.0,
                 digit_ratio: 0.0,
                 non_latin_ratio: 0.0,
+                alpha_char_ratio: 0.75,
+                uppercase_char_ratio: 0.02,
+                alpha_token_ratio: 1.0,
+                avg_token_length: 5.5,
+                short_line_ratio: 0.0,
+                repeated_line_ratio: 0.0,
+                hyphenated_line_ratio: 0.0,
                 first_line: String::new(),
                 last_line: String::new(),
             },
@@ -1759,6 +1837,42 @@ mod tests {
         assert_eq!(
             classification.ocr_recommendation,
             PdfOcrRecommendation::RequiredForText
+        );
+    }
+
+    #[test]
+    fn classification_marks_short_repetitive_lines_as_layout_hostile() {
+        let mut report = sample_report();
+        report.sample.pages = vec![crate::quack_check::probe::ProbePageStats {
+            page_index: 1,
+            char_count: 420,
+            token_count: 90,
+            line_count: 28,
+            whitespace_ratio: 0.16,
+            garbage_ratio: 0.0,
+            punctuation_ratio: 0.03,
+            digit_ratio: 0.01,
+            non_latin_ratio: 0.0,
+            alpha_char_ratio: 0.74,
+            uppercase_char_ratio: 0.06,
+            alpha_token_ratio: 0.92,
+            avg_token_length: 4.7,
+            short_line_ratio: 0.82,
+            repeated_line_ratio: 0.31,
+            hyphenated_line_ratio: 0.28,
+            first_line: "item".to_string(),
+            last_line: "item".to_string(),
+        }];
+
+        let page = classify_pdf_sample_page(&report.sample.pages[0]);
+        assert_eq!(page.class, PdfPageClass::LayoutHostile);
+
+        let classification =
+            classify_pdf_runtime(Some(&report), "Recovered text still exists.", "")
+                .expect("classification");
+        assert_eq!(
+            classification.document_class,
+            PdfDocumentClass::LayoutHostileDocument
         );
     }
 }

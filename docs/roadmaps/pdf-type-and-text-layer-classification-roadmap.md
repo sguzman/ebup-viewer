@@ -78,25 +78,25 @@
 - [x] Add tracing for rollup rationale and class distribution.
 
 ## Phase 4: Embedded Text Quality Analysis
-- [ ] Strengthen detection of whether existing PDF text is actually trustworthy:
-- [ ] token continuity
-- [ ] line coherence
+- [x] Strengthen detection of whether existing PDF text is actually trustworthy:
+- [x] token continuity
+- [x] line coherence
 - [ ] block coherence
 - [ ] coordinate sanity
 - [ ] duplicate/invisible text suppression need
 - [ ] reading-order stability
-- [ ] paragraph reconstruction quality
-- [ ] Promote only clearly trustworthy pages to `embedded_clean`.
-- [ ] Downgrade malformed but present text to `embedded_noisy` or `embedded_sparse`.
+- [x] paragraph reconstruction quality
+- [x] Promote only clearly trustworthy pages to `embedded_clean`.
+- [x] Downgrade malformed but present text to `embedded_noisy` or `embedded_sparse`.
 
 ## Phase 5: Hidden OCR Overlay Detection
-- [ ] Add explicit heuristics for hidden OCR text layers:
+- [x] Add explicit heuristics for hidden OCR text layers:
 - [ ] full-page image plus sparse text objects
 - [ ] invisible or zero-opacity text
 - [ ] duplicated text stacked over image content
-- [ ] OCR-like token quality with weak geometry coherence
+- [x] OCR-like token quality with weak geometry coherence
 - [ ] mixed embedded and OCR text behavior on the same page
-- [ ] Route these PDFs into a dedicated class instead of treating them as clean embedded text.
+- [x] Route these PDFs into a dedicated class instead of treating them as clean embedded text.
 
 ## Phase 6: OCR Readiness and Need Detection
 - [x] Decide whether OCR is required, optional, or unnecessary from classification alone.

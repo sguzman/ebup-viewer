@@ -21,6 +21,13 @@ pub struct ProbePageOut {
     pub punctuation_ratio: f32,
     pub digit_ratio: f32,
     pub non_latin_ratio: f32,
+    pub alpha_char_ratio: f32,
+    pub uppercase_char_ratio: f32,
+    pub alpha_token_ratio: f32,
+    pub avg_token_length: f32,
+    pub short_line_ratio: f32,
+    pub repeated_line_ratio: f32,
+    pub hyphenated_line_ratio: f32,
     #[serde(default)]
     pub first_line: String,
     #[serde(default)]

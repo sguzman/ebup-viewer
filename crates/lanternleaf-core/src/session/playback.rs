@@ -79,6 +79,14 @@ impl ReaderSession {
     }
 
     pub fn toggle_text_only(&mut self, normalizer: &normalizer::TextNormalizer) {
+        if !self.text_only_mode && !self.pdf_text_only_allowed() {
+            tracing::info!(
+                path = %self.source_path.display(),
+                policy = ?self.pdf_runtime_policy_ref().map(|value| value.text_only_policy),
+                "Ignoring text-only toggle because PDF runtime policy does not allow text ownership"
+            );
+            return;
+        }
         let previous_mode = self.text_only_mode;
         self.text_only_mode = !self.text_only_mode;
         if self.text_only_mode {
@@ -103,6 +111,15 @@ impl ReaderSession {
     }
 
     pub fn tts_play(&mut self, normalizer: &normalizer::TextNormalizer) {
+        if !self.pdf_tts_allowed() {
+            self.tts_state = TtsPlaybackState::Idle;
+            tracing::info!(
+                path = %self.source_path.display(),
+                policy = ?self.pdf_runtime_policy_ref().map(|value| value.text_only_policy),
+                "Ignoring TTS play because PDF runtime policy disallows TTS"
+            );
+            return;
+        }
         let count = self.current_audio_sentences(normalizer).len();
         if count == 0 {
             self.tts_state = TtsPlaybackState::Idle;
@@ -139,6 +156,14 @@ impl ReaderSession {
     }
 
     pub fn tts_play_from_page_start(&mut self, normalizer: &normalizer::TextNormalizer) {
+        if !self.pdf_tts_allowed() {
+            self.tts_state = TtsPlaybackState::Idle;
+            tracing::info!(
+                path = %self.source_path.display(),
+                "Ignoring TTS play-from-page-start because PDF runtime policy disallows TTS"
+            );
+            return;
+        }
         let count = self.current_audio_sentences(normalizer).len();
         if count == 0 {
             self.tts_state = TtsPlaybackState::Idle;
@@ -149,6 +174,14 @@ impl ReaderSession {
     }
 
     pub fn tts_play_from_highlight(&mut self, normalizer: &normalizer::TextNormalizer) {
+        if !self.pdf_tts_allowed() {
+            self.tts_state = TtsPlaybackState::Idle;
+            tracing::info!(
+                path = %self.source_path.display(),
+                "Ignoring TTS play-from-highlight because PDF runtime policy disallows TTS"
+            );
+            return;
+        }
         if self.current_audio_highlight_idx(normalizer).is_none() {
             self.tts_play_from_page_start(normalizer);
             return;

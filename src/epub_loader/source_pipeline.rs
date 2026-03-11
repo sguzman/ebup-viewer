@@ -2012,6 +2012,92 @@ mod tests {
             PdfDocumentClass::LayoutHostileDocument
         );
     }
+
+    #[test]
+    fn runtime_policy_uses_exact_sync_for_clean_embedded_text() {
+        let classification = PdfClassificationSummary {
+            document_class: PdfDocumentClass::EmbeddedClean,
+            confidence: 0.9,
+            ocr_recommendation: PdfOcrRecommendation::NotNeeded,
+            reasons: vec!["clean".to_string()],
+            feature_summary: PdfProbeFeatureSummary {
+                sampled_pages: 1,
+                text_page_ratio: 1.0,
+                empty_text_page_ratio: 0.0,
+                sparse_text_page_ratio: 0.0,
+                noisy_text_page_ratio: 0.0,
+                repeated_header_ratio: 0.0,
+                repeated_footer_ratio: 0.0,
+                avg_chars_per_page: 1400,
+                garbage_ratio: 0.01,
+                whitespace_ratio: 0.18,
+            },
+            page_classes: Vec::new(),
+            class_distribution: vec![PdfPageClassCount {
+                class: PdfPageClass::EmbeddedClean,
+                count: 1,
+            }],
+        };
+
+        let policy = derive_pdf_runtime_policy(
+            Some(&classification),
+            PdfGeometryMode::HighTextTrust,
+            PdfSyncStrategy::SentenceSpans,
+            "Alpha. Beta.",
+        );
+
+        assert_eq!(policy.text_only_policy, PdfTextOnlyPolicy::FullText);
+        assert_eq!(
+            policy.sentence_highlight_policy,
+            PdfSentenceHighlightPolicy::ExactSentence
+        );
+        assert_eq!(policy.search_policy, PdfSearchPolicy::FullText);
+        assert!(policy.tts_allowed);
+        assert!(policy.exact_sentence_sync);
+    }
+
+    #[test]
+    fn runtime_policy_gates_text_ownership_when_ocr_is_required() {
+        let classification = PdfClassificationSummary {
+            document_class: PdfDocumentClass::ScanWithWeakOcr,
+            confidence: 0.8,
+            ocr_recommendation: PdfOcrRecommendation::RequiredForText,
+            reasons: vec!["scan".to_string()],
+            feature_summary: PdfProbeFeatureSummary {
+                sampled_pages: 1,
+                text_page_ratio: 0.2,
+                empty_text_page_ratio: 0.8,
+                sparse_text_page_ratio: 0.2,
+                noisy_text_page_ratio: 0.0,
+                repeated_header_ratio: 0.0,
+                repeated_footer_ratio: 0.0,
+                avg_chars_per_page: 40,
+                garbage_ratio: 0.0,
+                whitespace_ratio: 0.1,
+            },
+            page_classes: Vec::new(),
+            class_distribution: vec![PdfPageClassCount {
+                class: PdfPageClass::ScanWithWeakOcr,
+                count: 1,
+            }],
+        };
+
+        let policy = derive_pdf_runtime_policy(
+            Some(&classification),
+            PdfGeometryMode::OcrRequired,
+            PdfSyncStrategy::RenderOnly,
+            "",
+        );
+
+        assert_eq!(policy.text_only_policy, PdfTextOnlyPolicy::OcrRequired);
+        assert_eq!(
+            policy.sentence_highlight_policy,
+            PdfSentenceHighlightPolicy::Disabled
+        );
+        assert_eq!(policy.bookmark_policy, PdfBookmarkPolicy::PageOnly);
+        assert!(!policy.tts_allowed);
+        assert!(!policy.pretty_sync_enabled);
+    }
 }
 
 fn load_quack_check_report(job_dir: &Path) -> Result<crate::quack_check::report::JobReport> {

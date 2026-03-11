@@ -318,6 +318,43 @@ fn maybe_log_mapping_summary(path: &Path) {
 }
 
 impl ReaderSession {
+    fn is_pdf_source(&self) -> bool {
+        self.source_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("pdf"))
+            .unwrap_or(false)
+    }
+
+    fn pdf_runtime_policy_ref(&self) -> Option<&crate::epub_loader::PdfRuntimePolicySummary> {
+        self.pdf_runtime_policy
+            .as_ref()
+            .filter(|_| self.is_pdf_source())
+    }
+
+    fn pdf_text_only_allowed(&self) -> bool {
+        !matches!(
+            self.pdf_runtime_policy_ref()
+                .map(|value| value.text_only_policy),
+            Some(crate::epub_loader::PdfTextOnlyPolicy::Disabled)
+                | Some(crate::epub_loader::PdfTextOnlyPolicy::OcrRequired)
+        )
+    }
+
+    fn pdf_search_allowed(&self) -> bool {
+        !matches!(
+            self.pdf_runtime_policy_ref()
+                .map(|value| value.search_policy),
+            Some(crate::epub_loader::PdfSearchPolicy::Disabled)
+        )
+    }
+
+    fn pdf_tts_allowed(&self) -> bool {
+        self.pdf_runtime_policy_ref()
+            .map(|value| value.tts_allowed)
+            .unwrap_or(true)
+    }
+
     pub fn snapshot(
         &mut self,
         panels: PanelState,
@@ -646,6 +683,14 @@ impl ReaderSession {
         if query.is_empty() {
             return;
         }
+        if !self.pdf_search_allowed() {
+            tracing::info!(
+                path = %self.source_path.display(),
+                policy = ?self.pdf_runtime_policy_ref().map(|value| value.search_policy),
+                "Ignoring search because PDF runtime policy disables it"
+            );
+            return;
+        }
 
         let sentences = self.current_sentences(normalizer);
         let regex = Regex::new(&query).ok();
@@ -916,6 +961,14 @@ mod tests {
             current_plan_page: None,
             current_plan: None,
         }
+    }
+
+    fn apply_pdf_runtime_policy(
+        session: &mut ReaderSession,
+        policy: crate::epub_loader::PdfRuntimePolicySummary,
+    ) {
+        session.source_path = PathBuf::from("/tmp/test.pdf");
+        session.pdf_runtime_policy = Some(policy);
     }
 
     fn unique_pdf_source_path() -> PathBuf {
@@ -1218,6 +1271,81 @@ mod tests {
                 "The next sentence still aligns.".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn pdf_runtime_policy_blocks_text_only_toggle_when_ocr_is_required() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let mut session = build_test_session(&[&["Alpha.", "Beta."]]);
+        apply_pdf_runtime_policy(
+            &mut session,
+            crate::epub_loader::PdfRuntimePolicySummary {
+                text_only_policy: crate::epub_loader::PdfTextOnlyPolicy::OcrRequired,
+                sentence_highlight_policy: crate::epub_loader::PdfSentenceHighlightPolicy::Disabled,
+                search_policy: crate::epub_loader::PdfSearchPolicy::LimitedText,
+                bookmark_policy: crate::epub_loader::PdfBookmarkPolicy::PageOnly,
+                tts_allowed: false,
+                pretty_sync_enabled: false,
+                exact_sentence_sync: false,
+                explanation: "OCR required".to_string(),
+                degraded_reasons: vec!["ocr_needed_for_text_ownership".to_string()],
+            },
+        );
+
+        session.toggle_text_only(&normalizer);
+
+        assert!(!session.text_only_mode);
+    }
+
+    #[test]
+    fn pdf_runtime_policy_blocks_search_when_search_is_disabled() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let mut session = build_test_session(&[&["Alpha needle.", "Beta."]]);
+        apply_pdf_runtime_policy(
+            &mut session,
+            crate::epub_loader::PdfRuntimePolicySummary {
+                text_only_policy: crate::epub_loader::PdfTextOnlyPolicy::LimitedText,
+                sentence_highlight_policy:
+                    crate::epub_loader::PdfSentenceHighlightPolicy::ParagraphFallback,
+                search_policy: crate::epub_loader::PdfSearchPolicy::Disabled,
+                bookmark_policy: crate::epub_loader::PdfBookmarkPolicy::PageOnly,
+                tts_allowed: true,
+                pretty_sync_enabled: true,
+                exact_sentence_sync: false,
+                explanation: "Search disabled".to_string(),
+                degraded_reasons: vec!["render_only_mode".to_string()],
+            },
+        );
+
+        session.set_search_query("needle".to_string(), &normalizer);
+
+        assert_eq!(session.search_query, "needle");
+        assert!(session.search_matches.is_empty());
+        assert_eq!(session.selected_search_match, None);
+    }
+
+    #[test]
+    fn pdf_runtime_policy_blocks_tts_play_when_tts_is_disallowed() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let mut session = build_test_session(&[&["Alpha.", "Beta."]]);
+        apply_pdf_runtime_policy(
+            &mut session,
+            crate::epub_loader::PdfRuntimePolicySummary {
+                text_only_policy: crate::epub_loader::PdfTextOnlyPolicy::Disabled,
+                sentence_highlight_policy: crate::epub_loader::PdfSentenceHighlightPolicy::Disabled,
+                search_policy: crate::epub_loader::PdfSearchPolicy::Disabled,
+                bookmark_policy: crate::epub_loader::PdfBookmarkPolicy::PageOnly,
+                tts_allowed: false,
+                pretty_sync_enabled: false,
+                exact_sentence_sync: false,
+                explanation: "TTS disabled".to_string(),
+                degraded_reasons: vec!["no_usable_text_available".to_string()],
+            },
+        );
+
+        session.tts_play(&normalizer);
+
+        assert_eq!(session.tts_state, TtsPlaybackState::Idle);
     }
 
     #[test]

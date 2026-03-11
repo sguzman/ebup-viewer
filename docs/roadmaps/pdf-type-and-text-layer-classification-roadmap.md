@@ -152,7 +152,7 @@
 - [ ] OCR-overlay PDFs
 - [ ] hybrid documents with mixed page classes
 - [ ] Add tests for page-level and document-level classification rollup.
-- [ ] Add tests proving runtime behavior selection matches classification.
+- [x] Add tests proving runtime behavior selection matches classification.
 
 ## Phase 11: Diagnostics and UX
 - [ ] Add developer diagnostics for:

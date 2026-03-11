@@ -111,13 +111,13 @@
 ## Phase 7: Runtime Policy Mapping
 - [x] Map classification directly to runtime behavior:
 - [x] native PDF pretty mode policy
-- [ ] text-only availability
-- [ ] TTS availability
-- [ ] sentence highlight policy
-- [ ] line/block fallback policy
+- [x] text-only availability
+- [x] TTS availability
+- [x] sentence highlight policy
+- [x] line/block fallback policy
 - [x] render-only policy
-- [ ] bookmark/resume policy
-- [ ] search policy
+- [x] bookmark/resume policy
+- [x] search policy
 - [x] Ensure the UI can surface the chosen class and why degraded behavior was selected.
 
 ## Phase 8: Cache and Contracts
@@ -161,9 +161,9 @@
 - [x] confidence levels
 - [x] OCR recommendation
 - [x] key feature signals
-- [ ] fallback triggers
+- [x] fallback triggers
 - [x] Add user-facing explanation strings for degraded PDF behavior driven by classification.
-- [ ] Provide a way to inspect why a PDF was treated as scan/mixed/render-only.
+- [x] Provide a way to inspect why a PDF was treated as scan/mixed/render-only.
 
 ## Recommended Order
 - [x] Step 1: expand probe feature collection

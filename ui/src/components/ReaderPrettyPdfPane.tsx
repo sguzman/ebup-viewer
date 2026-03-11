@@ -607,7 +607,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     } | null>(null);
     const [activeMatch, setActiveMatch] = useState<PdfSentenceMatch | null>(null);
 
-    const canSyncHighlights = reader.pdf_sync_strategy !== "render_only";
+    const canSyncHighlights = reader.pdf_runtime_policy
+      ? reader.pdf_runtime_policy.pretty_sync_enabled
+      : reader.pdf_sync_strategy !== "render_only";
     const modeLabel = reader.pdf_geometry_mode ? reader.pdf_geometry_mode.replaceAll("_", " ") : "unknown";
     const strategyLabel = reader.pdf_sync_strategy ? reader.pdf_sync_strategy.replaceAll("_", " ") : "unknown";
     const documentClassLabel = reader.pdf_classification?.document_class
@@ -616,6 +618,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const ocrRecommendationLabel = reader.pdf_classification?.ocr_recommendation
       ? reader.pdf_classification.ocr_recommendation.replaceAll("_", " ")
       : "unknown";
+    const highlightPolicyLabel = reader.pdf_runtime_policy?.sentence_highlight_policy
+      ? reader.pdf_runtime_policy.sentence_highlight_policy.replaceAll("_", " ")
+      : strategyLabel;
     const globalSentenceStart = globalSentenceStartForReader(reader);
     const highlightedSentenceIdx = reader.highlighted_sentence_idx ?? null;
 
@@ -1381,7 +1386,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           sx={{ mb: 1.25, px: 0.5 }}
         >
           <Typography variant="caption" color="text.secondary">
-            Native PDF | class: {documentClassLabel} | geometry: {modeLabel} | sync: {strategyLabel}
+            Native PDF | class: {documentClassLabel} | geometry: {modeLabel} | sync: {strategyLabel} | policy: {highlightPolicyLabel}
           </Typography>
           <ButtonGroup size="small" variant="outlined">
             <Button onClick={() => setZoom((value) => normalizeNumber(value - 0.1, 0.7, 2.5, 0.05, 2))}>
@@ -1400,9 +1405,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         ) : null}
         {!error && !canSyncHighlights ? (
           <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-degraded">
-            {reader.pdf_geometry_mode === "ocr_required"
-              ? "This PDF is renderable now, but precise highlight sync and text playback will stay gated until OCR produces usable text."
-              : "This PDF is render-only right now. Text-only/TTS can continue, but precise PDF highlight sync is unavailable."}
+            {reader.pdf_runtime_policy?.explanation
+              ?? (reader.pdf_geometry_mode === "ocr_required"
+                ? "This PDF is renderable now, but precise highlight sync and text playback will stay gated until OCR produces usable text."
+                : "This PDF is render-only right now. Text-only/TTS can continue, but precise PDF highlight sync is unavailable.")}
           </Typography>
         ) : null}
         {!error && reader.pdf_classification ? (
@@ -1410,6 +1416,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             OCR: {ocrRecommendationLabel} | Confidence: {reader.pdf_classification.confidence.toFixed(2)}
             {reader.pdf_classification.reasons.length > 0
               ? ` | Why: ${reader.pdf_classification.reasons.slice(0, 2).join("; ").replaceAll("_", " ")}`
+              : ""}
+          </Typography>
+        ) : null}
+        {!error && reader.pdf_runtime_policy ? (
+          <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-policy">
+            Text: {reader.pdf_runtime_policy.text_only_policy.replaceAll("_", " ")} | Search: {reader.pdf_runtime_policy.search_policy.replaceAll("_", " ")} | Bookmark: {reader.pdf_runtime_policy.bookmark_policy.replaceAll("_", " ")}
+            {reader.pdf_runtime_policy.degraded_reasons.length > 0
+              ? ` | Degraded: ${reader.pdf_runtime_policy.degraded_reasons.slice(0, 2).join("; ").replaceAll("_", " ")}`
               : ""}
           </Typography>
         ) : null}

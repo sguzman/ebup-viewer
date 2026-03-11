@@ -73,6 +73,11 @@ impl ReaderSession {
                 .as_ref()
                 .and_then(|value| value.pdf_classification.clone())
         });
+        let pdf_runtime_policy = loaded.pdf_runtime_policy.or_else(|| {
+            cached_pdf_sync
+                .as_ref()
+                .and_then(|value| value.pdf_runtime_policy.clone())
+        });
 
         let mut session = Self {
             source_path,
@@ -84,6 +89,7 @@ impl ReaderSession {
             pdf_geometry_mode,
             pdf_sync_strategy,
             pdf_classification,
+            pdf_runtime_policy,
             images: loaded
                 .images
                 .into_iter()

@@ -7,7 +7,9 @@ use super::{
     CONTENT_LAYOUT_VERSION, CONTENT_LAYOUT_VERSION_FILE, CONTENT_READING_HTML_FILE,
     CONTENT_READING_MARKDOWN_FILE, CONTENT_TTS_TEXT_FILE, hash_dir,
 };
-use crate::epub_loader::{PdfClassificationSummary, PdfGeometryMode, PdfSyncStrategy};
+use crate::epub_loader::{
+    PdfClassificationSummary, PdfGeometryMode, PdfRuntimePolicySummary, PdfSyncStrategy,
+};
 
 const CONTENT_PDF_SYNC_META_FILE: &str = "content/pdf-sync-meta.toml";
 const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
@@ -19,6 +21,8 @@ pub struct PdfSyncMeta {
     pub pdf_sync_strategy: PdfSyncStrategy,
     #[serde(default)]
     pub pdf_classification: Option<PdfClassificationSummary>,
+    #[serde(default)]
+    pub pdf_runtime_policy: Option<PdfRuntimePolicySummary>,
     #[serde(default)]
     pub pdf_classification_version: u32,
 }
@@ -175,6 +179,7 @@ pub(super) fn persist_pdf_sync_meta(
     pdf_geometry_mode: PdfGeometryMode,
     pdf_sync_strategy: PdfSyncStrategy,
     pdf_classification: Option<&PdfClassificationSummary>,
+    pdf_runtime_policy: Option<&PdfRuntimePolicySummary>,
 ) {
     ensure_content_layout(source_path);
     let meta_path = hash_dir(source_path).join(CONTENT_PDF_SYNC_META_FILE);
@@ -185,6 +190,7 @@ pub(super) fn persist_pdf_sync_meta(
         pdf_geometry_mode,
         pdf_sync_strategy,
         pdf_classification: pdf_classification.cloned(),
+        pdf_runtime_policy: pdf_runtime_policy.cloned(),
         pdf_classification_version: PDF_SYNC_META_CLASSIFICATION_VERSION,
     }) {
         Ok(value) => value,
@@ -201,6 +207,7 @@ pub(super) fn persist_pdf_sync_meta(
             ?pdf_geometry_mode,
             ?pdf_sync_strategy,
             pdf_document_class = ?pdf_classification.map(|value| value.document_class),
+            pdf_highlight_policy = ?pdf_runtime_policy.map(|value| value.sentence_highlight_policy),
             "Persisted PDF sync metadata"
         );
     }

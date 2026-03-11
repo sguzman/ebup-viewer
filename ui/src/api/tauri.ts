@@ -302,6 +302,7 @@ const mockReaderSnapshot = (): ReaderSnapshot => ({
   pdf_geometry_mode: null,
   pdf_sync_strategy: null,
   pdf_classification: null,
+  pdf_runtime_policy: null,
   images: [],
   tts_text_page: MOCK_PAGES[0].text,
   reading_markdown_page: null,
@@ -459,6 +460,19 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
         },
         page_classes: [],
         class_distribution: [{ class: "embedded_clean", count: 3 }]
+      }
+    : null;
+  reader.pdf_runtime_policy = reader.source_path.toLowerCase().endsWith(".pdf")
+    ? {
+        text_only_policy: "full_text",
+        sentence_highlight_policy: "exact_sentence",
+        search_policy: "full_text",
+        bookmark_policy: "canonical_text",
+        tts_allowed: true,
+        pretty_sync_enabled: true,
+        exact_sentence_sync: true,
+        explanation: "Exact sentence sync is enabled for this PDF.",
+        degraded_reasons: []
       }
     : null;
   reader.page_text = pageData.text;

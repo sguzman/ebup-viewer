@@ -52,6 +52,7 @@ pub struct LoadedBook {
     pub pdf_geometry_mode: Option<PdfGeometryMode>,
     pub pdf_sync_strategy: Option<PdfSyncStrategy>,
     pub pdf_classification: Option<PdfClassificationSummary>,
+    pub pdf_runtime_policy: Option<PdfRuntimePolicySummary>,
     pub images: Vec<BookImage>,
 }
 
@@ -184,6 +185,57 @@ pub struct PdfClassificationSummary {
     pub class_distribution: Vec<PdfPageClassCount>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfTextOnlyPolicy {
+    FullText,
+    LimitedText,
+    OcrRequired,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfSentenceHighlightPolicy {
+    ExactSentence,
+    ParagraphFallback,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfSearchPolicy {
+    FullText,
+    LimitedText,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfBookmarkPolicy {
+    CanonicalText,
+    PageOnly,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct PdfRuntimePolicySummary {
+    pub text_only_policy: PdfTextOnlyPolicy,
+    pub sentence_highlight_policy: PdfSentenceHighlightPolicy,
+    pub search_policy: PdfSearchPolicy,
+    pub bookmark_policy: PdfBookmarkPolicy,
+    pub tts_allowed: bool,
+    pub pretty_sync_enabled: bool,
+    pub exact_sentence_sync: bool,
+    pub explanation: String,
+    #[serde(default)]
+    pub degraded_reasons: Vec<String>,
+}
+
 /// Load a supported source file and return plain text plus extracted image paths.
 pub fn load_book_content(path: &Path) -> Result<LoadedBook> {
     load_book_content_with_cancel(path, None)
@@ -212,6 +264,7 @@ pub fn load_book_content_with_cancel(
             pdf_geometry_mode,
             pdf_sync_strategy,
             content.pdf_classification.as_ref(),
+            content.pdf_runtime_policy.as_ref(),
         );
     }
     record_markdown_availability(path, content.has_structured_markdown);
@@ -247,6 +300,10 @@ pub fn load_book_content_with_cancel(
             .pdf_classification
             .as_ref()
             .map(|value| value.ocr_recommendation),
+        pdf_runtime_policy = ?content
+            .pdf_runtime_policy
+            .as_ref()
+            .map(|value| value.sentence_highlight_policy),
         image_count = images.len(),
         elapsed_ms = start.elapsed().as_millis(),
         "Source load complete"
@@ -259,6 +316,7 @@ pub fn load_book_content_with_cancel(
         pdf_geometry_mode: content.pdf_geometry_mode,
         pdf_sync_strategy: content.pdf_sync_strategy,
         pdf_classification: content.pdf_classification,
+        pdf_runtime_policy: content.pdf_runtime_policy,
         images,
     })
 }
@@ -272,6 +330,7 @@ struct SourceContent {
     pdf_geometry_mode: Option<PdfGeometryMode>,
     pdf_sync_strategy: Option<PdfSyncStrategy>,
     pdf_classification: Option<PdfClassificationSummary>,
+    pdf_runtime_policy: Option<PdfRuntimePolicySummary>,
 }
 
 fn collect_images(path: &Path) -> Result<Vec<BookImage>> {

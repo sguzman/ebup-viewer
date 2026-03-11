@@ -33,9 +33,10 @@ export const ReaderPdfTextUnavailableNotice = memo(function ReaderPdfTextUnavail
 }: {
   reader: ReaderSnapshot;
 }) {
-  const message = reader.pdf_geometry_mode === "ocr_required"
-    ? "Text-only content is unavailable for this PDF until OCR produces usable text."
-    : "Text-only content is unavailable for this PDF because no usable extracted text is available.";
+  const message = reader.pdf_runtime_policy?.explanation
+    ?? (reader.pdf_geometry_mode === "ocr_required"
+      ? "Text-only content is unavailable for this PDF until OCR produces usable text."
+      : "Text-only content is unavailable for this PDF because no usable extracted text is available.");
   const why = reader.pdf_classification?.reasons?.[0]?.replaceAll("_", " ") ?? null;
   return (
     <Stack spacing={0.25}>

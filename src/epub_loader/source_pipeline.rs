@@ -1,7 +1,8 @@
 use super::{
-    PdfClassificationSummary, PdfDocumentClass, PdfGeometryMode, PdfOcrRecommendation,
-    PdfPageClass, PdfPageClassCount, PdfPageClassificationSummary, PdfProbeFeatureSummary,
-    PdfProbePageSummary, PdfSyncStrategy, SourceContent,
+    PdfBookmarkPolicy, PdfClassificationSummary, PdfDocumentClass, PdfGeometryMode,
+    PdfOcrRecommendation, PdfPageClass, PdfPageClassCount, PdfPageClassificationSummary,
+    PdfProbeFeatureSummary, PdfProbePageSummary, PdfRuntimePolicySummary, PdfSearchPolicy,
+    PdfSentenceHighlightPolicy, PdfSyncStrategy, PdfTextOnlyPolicy, SourceContent,
 };
 use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
 use crate::cancellation::CancellationToken;
@@ -73,6 +74,7 @@ pub(super) fn load_source_content(
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
             pdf_classification: None,
+            pdf_runtime_policy: None,
         });
     }
 
@@ -97,6 +99,7 @@ pub(super) fn load_source_content(
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
             pdf_classification: None,
+            pdf_runtime_policy: None,
         });
     }
 
@@ -124,6 +127,7 @@ pub(super) fn load_source_content(
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
             pdf_classification: None,
+            pdf_runtime_policy: None,
         };
         info!(
             path = %path.display(),
@@ -152,6 +156,7 @@ pub(super) fn load_source_content(
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
             pdf_classification: None,
+            pdf_runtime_policy: None,
         };
         info!(
             path = %path.display(),
@@ -176,6 +181,7 @@ pub(super) fn load_source_content(
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
             pdf_classification: None,
+            pdf_runtime_policy: None,
         });
     }
 
@@ -331,6 +337,7 @@ fn load_pdf_with_quack_check(
             pdf_geometry_mode: Some(cached.pdf_geometry_mode),
             pdf_sync_strategy: Some(cached.pdf_sync_strategy),
             pdf_classification: cached.pdf_classification,
+            pdf_runtime_policy: cached.pdf_runtime_policy,
         });
     }
 
@@ -375,6 +382,7 @@ fn load_pdf_with_quack_check(
         ocr_enabled,
         report.as_ref(),
         resolved.pdf_classification.as_ref(),
+        resolved.pdf_runtime_policy.as_ref(),
     )?;
     info!(
         path = %path.display(),
@@ -411,6 +419,10 @@ fn load_pdf_with_quack_check(
             .pdf_classification
             .as_ref()
             .map(|value| value.ocr_recommendation),
+        pdf_highlight_policy = ?resolved
+            .pdf_runtime_policy
+            .as_ref()
+            .map(|value| value.sentence_highlight_policy),
         job_id = %run.job_id,
         job_dir = %run.job_dir.display(),
         elapsed_ms = start.elapsed().as_millis(),
@@ -424,6 +436,7 @@ fn load_pdf_with_quack_check(
         pdf_geometry_mode: resolved.pdf_geometry_mode,
         pdf_sync_strategy: resolved.pdf_sync_strategy,
         pdf_classification: resolved.pdf_classification,
+        pdf_runtime_policy: resolved.pdf_runtime_policy,
     })
 }
 
@@ -449,6 +462,12 @@ pub(super) fn resolve_pdf_dual_view_content(
         transcript_text,
         markdown,
     );
+    let pdf_runtime_policy = derive_pdf_runtime_policy(
+        pdf_classification.as_ref(),
+        pdf_geometry_mode,
+        pdf_sync_strategy,
+        transcript_text,
+    );
     SourceContent {
         tts_text,
         reading_html: None,
@@ -457,6 +476,7 @@ pub(super) fn resolve_pdf_dual_view_content(
         pdf_geometry_mode: Some(pdf_geometry_mode),
         pdf_sync_strategy: Some(pdf_sync_strategy),
         pdf_classification,
+        pdf_runtime_policy: Some(pdf_runtime_policy),
     }
 }
 
@@ -1104,6 +1124,8 @@ struct PdfCacheMeta {
     #[serde(default)]
     pdf_classification: Option<PdfClassificationSummary>,
     #[serde(default)]
+    pdf_runtime_policy: Option<PdfRuntimePolicySummary>,
+    #[serde(default)]
     pdf_classification_version: u32,
     #[serde(default)]
     extraction_mode: String,
@@ -1186,6 +1208,7 @@ fn pdf_signature(path: &Path, config_sha256: &str, text_filename: &str) -> Resul
         pdf_geometry_mode: None,
         pdf_sync_strategy: None,
         pdf_classification: None,
+        pdf_runtime_policy: None,
         pdf_classification_version: PDF_CLASSIFICATION_VERSION,
         extraction_mode: String::new(),
         ocr_enabled: false,
@@ -1294,6 +1317,7 @@ struct PdfCachedLoad {
     pdf_geometry_mode: PdfGeometryMode,
     pdf_sync_strategy: PdfSyncStrategy,
     pdf_classification: Option<PdfClassificationSummary>,
+    pdf_runtime_policy: Option<PdfRuntimePolicySummary>,
     extraction_mode: String,
     ocr_enabled: bool,
     page_count: u32,
@@ -1375,6 +1399,10 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
             .pdf_classification
             .as_ref()
             .map(|value| value.document_class),
+        pdf_highlight_policy = ?cached_meta
+            .pdf_runtime_policy
+            .as_ref()
+            .map(|value| value.sentence_highlight_policy),
         extraction_mode = cached_meta.extraction_mode,
         ocr_enabled = cached_meta.ocr_enabled,
         page_count = cached_meta.page_count,
@@ -1393,6 +1421,7 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
             .pdf_sync_strategy
             .unwrap_or(PdfSyncStrategy::ParagraphFallback),
         pdf_classification: cached_meta.pdf_classification,
+        pdf_runtime_policy: cached_meta.pdf_runtime_policy,
         extraction_mode: cached_meta.extraction_mode,
         ocr_enabled: cached_meta.ocr_enabled,
         page_count: cached_meta.page_count,
@@ -1444,6 +1473,7 @@ fn write_pdf_cache(
     ocr_enabled: bool,
     report: Option<&crate::quack_check::report::JobReport>,
     pdf_classification: Option<&PdfClassificationSummary>,
+    pdf_runtime_policy: Option<&PdfRuntimePolicySummary>,
 ) -> Result<()> {
     let (text_path, meta_path, _) = pdf_cache_paths(path);
     if let Some(parent) = text_path.parent() {
@@ -1462,6 +1492,7 @@ fn write_pdf_cache(
     signature.pdf_geometry_mode = Some(pdf_geometry_mode);
     signature.pdf_sync_strategy = Some(pdf_sync_strategy);
     signature.pdf_classification = pdf_classification.cloned();
+    signature.pdf_runtime_policy = pdf_runtime_policy.cloned();
     signature.pdf_classification_version = PDF_CLASSIFICATION_VERSION;
     signature.extraction_mode = extraction_mode.to_string();
     signature.ocr_enabled = ocr_enabled;
@@ -1504,6 +1535,10 @@ fn write_pdf_cache(
             .pdf_classification
             .as_ref()
             .map(|value| value.document_class),
+        pdf_highlight_policy = ?signature
+            .pdf_runtime_policy
+            .as_ref()
+            .map(|value| value.sentence_highlight_policy),
         extraction_mode,
         ocr_enabled,
         page_count = signature.page_count,
@@ -1590,6 +1625,107 @@ fn derive_pdf_runtime_metadata(
                 PdfSyncStrategy::ParagraphFallback
             },
         ),
+    }
+}
+
+fn derive_pdf_runtime_policy(
+    classification: Option<&PdfClassificationSummary>,
+    pdf_geometry_mode: PdfGeometryMode,
+    pdf_sync_strategy: PdfSyncStrategy,
+    transcript_text: &str,
+) -> PdfRuntimePolicySummary {
+    let has_text = !transcript_text.trim().is_empty();
+    let document_class = classification.map(|value| value.document_class);
+    let text_only_policy = if !has_text {
+        match document_class {
+            Some(PdfDocumentClass::ScanWithGoodOcr)
+            | Some(PdfDocumentClass::ScanWithWeakOcr)
+            | Some(PdfDocumentClass::HiddenOcrOverlay) => PdfTextOnlyPolicy::OcrRequired,
+            _ => PdfTextOnlyPolicy::Disabled,
+        }
+    } else if matches!(
+        pdf_sync_strategy,
+        PdfSyncStrategy::SentenceSpans | PdfSyncStrategy::ParagraphFallback
+    ) {
+        PdfTextOnlyPolicy::FullText
+    } else {
+        PdfTextOnlyPolicy::LimitedText
+    };
+    let sentence_highlight_policy = match pdf_sync_strategy {
+        PdfSyncStrategy::SentenceSpans => PdfSentenceHighlightPolicy::ExactSentence,
+        PdfSyncStrategy::ParagraphFallback => PdfSentenceHighlightPolicy::ParagraphFallback,
+        PdfSyncStrategy::RenderOnly => PdfSentenceHighlightPolicy::Disabled,
+    };
+    let search_policy = match text_only_policy {
+        PdfTextOnlyPolicy::FullText => PdfSearchPolicy::FullText,
+        PdfTextOnlyPolicy::LimitedText | PdfTextOnlyPolicy::OcrRequired => {
+            PdfSearchPolicy::LimitedText
+        }
+        PdfTextOnlyPolicy::Disabled => PdfSearchPolicy::Disabled,
+    };
+    let bookmark_policy = if has_text {
+        PdfBookmarkPolicy::CanonicalText
+    } else {
+        PdfBookmarkPolicy::PageOnly
+    };
+
+    let mut degraded_reasons = Vec::new();
+    if !matches!(
+        sentence_highlight_policy,
+        PdfSentenceHighlightPolicy::ExactSentence
+    ) {
+        degraded_reasons.push("sentence_sync_not_exact".to_string());
+    }
+    if matches!(text_only_policy, PdfTextOnlyPolicy::OcrRequired) {
+        degraded_reasons.push("ocr_needed_for_text_ownership".to_string());
+    }
+    if matches!(text_only_policy, PdfTextOnlyPolicy::Disabled) {
+        degraded_reasons.push("no_usable_text_available".to_string());
+    }
+    if matches!(pdf_geometry_mode, PdfGeometryMode::MixedTextTrust) {
+        degraded_reasons.push("embedded_text_trust_is_mixed".to_string());
+    }
+    if matches!(pdf_geometry_mode, PdfGeometryMode::OcrRequired) {
+        degraded_reasons.push("native_pdf_sync_is_ocr_gated".to_string());
+    }
+    if matches!(pdf_geometry_mode, PdfGeometryMode::RenderOnlyNoSync) {
+        degraded_reasons.push("render_only_mode".to_string());
+    }
+    if let Some(classification) = classification {
+        degraded_reasons.extend(classification.reasons.iter().take(2).cloned());
+    }
+    degraded_reasons.sort();
+    degraded_reasons.dedup();
+
+    let explanation = match sentence_highlight_policy {
+        PdfSentenceHighlightPolicy::ExactSentence => {
+            "Exact sentence sync is enabled for this PDF.".to_string()
+        }
+        PdfSentenceHighlightPolicy::ParagraphFallback => {
+            "This PDF is readable, but highlight sync is degraded to paragraph/page-level fallbacks."
+                .to_string()
+        }
+        PdfSentenceHighlightPolicy::Disabled => {
+            "This PDF is currently render-only for native view sync.".to_string()
+        }
+    };
+
+    PdfRuntimePolicySummary {
+        text_only_policy,
+        sentence_highlight_policy,
+        search_policy,
+        bookmark_policy,
+        tts_allowed: has_text,
+        pretty_sync_enabled: !matches!(
+            sentence_highlight_policy,
+            PdfSentenceHighlightPolicy::Disabled
+        ),
+        exact_sentence_sync: matches!(
+            sentence_highlight_policy,
+            PdfSentenceHighlightPolicy::ExactSentence
+        ),
+        explanation,
+        degraded_reasons,
     }
 }
 
@@ -1752,6 +1888,7 @@ mod tests {
             true,
             Some(&report),
             classify_pdf_runtime(Some(&report), "Alpha. Beta.", "## pretty").as_ref(),
+            None,
         )
         .expect("write pdf cache");
 

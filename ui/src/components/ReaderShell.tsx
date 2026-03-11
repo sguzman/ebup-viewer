@@ -199,6 +199,9 @@ export const ReaderShell = memo(function ReaderShell({
     if (reader.pretty_kind !== "pdf") {
       return null;
     }
+    if (reader.pdf_runtime_policy?.tts_allowed === false) {
+      return reader.pdf_runtime_policy.explanation;
+    }
     const hasUsableSentenceText = reader.sentences.some((sentence) => sentence.trim().length > 0);
     const hasUsablePageText = reader.page_text.trim().length > 0 || reader.tts_text_page.trim().length > 0;
     if (hasUsableSentenceText || hasUsablePageText) {
@@ -211,6 +214,7 @@ export const ReaderShell = memo(function ReaderShell({
   }, [
     reader.page_text,
     reader.pdf_geometry_mode,
+    reader.pdf_runtime_policy,
     reader.pretty_kind,
     reader.sentences,
     reader.tts_text_page

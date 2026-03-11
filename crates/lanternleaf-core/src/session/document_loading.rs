@@ -68,6 +68,11 @@ impl ReaderSession {
                 .as_ref()
                 .map(|value| value.pdf_sync_strategy)
         });
+        let pdf_classification = loaded.pdf_classification.or_else(|| {
+            cached_pdf_sync
+                .as_ref()
+                .and_then(|value| value.pdf_classification.clone())
+        });
 
         let mut session = Self {
             source_path,
@@ -78,6 +83,7 @@ impl ReaderSession {
             has_structured_markdown,
             pdf_geometry_mode,
             pdf_sync_strategy,
+            pdf_classification,
             images: loaded
                 .images
                 .into_iter()

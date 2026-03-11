@@ -2198,6 +2198,7 @@ mod tests {
                 pretty_kind: session::PrettyKind::None,
                 pdf_geometry_mode: None,
                 pdf_sync_strategy: None,
+                pdf_classification: None,
                 images: Vec::new(),
                 tts_text_page: "hello".to_string(),
                 reading_markdown_page: None,

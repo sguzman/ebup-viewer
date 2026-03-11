@@ -301,6 +301,7 @@ const mockReaderSnapshot = (): ReaderSnapshot => ({
   pretty_kind: "none",
   pdf_geometry_mode: null,
   pdf_sync_strategy: null,
+  pdf_classification: null,
   images: [],
   tts_text_page: MOCK_PAGES[0].text,
   reading_markdown_page: null,
@@ -438,6 +439,28 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
   reader.reading_html_page = pageData.html ?? null;
   reader.pdf_geometry_mode = reader.source_path.toLowerCase().endsWith(".pdf") ? "high_text_trust" : null;
   reader.pdf_sync_strategy = reader.source_path.toLowerCase().endsWith(".pdf") ? "sentence_spans" : null;
+  reader.pdf_classification = reader.source_path.toLowerCase().endsWith(".pdf")
+    ? {
+        document_class: "embedded_clean",
+        confidence: 0.92,
+        ocr_recommendation: "not_needed",
+        reasons: ["mock_pdf_classifier"],
+        feature_summary: {
+          sampled_pages: 3,
+          text_page_ratio: 1,
+          empty_text_page_ratio: 0,
+          sparse_text_page_ratio: 0,
+          noisy_text_page_ratio: 0,
+          repeated_header_ratio: 0,
+          repeated_footer_ratio: 0,
+          avg_chars_per_page: 1400,
+          garbage_ratio: 0.01,
+          whitespace_ratio: 0.18
+        },
+        page_classes: [],
+        class_distribution: [{ class: "embedded_clean", count: 3 }]
+      }
+    : null;
   reader.page_text = pageData.text;
   reader.sentences = pageData.sentences;
   reader.sentence_anchor_map = pageData.sentences.map((_, idx) => idx);

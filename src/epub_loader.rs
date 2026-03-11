@@ -74,8 +74,9 @@ pub enum PdfSyncStrategy {
     RenderOnly,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum PdfPageClass {
     EmbeddedClean,
     EmbeddedNoisy,
@@ -86,8 +87,9 @@ pub enum PdfPageClass {
     LayoutHostile,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum PdfDocumentClass {
     EmbeddedClean,
     EmbeddedNoisy,
@@ -100,8 +102,9 @@ pub enum PdfDocumentClass {
     LayoutHostileDocument,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum PdfOcrRecommendation {
     NotNeeded,
     GeometryOnly,
@@ -109,7 +112,8 @@ pub enum PdfOcrRecommendation {
     UnlikelyToHelp,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
 pub struct PdfProbePageSummary {
     pub page_index: u32,
     pub char_count: u32,
@@ -124,7 +128,8 @@ pub struct PdfProbePageSummary {
     pub last_line: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
 pub struct PdfProbeFeatureSummary {
     pub sampled_pages: u32,
     pub text_page_ratio: f32,
@@ -138,7 +143,8 @@ pub struct PdfProbeFeatureSummary {
     pub whitespace_ratio: f32,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
 pub struct PdfPageClassificationSummary {
     pub page_index: u32,
     pub class: PdfPageClass,
@@ -148,7 +154,16 @@ pub struct PdfPageClassificationSummary {
     pub features: PdfProbePageSummary,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct PdfPageClassCount {
+    pub class: PdfPageClass,
+    #[ts(type = "number")]
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
 pub struct PdfClassificationSummary {
     pub document_class: PdfDocumentClass,
     pub confidence: f32,
@@ -159,7 +174,7 @@ pub struct PdfClassificationSummary {
     #[serde(default)]
     pub page_classes: Vec<PdfPageClassificationSummary>,
     #[serde(default)]
-    pub class_distribution: Vec<(PdfPageClass, u32)>,
+    pub class_distribution: Vec<PdfPageClassCount>,
 }
 
 /// Load a supported source file and return plain text plus extracted image paths.

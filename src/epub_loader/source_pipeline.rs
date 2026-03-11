@@ -1,7 +1,7 @@
 use super::{
     PdfClassificationSummary, PdfDocumentClass, PdfGeometryMode, PdfOcrRecommendation,
-    PdfPageClass, PdfPageClassificationSummary, PdfProbeFeatureSummary, PdfProbePageSummary,
-    PdfSyncStrategy, SourceContent,
+    PdfPageClass, PdfPageClassCount, PdfPageClassificationSummary, PdfProbeFeatureSummary,
+    PdfProbePageSummary, PdfSyncStrategy, SourceContent,
 };
 use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
 use crate::cancellation::CancellationToken;
@@ -20,8 +20,9 @@ use tracing::{info, warn};
 const PANDOC_FILTER_REL_PATH: &str = "conf/pandoc/strip-nontext.lua";
 const PANDOC_PIPELINE_REV: &str = "pandoc-clean-v1";
 const QUACK_CHECK_CONFIG_REL_PATH: &str = "conf/quack-check.toml";
-const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v2";
+const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v3";
 const QUACK_CHECK_TEXT_FILENAME_DEFAULT: &str = "transcript.txt";
+const PDF_CLASSIFICATION_VERSION: u32 = 1;
 const AVAILABILITY_LOG_EVERY: u64 = 20;
 
 static LOAD_COUNT_TOTAL: AtomicU64 = AtomicU64::new(0);
@@ -888,7 +889,7 @@ fn distinct_page_class_kinds(pages: &[PdfPageClassificationSummary]) -> usize {
     seen.len()
 }
 
-fn page_class_distribution(pages: &[PdfPageClassificationSummary]) -> Vec<(PdfPageClass, u32)> {
+fn page_class_distribution(pages: &[PdfPageClassificationSummary]) -> Vec<PdfPageClassCount> {
     let order = [
         PdfPageClass::EmbeddedClean,
         PdfPageClass::EmbeddedNoisy,
@@ -902,7 +903,7 @@ fn page_class_distribution(pages: &[PdfPageClassificationSummary]) -> Vec<(PdfPa
         .into_iter()
         .filter_map(|class| {
             let count = count_page_class(pages, class) as u32;
-            (count > 0).then_some((class, count))
+            (count > 0).then_some(PdfPageClassCount { class, count })
         })
         .collect()
 }
@@ -910,7 +911,7 @@ fn page_class_distribution(pages: &[PdfPageClassificationSummary]) -> Vec<(PdfPa
 fn describe_page_distribution(pages: &[PdfPageClassificationSummary]) -> String {
     page_class_distribution(pages)
         .into_iter()
-        .map(|(class, count)| format!("{class:?}:{count}"))
+        .map(|entry| format!("{:?}:{}", entry.class, entry.count))
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -1053,6 +1054,8 @@ struct PdfCacheMeta {
     #[serde(default)]
     pdf_classification: Option<PdfClassificationSummary>,
     #[serde(default)]
+    pdf_classification_version: u32,
+    #[serde(default)]
     extraction_mode: String,
     #[serde(default)]
     ocr_enabled: bool,
@@ -1133,6 +1136,7 @@ fn pdf_signature(path: &Path, config_sha256: &str, text_filename: &str) -> Resul
         pdf_geometry_mode: None,
         pdf_sync_strategy: None,
         pdf_classification: None,
+        pdf_classification_version: PDF_CLASSIFICATION_VERSION,
         extraction_mode: String::new(),
         ocr_enabled: false,
         page_count: 0,
@@ -1280,10 +1284,13 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
         || cached_meta.pipeline_rev != signature.pipeline_rev
         || cached_meta.quack_config_sha256 != signature.quack_config_sha256
         || cached_meta.quack_text_filename != signature.quack_text_filename
+        || cached_meta.pdf_classification_version != PDF_CLASSIFICATION_VERSION
     {
         info!(
             path = %path.display(),
-            "PDF transcript cache miss: signature changed, rebuilding artifacts"
+            cached_classification_version = cached_meta.pdf_classification_version,
+            required_classification_version = PDF_CLASSIFICATION_VERSION,
+            "PDF transcript cache miss: signature or classification version changed, rebuilding artifacts"
         );
         return Ok(None);
     }
@@ -1405,6 +1412,7 @@ fn write_pdf_cache(
     signature.pdf_geometry_mode = Some(pdf_geometry_mode);
     signature.pdf_sync_strategy = Some(pdf_sync_strategy);
     signature.pdf_classification = pdf_classification.cloned();
+    signature.pdf_classification_version = PDF_CLASSIFICATION_VERSION;
     signature.extraction_mode = extraction_mode.to_string();
     signature.ocr_enabled = ocr_enabled;
     signature.page_count = report.map(|value| value.input.page_count).unwrap_or(0);

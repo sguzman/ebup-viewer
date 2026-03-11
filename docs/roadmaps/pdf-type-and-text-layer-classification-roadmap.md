@@ -2,8 +2,9 @@
 
 ## Tranche Status
 - [x] Tranche 1: sampled-page probe expansion, page/document classification, OCR recommendation, cache persistence, and coarse runtime policy mapping
-- [ ] Tranche 2: stronger embedded-text trust signals, hidden-OCR-overlay heuristics tied to image/raster evidence, and richer runtime policy coverage
-- [ ] Tranche 3: diagnostics UI, fixture calibration set, regression matrix, and classification versioning/invalidation
+- [x] Tranche 2: classification versioning plus reader/UI diagnostics for class, OCR recommendation, and rationale
+- [ ] Tranche 3: stronger embedded-text trust signals, hidden-OCR-overlay heuristics tied to image/raster evidence, and richer runtime policy coverage
+- [ ] Tranche 4: fixture calibration set, regression matrix, and remaining diagnostics depth
 
 ## Objective
 - [ ] Build a stronger PDF classifier that can reliably determine what kind of PDF the app is dealing with before ingestion, OCR, sync, and highlighting decisions are made.
@@ -117,7 +118,7 @@
 - [x] render-only policy
 - [ ] bookmark/resume policy
 - [ ] search policy
-- [ ] Ensure the UI can surface the chosen class and why degraded behavior was selected.
+- [x] Ensure the UI can surface the chosen class and why degraded behavior was selected.
 
 ## Phase 8: Cache and Contracts
 - [x] Extend cache layout to store:
@@ -126,8 +127,8 @@
 - [x] document rollup result
 - [x] OCR recommendation
 - [ ] embedded-text trust diagnostics
-- [ ] classification version
-- [ ] Add cache invalidation/versioning rules when classification logic changes.
+- [x] classification version
+- [x] Add cache invalidation/versioning rules when classification logic changes.
 - [x] Ensure reopen behavior reuses cached classification when valid.
 
 ## Phase 9: Model and Heuristic Calibration
@@ -155,13 +156,13 @@
 
 ## Phase 11: Diagnostics and UX
 - [ ] Add developer diagnostics for:
-- [ ] detected page classes
-- [ ] document class
-- [ ] confidence levels
-- [ ] OCR recommendation
-- [ ] key feature signals
+- [x] detected page classes
+- [x] document class
+- [x] confidence levels
+- [x] OCR recommendation
+- [x] key feature signals
 - [ ] fallback triggers
-- [ ] Add user-facing explanation strings for degraded PDF behavior driven by classification.
+- [x] Add user-facing explanation strings for degraded PDF behavior driven by classification.
 - [ ] Provide a way to inspect why a PDF was treated as scan/mixed/render-only.
 
 ## Recommended Order

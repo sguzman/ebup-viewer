@@ -11,6 +11,7 @@ use crate::epub_loader::{PdfClassificationSummary, PdfGeometryMode, PdfSyncStrat
 
 const CONTENT_PDF_SYNC_META_FILE: &str = "content/pdf-sync-meta.toml";
 const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
+const PDF_SYNC_META_CLASSIFICATION_VERSION: u32 = 1;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PdfSyncMeta {
@@ -18,6 +19,8 @@ pub struct PdfSyncMeta {
     pub pdf_sync_strategy: PdfSyncStrategy,
     #[serde(default)]
     pub pdf_classification: Option<PdfClassificationSummary>,
+    #[serde(default)]
+    pub pdf_classification_version: u32,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -182,6 +185,7 @@ pub(super) fn persist_pdf_sync_meta(
         pdf_geometry_mode,
         pdf_sync_strategy,
         pdf_classification: pdf_classification.cloned(),
+        pdf_classification_version: PDF_SYNC_META_CLASSIFICATION_VERSION,
     }) {
         Ok(value) => value,
         Err(err) => {
@@ -225,6 +229,16 @@ pub(super) fn load_pdf_sync_meta(source_path: &Path) -> Option<PdfSyncMeta> {
             return None;
         }
     };
+    if parsed.pdf_classification_version != PDF_SYNC_META_CLASSIFICATION_VERSION {
+        warn!(
+            path = %meta_path.display(),
+            cached_classification_version = parsed.pdf_classification_version,
+            required_classification_version = PDF_SYNC_META_CLASSIFICATION_VERSION,
+            "PDF sync metadata classification version changed; removing stale artifact so it can be rebuilt"
+        );
+        let _ = fs::remove_file(&meta_path);
+        return None;
+    }
     debug!(
         path = %meta_path.display(),
         ?parsed.pdf_geometry_mode,
@@ -233,6 +247,7 @@ pub(super) fn load_pdf_sync_meta(source_path: &Path) -> Option<PdfSyncMeta> {
             .pdf_classification
             .as_ref()
             .map(|value| value.document_class),
+        classification_version = parsed.pdf_classification_version,
         "Loaded cached PDF sync metadata"
     );
     Some(parsed)

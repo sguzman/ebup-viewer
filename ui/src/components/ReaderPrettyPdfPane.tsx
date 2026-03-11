@@ -610,6 +610,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const canSyncHighlights = reader.pdf_sync_strategy !== "render_only";
     const modeLabel = reader.pdf_geometry_mode ? reader.pdf_geometry_mode.replaceAll("_", " ") : "unknown";
     const strategyLabel = reader.pdf_sync_strategy ? reader.pdf_sync_strategy.replaceAll("_", " ") : "unknown";
+    const documentClassLabel = reader.pdf_classification?.document_class
+      ? reader.pdf_classification.document_class.replaceAll("_", " ")
+      : "unknown";
+    const ocrRecommendationLabel = reader.pdf_classification?.ocr_recommendation
+      ? reader.pdf_classification.ocr_recommendation.replaceAll("_", " ")
+      : "unknown";
     const globalSentenceStart = globalSentenceStartForReader(reader);
     const highlightedSentenceIdx = reader.highlighted_sentence_idx ?? null;
 
@@ -1375,7 +1381,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           sx={{ mb: 1.25, px: 0.5 }}
         >
           <Typography variant="caption" color="text.secondary">
-            Native PDF | geometry: {modeLabel} | sync: {strategyLabel}
+            Native PDF | class: {documentClassLabel} | geometry: {modeLabel} | sync: {strategyLabel}
           </Typography>
           <ButtonGroup size="small" variant="outlined">
             <Button onClick={() => setZoom((value) => normalizeNumber(value - 0.1, 0.7, 2.5, 0.05, 2))}>
@@ -1397,6 +1403,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             {reader.pdf_geometry_mode === "ocr_required"
               ? "This PDF is renderable now, but precise highlight sync and text playback will stay gated until OCR produces usable text."
               : "This PDF is render-only right now. Text-only/TTS can continue, but precise PDF highlight sync is unavailable."}
+          </Typography>
+        ) : null}
+        {!error && reader.pdf_classification ? (
+          <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-classification">
+            OCR: {ocrRecommendationLabel} | Confidence: {reader.pdf_classification.confidence.toFixed(2)}
+            {reader.pdf_classification.reasons.length > 0
+              ? ` | Why: ${reader.pdf_classification.reasons.slice(0, 2).join("; ").replaceAll("_", " ")}`
+              : ""}
           </Typography>
         ) : null}
         {!error && canSyncHighlights && mappingSummary ? (

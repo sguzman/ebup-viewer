@@ -837,8 +837,16 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
                 {formatPercent(reader.pdf_classification.feature_summary.hidden_text_layer_page_ratio * 100)}
               </Typography>
               <Typography variant="body2">
+                Invisible-text sampled pages:{" "}
+                {formatPercent(reader.pdf_classification.feature_summary.invisible_text_layer_page_ratio * 100)}
+              </Typography>
+              <Typography variant="body2">
                 Duplicate-text sampled pages:{" "}
                 {formatPercent(reader.pdf_classification.feature_summary.duplicate_text_page_ratio * 100)}
+              </Typography>
+              <Typography variant="body2">
+                Stacked duplicate-text sampled pages:{" "}
+                {formatPercent(reader.pdf_classification.feature_summary.stacked_duplicate_text_page_ratio * 100)}
               </Typography>
               <Typography variant="body2">
                 Trust: block {reader.pdf_classification.trust_diagnostics.block_coherence.toFixed(2)} | coordinates{" "}
@@ -850,6 +858,17 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
                 {reader.pdf_classification.trust_diagnostics.duplicate_text_suppression_needed ? "yes" : "no"}
                 {" | "}Hidden text layer suspected:{" "}
                 {reader.pdf_classification.trust_diagnostics.hidden_text_layer_suspected ? "yes" : "no"}
+              </Typography>
+              <Typography variant="body2">
+                Invisible text suspected:{" "}
+                {reader.pdf_classification.trust_diagnostics.invisible_text_suspected ? "yes" : "no"}
+                {" | "}Stacked duplicate text suspected:{" "}
+                {reader.pdf_classification.trust_diagnostics.stacked_duplicate_text_suspected ? "yes" : "no"}
+              </Typography>
+              <Typography variant="body2">
+                OCR replace confidence: {reader.pdf_classification.trust_diagnostics.ocr_replace_confidence.toFixed(2)}
+                {" | "}OCR augment confidence: {reader.pdf_classification.trust_diagnostics.ocr_augment_confidence.toFixed(2)}
+                {" | "}Threshold met: {reader.pdf_classification.trust_diagnostics.ocr_confidence_threshold_met ? "yes" : "no"}
               </Typography>
               {reader.pdf_classification.reasons.length > 0 ? (
                 <Typography variant="body2">
@@ -875,6 +894,8 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
                       Page {page.page_index}: {formatPdfTokenLabel(page.class)} ({page.confidence.toFixed(2)}) | image coverage{" "}
                       {formatPercent(page.features.image_coverage_ratio * 100)} | block{" "}
                       {page.features.block_coherence.toFixed(2)} | order {page.features.reading_order_stability.toFixed(2)}
+                      {page.features.invisible_text_suspected ? " | invisible text" : ""}
+                      {page.features.stacked_duplicate_text_suspected ? " | stacked duplicate text" : ""}
                     </Typography>
                   ))}
                 </Stack>

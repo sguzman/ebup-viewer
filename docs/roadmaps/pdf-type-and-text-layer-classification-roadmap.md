@@ -92,20 +92,20 @@
 ## Phase 5: Hidden OCR Overlay Detection
 - [x] Add explicit heuristics for hidden OCR text layers:
 - [x] full-page image plus sparse text objects
-- [ ] invisible or zero-opacity text
-- [ ] duplicated text stacked over image content
+- [x] invisible or zero-opacity text
+- [x] duplicated text stacked over image content
 - [x] OCR-like token quality with weak geometry coherence
 - [x] mixed embedded and OCR text behavior on the same page
 - [x] Route these PDFs into a dedicated class instead of treating them as clean embedded text.
 
 ## Phase 6: OCR Readiness and Need Detection
 - [x] Decide whether OCR is required, optional, or unnecessary from classification alone.
-- [ ] Separate:
+- [x] Separate:
 - [x] OCR needed for text ownership
 - [x] OCR needed only for better geometry
 - [x] OCR not needed
 - [x] OCR unlikely to help enough
-- [ ] Add confidence thresholds for when OCR output may replace or augment embedded text.
+- [x] Add confidence thresholds for when OCR output may replace or augment embedded text.
 - [x] Record OCR recommendation in cache and runtime state.
 
 ## Phase 7: Runtime Policy Mapping
@@ -132,7 +132,7 @@
 - [x] Ensure reopen behavior reuses cached classification when valid.
 
 ## Phase 9: Model and Heuristic Calibration
-- [ ] Build a labeled fixture set of PDFs across all target classes.
+- [x] Build a labeled fixture set of PDFs across all target classes.
 - [ ] Measure false positives and false negatives for:
 - [ ] clean embedded text misclassified as scan
 - [ ] scans misclassified as embedded text
@@ -143,14 +143,14 @@
 
 ## Phase 10: Validation Matrix
 - [ ] Add regression fixtures for:
-- [ ] high-quality publisher PDFs
-- [ ] malformed embedded-text PDFs
-- [ ] sparse-text presentation PDFs
-- [ ] academic PDFs with figures/tables/footnotes
-- [ ] scanned books
-- [ ] photocopies
-- [ ] OCR-overlay PDFs
-- [ ] hybrid documents with mixed page classes
+- [x] high-quality publisher PDFs
+- [x] malformed embedded-text PDFs
+- [x] sparse-text presentation PDFs
+- [x] academic PDFs with figures/tables/footnotes
+- [x] scanned books
+- [x] photocopies
+- [x] OCR-overlay PDFs
+- [x] hybrid documents with mixed page classes
 - [x] Add tests for page-level and document-level classification rollup.
 - [x] Add tests proving runtime behavior selection matches classification.
 
@@ -172,4 +172,4 @@
 - [x] Step 4: add hidden OCR overlay detection
 - [x] Step 5: add OCR recommendation logic
 - [x] Step 6: wire UI diagnostics and explanation strings
-- [ ] Step 7: add regression fixtures and calibration loop
+- [x] Step 7: add regression fixtures and calibration loop

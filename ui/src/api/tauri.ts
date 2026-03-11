@@ -458,7 +458,9 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
           mixed_text_image_page_ratio: 0,
           full_page_raster_page_ratio: 0,
           hidden_text_layer_page_ratio: 0,
+          invisible_text_layer_page_ratio: 0,
           duplicate_text_page_ratio: 0,
+          stacked_duplicate_text_page_ratio: 0,
           avg_chars_per_page: 1400,
           garbage_ratio: 0.01,
           whitespace_ratio: 0.18
@@ -469,8 +471,13 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
           reading_order_stability: 0.9,
           duplicate_text_suppression_needed: false,
           hidden_text_layer_suspected: false,
+          invisible_text_suspected: false,
+          stacked_duplicate_text_suspected: false,
           full_page_raster_ratio: 0,
           mixed_text_image_ratio: 0,
+          ocr_replace_confidence: 0,
+          ocr_augment_confidence: 0,
+          ocr_confidence_threshold_met: false,
           rationale: ["mock_pdf_classifier"]
         },
         page_classes: [],

@@ -43,7 +43,11 @@ pub struct ProbePageOut {
     #[serde(default)]
     pub hidden_text_layer_suspected: bool,
     #[serde(default)]
+    pub invisible_text_suspected: bool,
+    #[serde(default)]
     pub duplicate_text_suspected: bool,
+    #[serde(default)]
+    pub stacked_duplicate_text_suspected: bool,
     #[serde(default)]
     pub mixed_text_image_suspected: bool,
     #[serde(default)]
@@ -82,7 +86,11 @@ pub struct ProbeOut {
     #[serde(default)]
     pub hidden_text_layer_page_ratio: f32,
     #[serde(default)]
+    pub invisible_text_layer_page_ratio: f32,
+    #[serde(default)]
     pub duplicate_text_page_ratio: f32,
+    #[serde(default)]
+    pub stacked_duplicate_text_page_ratio: f32,
     #[serde(default)]
     pub pages: Vec<ProbePageOut>,
     #[serde(default)]

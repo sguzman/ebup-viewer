@@ -22,9 +22,9 @@ use tracing::{info, warn};
 const PANDOC_FILTER_REL_PATH: &str = "conf/pandoc/strip-nontext.lua";
 const PANDOC_PIPELINE_REV: &str = "pandoc-clean-v1";
 const QUACK_CHECK_CONFIG_REL_PATH: &str = "conf/quack-check.toml";
-const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v4";
+const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v5";
 const QUACK_CHECK_TEXT_FILENAME_DEFAULT: &str = "transcript.txt";
-const PDF_CLASSIFICATION_VERSION: u32 = 2;
+const PDF_CLASSIFICATION_VERSION: u32 = 3;
 const AVAILABILITY_LOG_EVERY: u64 = 20;
 
 static LOAD_COUNT_TOTAL: AtomicU64 = AtomicU64::new(0);
@@ -686,7 +686,9 @@ fn classify_pdf_runtime(
         mixed_text_image_page_ratio: sample.mixed_text_image_page_ratio,
         full_page_raster_page_ratio: sample.full_page_raster_page_ratio,
         hidden_text_layer_page_ratio: sample.hidden_text_layer_page_ratio,
+        invisible_text_layer_page_ratio: sample.invisible_text_layer_page_ratio,
         duplicate_text_page_ratio: sample.duplicate_text_page_ratio,
+        stacked_duplicate_text_page_ratio: sample.stacked_duplicate_text_page_ratio,
         avg_chars_per_page: sample.avg_chars_per_page,
         garbage_ratio: sample.garbage_ratio,
         whitespace_ratio: sample.whitespace_ratio,
@@ -719,6 +721,20 @@ fn classify_pdf_runtime(
             0.0
         },
     );
+    let invisible_text_signal = feature_summary.invisible_text_layer_page_ratio.max(
+        if trust_diagnostics.invisible_text_suspected {
+            0.6
+        } else {
+            0.0
+        },
+    );
+    let stacked_duplicate_signal = feature_summary.stacked_duplicate_text_page_ratio.max(
+        if trust_diagnostics.stacked_duplicate_text_suspected {
+            0.5
+        } else {
+            0.0
+        },
+    );
 
     let (document_class, confidence, mut reasons) = if transcript_text.trim().is_empty() {
         (
@@ -730,6 +746,8 @@ fn classify_pdf_runtime(
             ],
         )
     } else if hidden_overlay_signal >= 0.40
+        || invisible_text_signal >= 0.35
+        || stacked_duplicate_signal >= 0.30
         || (full_page_raster_ratio >= 0.35 && hidden_overlay_count as f32 / sampled >= 0.25)
     {
         (
@@ -851,6 +869,19 @@ fn classify_pdf_runtime(
             }
         }
     };
+    let ocr_replace_threshold_met = trust_diagnostics.ocr_replace_confidence >= 0.74;
+    let ocr_augment_threshold_met = trust_diagnostics.ocr_augment_confidence >= 0.58;
+    if matches!(
+        ocr_recommendation,
+        PdfOcrRecommendation::RequiredForText | PdfOcrRecommendation::GeometryOnly
+    ) {
+        reasons.push(format!(
+            "ocr_replace_threshold_met={ocr_replace_threshold_met}"
+        ));
+        reasons.push(format!(
+            "ocr_augment_threshold_met={ocr_augment_threshold_met}"
+        ));
+    }
 
     Some(PdfClassificationSummary {
         document_class,
@@ -891,7 +922,9 @@ fn classify_pdf_sample_page(
         coordinate_sanity: page.coordinate_sanity,
         reading_order_stability: page.reading_order_stability,
         hidden_text_layer_suspected: page.hidden_text_layer_suspected,
+        invisible_text_suspected: page.invisible_text_suspected,
         duplicate_text_suspected: page.duplicate_text_suspected,
+        stacked_duplicate_text_suspected: page.stacked_duplicate_text_suspected,
         mixed_text_image_suspected: page.mixed_text_image_suspected,
         full_page_raster_suspected: page.full_page_raster_suspected,
         first_line: page.first_line.clone(),
@@ -914,6 +947,8 @@ fn classify_pdf_sample_page(
         || page.block_coherence <= 0.42
         || page.reading_order_stability <= 0.4;
     let looks_hidden_overlay = page.hidden_text_layer_suspected
+        || page.invisible_text_suspected
+        || page.stacked_duplicate_text_suspected
         || (page.char_count <= 80
             && page.token_count <= 18
             && page.alpha_token_ratio >= 0.55
@@ -928,15 +963,18 @@ fn classify_pdf_sample_page(
             vec!["no_extracted_text_detected".to_string()],
         )
     } else if looks_hidden_overlay {
-        (
-            PdfPageClass::HiddenOcrOverlay,
-            0.82,
-            vec![
-                "very_sparse_text_layer_detected".to_string(),
-                "overlay_like_alpha_token_mix".to_string(),
-                format!("image_coverage_ratio={:.3}", page.image_coverage_ratio),
-            ],
-        )
+        let mut reasons = vec![
+            "very_sparse_text_layer_detected".to_string(),
+            "overlay_like_alpha_token_mix".to_string(),
+            format!("image_coverage_ratio={:.3}", page.image_coverage_ratio),
+        ];
+        if page.invisible_text_suspected {
+            reasons.push("invisible_or_zero_opacity_text_suspected".to_string());
+        }
+        if page.stacked_duplicate_text_suspected {
+            reasons.push("duplicated_text_stacked_over_image_content".to_string());
+        }
+        (PdfPageClass::HiddenOcrOverlay, 0.82, reasons)
     } else if looks_scan {
         (
             PdfPageClass::ScanWithWeakOcr,
@@ -1047,6 +1085,28 @@ fn derive_pdf_trust_diagnostics(
             .pages
             .iter()
             .any(|page| page.hidden_text_layer_suspected);
+    let invisible_text_suspected = sample.invisible_text_layer_page_ratio >= 0.15
+        || sample
+            .pages
+            .iter()
+            .any(|page| page.invisible_text_suspected);
+    let stacked_duplicate_text_suspected = sample.stacked_duplicate_text_page_ratio >= 0.15
+        || sample
+            .pages
+            .iter()
+            .any(|page| page.stacked_duplicate_text_suspected);
+    let ocr_replace_confidence = ((sample.full_page_raster_page_ratio * 0.35)
+        + (sample.hidden_text_layer_page_ratio * 0.35)
+        + (sample.invisible_text_layer_page_ratio * 0.2)
+        + (sample.stacked_duplicate_text_page_ratio * 0.1))
+        .clamp(0.0, 1.0);
+    let ocr_augment_confidence = ((1.0 - avg_coordinate_sanity) * 0.35
+        + (1.0 - avg_block_coherence) * 0.25
+        + sample.mixed_text_image_page_ratio * 0.25
+        + sample.duplicate_text_page_ratio * 0.15)
+        .clamp(0.0, 1.0);
+    let ocr_confidence_threshold_met =
+        ocr_replace_confidence >= 0.74 || ocr_augment_confidence >= 0.58;
     let mut rationale = Vec::new();
     rationale.push(format!("block_coherence={avg_block_coherence:.3}"));
     rationale.push(format!("coordinate_sanity={avg_coordinate_sanity:.3}"));
@@ -1055,6 +1115,12 @@ fn derive_pdf_trust_diagnostics(
     ));
     if hidden_text_layer_suspected {
         rationale.push("hidden_text_layer_suspected=true".to_string());
+    }
+    if invisible_text_suspected {
+        rationale.push("invisible_text_suspected=true".to_string());
+    }
+    if stacked_duplicate_text_suspected {
+        rationale.push("stacked_duplicate_text_suspected=true".to_string());
     }
     if duplicate_text_suppression_needed {
         rationale.push("duplicate_text_suppression_needed=true".to_string());
@@ -1071,14 +1137,25 @@ fn derive_pdf_trust_diagnostics(
             sample.mixed_text_image_page_ratio
         ));
     }
+    rationale.push(format!(
+        "ocr_replace_confidence={ocr_replace_confidence:.3}"
+    ));
+    rationale.push(format!(
+        "ocr_augment_confidence={ocr_augment_confidence:.3}"
+    ));
     PdfEmbeddedTextTrustDiagnostics {
         block_coherence: avg_block_coherence,
         coordinate_sanity: avg_coordinate_sanity,
         reading_order_stability: avg_reading_order_stability,
         duplicate_text_suppression_needed,
         hidden_text_layer_suspected,
+        invisible_text_suspected,
+        stacked_duplicate_text_suspected,
         full_page_raster_ratio: sample.full_page_raster_page_ratio,
         mixed_text_image_ratio: sample.mixed_text_image_page_ratio,
+        ocr_replace_confidence,
+        ocr_augment_confidence,
+        ocr_confidence_threshold_met,
         rationale,
     }
 }
@@ -1873,6 +1950,31 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[derive(Debug, serde::Deserialize)]
+    struct FixtureFile {
+        fixtures: Vec<ClassificationFixture>,
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    struct ClassificationFixture {
+        id: String,
+        label: String,
+        document_class: PdfDocumentClass,
+        ocr_recommendation: PdfOcrRecommendation,
+        text_only_policy: PdfTextOnlyPolicy,
+        sentence_highlight_policy: PdfSentenceHighlightPolicy,
+        search_policy: PdfSearchPolicy,
+        page_classes: Vec<PdfPageClass>,
+        sample: crate::quack_check::probe::ProbeSampleStats,
+        pages: Vec<crate::quack_check::probe::ProbePageStats>,
+    }
+
+    fn load_classification_fixtures() -> Vec<ClassificationFixture> {
+        let raw = include_str!("../../tests/fixtures/pdf-classification-fixtures.toml");
+        let parsed: FixtureFile = toml::from_str(raw).expect("fixture toml should parse");
+        parsed.fixtures
+    }
+
     fn sample_report() -> crate::quack_check::report::JobReport {
         crate::quack_check::report::JobReport {
             input: crate::quack_check::probe::ProbeInput {
@@ -1895,7 +1997,9 @@ mod tests {
                 mixed_text_image_page_ratio: 0.0,
                 full_page_raster_page_ratio: 0.0,
                 hidden_text_layer_page_ratio: 0.0,
+                invisible_text_layer_page_ratio: 0.0,
                 duplicate_text_page_ratio: 0.0,
+                stacked_duplicate_text_page_ratio: 0.0,
                 pages: vec![
                     crate::quack_check::probe::ProbePageStats {
                         page_index: 1,
@@ -1921,7 +2025,9 @@ mod tests {
                         coordinate_sanity: 0.9,
                         reading_order_stability: 0.88,
                         hidden_text_layer_suspected: false,
+                        invisible_text_suspected: false,
                         duplicate_text_suspected: false,
+                        stacked_duplicate_text_suspected: false,
                         mixed_text_image_suspected: false,
                         full_page_raster_suspected: false,
                         first_line: "chapter #".to_string(),
@@ -1951,7 +2057,9 @@ mod tests {
                         coordinate_sanity: 0.89,
                         reading_order_stability: 0.87,
                         hidden_text_layer_suspected: false,
+                        invisible_text_suspected: false,
                         duplicate_text_suspected: false,
+                        stacked_duplicate_text_suspected: false,
                         mixed_text_image_suspected: false,
                         full_page_raster_suspected: false,
                         first_line: "chapter #".to_string(),
@@ -2107,7 +2215,9 @@ mod tests {
                 coordinate_sanity: 0.05,
                 reading_order_stability: 0.0,
                 hidden_text_layer_suspected: false,
+                invisible_text_suspected: false,
                 duplicate_text_suspected: false,
+                stacked_duplicate_text_suspected: false,
                 mixed_text_image_suspected: false,
                 full_page_raster_suspected: true,
                 first_line: String::new(),
@@ -2137,7 +2247,9 @@ mod tests {
                 coordinate_sanity: 0.12,
                 reading_order_stability: 0.1,
                 hidden_text_layer_suspected: true,
+                invisible_text_suspected: true,
                 duplicate_text_suspected: false,
+                stacked_duplicate_text_suspected: false,
                 mixed_text_image_suspected: false,
                 full_page_raster_suspected: true,
                 first_line: String::new(),
@@ -2150,6 +2262,7 @@ mod tests {
         report.sample.image_page_ratio = 1.0;
         report.sample.full_page_raster_page_ratio = 1.0;
         report.sample.hidden_text_layer_page_ratio = 0.5;
+        report.sample.invisible_text_layer_page_ratio = 0.5;
 
         let classification =
             classify_pdf_runtime(Some(&report), "Recovered OCR text.", "").expect("classification");
@@ -2190,7 +2303,9 @@ mod tests {
             coordinate_sanity: 0.44,
             reading_order_stability: 0.28,
             hidden_text_layer_suspected: false,
+            invisible_text_suspected: false,
             duplicate_text_suspected: true,
+            stacked_duplicate_text_suspected: false,
             mixed_text_image_suspected: false,
             full_page_raster_suspected: false,
             first_line: "item".to_string(),
@@ -2236,7 +2351,9 @@ mod tests {
             coordinate_sanity: 0.15,
             reading_order_stability: 0.14,
             hidden_text_layer_suspected: true,
+            invisible_text_suspected: true,
             duplicate_text_suspected: false,
+            stacked_duplicate_text_suspected: false,
             mixed_text_image_suspected: false,
             full_page_raster_suspected: true,
             first_line: "alpha beta".to_string(),
@@ -2283,7 +2400,9 @@ mod tests {
                 coordinate_sanity: 0.8,
                 reading_order_stability: 0.78,
                 hidden_text_layer_suspected: false,
+                invisible_text_suspected: false,
                 duplicate_text_suspected: false,
+                stacked_duplicate_text_suspected: false,
                 mixed_text_image_suspected: true,
                 full_page_raster_suspected: false,
                 first_line: "chapter one".to_string(),
@@ -2313,7 +2432,9 @@ mod tests {
                 coordinate_sanity: 0.1,
                 reading_order_stability: 0.0,
                 hidden_text_layer_suspected: false,
+                invisible_text_suspected: false,
                 duplicate_text_suspected: false,
+                stacked_duplicate_text_suspected: false,
                 mixed_text_image_suspected: false,
                 full_page_raster_suspected: true,
                 first_line: String::new(),
@@ -2366,6 +2487,99 @@ mod tests {
     }
 
     #[test]
+    fn classification_fixture_matrix_matches_expected_contracts() {
+        let fixtures = load_classification_fixtures();
+        assert!(
+            fixtures.len() >= 8,
+            "expected a substantial classification fixture matrix"
+        );
+
+        for fixture in fixtures {
+            let report = crate::quack_check::report::JobReport {
+                input: crate::quack_check::probe::ProbeInput {
+                    path: format!("/fixtures/{}.pdf", fixture.id),
+                    file_bytes: 1024,
+                    page_count: fixture.pages.len() as u32,
+                },
+                sample: crate::quack_check::probe::ProbeSampleStats {
+                    pages: fixture.pages.clone(),
+                    ..fixture.sample.clone()
+                },
+                decision: crate::quack_check::policy::PolicyDecision {
+                    tier: crate::quack_check::policy::QualityTier::MixedText,
+                    chosen_engine: "docling".to_string(),
+                    do_ocr: !matches!(fixture.ocr_recommendation, PdfOcrRecommendation::NotNeeded),
+                },
+                chunk_reports: Vec::new(),
+            };
+            let transcript_text =
+                if matches!(fixture.document_class, PdfDocumentClass::ImageOnlyNoText) {
+                    ""
+                } else {
+                    "Fixture transcript text."
+                };
+            let classification = classify_pdf_runtime(Some(&report), transcript_text, "")
+                .unwrap_or_else(|| {
+                    panic!("classification should exist for fixture {}", fixture.id)
+                });
+            let policy = derive_pdf_runtime_policy(
+                Some(&classification),
+                derive_pdf_runtime_metadata(
+                    Some(&classification),
+                    Some(&report),
+                    transcript_text,
+                    "",
+                )
+                .0,
+                derive_pdf_runtime_metadata(
+                    Some(&classification),
+                    Some(&report),
+                    transcript_text,
+                    "",
+                )
+                .1,
+                transcript_text,
+            );
+
+            assert_eq!(
+                classification.document_class, fixture.document_class,
+                "document class mismatch for fixture {} ({})",
+                fixture.id, fixture.label
+            );
+            assert_eq!(
+                classification.ocr_recommendation, fixture.ocr_recommendation,
+                "ocr recommendation mismatch for fixture {}",
+                fixture.id
+            );
+            assert_eq!(
+                policy.text_only_policy, fixture.text_only_policy,
+                "text-only policy mismatch for fixture {}",
+                fixture.id
+            );
+            assert_eq!(
+                policy.sentence_highlight_policy, fixture.sentence_highlight_policy,
+                "highlight policy mismatch for fixture {}",
+                fixture.id
+            );
+            assert_eq!(
+                policy.search_policy, fixture.search_policy,
+                "search policy mismatch for fixture {}",
+                fixture.id
+            );
+            let actual_page_classes = classification
+                .page_classes
+                .iter()
+                .map(|page| page.class)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual_page_classes, fixture.page_classes,
+                "page classes mismatch for fixture {}",
+                fixture.id
+            );
+        }
+    }
+
+    #[test]
     fn runtime_policy_uses_exact_sync_for_clean_embedded_text() {
         let classification = PdfClassificationSummary {
             document_class: PdfDocumentClass::EmbeddedClean,
@@ -2384,7 +2598,9 @@ mod tests {
                 mixed_text_image_page_ratio: 0.0,
                 full_page_raster_page_ratio: 0.0,
                 hidden_text_layer_page_ratio: 0.0,
+                invisible_text_layer_page_ratio: 0.0,
                 duplicate_text_page_ratio: 0.0,
+                stacked_duplicate_text_page_ratio: 0.0,
                 avg_chars_per_page: 1400,
                 garbage_ratio: 0.01,
                 whitespace_ratio: 0.18,
@@ -2395,8 +2611,13 @@ mod tests {
                 reading_order_stability: 0.89,
                 duplicate_text_suppression_needed: false,
                 hidden_text_layer_suspected: false,
+                invisible_text_suspected: false,
+                stacked_duplicate_text_suspected: false,
                 full_page_raster_ratio: 0.0,
                 mixed_text_image_ratio: 0.0,
+                ocr_replace_confidence: 0.0,
+                ocr_augment_confidence: 0.0,
+                ocr_confidence_threshold_met: false,
                 rationale: vec!["clean".to_string()],
             },
             page_classes: Vec::new(),
@@ -2442,7 +2663,9 @@ mod tests {
                 mixed_text_image_page_ratio: 0.0,
                 full_page_raster_page_ratio: 1.0,
                 hidden_text_layer_page_ratio: 1.0,
+                invisible_text_layer_page_ratio: 1.0,
                 duplicate_text_page_ratio: 0.0,
+                stacked_duplicate_text_page_ratio: 0.0,
                 avg_chars_per_page: 40,
                 garbage_ratio: 0.0,
                 whitespace_ratio: 0.1,
@@ -2453,8 +2676,13 @@ mod tests {
                 reading_order_stability: 0.08,
                 duplicate_text_suppression_needed: false,
                 hidden_text_layer_suspected: true,
+                invisible_text_suspected: true,
+                stacked_duplicate_text_suspected: false,
                 full_page_raster_ratio: 1.0,
                 mixed_text_image_ratio: 0.0,
+                ocr_replace_confidence: 0.82,
+                ocr_augment_confidence: 0.41,
+                ocr_confidence_threshold_met: true,
                 rationale: vec!["scan".to_string()],
             },
             page_classes: Vec::new(),

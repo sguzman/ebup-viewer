@@ -1428,6 +1428,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             {reader.pdf_classification.trust_diagnostics.hidden_text_layer_suspected
               ? " | Hidden text layer suspected"
               : ""}
+            {reader.pdf_classification.trust_diagnostics.invisible_text_suspected
+              ? " | Invisible text suspected"
+              : ""}
+            {reader.pdf_classification.trust_diagnostics.stacked_duplicate_text_suspected
+              ? " | Stacked duplicate text suspected"
+              : ""}
           </Typography>
         ) : null}
         {!error && reader.pdf_runtime_policy ? (

@@ -29,7 +29,9 @@ pub struct ProbePageStats {
     pub coordinate_sanity: f32,
     pub reading_order_stability: f32,
     pub hidden_text_layer_suspected: bool,
+    pub invisible_text_suspected: bool,
     pub duplicate_text_suspected: bool,
+    pub stacked_duplicate_text_suspected: bool,
     pub mixed_text_image_suspected: bool,
     pub full_page_raster_suspected: bool,
     pub first_line: String,
@@ -65,7 +67,9 @@ pub struct ProbeSampleStats {
     pub mixed_text_image_page_ratio: f32,
     pub full_page_raster_page_ratio: f32,
     pub hidden_text_layer_page_ratio: f32,
+    pub invisible_text_layer_page_ratio: f32,
     pub duplicate_text_page_ratio: f32,
+    pub stacked_duplicate_text_page_ratio: f32,
     pub pages: Vec<ProbePageStats>,
 }
 
@@ -104,7 +108,9 @@ pub fn probe_pdf(cfg: &Config, engine: &dyn Engine, input: &Path) -> Result<Prob
         mixed_text_image_page_ratio = probe.mixed_text_image_page_ratio,
         full_page_raster_page_ratio = probe.full_page_raster_page_ratio,
         hidden_text_layer_page_ratio = probe.hidden_text_layer_page_ratio,
+        invisible_text_layer_page_ratio = probe.invisible_text_layer_page_ratio,
         duplicate_text_page_ratio = probe.duplicate_text_page_ratio,
+        stacked_duplicate_text_page_ratio = probe.stacked_duplicate_text_page_ratio,
         "Collected PDF probe features"
     );
     for page in &probe.pages {
@@ -132,7 +138,9 @@ pub fn probe_pdf(cfg: &Config, engine: &dyn Engine, input: &Path) -> Result<Prob
             coordinate_sanity = page.coordinate_sanity,
             reading_order_stability = page.reading_order_stability,
             hidden_text_layer_suspected = page.hidden_text_layer_suspected,
+            invisible_text_suspected = page.invisible_text_suspected,
             duplicate_text_suspected = page.duplicate_text_suspected,
+            stacked_duplicate_text_suspected = page.stacked_duplicate_text_suspected,
             mixed_text_image_suspected = page.mixed_text_image_suspected,
             full_page_raster_suspected = page.full_page_raster_suspected,
             first_line = %page.first_line,
@@ -162,7 +170,9 @@ pub fn probe_pdf(cfg: &Config, engine: &dyn Engine, input: &Path) -> Result<Prob
             mixed_text_image_page_ratio: probe.mixed_text_image_page_ratio,
             full_page_raster_page_ratio: probe.full_page_raster_page_ratio,
             hidden_text_layer_page_ratio: probe.hidden_text_layer_page_ratio,
+            invisible_text_layer_page_ratio: probe.invisible_text_layer_page_ratio,
             duplicate_text_page_ratio: probe.duplicate_text_page_ratio,
+            stacked_duplicate_text_page_ratio: probe.stacked_duplicate_text_page_ratio,
             pages: probe
                 .pages
                 .into_iter()
@@ -190,7 +200,9 @@ pub fn probe_pdf(cfg: &Config, engine: &dyn Engine, input: &Path) -> Result<Prob
                     coordinate_sanity: page.coordinate_sanity,
                     reading_order_stability: page.reading_order_stability,
                     hidden_text_layer_suspected: page.hidden_text_layer_suspected,
+                    invisible_text_suspected: page.invisible_text_suspected,
                     duplicate_text_suspected: page.duplicate_text_suspected,
+                    stacked_duplicate_text_suspected: page.stacked_duplicate_text_suspected,
                     mixed_text_image_suspected: page.mixed_text_image_suspected,
                     full_page_raster_suspected: page.full_page_raster_suspected,
                     first_line: page.first_line,

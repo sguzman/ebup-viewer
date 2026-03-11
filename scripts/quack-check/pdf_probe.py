@@ -117,7 +117,18 @@ def _page_quality_features(text: str, image_object_count: int, image_coverage_ra
         and image_coverage_ratio >= 0.70
         and image_object_count >= 1
     )
+    invisible_text_suspected = (
+        hidden_text_layer_suspected
+        and total_chars <= 60
+        and image_coverage_ratio >= 0.85
+        and duplicate_text_ratio <= 0.08
+    )
     duplicate_text_suspected = duplicate_text_ratio >= 0.22
+    stacked_duplicate_text_suspected = (
+        duplicate_text_suspected
+        and image_coverage_ratio >= 0.45
+        and image_object_count >= 1
+    )
     mixed_text_image_suspected = (
         total_chars >= 150
         and image_object_count >= 1
@@ -135,7 +146,9 @@ def _page_quality_features(text: str, image_object_count: int, image_coverage_ra
         "coordinate_sanity": coordinate_sanity,
         "reading_order_stability": reading_order_stability,
         "hidden_text_layer_suspected": hidden_text_layer_suspected,
+        "invisible_text_suspected": invisible_text_suspected,
         "duplicate_text_suspected": duplicate_text_suspected,
+        "stacked_duplicate_text_suspected": stacked_duplicate_text_suspected,
         "mixed_text_image_suspected": mixed_text_image_suspected,
         "full_page_raster_suspected": full_page_raster_suspected,
     }
@@ -305,7 +318,11 @@ def main() -> None:
     mixed_text_image_pages = sum(1 for page in page_stats if page["mixed_text_image_suspected"])
     full_page_raster_pages = sum(1 for page in page_stats if page["full_page_raster_suspected"])
     hidden_text_layer_pages = sum(1 for page in page_stats if page["hidden_text_layer_suspected"])
+    invisible_text_layer_pages = sum(1 for page in page_stats if page["invisible_text_suspected"])
     duplicate_text_pages = sum(1 for page in page_stats if page["duplicate_text_suspected"])
+    stacked_duplicate_text_pages = sum(
+        1 for page in page_stats if page["stacked_duplicate_text_suspected"]
+    )
 
     first_lines = [page["first_line"] for page in page_stats if page["first_line"]]
     last_lines = [page["last_line"] for page in page_stats if page["last_line"]]
@@ -329,7 +346,9 @@ def main() -> None:
         mixed_text_image_page_ratio=float(mixed_text_image_pages / denom),
         full_page_raster_page_ratio=float(full_page_raster_pages / denom),
         hidden_text_layer_page_ratio=float(hidden_text_layer_pages / denom),
+        invisible_text_layer_page_ratio=float(invisible_text_layer_pages / denom),
         duplicate_text_page_ratio=float(duplicate_text_pages / denom),
+        stacked_duplicate_text_page_ratio=float(stacked_duplicate_text_pages / denom),
         pages=page_stats,
     )
     print(json.dumps(out))

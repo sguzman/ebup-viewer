@@ -86,6 +86,8 @@ export interface ReaderTopBarProps {
 }
 
 export interface ReaderSearchBarProps {
+  disabled?: boolean;
+  disabledReason?: string | null;
   onSearchNext: () => Promise<void>;
   onSearchPrev: () => Promise<void>;
   onSearchQuery: (query: string) => Promise<void>;
@@ -452,6 +454,8 @@ export function ReaderTopBar({
 }
 
 export function ReaderSearchBar({
+  disabled = false,
+  disabledReason = null,
   onSearchNext,
   onSearchPrev,
   onSearchQuery,
@@ -459,35 +463,54 @@ export function ReaderSearchBar({
   setSearchInput
 }: ReaderSearchBarProps) {
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
-      <SearchIcon fontSize="small" />
-      <TextField
-        size="small"
-        fullWidth
-        label="Search (regex supported)"
-        value={searchInput}
-        data-testid="reader-search-input"
-        inputProps={{ "data-reader-search-input": "1" }}
-        onChange={(event) => setSearchInput(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            void onSearchQuery(searchInput);
-          }
-        }}
-      />
-      <Button
-        variant="outlined"
-        onClick={() => void onSearchQuery(searchInput)}
-        data-testid="reader-search-apply-button"
-      >
-        Apply
-      </Button>
-      <Button variant="outlined" onClick={() => void onSearchPrev()} data-testid="reader-search-prev-button">
-        Prev
-      </Button>
-      <Button variant="outlined" onClick={() => void onSearchNext()} data-testid="reader-search-next-button">
-        Next
-      </Button>
+    <Stack spacing={0.5} sx={{ flexShrink: 0 }}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <SearchIcon fontSize="small" />
+        <TextField
+          size="small"
+          fullWidth
+          label="Search (regex supported)"
+          value={searchInput}
+          disabled={disabled}
+          data-testid="reader-search-input"
+          inputProps={{ "data-reader-search-input": "1" }}
+          onChange={(event) => setSearchInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !disabled) {
+              void onSearchQuery(searchInput);
+            }
+          }}
+        />
+        <Button
+          variant="outlined"
+          onClick={() => void onSearchQuery(searchInput)}
+          data-testid="reader-search-apply-button"
+          disabled={disabled}
+        >
+          Apply
+        </Button>
+        <Button
+          variant="outlined"
+          onClick={() => void onSearchPrev()}
+          data-testid="reader-search-prev-button"
+          disabled={disabled}
+        >
+          Prev
+        </Button>
+        <Button
+          variant="outlined"
+          onClick={() => void onSearchNext()}
+          data-testid="reader-search-next-button"
+          disabled={disabled}
+        >
+          Next
+        </Button>
+      </Stack>
+      {disabledReason ? (
+        <Typography variant="caption" color="text.secondary" data-testid="reader-search-disabled-reason">
+          {disabledReason}
+        </Typography>
+      ) : null}
     </Stack>
   );
 }

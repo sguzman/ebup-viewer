@@ -219,6 +219,21 @@ export const ReaderShell = memo(function ReaderShell({
     reader.sentences,
     reader.tts_text_page
   ]);
+  const pdfSearchDisabledReason = useMemo(() => {
+    if (reader.pretty_kind !== "pdf") {
+      return null;
+    }
+    if (reader.pdf_runtime_policy?.search_policy === "disabled") {
+      return reader.pdf_runtime_policy.explanation;
+    }
+    return null;
+  }, [reader.pdf_runtime_policy, reader.pretty_kind]);
+  const pdfJumpDisabled = useMemo(() => {
+    if (reader.pretty_kind !== "pdf") {
+      return false;
+    }
+    return reader.pdf_runtime_policy?.pretty_sync_enabled === false;
+  }, [reader.pdf_runtime_policy, reader.pretty_kind]);
   const renderedMarkdownHtml = useMemo(() => {
     if (!hasPrettyMarkdown || !reader.reading_markdown_page) {
       return "";
@@ -278,7 +293,7 @@ export const ReaderShell = memo(function ReaderShell({
         <Stack spacing={2} sx={{ height: "100%", minHeight: 0 }}>
           <ReaderTopBar
             busy={busy}
-            hasHighlightSentence={hasHighlightSentence}
+            hasHighlightSentence={hasHighlightSentence && !pdfJumpDisabled}
             jumpToHighlightedSentence={jumpToHighlightedSentence}
             onCloseSession={onCloseSession}
             onNextPage={onNextPage}
@@ -294,6 +309,8 @@ export const ReaderShell = memo(function ReaderShell({
           />
 
           <ReaderSearchBar
+            disabled={Boolean(pdfSearchDisabledReason)}
+            disabledReason={pdfSearchDisabledReason}
             onSearchNext={onSearchNext}
             onSearchPrev={onSearchPrev}
             onSearchQuery={onSearchQuery}

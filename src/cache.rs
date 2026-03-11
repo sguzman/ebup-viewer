@@ -1023,6 +1023,49 @@ sentence_text = "legacy bookmark entry"
     }
 
     #[test]
+    fn pdf_sync_meta_roundtrip_preserves_runtime_policy() {
+        let source = unique_source_path("pdf");
+        write_source_file(&source);
+        let policy = crate::epub_loader::PdfRuntimePolicySummary {
+            text_only_policy: crate::epub_loader::PdfTextOnlyPolicy::LimitedText,
+            sentence_highlight_policy:
+                crate::epub_loader::PdfSentenceHighlightPolicy::ParagraphFallback,
+            search_policy: crate::epub_loader::PdfSearchPolicy::LimitedText,
+            bookmark_policy: crate::epub_loader::PdfBookmarkPolicy::PageOnly,
+            tts_allowed: true,
+            pretty_sync_enabled: true,
+            exact_sentence_sync: false,
+            explanation: "Degraded sync".to_string(),
+            degraded_reasons: vec!["sentence_sync_not_exact".to_string()],
+        };
+
+        persist_pdf_sync_meta(
+            &source,
+            crate::epub_loader::PdfGeometryMode::MixedTextTrust,
+            crate::epub_loader::PdfSyncStrategy::ParagraphFallback,
+            None,
+            Some(&policy),
+        );
+        let loaded = load_pdf_sync_meta(&source).expect("pdf sync meta should load");
+        assert_eq!(
+            loaded
+                .pdf_runtime_policy
+                .as_ref()
+                .map(|value| value.sentence_highlight_policy),
+            Some(crate::epub_loader::PdfSentenceHighlightPolicy::ParagraphFallback)
+        );
+        assert_eq!(
+            loaded
+                .pdf_runtime_policy
+                .as_ref()
+                .map(|value| value.explanation.as_str()),
+            Some("Degraded sync")
+        );
+
+        cleanup_source_and_cache(&source);
+    }
+
+    #[test]
     fn pdf_sentence_map_roundtrip_preserves_locations() {
         let source = unique_source_path("pdf");
         write_source_file(&source);

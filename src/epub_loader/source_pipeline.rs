@@ -1969,10 +1969,57 @@ mod tests {
         pages: Vec<crate::quack_check::probe::ProbePageStats>,
     }
 
+    #[derive(Default)]
+    struct CalibrationCounters {
+        clean_misclassified_as_scan: usize,
+        scan_misclassified_as_embedded: usize,
+        hidden_overlay_misclassified_as_clean: usize,
+        mixed_forced_into_overstrong_class: usize,
+    }
+
     fn load_classification_fixtures() -> Vec<ClassificationFixture> {
         let raw = include_str!("../../tests/fixtures/pdf-classification-fixtures.toml");
         let parsed: FixtureFile = toml::from_str(raw).expect("fixture toml should parse");
         parsed.fixtures
+    }
+
+    fn classify_fixture(
+        fixture: &ClassificationFixture,
+    ) -> (PdfClassificationSummary, PdfRuntimePolicySummary) {
+        let report = crate::quack_check::report::JobReport {
+            input: crate::quack_check::probe::ProbeInput {
+                path: format!("/fixtures/{}.pdf", fixture.id),
+                file_bytes: 1024,
+                page_count: fixture.pages.len() as u32,
+            },
+            sample: crate::quack_check::probe::ProbeSampleStats {
+                pages: fixture.pages.clone(),
+                ..fixture.sample.clone()
+            },
+            decision: crate::quack_check::policy::PolicyDecision {
+                tier: crate::quack_check::policy::QualityTier::MixedText,
+                chosen_engine: "docling".to_string(),
+                do_ocr: !matches!(fixture.ocr_recommendation, PdfOcrRecommendation::NotNeeded),
+            },
+            chunk_reports: Vec::new(),
+        };
+        let transcript_text = if matches!(fixture.document_class, PdfDocumentClass::ImageOnlyNoText)
+        {
+            ""
+        } else {
+            "Fixture transcript text."
+        };
+        let classification = classify_pdf_runtime(Some(&report), transcript_text, "")
+            .unwrap_or_else(|| panic!("classification should exist for fixture {}", fixture.id));
+        let (geometry_mode, sync_strategy) =
+            derive_pdf_runtime_metadata(Some(&classification), Some(&report), transcript_text, "");
+        let policy = derive_pdf_runtime_policy(
+            Some(&classification),
+            geometry_mode,
+            sync_strategy,
+            transcript_text,
+        );
+        (classification, policy)
     }
 
     fn sample_report() -> crate::quack_check::report::JobReport {
@@ -2495,51 +2542,7 @@ mod tests {
         );
 
         for fixture in fixtures {
-            let report = crate::quack_check::report::JobReport {
-                input: crate::quack_check::probe::ProbeInput {
-                    path: format!("/fixtures/{}.pdf", fixture.id),
-                    file_bytes: 1024,
-                    page_count: fixture.pages.len() as u32,
-                },
-                sample: crate::quack_check::probe::ProbeSampleStats {
-                    pages: fixture.pages.clone(),
-                    ..fixture.sample.clone()
-                },
-                decision: crate::quack_check::policy::PolicyDecision {
-                    tier: crate::quack_check::policy::QualityTier::MixedText,
-                    chosen_engine: "docling".to_string(),
-                    do_ocr: !matches!(fixture.ocr_recommendation, PdfOcrRecommendation::NotNeeded),
-                },
-                chunk_reports: Vec::new(),
-            };
-            let transcript_text =
-                if matches!(fixture.document_class, PdfDocumentClass::ImageOnlyNoText) {
-                    ""
-                } else {
-                    "Fixture transcript text."
-                };
-            let classification = classify_pdf_runtime(Some(&report), transcript_text, "")
-                .unwrap_or_else(|| {
-                    panic!("classification should exist for fixture {}", fixture.id)
-                });
-            let policy = derive_pdf_runtime_policy(
-                Some(&classification),
-                derive_pdf_runtime_metadata(
-                    Some(&classification),
-                    Some(&report),
-                    transcript_text,
-                    "",
-                )
-                .0,
-                derive_pdf_runtime_metadata(
-                    Some(&classification),
-                    Some(&report),
-                    transcript_text,
-                    "",
-                )
-                .1,
-                transcript_text,
-            );
+            let (classification, policy) = classify_fixture(&fixture);
 
             assert_eq!(
                 classification.document_class, fixture.document_class,
@@ -2574,6 +2577,117 @@ mod tests {
             assert_eq!(
                 actual_page_classes, fixture.page_classes,
                 "page classes mismatch for fixture {}",
+                fixture.id
+            );
+        }
+    }
+
+    #[test]
+    fn classification_fixture_calibration_metrics_show_no_known_false_positives() {
+        let fixtures = load_classification_fixtures();
+        let mut counters = CalibrationCounters::default();
+
+        for fixture in &fixtures {
+            let (classification, _) = classify_fixture(fixture);
+            match fixture.document_class {
+                PdfDocumentClass::EmbeddedClean => {
+                    if matches!(
+                        classification.document_class,
+                        PdfDocumentClass::ScanWithGoodOcr
+                            | PdfDocumentClass::ScanWithWeakOcr
+                            | PdfDocumentClass::ImageOnlyNoText
+                    ) {
+                        counters.clean_misclassified_as_scan += 1;
+                    }
+                }
+                PdfDocumentClass::ScanWithGoodOcr | PdfDocumentClass::ScanWithWeakOcr => {
+                    if matches!(
+                        classification.document_class,
+                        PdfDocumentClass::EmbeddedClean
+                            | PdfDocumentClass::EmbeddedNoisy
+                            | PdfDocumentClass::EmbeddedSparse
+                    ) {
+                        counters.scan_misclassified_as_embedded += 1;
+                    }
+                }
+                PdfDocumentClass::HiddenOcrOverlay => {
+                    if classification.document_class == PdfDocumentClass::EmbeddedClean {
+                        counters.hidden_overlay_misclassified_as_clean += 1;
+                    }
+                }
+                PdfDocumentClass::HybridMixedDocument => {
+                    if classification.document_class != PdfDocumentClass::HybridMixedDocument {
+                        counters.mixed_forced_into_overstrong_class += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(counters.clean_misclassified_as_scan, 0);
+        assert_eq!(counters.scan_misclassified_as_embedded, 0);
+        assert_eq!(counters.hidden_overlay_misclassified_as_clean, 0);
+        assert_eq!(counters.mixed_forced_into_overstrong_class, 0);
+    }
+
+    #[test]
+    fn classification_fixture_matrix_is_deterministic_and_explainable() {
+        for fixture in load_classification_fixtures() {
+            let (first_classification, first_policy) = classify_fixture(&fixture);
+            let (second_classification, second_policy) = classify_fixture(&fixture);
+
+            assert_eq!(
+                first_classification.document_class, second_classification.document_class,
+                "document class should be deterministic for fixture {}",
+                fixture.id
+            );
+            assert_eq!(
+                first_classification.reasons, second_classification.reasons,
+                "reason ordering should stay deterministic for fixture {}",
+                fixture.id
+            );
+            assert_eq!(
+                first_classification.trust_diagnostics.rationale,
+                second_classification.trust_diagnostics.rationale,
+                "trust rationale should stay deterministic for fixture {}",
+                fixture.id
+            );
+            assert_eq!(
+                first_policy.explanation, second_policy.explanation,
+                "policy explanation should stay deterministic for fixture {}",
+                fixture.id
+            );
+            assert!(
+                !first_classification.reasons.is_empty(),
+                "fixture {} should remain explainable",
+                fixture.id
+            );
+        }
+    }
+
+    #[test]
+    fn hidden_overlay_and_scan_fixtures_record_ocr_confidence_thresholds() {
+        for fixture in load_classification_fixtures()
+            .into_iter()
+            .filter(|fixture| {
+                matches!(
+                    fixture.document_class,
+                    PdfDocumentClass::HiddenOcrOverlay | PdfDocumentClass::ScanWithWeakOcr
+                )
+            })
+        {
+            let (classification, _) = classify_fixture(&fixture);
+            assert!(
+                classification
+                    .trust_diagnostics
+                    .ocr_confidence_threshold_met,
+                "fixture {} should meet OCR confidence thresholds",
+                fixture.id
+            );
+            assert!(
+                classification.trust_diagnostics.ocr_replace_confidence > 0.0
+                    || classification.trust_diagnostics.ocr_augment_confidence > 0.0,
+                "fixture {} should record OCR confidence diagnostics",
                 fixture.id
             );
         }

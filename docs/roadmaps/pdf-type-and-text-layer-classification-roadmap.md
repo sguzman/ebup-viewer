@@ -4,12 +4,12 @@
 - [x] Tranche 1: sampled-page probe expansion, page/document classification, OCR recommendation, cache persistence, and coarse runtime policy mapping
 - [x] Tranche 2: classification versioning plus reader/UI diagnostics for class, OCR recommendation, and rationale
 - [x] Tranche 3: stronger embedded-text trust signals, hidden-OCR-overlay heuristics tied to image/raster evidence, and richer runtime policy coverage
-- [ ] Tranche 4: fixture calibration set, regression matrix, and remaining diagnostics depth
+- [x] Tranche 4: fixture calibration set, regression matrix, and remaining diagnostics depth
 
 ## Objective
-- [ ] Build a stronger PDF classifier that can reliably determine what kind of PDF the app is dealing with before ingestion, OCR, sync, and highlighting decisions are made.
-- [ ] Distinguish clean embedded-text PDFs, noisy embedded-text PDFs, mixed/hybrid PDFs, hidden-OCR-overlay PDFs, scan-first PDFs, and image-only PDFs.
-- [ ] Drive OCR, native-PDF sync, fallback, and UI behavior from explicit classification results instead of only coarse sampled text heuristics.
+- [x] Build a stronger PDF classifier that can reliably determine what kind of PDF the app is dealing with before ingestion, OCR, sync, and highlighting decisions are made.
+- [x] Distinguish clean embedded-text PDFs, noisy embedded-text PDFs, mixed/hybrid PDFs, hidden-OCR-overlay PDFs, scan-first PDFs, and image-only PDFs.
+- [x] Drive OCR, native-PDF sync, fallback, and UI behavior from explicit classification results instead of only coarse sampled text heuristics.
 
 ## Success Criteria
 - [x] The app can explain why a PDF was classified the way it was.
@@ -68,7 +68,7 @@
 ## Phase 3: Document-Level Rollup
 - [x] Aggregate page-level classes into a document-level class.
 - [x] Keep per-page overrides even when the document gets one primary class.
-- [ ] Define rollup rules for:
+- [x] Define rollup rules for:
 - [x] mostly embedded text with a scanned appendix
 - [x] mostly scanned text with a few embedded-text pages
 - [x] mixed page classes across chapters
@@ -133,16 +133,16 @@
 
 ## Phase 9: Model and Heuristic Calibration
 - [x] Build a labeled fixture set of PDFs across all target classes.
-- [ ] Measure false positives and false negatives for:
-- [ ] clean embedded text misclassified as scan
-- [ ] scans misclassified as embedded text
-- [ ] hidden OCR overlays misclassified as clean text
-- [ ] mixed documents forced into one overly strong class
-- [ ] Tune thresholds with recorded fixture outcomes.
-- [ ] Keep classifier deterministic and explainable even if a learned scorer is introduced later.
+- [x] Measure false positives and false negatives for:
+- [x] clean embedded text misclassified as scan
+- [x] scans misclassified as embedded text
+- [x] hidden OCR overlays misclassified as clean text
+- [x] mixed documents forced into one overly strong class
+- [x] Tune thresholds with recorded fixture outcomes.
+- [x] Keep classifier deterministic and explainable even if a learned scorer is introduced later.
 
 ## Phase 10: Validation Matrix
-- [ ] Add regression fixtures for:
+- [x] Add regression fixtures for:
 - [x] high-quality publisher PDFs
 - [x] malformed embedded-text PDFs
 - [x] sparse-text presentation PDFs

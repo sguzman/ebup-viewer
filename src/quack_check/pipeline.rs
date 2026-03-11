@@ -47,12 +47,16 @@ impl<E: Engine> Pipeline<E> {
         let mut plan = ChunkPlan::from_probe(&self.cfg, &probe_res)?;
 
         info!(
-            "probe page_count={} file_bytes={} avg_chars={} garbage_ratio={} whitespace_ratio={}",
+            "probe page_count={} file_bytes={} avg_chars={} garbage_ratio={} whitespace_ratio={} text_page_ratio={} sparse_text_page_ratio={} repeated_header_ratio={} repeated_footer_ratio={}",
             probe_res.input.page_count,
             probe_res.input.file_bytes,
             probe_res.sample.avg_chars_per_page,
             probe_res.sample.garbage_ratio,
-            probe_res.sample.whitespace_ratio
+            probe_res.sample.whitespace_ratio,
+            probe_res.sample.text_page_ratio,
+            probe_res.sample.sparse_text_page_ratio,
+            probe_res.sample.repeated_header_ratio,
+            probe_res.sample.repeated_footer_ratio
         );
         info!(
             "policy tier={:?} engine={} do_ocr={}",
@@ -454,6 +458,13 @@ mod tests {
             avg_chars_per_page: 2500,
             garbage_ratio: 0.0,
             whitespace_ratio: 0.15,
+            text_page_ratio: 1.0,
+            empty_text_page_ratio: 0.0,
+            sparse_text_page_ratio: 0.0,
+            noisy_text_page_ratio: 0.0,
+            repeated_header_ratio: 0.0,
+            repeated_footer_ratio: 0.0,
+            pages: Vec::new(),
             error: None,
         }
     }

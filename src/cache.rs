@@ -260,16 +260,17 @@ pub fn persist_pdf_sync_meta(
     source_path: &Path,
     pdf_geometry_mode: crate::epub_loader::PdfGeometryMode,
     pdf_sync_strategy: crate::epub_loader::PdfSyncStrategy,
+    pdf_classification: Option<&crate::epub_loader::PdfClassificationSummary>,
 ) {
-    content_artifacts::persist_pdf_sync_meta(source_path, pdf_geometry_mode, pdf_sync_strategy)
+    content_artifacts::persist_pdf_sync_meta(
+        source_path,
+        pdf_geometry_mode,
+        pdf_sync_strategy,
+        pdf_classification,
+    )
 }
 
-pub fn load_pdf_sync_meta(
-    source_path: &Path,
-) -> Option<(
-    crate::epub_loader::PdfGeometryMode,
-    crate::epub_loader::PdfSyncStrategy,
-)> {
+pub fn load_pdf_sync_meta(source_path: &Path) -> Option<content_artifacts::PdfSyncMeta> {
     content_artifacts::load_pdf_sync_meta(source_path)
 }
 
@@ -1003,14 +1004,15 @@ sentence_text = "legacy bookmark entry"
             &source,
             crate::epub_loader::PdfGeometryMode::MixedTextTrust,
             crate::epub_loader::PdfSyncStrategy::ParagraphFallback,
+            None,
         );
         let loaded = load_pdf_sync_meta(&source).expect("pdf sync meta should load");
         assert_eq!(
-            loaded.0,
+            loaded.pdf_geometry_mode,
             crate::epub_loader::PdfGeometryMode::MixedTextTrust
         );
         assert_eq!(
-            loaded.1,
+            loaded.pdf_sync_strategy,
             crate::epub_loader::PdfSyncStrategy::ParagraphFallback
         );
 
@@ -1137,6 +1139,7 @@ sentence_text = "legacy bookmark entry"
             &source,
             crate::epub_loader::PdfGeometryMode::HighTextTrust,
             crate::epub_loader::PdfSyncStrategy::SentenceSpans,
+            None,
         );
         let meta_path = hash_dir(&source).join("content").join("pdf-sync-meta.toml");
         let tts_text_path = hash_dir(&source).join("content").join("tts-text.txt");

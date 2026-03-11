@@ -51,6 +51,7 @@ pub struct LoadedBook {
     pub has_structured_markdown: bool,
     pub pdf_geometry_mode: Option<PdfGeometryMode>,
     pub pdf_sync_strategy: Option<PdfSyncStrategy>,
+    pub pdf_classification: Option<PdfClassificationSummary>,
     pub images: Vec<BookImage>,
 }
 
@@ -71,6 +72,94 @@ pub enum PdfSyncStrategy {
     SentenceSpans,
     ParagraphFallback,
     RenderOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfPageClass {
+    EmbeddedClean,
+    EmbeddedNoisy,
+    EmbeddedSparse,
+    HiddenOcrOverlay,
+    ScanWithWeakOcr,
+    ImageOnlyNoText,
+    LayoutHostile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfDocumentClass {
+    EmbeddedClean,
+    EmbeddedNoisy,
+    EmbeddedSparse,
+    HiddenOcrOverlay,
+    ScanWithGoodOcr,
+    ScanWithWeakOcr,
+    ImageOnlyNoText,
+    HybridMixedDocument,
+    LayoutHostileDocument,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfOcrRecommendation {
+    NotNeeded,
+    GeometryOnly,
+    RequiredForText,
+    UnlikelyToHelp,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PdfProbePageSummary {
+    pub page_index: u32,
+    pub char_count: u32,
+    pub token_count: u32,
+    pub line_count: u32,
+    pub whitespace_ratio: f32,
+    pub garbage_ratio: f32,
+    pub punctuation_ratio: f32,
+    pub digit_ratio: f32,
+    pub non_latin_ratio: f32,
+    pub first_line: String,
+    pub last_line: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PdfProbeFeatureSummary {
+    pub sampled_pages: u32,
+    pub text_page_ratio: f32,
+    pub empty_text_page_ratio: f32,
+    pub sparse_text_page_ratio: f32,
+    pub noisy_text_page_ratio: f32,
+    pub repeated_header_ratio: f32,
+    pub repeated_footer_ratio: f32,
+    pub avg_chars_per_page: u32,
+    pub garbage_ratio: f32,
+    pub whitespace_ratio: f32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PdfPageClassificationSummary {
+    pub page_index: u32,
+    pub class: PdfPageClass,
+    pub confidence: f32,
+    #[serde(default)]
+    pub reasons: Vec<String>,
+    pub features: PdfProbePageSummary,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PdfClassificationSummary {
+    pub document_class: PdfDocumentClass,
+    pub confidence: f32,
+    pub ocr_recommendation: PdfOcrRecommendation,
+    #[serde(default)]
+    pub reasons: Vec<String>,
+    pub feature_summary: PdfProbeFeatureSummary,
+    #[serde(default)]
+    pub page_classes: Vec<PdfPageClassificationSummary>,
+    #[serde(default)]
+    pub class_distribution: Vec<(PdfPageClass, u32)>,
 }
 
 /// Load a supported source file and return plain text plus extracted image paths.
@@ -96,7 +185,12 @@ pub fn load_book_content_with_cancel(
     if let (Some(pdf_geometry_mode), Some(pdf_sync_strategy)) =
         (content.pdf_geometry_mode, content.pdf_sync_strategy)
     {
-        crate::cache::persist_pdf_sync_meta(path, pdf_geometry_mode, pdf_sync_strategy);
+        crate::cache::persist_pdf_sync_meta(
+            path,
+            pdf_geometry_mode,
+            pdf_sync_strategy,
+            content.pdf_classification.as_ref(),
+        );
     }
     record_markdown_availability(path, content.has_structured_markdown);
     ensure_not_cancelled(cancel, "after_load_source_text")?;
@@ -123,6 +217,14 @@ pub fn load_book_content_with_cancel(
         tts_chars = content.tts_text.len(),
         pdf_geometry_mode = ?content.pdf_geometry_mode,
         pdf_sync_strategy = ?content.pdf_sync_strategy,
+        pdf_document_class = ?content
+            .pdf_classification
+            .as_ref()
+            .map(|value| value.document_class),
+        pdf_ocr_recommendation = ?content
+            .pdf_classification
+            .as_ref()
+            .map(|value| value.ocr_recommendation),
         image_count = images.len(),
         elapsed_ms = start.elapsed().as_millis(),
         "Source load complete"
@@ -134,6 +236,7 @@ pub fn load_book_content_with_cancel(
         has_structured_markdown: content.has_structured_markdown,
         pdf_geometry_mode: content.pdf_geometry_mode,
         pdf_sync_strategy: content.pdf_sync_strategy,
+        pdf_classification: content.pdf_classification,
         images,
     })
 }
@@ -146,6 +249,7 @@ struct SourceContent {
     has_structured_markdown: bool,
     pdf_geometry_mode: Option<PdfGeometryMode>,
     pdf_sync_strategy: Option<PdfSyncStrategy>,
+    pdf_classification: Option<PdfClassificationSummary>,
 }
 
 fn collect_images(path: &Path) -> Result<Vec<BookImage>> {

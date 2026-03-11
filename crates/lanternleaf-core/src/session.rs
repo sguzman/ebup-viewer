@@ -1167,7 +1167,7 @@ mod tests {
         let normalizer = normalizer::TextNormalizer::default();
         let mut session = build_test_session(&[&[
             "This claim remains disputed1.",
-            "The next sentence still aligns."
+            "The next sentence still aligns.",
         ]]);
 
         session.toggle_text_only(&normalizer);

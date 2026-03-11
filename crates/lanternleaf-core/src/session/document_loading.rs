@@ -58,12 +58,16 @@ impl ReaderSession {
         let reading_html = loaded.reading_html;
         let has_structured_markdown = loaded.has_structured_markdown;
         let cached_pdf_sync = crate::cache::load_pdf_sync_meta(&source_path);
-        let pdf_geometry_mode = loaded
-            .pdf_geometry_mode
-            .or_else(|| cached_pdf_sync.as_ref().map(|value| value.0));
-        let pdf_sync_strategy = loaded
-            .pdf_sync_strategy
-            .or_else(|| cached_pdf_sync.as_ref().map(|value| value.1));
+        let pdf_geometry_mode = loaded.pdf_geometry_mode.or_else(|| {
+            cached_pdf_sync
+                .as_ref()
+                .map(|value| value.pdf_geometry_mode)
+        });
+        let pdf_sync_strategy = loaded.pdf_sync_strategy.or_else(|| {
+            cached_pdf_sync
+                .as_ref()
+                .map(|value| value.pdf_sync_strategy)
+        });
 
         let mut session = Self {
             source_path,

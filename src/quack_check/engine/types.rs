@@ -11,12 +11,43 @@ pub struct DocDiag {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbePageOut {
+    pub page_index: u32,
+    pub char_count: u32,
+    pub token_count: u32,
+    pub line_count: u32,
+    pub whitespace_ratio: f32,
+    pub garbage_ratio: f32,
+    pub punctuation_ratio: f32,
+    pub digit_ratio: f32,
+    pub non_latin_ratio: f32,
+    #[serde(default)]
+    pub first_line: String,
+    #[serde(default)]
+    pub last_line: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbeOut {
     pub page_count: u32,
     pub sampled_pages: u32,
     pub avg_chars_per_page: u32,
     pub garbage_ratio: f32,
     pub whitespace_ratio: f32,
+    #[serde(default)]
+    pub text_page_ratio: f32,
+    #[serde(default)]
+    pub empty_text_page_ratio: f32,
+    #[serde(default)]
+    pub sparse_text_page_ratio: f32,
+    #[serde(default)]
+    pub noisy_text_page_ratio: f32,
+    #[serde(default)]
+    pub repeated_header_ratio: f32,
+    #[serde(default)]
+    pub repeated_footer_ratio: f32,
+    #[serde(default)]
+    pub pages: Vec<ProbePageOut>,
     #[serde(default)]
     pub error: Option<String>,
 }

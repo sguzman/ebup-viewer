@@ -1,4 +1,8 @@
-use super::{PdfGeometryMode, PdfSyncStrategy, SourceContent};
+use super::{
+    PdfClassificationSummary, PdfDocumentClass, PdfGeometryMode, PdfOcrRecommendation,
+    PdfPageClass, PdfPageClassificationSummary, PdfProbeFeatureSummary, PdfProbePageSummary,
+    PdfSyncStrategy, SourceContent,
+};
 use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
 use crate::cancellation::CancellationToken;
 use anyhow::{Context, Result};
@@ -67,6 +71,7 @@ pub(super) fn load_source_content(
             has_structured_markdown: true,
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
+            pdf_classification: None,
         });
     }
 
@@ -90,6 +95,7 @@ pub(super) fn load_source_content(
             has_structured_markdown: false,
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
+            pdf_classification: None,
         });
     }
 
@@ -116,6 +122,7 @@ pub(super) fn load_source_content(
             has_structured_markdown: has_pretty,
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
+            pdf_classification: None,
         };
         info!(
             path = %path.display(),
@@ -143,6 +150,7 @@ pub(super) fn load_source_content(
             has_structured_markdown: has_pretty,
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
+            pdf_classification: None,
         };
         info!(
             path = %path.display(),
@@ -166,6 +174,7 @@ pub(super) fn load_source_content(
             has_structured_markdown: true,
             pdf_geometry_mode: None,
             pdf_sync_strategy: None,
+            pdf_classification: None,
         });
     }
 
@@ -307,6 +316,10 @@ fn load_pdf_with_quack_check(
             chunk_ranges = cached.chunk_ranges.len(),
             pdf_geometry_mode = ?cached.pdf_geometry_mode,
             pdf_sync_strategy = ?cached.pdf_sync_strategy,
+            pdf_document_class = ?cached
+                .pdf_classification
+                .as_ref()
+                .map(|value| value.document_class),
             "Using cached quack-check PDF transcript"
         );
         return Ok(SourceContent {
@@ -316,6 +329,7 @@ fn load_pdf_with_quack_check(
             has_structured_markdown: false,
             pdf_geometry_mode: Some(cached.pdf_geometry_mode),
             pdf_sync_strategy: Some(cached.pdf_sync_strategy),
+            pdf_classification: cached.pdf_classification,
         });
     }
 
@@ -359,6 +373,7 @@ fn load_pdf_with_quack_check(
         extraction_mode,
         ocr_enabled,
         report.as_ref(),
+        resolved.pdf_classification.as_ref(),
     )?;
     info!(
         path = %path.display(),
@@ -387,6 +402,14 @@ fn load_pdf_with_quack_check(
         chunk_ranges = report.as_ref().map(|value| value.chunk_reports.len()).unwrap_or(0),
         pdf_geometry_mode = ?resolved.pdf_geometry_mode,
         pdf_sync_strategy = ?resolved.pdf_sync_strategy,
+        pdf_document_class = ?resolved
+            .pdf_classification
+            .as_ref()
+            .map(|value| value.document_class),
+        pdf_ocr_recommendation = ?resolved
+            .pdf_classification
+            .as_ref()
+            .map(|value| value.ocr_recommendation),
         job_id = %run.job_id,
         job_dir = %run.job_dir.display(),
         elapsed_ms = start.elapsed().as_millis(),
@@ -399,6 +422,7 @@ fn load_pdf_with_quack_check(
         reading_markdown,
         pdf_geometry_mode: resolved.pdf_geometry_mode,
         pdf_sync_strategy: resolved.pdf_sync_strategy,
+        pdf_classification: resolved.pdf_classification,
     })
 }
 
@@ -417,8 +441,13 @@ pub(super) fn resolve_pdf_dual_view_content(
     } else {
         Some(markdown.to_string())
     };
-    let (pdf_geometry_mode, pdf_sync_strategy) =
-        derive_pdf_runtime_metadata(report, transcript_text, markdown);
+    let pdf_classification = classify_pdf_runtime(report, transcript_text, markdown);
+    let (pdf_geometry_mode, pdf_sync_strategy) = derive_pdf_runtime_metadata(
+        pdf_classification.as_ref(),
+        report,
+        transcript_text,
+        markdown,
+    );
     SourceContent {
         tts_text,
         reading_html: None,
@@ -426,6 +455,7 @@ pub(super) fn resolve_pdf_dual_view_content(
         reading_markdown,
         pdf_geometry_mode: Some(pdf_geometry_mode),
         pdf_sync_strategy: Some(pdf_sync_strategy),
+        pdf_classification,
     }
 }
 
@@ -615,6 +645,276 @@ fn derive_pdf_fallback_strategies(
     strategies
 }
 
+fn classify_pdf_runtime(
+    report: Option<&crate::quack_check::report::JobReport>,
+    transcript_text: &str,
+    _markdown: &str,
+) -> Option<PdfClassificationSummary> {
+    let report = report?;
+    let sample = &report.sample;
+    let feature_summary = PdfProbeFeatureSummary {
+        sampled_pages: sample.sampled_pages,
+        text_page_ratio: sample.text_page_ratio,
+        empty_text_page_ratio: sample.empty_text_page_ratio,
+        sparse_text_page_ratio: sample.sparse_text_page_ratio,
+        noisy_text_page_ratio: sample.noisy_text_page_ratio,
+        repeated_header_ratio: sample.repeated_header_ratio,
+        repeated_footer_ratio: sample.repeated_footer_ratio,
+        avg_chars_per_page: sample.avg_chars_per_page,
+        garbage_ratio: sample.garbage_ratio,
+        whitespace_ratio: sample.whitespace_ratio,
+    };
+    let page_classes: Vec<PdfPageClassificationSummary> =
+        sample.pages.iter().map(classify_pdf_sample_page).collect();
+
+    let clean_count = count_page_class(&page_classes, PdfPageClass::EmbeddedClean);
+    let noisy_count = count_page_class(&page_classes, PdfPageClass::EmbeddedNoisy);
+    let sparse_count = count_page_class(&page_classes, PdfPageClass::EmbeddedSparse);
+    let image_only_count = count_page_class(&page_classes, PdfPageClass::ImageOnlyNoText);
+    let hidden_overlay_count = count_page_class(&page_classes, PdfPageClass::HiddenOcrOverlay);
+    let layout_hostile_count = count_page_class(&page_classes, PdfPageClass::LayoutHostile);
+    let weak_scan_count = count_page_class(&page_classes, PdfPageClass::ScanWithWeakOcr);
+    let sampled = page_classes.len().max(1) as f32;
+    let transcript_chars = transcript_text.trim().chars().count() as f32;
+    let transcript_chars_per_page = transcript_chars / report.input.page_count.max(1) as f32;
+    let scanish_ratio =
+        (image_only_count + hidden_overlay_count + weak_scan_count) as f32 / sampled;
+    let clean_ratio = clean_count as f32 / sampled;
+    let sparse_ratio = sparse_count as f32 / sampled;
+    let hostile_ratio = (noisy_count + layout_hostile_count) as f32 / sampled;
+
+    let (document_class, confidence, mut reasons) = if transcript_text.trim().is_empty() {
+        (
+            PdfDocumentClass::ImageOnlyNoText,
+            0.98,
+            vec![
+                "transcript_text_empty".to_string(),
+                "sampled_pages_have_no_usable_text".to_string(),
+            ],
+        )
+    } else if hidden_overlay_count as f32 / sampled >= 0.45 {
+        (
+            PdfDocumentClass::HiddenOcrOverlay,
+            0.79,
+            vec![
+                "many_pages_have_sparse_overlay_like_text".to_string(),
+                "native_text_presence_looks_too_thin_for_clean_sync".to_string(),
+            ],
+        )
+    } else if scanish_ratio >= 0.65 {
+        let class = if transcript_chars_per_page >= 450.0 && sample.garbage_ratio <= 0.03 {
+            PdfDocumentClass::ScanWithGoodOcr
+        } else {
+            PdfDocumentClass::ScanWithWeakOcr
+        };
+        (
+            class,
+            0.84,
+            vec![
+                "most_sampled_pages_lack_trustworthy_embedded_text".to_string(),
+                format!("ocr_enabled={}", report.decision.do_ocr),
+            ],
+        )
+    } else if clean_ratio >= 0.70 && hostile_ratio <= 0.15 && sparse_ratio <= 0.20 {
+        (
+            PdfDocumentClass::EmbeddedClean,
+            0.88,
+            vec!["sampled_pages_show_dense_low-garbage_text".to_string()],
+        )
+    } else if sparse_ratio >= 0.50 {
+        (
+            PdfDocumentClass::EmbeddedSparse,
+            0.73,
+            vec!["many_sampled_pages_have_only_sparse_text".to_string()],
+        )
+    } else if layout_hostile_count as f32 / sampled >= 0.35
+        || feature_summary.repeated_header_ratio >= 0.50
+        || feature_summary.repeated_footer_ratio >= 0.50
+    {
+        (
+            PdfDocumentClass::LayoutHostileDocument,
+            0.71,
+            vec![
+                "layout_signals_suggest_unstable_reading_order".to_string(),
+                "header_footer_repetition_or_short_line_density_detected".to_string(),
+            ],
+        )
+    } else if distinct_page_class_kinds(&page_classes) >= 3 {
+        (
+            PdfDocumentClass::HybridMixedDocument,
+            0.76,
+            vec!["sampled_pages_span_multiple_quality_classes".to_string()],
+        )
+    } else {
+        (
+            PdfDocumentClass::EmbeddedNoisy,
+            0.68,
+            vec![
+                "embedded_text_exists_but_quality_is_not_clean".to_string(),
+                "paragraph_level_fallback_recommended".to_string(),
+            ],
+        )
+    };
+
+    reasons.push(format!("sampled_page_count={}", page_classes.len()));
+    reasons.push(format!(
+        "class_distribution={}",
+        describe_page_distribution(&page_classes)
+    ));
+
+    let ocr_recommendation = match document_class {
+        PdfDocumentClass::EmbeddedClean => PdfOcrRecommendation::NotNeeded,
+        PdfDocumentClass::EmbeddedNoisy | PdfDocumentClass::EmbeddedSparse => {
+            PdfOcrRecommendation::GeometryOnly
+        }
+        PdfDocumentClass::HiddenOcrOverlay => PdfOcrRecommendation::GeometryOnly,
+        PdfDocumentClass::HybridMixedDocument | PdfDocumentClass::LayoutHostileDocument => {
+            if transcript_chars_per_page < 180.0 {
+                PdfOcrRecommendation::RequiredForText
+            } else {
+                PdfOcrRecommendation::GeometryOnly
+            }
+        }
+        PdfDocumentClass::ScanWithGoodOcr | PdfDocumentClass::ScanWithWeakOcr => {
+            PdfOcrRecommendation::RequiredForText
+        }
+        PdfDocumentClass::ImageOnlyNoText => {
+            if report.decision.do_ocr && transcript_text.trim().is_empty() {
+                PdfOcrRecommendation::UnlikelyToHelp
+            } else {
+                PdfOcrRecommendation::RequiredForText
+            }
+        }
+    };
+
+    Some(PdfClassificationSummary {
+        document_class,
+        confidence,
+        ocr_recommendation,
+        reasons,
+        feature_summary,
+        class_distribution: page_class_distribution(&page_classes),
+        page_classes,
+    })
+}
+
+fn classify_pdf_sample_page(
+    page: &crate::quack_check::probe::ProbePageStats,
+) -> PdfPageClassificationSummary {
+    let features = PdfProbePageSummary {
+        page_index: page.page_index,
+        char_count: page.char_count,
+        token_count: page.token_count,
+        line_count: page.line_count,
+        whitespace_ratio: page.whitespace_ratio,
+        garbage_ratio: page.garbage_ratio,
+        punctuation_ratio: page.punctuation_ratio,
+        digit_ratio: page.digit_ratio,
+        non_latin_ratio: page.non_latin_ratio,
+        first_line: page.first_line.clone(),
+        last_line: page.last_line.clone(),
+    };
+
+    let avg_line_length = if page.line_count == 0 {
+        0.0
+    } else {
+        page.char_count as f32 / page.line_count as f32
+    };
+
+    let (class, confidence, reasons) = if page.char_count == 0 {
+        (
+            PdfPageClass::ImageOnlyNoText,
+            0.99,
+            vec!["no_extracted_text_detected".to_string()],
+        )
+    } else if page.char_count <= 40 && page.line_count <= 3 {
+        (
+            PdfPageClass::HiddenOcrOverlay,
+            0.72,
+            vec!["very_sparse_text_layer_detected".to_string()],
+        )
+    } else if page.garbage_ratio >= 0.04 || page.non_latin_ratio >= 0.35 {
+        (
+            PdfPageClass::EmbeddedNoisy,
+            0.77,
+            vec!["garbled_or_non_coherent_text_ratio_high".to_string()],
+        )
+    } else if page.char_count < 120 || page.token_count < 25 {
+        (
+            PdfPageClass::EmbeddedSparse,
+            0.74,
+            vec!["sparse_text_density".to_string()],
+        )
+    } else if avg_line_length <= 18.0 && page.line_count >= 10 {
+        (
+            PdfPageClass::LayoutHostile,
+            0.68,
+            vec!["short_line_density_suggests_layout_hostility".to_string()],
+        )
+    } else if page.char_count < 260 && page.digit_ratio >= 0.12 {
+        (
+            PdfPageClass::ScanWithWeakOcr,
+            0.61,
+            vec!["weak_ocr_like_text_density".to_string()],
+        )
+    } else {
+        (
+            PdfPageClass::EmbeddedClean,
+            0.86,
+            vec!["dense_low-garbage_embedded_text".to_string()],
+        )
+    };
+
+    PdfPageClassificationSummary {
+        page_index: page.page_index,
+        class,
+        confidence,
+        reasons,
+        features,
+    }
+}
+
+fn count_page_class(pages: &[PdfPageClassificationSummary], class: PdfPageClass) -> usize {
+    pages.iter().filter(|page| page.class == class).count()
+}
+
+fn distinct_page_class_kinds(pages: &[PdfPageClassificationSummary]) -> usize {
+    let mut seen = Vec::new();
+    for page in pages {
+        if !seen.contains(&page.class) {
+            seen.push(page.class);
+        }
+    }
+    seen.len()
+}
+
+fn page_class_distribution(pages: &[PdfPageClassificationSummary]) -> Vec<(PdfPageClass, u32)> {
+    let order = [
+        PdfPageClass::EmbeddedClean,
+        PdfPageClass::EmbeddedNoisy,
+        PdfPageClass::EmbeddedSparse,
+        PdfPageClass::HiddenOcrOverlay,
+        PdfPageClass::ScanWithWeakOcr,
+        PdfPageClass::ImageOnlyNoText,
+        PdfPageClass::LayoutHostile,
+    ];
+    order
+        .into_iter()
+        .filter_map(|class| {
+            let count = count_page_class(pages, class) as u32;
+            (count > 0).then_some((class, count))
+        })
+        .collect()
+}
+
+fn describe_page_distribution(pages: &[PdfPageClassificationSummary]) -> String {
+    page_class_distribution(pages)
+        .into_iter()
+        .map(|(class, count)| format!("{class:?}:{count}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 fn load_with_pandoc(
     path: &Path,
     target: &str,
@@ -751,6 +1051,8 @@ struct PdfCacheMeta {
     #[serde(default)]
     pdf_sync_strategy: Option<PdfSyncStrategy>,
     #[serde(default)]
+    pdf_classification: Option<PdfClassificationSummary>,
+    #[serde(default)]
     extraction_mode: String,
     #[serde(default)]
     ocr_enabled: bool,
@@ -830,6 +1132,7 @@ fn pdf_signature(path: &Path, config_sha256: &str, text_filename: &str) -> Resul
         quack_text_filename: text_filename.to_string(),
         pdf_geometry_mode: None,
         pdf_sync_strategy: None,
+        pdf_classification: None,
         extraction_mode: String::new(),
         ocr_enabled: false,
         page_count: 0,
@@ -936,6 +1239,7 @@ struct PdfCachedLoad {
     text: String,
     pdf_geometry_mode: PdfGeometryMode,
     pdf_sync_strategy: PdfSyncStrategy,
+    pdf_classification: Option<PdfClassificationSummary>,
     extraction_mode: String,
     ocr_enabled: bool,
     page_count: u32,
@@ -1010,6 +1314,10 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
         total_chars = text.len(),
         pdf_geometry_mode = ?cached_meta.pdf_geometry_mode,
         pdf_sync_strategy = ?cached_meta.pdf_sync_strategy,
+        pdf_document_class = ?cached_meta
+            .pdf_classification
+            .as_ref()
+            .map(|value| value.document_class),
         extraction_mode = cached_meta.extraction_mode,
         ocr_enabled = cached_meta.ocr_enabled,
         page_count = cached_meta.page_count,
@@ -1027,6 +1335,7 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
         pdf_sync_strategy: cached_meta
             .pdf_sync_strategy
             .unwrap_or(PdfSyncStrategy::ParagraphFallback),
+        pdf_classification: cached_meta.pdf_classification,
         extraction_mode: cached_meta.extraction_mode,
         ocr_enabled: cached_meta.ocr_enabled,
         page_count: cached_meta.page_count,
@@ -1077,6 +1386,7 @@ fn write_pdf_cache(
     extraction_mode: &str,
     ocr_enabled: bool,
     report: Option<&crate::quack_check::report::JobReport>,
+    pdf_classification: Option<&PdfClassificationSummary>,
 ) -> Result<()> {
     let (text_path, meta_path, _) = pdf_cache_paths(path);
     if let Some(parent) = text_path.parent() {
@@ -1094,6 +1404,7 @@ fn write_pdf_cache(
     let mut signature = signature.clone();
     signature.pdf_geometry_mode = Some(pdf_geometry_mode);
     signature.pdf_sync_strategy = Some(pdf_sync_strategy);
+    signature.pdf_classification = pdf_classification.cloned();
     signature.extraction_mode = extraction_mode.to_string();
     signature.ocr_enabled = ocr_enabled;
     signature.page_count = report.map(|value| value.input.page_count).unwrap_or(0);
@@ -1131,6 +1442,10 @@ fn write_pdf_cache(
         total_chars = text.len(),
         ?pdf_geometry_mode,
         ?pdf_sync_strategy,
+        pdf_document_class = ?signature
+            .pdf_classification
+            .as_ref()
+            .map(|value| value.document_class),
         extraction_mode,
         ocr_enabled,
         page_count = signature.page_count,
@@ -1145,6 +1460,7 @@ fn write_pdf_cache(
 }
 
 fn derive_pdf_runtime_metadata(
+    classification: Option<&PdfClassificationSummary>,
     report: Option<&crate::quack_check::report::JobReport>,
     transcript_text: &str,
     markdown: &str,
@@ -1168,6 +1484,36 @@ fn derive_pdf_runtime_metadata(
             )
         };
     };
+
+    if let Some(classification) = classification {
+        return match classification.document_class {
+            PdfDocumentClass::EmbeddedClean => (
+                PdfGeometryMode::HighTextTrust,
+                PdfSyncStrategy::SentenceSpans,
+            ),
+            PdfDocumentClass::EmbeddedNoisy
+            | PdfDocumentClass::EmbeddedSparse
+            | PdfDocumentClass::HybridMixedDocument
+            | PdfDocumentClass::LayoutHostileDocument => (
+                PdfGeometryMode::MixedTextTrust,
+                PdfSyncStrategy::ParagraphFallback,
+            ),
+            PdfDocumentClass::HiddenOcrOverlay
+            | PdfDocumentClass::ScanWithGoodOcr
+            | PdfDocumentClass::ScanWithWeakOcr => (
+                PdfGeometryMode::OcrRequired,
+                if transcript_text.trim().is_empty() {
+                    PdfSyncStrategy::RenderOnly
+                } else {
+                    PdfSyncStrategy::ParagraphFallback
+                },
+            ),
+            PdfDocumentClass::ImageOnlyNoText => (
+                PdfGeometryMode::RenderOnlyNoSync,
+                PdfSyncStrategy::RenderOnly,
+            ),
+        };
+    }
 
     match report.decision.tier {
         crate::quack_check::policy::QualityTier::HighText => (
@@ -1207,6 +1553,40 @@ mod tests {
                 avg_chars_per_page: 1200,
                 garbage_ratio: 0.02,
                 whitespace_ratio: 0.18,
+                text_page_ratio: 1.0,
+                empty_text_page_ratio: 0.0,
+                sparse_text_page_ratio: 0.0,
+                noisy_text_page_ratio: 0.0,
+                repeated_header_ratio: 0.5,
+                repeated_footer_ratio: 0.5,
+                pages: vec![
+                    crate::quack_check::probe::ProbePageStats {
+                        page_index: 1,
+                        char_count: 1400,
+                        token_count: 240,
+                        line_count: 32,
+                        whitespace_ratio: 0.17,
+                        garbage_ratio: 0.01,
+                        punctuation_ratio: 0.09,
+                        digit_ratio: 0.02,
+                        non_latin_ratio: 0.0,
+                        first_line: "chapter #".to_string(),
+                        last_line: "publisher footer".to_string(),
+                    },
+                    crate::quack_check::probe::ProbePageStats {
+                        page_index: 2,
+                        char_count: 1380,
+                        token_count: 230,
+                        line_count: 31,
+                        whitespace_ratio: 0.18,
+                        garbage_ratio: 0.01,
+                        punctuation_ratio: 0.08,
+                        digit_ratio: 0.01,
+                        non_latin_ratio: 0.0,
+                        first_line: "chapter #".to_string(),
+                        last_line: "publisher footer".to_string(),
+                    },
+                ],
             },
             decision: crate::quack_check::policy::PolicyDecision {
                 tier: crate::quack_check::policy::QualityTier::MixedText,
@@ -1299,6 +1679,7 @@ mod tests {
             "mixed_text_with_ocr",
             true,
             Some(&report),
+            classify_pdf_runtime(Some(&report), "Alpha. Beta.", "## pretty").as_ref(),
         )
         .expect("write pdf cache");
 
@@ -1311,12 +1692,66 @@ mod tests {
         assert_eq!(cached.chunk_ranges[0].start_page, 1);
         assert_eq!(cached.chunk_ranges[0].end_page, 6);
         assert_eq!(
+            cached
+                .pdf_classification
+                .as_ref()
+                .map(|value| value.document_class),
+            Some(PdfDocumentClass::LayoutHostileDocument)
+        );
+        assert_eq!(
             cached.chunk_ranges[0].meta["applied_flags"],
             serde_json::json!(["generate_parsed_pages"])
         );
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_dir_all(hash_dir(&path));
+    }
+
+    #[test]
+    fn classification_rollup_prefers_scan_when_sampled_pages_are_image_only() {
+        let mut report = sample_report();
+        report.sample.pages = vec![
+            crate::quack_check::probe::ProbePageStats {
+                page_index: 1,
+                char_count: 0,
+                token_count: 0,
+                line_count: 0,
+                whitespace_ratio: 0.0,
+                garbage_ratio: 0.0,
+                punctuation_ratio: 0.0,
+                digit_ratio: 0.0,
+                non_latin_ratio: 0.0,
+                first_line: String::new(),
+                last_line: String::new(),
+            },
+            crate::quack_check::probe::ProbePageStats {
+                page_index: 2,
+                char_count: 12,
+                token_count: 2,
+                line_count: 1,
+                whitespace_ratio: 0.1,
+                garbage_ratio: 0.0,
+                punctuation_ratio: 0.0,
+                digit_ratio: 0.0,
+                non_latin_ratio: 0.0,
+                first_line: String::new(),
+                last_line: String::new(),
+            },
+        ];
+        report.sample.empty_text_page_ratio = 0.5;
+        report.sample.sparse_text_page_ratio = 0.5;
+        report.sample.text_page_ratio = 0.5;
+
+        let classification =
+            classify_pdf_runtime(Some(&report), "Recovered OCR text.", "").expect("classification");
+        assert_eq!(
+            classification.document_class,
+            PdfDocumentClass::ScanWithWeakOcr
+        );
+        assert_eq!(
+            classification.ocr_recommendation,
+            PdfOcrRecommendation::RequiredForText
+        );
     }
 }
 

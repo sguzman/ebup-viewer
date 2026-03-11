@@ -8,7 +8,8 @@ impl ReaderSession {
                     return;
                 }
                 self.highlighted_display_idx = Some(sentence_idx);
-                self.highlighted_audio_idx = self.map_display_to_audio_idx(normalizer, sentence_idx);
+                self.highlighted_audio_idx =
+                    self.map_display_to_audio_idx(normalizer, sentence_idx);
                 tracing::trace!(
                     path = %self.source_path.display(),
                     mode = "text_only_original",

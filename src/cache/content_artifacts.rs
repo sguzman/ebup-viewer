@@ -7,15 +7,17 @@ use super::{
     CONTENT_LAYOUT_VERSION, CONTENT_LAYOUT_VERSION_FILE, CONTENT_READING_HTML_FILE,
     CONTENT_READING_MARKDOWN_FILE, CONTENT_TTS_TEXT_FILE, hash_dir,
 };
-use crate::epub_loader::{PdfGeometryMode, PdfSyncStrategy};
+use crate::epub_loader::{PdfClassificationSummary, PdfGeometryMode, PdfSyncStrategy};
 
 const CONTENT_PDF_SYNC_META_FILE: &str = "content/pdf-sync-meta.toml";
 const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct PdfSyncMeta {
-    pdf_geometry_mode: PdfGeometryMode,
-    pdf_sync_strategy: PdfSyncStrategy,
+pub struct PdfSyncMeta {
+    pub pdf_geometry_mode: PdfGeometryMode,
+    pub pdf_sync_strategy: PdfSyncStrategy,
+    #[serde(default)]
+    pub pdf_classification: Option<PdfClassificationSummary>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -169,6 +171,7 @@ pub(super) fn persist_pdf_sync_meta(
     source_path: &Path,
     pdf_geometry_mode: PdfGeometryMode,
     pdf_sync_strategy: PdfSyncStrategy,
+    pdf_classification: Option<&PdfClassificationSummary>,
 ) {
     ensure_content_layout(source_path);
     let meta_path = hash_dir(source_path).join(CONTENT_PDF_SYNC_META_FILE);
@@ -178,6 +181,7 @@ pub(super) fn persist_pdf_sync_meta(
     let serialized = match toml::to_string(&PdfSyncMeta {
         pdf_geometry_mode,
         pdf_sync_strategy,
+        pdf_classification: pdf_classification.cloned(),
     }) {
         Ok(value) => value,
         Err(err) => {
@@ -192,12 +196,13 @@ pub(super) fn persist_pdf_sync_meta(
             path = %meta_path.display(),
             ?pdf_geometry_mode,
             ?pdf_sync_strategy,
+            pdf_document_class = ?pdf_classification.map(|value| value.document_class),
             "Persisted PDF sync metadata"
         );
     }
 }
 
-pub(super) fn load_pdf_sync_meta(source_path: &Path) -> Option<(PdfGeometryMode, PdfSyncStrategy)> {
+pub(super) fn load_pdf_sync_meta(source_path: &Path) -> Option<PdfSyncMeta> {
     let meta_path = hash_dir(source_path).join(CONTENT_PDF_SYNC_META_FILE);
     let raw = match fs::read_to_string(&meta_path) {
         Ok(value) => value,
@@ -224,9 +229,13 @@ pub(super) fn load_pdf_sync_meta(source_path: &Path) -> Option<(PdfGeometryMode,
         path = %meta_path.display(),
         ?parsed.pdf_geometry_mode,
         ?parsed.pdf_sync_strategy,
+        pdf_document_class = ?parsed
+            .pdf_classification
+            .as_ref()
+            .map(|value| value.document_class),
         "Loaded cached PDF sync metadata"
     );
-    Some((parsed.pdf_geometry_mode, parsed.pdf_sync_strategy))
+    Some(parsed)
 }
 
 pub(super) fn persist_pdf_sentence_map(source_path: &Path, locations: &[PdfSentenceLocation]) {

@@ -3,7 +3,7 @@
 ## Tranche Status
 - [x] Tranche 1: sampled-page probe expansion, page/document classification, OCR recommendation, cache persistence, and coarse runtime policy mapping
 - [x] Tranche 2: classification versioning plus reader/UI diagnostics for class, OCR recommendation, and rationale
-- [ ] Tranche 3: stronger embedded-text trust signals, hidden-OCR-overlay heuristics tied to image/raster evidence, and richer runtime policy coverage
+- [x] Tranche 3: stronger embedded-text trust signals, hidden-OCR-overlay heuristics tied to image/raster evidence, and richer runtime policy coverage
 - [ ] Tranche 4: fixture calibration set, regression matrix, and remaining diagnostics depth
 
 ## Objective
@@ -15,7 +15,7 @@
 - [ ] The app can explain why a PDF was classified the way it was.
 - [x] Classification is performed per page first, then rolled up to a document-level mode.
 - [ ] Borderline PDFs land in explicit mixed/degraded classes instead of being misrepresented as clean embedded text.
-- [ ] OCR, TTS, search, pretty-view sync, and degraded behavior all use the same classification contract.
+- [x] OCR, TTS, search, pretty-view sync, and degraded behavior all use the same classification contract.
 - [x] Classification is deterministic across reopen/cache reuse unless the source file actually changes.
 
 ## Target PDF Classes
@@ -29,12 +29,12 @@
 - [x] `image_only_no_text`
 - [x] `hybrid_mixed_document`
 - [x] `layout_hostile_document`
-- [ ] Define allowed runtime behavior for each class:
-- [ ] exact sentence sync allowed
-- [ ] fuzzy/paragraph fallback only
-- [ ] OCR required before TTS/sync
-- [ ] text-only allowed, pretty sync disabled
-- [ ] render-only with no text ownership
+- [x] Define allowed runtime behavior for each class:
+- [x] exact sentence sync allowed
+- [x] fuzzy/paragraph fallback only
+- [x] OCR required before TTS/sync
+- [x] text-only allowed, pretty sync disabled
+- [x] render-only with no text ownership
 
 ## Phase 1: Probe Contract Expansion
 - [x] Expand the PDF probe stage to collect more than average chars/garbage/whitespace:
@@ -171,5 +171,5 @@
 - [x] Step 3: add document rollup and runtime policy mapping
 - [ ] Step 4: add hidden OCR overlay detection
 - [x] Step 5: add OCR recommendation logic
-- [ ] Step 6: wire UI diagnostics and explanation strings
+- [x] Step 6: wire UI diagnostics and explanation strings
 - [ ] Step 7: add regression fixtures and calibration loop

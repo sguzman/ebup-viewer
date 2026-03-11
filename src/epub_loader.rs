@@ -132,6 +132,16 @@ pub struct PdfProbePageSummary {
     pub short_line_ratio: f32,
     pub repeated_line_ratio: f32,
     pub hyphenated_line_ratio: f32,
+    pub image_object_count: u32,
+    pub image_coverage_ratio: f32,
+    pub duplicate_text_ratio: f32,
+    pub block_coherence: f32,
+    pub coordinate_sanity: f32,
+    pub reading_order_stability: f32,
+    pub hidden_text_layer_suspected: bool,
+    pub duplicate_text_suspected: bool,
+    pub mixed_text_image_suspected: bool,
+    pub full_page_raster_suspected: bool,
     pub first_line: String,
     pub last_line: String,
 }
@@ -146,9 +156,28 @@ pub struct PdfProbeFeatureSummary {
     pub noisy_text_page_ratio: f32,
     pub repeated_header_ratio: f32,
     pub repeated_footer_ratio: f32,
+    pub image_page_ratio: f32,
+    pub mixed_text_image_page_ratio: f32,
+    pub full_page_raster_page_ratio: f32,
+    pub hidden_text_layer_page_ratio: f32,
+    pub duplicate_text_page_ratio: f32,
     pub avg_chars_per_page: u32,
     pub garbage_ratio: f32,
     pub whitespace_ratio: f32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct PdfEmbeddedTextTrustDiagnostics {
+    pub block_coherence: f32,
+    pub coordinate_sanity: f32,
+    pub reading_order_stability: f32,
+    pub duplicate_text_suppression_needed: bool,
+    pub hidden_text_layer_suspected: bool,
+    pub full_page_raster_ratio: f32,
+    pub mixed_text_image_ratio: f32,
+    #[serde(default)]
+    pub rationale: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
@@ -179,6 +208,7 @@ pub struct PdfClassificationSummary {
     #[serde(default)]
     pub reasons: Vec<String>,
     pub feature_summary: PdfProbeFeatureSummary,
+    pub trust_diagnostics: PdfEmbeddedTextTrustDiagnostics,
     #[serde(default)]
     pub page_classes: Vec<PdfPageClassificationSummary>,
     #[serde(default)]

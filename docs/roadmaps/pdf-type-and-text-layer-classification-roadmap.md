@@ -12,9 +12,9 @@
 - [ ] Drive OCR, native-PDF sync, fallback, and UI behavior from explicit classification results instead of only coarse sampled text heuristics.
 
 ## Success Criteria
-- [ ] The app can explain why a PDF was classified the way it was.
+- [x] The app can explain why a PDF was classified the way it was.
 - [x] Classification is performed per page first, then rolled up to a document-level mode.
-- [ ] Borderline PDFs land in explicit mixed/degraded classes instead of being misrepresented as clean embedded text.
+- [x] Borderline PDFs land in explicit mixed/degraded classes instead of being misrepresented as clean embedded text.
 - [x] OCR, TTS, search, pretty-view sync, and degraded behavior all use the same classification contract.
 - [x] Classification is deterministic across reopen/cache reuse unless the source file actually changes.
 
@@ -41,20 +41,20 @@
 - [x] page count
 - [x] text-object presence by page
 - [x] text-object density by page
-- [ ] image coverage ratio by page
-- [ ] bitmap/full-page raster heuristics
-- [ ] hidden or invisible text-layer presence
-- [ ] duplicate glyph / overlapping text rate
+- [x] image coverage ratio by page
+- [x] bitmap/full-page raster heuristics
+- [x] hidden or invisible text-layer presence
+- [x] duplicate glyph / overlapping text rate
 - [x] repeated header/footer rate
 - [x] line/word box coherence metrics
 - [x] copy-paste corruption indicators
-- [ ] mixed text-and-image page ratio
+- [x] mixed text-and-image page ratio
 - [x] Persist raw probe features in cache for later audit.
 - [x] Add tracing for all probe features at both page and document level.
 
 ## Phase 2: Page-Level Classification
 - [x] Implement a page-level classifier that scores each page independently.
-- [ ] Define feature thresholds and weighted scores for:
+- [x] Define feature thresholds and weighted scores for:
 - [x] strong embedded-text page
 - [x] noisy embedded-text page
 - [x] likely scanned page
@@ -63,7 +63,7 @@
 - [x] layout-hostile page
 - [x] Add confidence per page classification.
 - [x] Persist page classifications and confidence in cache.
-- [ ] Expose page classifications to diagnostics and QA tooling.
+- [x] Expose page classifications to diagnostics and QA tooling.
 
 ## Phase 3: Document-Level Rollup
 - [x] Aggregate page-level classes into a document-level class.
@@ -81,21 +81,21 @@
 - [x] Strengthen detection of whether existing PDF text is actually trustworthy:
 - [x] token continuity
 - [x] line coherence
-- [ ] block coherence
-- [ ] coordinate sanity
-- [ ] duplicate/invisible text suppression need
-- [ ] reading-order stability
+- [x] block coherence
+- [x] coordinate sanity
+- [x] duplicate/invisible text suppression need
+- [x] reading-order stability
 - [x] paragraph reconstruction quality
 - [x] Promote only clearly trustworthy pages to `embedded_clean`.
 - [x] Downgrade malformed but present text to `embedded_noisy` or `embedded_sparse`.
 
 ## Phase 5: Hidden OCR Overlay Detection
 - [x] Add explicit heuristics for hidden OCR text layers:
-- [ ] full-page image plus sparse text objects
+- [x] full-page image plus sparse text objects
 - [ ] invisible or zero-opacity text
 - [ ] duplicated text stacked over image content
 - [x] OCR-like token quality with weak geometry coherence
-- [ ] mixed embedded and OCR text behavior on the same page
+- [x] mixed embedded and OCR text behavior on the same page
 - [x] Route these PDFs into a dedicated class instead of treating them as clean embedded text.
 
 ## Phase 6: OCR Readiness and Need Detection
@@ -126,7 +126,7 @@
 - [x] per-page class results
 - [x] document rollup result
 - [x] OCR recommendation
-- [ ] embedded-text trust diagnostics
+- [x] embedded-text trust diagnostics
 - [x] classification version
 - [x] Add cache invalidation/versioning rules when classification logic changes.
 - [x] Ensure reopen behavior reuses cached classification when valid.
@@ -151,11 +151,11 @@
 - [ ] photocopies
 - [ ] OCR-overlay PDFs
 - [ ] hybrid documents with mixed page classes
-- [ ] Add tests for page-level and document-level classification rollup.
+- [x] Add tests for page-level and document-level classification rollup.
 - [x] Add tests proving runtime behavior selection matches classification.
 
 ## Phase 11: Diagnostics and UX
-- [ ] Add developer diagnostics for:
+- [x] Add developer diagnostics for:
 - [x] detected page classes
 - [x] document class
 - [x] confidence levels
@@ -169,7 +169,7 @@
 - [x] Step 1: expand probe feature collection
 - [x] Step 2: add page-level classifier and cache schema
 - [x] Step 3: add document rollup and runtime policy mapping
-- [ ] Step 4: add hidden OCR overlay detection
+- [x] Step 4: add hidden OCR overlay detection
 - [x] Step 5: add OCR recommendation logic
 - [x] Step 6: wire UI diagnostics and explanation strings
 - [ ] Step 7: add regression fixtures and calibration loop

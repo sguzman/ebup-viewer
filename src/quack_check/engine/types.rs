@@ -29,6 +29,26 @@ pub struct ProbePageOut {
     pub repeated_line_ratio: f32,
     pub hyphenated_line_ratio: f32,
     #[serde(default)]
+    pub image_object_count: u32,
+    #[serde(default)]
+    pub image_coverage_ratio: f32,
+    #[serde(default)]
+    pub duplicate_text_ratio: f32,
+    #[serde(default)]
+    pub block_coherence: f32,
+    #[serde(default)]
+    pub coordinate_sanity: f32,
+    #[serde(default)]
+    pub reading_order_stability: f32,
+    #[serde(default)]
+    pub hidden_text_layer_suspected: bool,
+    #[serde(default)]
+    pub duplicate_text_suspected: bool,
+    #[serde(default)]
+    pub mixed_text_image_suspected: bool,
+    #[serde(default)]
+    pub full_page_raster_suspected: bool,
+    #[serde(default)]
     pub first_line: String,
     #[serde(default)]
     pub last_line: String,
@@ -53,6 +73,16 @@ pub struct ProbeOut {
     pub repeated_header_ratio: f32,
     #[serde(default)]
     pub repeated_footer_ratio: f32,
+    #[serde(default)]
+    pub image_page_ratio: f32,
+    #[serde(default)]
+    pub mixed_text_image_page_ratio: f32,
+    #[serde(default)]
+    pub full_page_raster_page_ratio: f32,
+    #[serde(default)]
+    pub hidden_text_layer_page_ratio: f32,
+    #[serde(default)]
+    pub duplicate_text_page_ratio: f32,
     #[serde(default)]
     pub pages: Vec<ProbePageOut>,
     #[serde(default)]

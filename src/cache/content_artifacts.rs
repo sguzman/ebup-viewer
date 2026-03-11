@@ -13,7 +13,7 @@ use crate::epub_loader::{
 
 const CONTENT_PDF_SYNC_META_FILE: &str = "content/pdf-sync-meta.toml";
 const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
-const PDF_SYNC_META_CLASSIFICATION_VERSION: u32 = 1;
+const PDF_SYNC_META_CLASSIFICATION_VERSION: u32 = 2;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PdfSyncMeta {

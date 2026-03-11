@@ -1419,6 +1419,17 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
               : ""}
           </Typography>
         ) : null}
+        {!error && reader.pdf_classification ? (
+          <Typography color="text.secondary" variant="caption">
+            Trust: block {reader.pdf_classification.trust_diagnostics.block_coherence.toFixed(2)} | coordinates{" "}
+            {reader.pdf_classification.trust_diagnostics.coordinate_sanity.toFixed(2)} | order{" "}
+            {reader.pdf_classification.trust_diagnostics.reading_order_stability.toFixed(2)} | image pages{" "}
+            {(reader.pdf_classification.feature_summary.image_page_ratio * 100).toFixed(1)}%
+            {reader.pdf_classification.trust_diagnostics.hidden_text_layer_suspected
+              ? " | Hidden text layer suspected"
+              : ""}
+          </Typography>
+        ) : null}
         {!error && reader.pdf_runtime_policy ? (
           <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-policy">
             Text: {reader.pdf_runtime_policy.text_only_policy.replaceAll("_", " ")} | Search: {reader.pdf_runtime_policy.search_policy.replaceAll("_", " ")} | Bookmark: {reader.pdf_runtime_policy.bookmark_policy.replaceAll("_", " ")}

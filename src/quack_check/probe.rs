@@ -22,6 +22,16 @@ pub struct ProbePageStats {
     pub short_line_ratio: f32,
     pub repeated_line_ratio: f32,
     pub hyphenated_line_ratio: f32,
+    pub image_object_count: u32,
+    pub image_coverage_ratio: f32,
+    pub duplicate_text_ratio: f32,
+    pub block_coherence: f32,
+    pub coordinate_sanity: f32,
+    pub reading_order_stability: f32,
+    pub hidden_text_layer_suspected: bool,
+    pub duplicate_text_suspected: bool,
+    pub mixed_text_image_suspected: bool,
+    pub full_page_raster_suspected: bool,
     pub first_line: String,
     pub last_line: String,
 }
@@ -51,6 +61,11 @@ pub struct ProbeSampleStats {
     pub noisy_text_page_ratio: f32,
     pub repeated_header_ratio: f32,
     pub repeated_footer_ratio: f32,
+    pub image_page_ratio: f32,
+    pub mixed_text_image_page_ratio: f32,
+    pub full_page_raster_page_ratio: f32,
+    pub hidden_text_layer_page_ratio: f32,
+    pub duplicate_text_page_ratio: f32,
     pub pages: Vec<ProbePageStats>,
 }
 
@@ -85,6 +100,11 @@ pub fn probe_pdf(cfg: &Config, engine: &dyn Engine, input: &Path) -> Result<Prob
         noisy_text_page_ratio = probe.noisy_text_page_ratio,
         repeated_header_ratio = probe.repeated_header_ratio,
         repeated_footer_ratio = probe.repeated_footer_ratio,
+        image_page_ratio = probe.image_page_ratio,
+        mixed_text_image_page_ratio = probe.mixed_text_image_page_ratio,
+        full_page_raster_page_ratio = probe.full_page_raster_page_ratio,
+        hidden_text_layer_page_ratio = probe.hidden_text_layer_page_ratio,
+        duplicate_text_page_ratio = probe.duplicate_text_page_ratio,
         "Collected PDF probe features"
     );
     for page in &probe.pages {
@@ -105,6 +125,16 @@ pub fn probe_pdf(cfg: &Config, engine: &dyn Engine, input: &Path) -> Result<Prob
             short_line_ratio = page.short_line_ratio,
             repeated_line_ratio = page.repeated_line_ratio,
             hyphenated_line_ratio = page.hyphenated_line_ratio,
+            image_object_count = page.image_object_count,
+            image_coverage_ratio = page.image_coverage_ratio,
+            duplicate_text_ratio = page.duplicate_text_ratio,
+            block_coherence = page.block_coherence,
+            coordinate_sanity = page.coordinate_sanity,
+            reading_order_stability = page.reading_order_stability,
+            hidden_text_layer_suspected = page.hidden_text_layer_suspected,
+            duplicate_text_suspected = page.duplicate_text_suspected,
+            mixed_text_image_suspected = page.mixed_text_image_suspected,
+            full_page_raster_suspected = page.full_page_raster_suspected,
             first_line = %page.first_line,
             last_line = %page.last_line,
             "Collected sampled PDF page probe features"
@@ -128,6 +158,11 @@ pub fn probe_pdf(cfg: &Config, engine: &dyn Engine, input: &Path) -> Result<Prob
             noisy_text_page_ratio: probe.noisy_text_page_ratio,
             repeated_header_ratio: probe.repeated_header_ratio,
             repeated_footer_ratio: probe.repeated_footer_ratio,
+            image_page_ratio: probe.image_page_ratio,
+            mixed_text_image_page_ratio: probe.mixed_text_image_page_ratio,
+            full_page_raster_page_ratio: probe.full_page_raster_page_ratio,
+            hidden_text_layer_page_ratio: probe.hidden_text_layer_page_ratio,
+            duplicate_text_page_ratio: probe.duplicate_text_page_ratio,
             pages: probe
                 .pages
                 .into_iter()
@@ -148,6 +183,16 @@ pub fn probe_pdf(cfg: &Config, engine: &dyn Engine, input: &Path) -> Result<Prob
                     short_line_ratio: page.short_line_ratio,
                     repeated_line_ratio: page.repeated_line_ratio,
                     hyphenated_line_ratio: page.hyphenated_line_ratio,
+                    image_object_count: page.image_object_count,
+                    image_coverage_ratio: page.image_coverage_ratio,
+                    duplicate_text_ratio: page.duplicate_text_ratio,
+                    block_coherence: page.block_coherence,
+                    coordinate_sanity: page.coordinate_sanity,
+                    reading_order_stability: page.reading_order_stability,
+                    hidden_text_layer_suspected: page.hidden_text_layer_suspected,
+                    duplicate_text_suspected: page.duplicate_text_suspected,
+                    mixed_text_image_suspected: page.mixed_text_image_suspected,
+                    full_page_raster_suspected: page.full_page_raster_suspected,
                     first_line: page.first_line,
                     last_line: page.last_line,
                 })

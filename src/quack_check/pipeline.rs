@@ -47,7 +47,7 @@ impl<E: Engine> Pipeline<E> {
         let mut plan = ChunkPlan::from_probe(&self.cfg, &probe_res)?;
 
         info!(
-            "probe page_count={} file_bytes={} avg_chars={} garbage_ratio={} whitespace_ratio={} text_page_ratio={} sparse_text_page_ratio={} repeated_header_ratio={} repeated_footer_ratio={}",
+            "probe page_count={} file_bytes={} avg_chars={} garbage_ratio={} whitespace_ratio={} text_page_ratio={} sparse_text_page_ratio={} repeated_header_ratio={} repeated_footer_ratio={} image_page_ratio={} mixed_text_image_page_ratio={} full_page_raster_page_ratio={} hidden_text_layer_page_ratio={} duplicate_text_page_ratio={}",
             probe_res.input.page_count,
             probe_res.input.file_bytes,
             probe_res.sample.avg_chars_per_page,
@@ -56,7 +56,12 @@ impl<E: Engine> Pipeline<E> {
             probe_res.sample.text_page_ratio,
             probe_res.sample.sparse_text_page_ratio,
             probe_res.sample.repeated_header_ratio,
-            probe_res.sample.repeated_footer_ratio
+            probe_res.sample.repeated_footer_ratio,
+            probe_res.sample.image_page_ratio,
+            probe_res.sample.mixed_text_image_page_ratio,
+            probe_res.sample.full_page_raster_page_ratio,
+            probe_res.sample.hidden_text_layer_page_ratio,
+            probe_res.sample.duplicate_text_page_ratio
         );
         info!(
             "policy tier={:?} engine={} do_ocr={}",
@@ -464,6 +469,11 @@ mod tests {
             noisy_text_page_ratio: 0.0,
             repeated_header_ratio: 0.0,
             repeated_footer_ratio: 0.0,
+            image_page_ratio: 0.0,
+            mixed_text_image_page_ratio: 0.0,
+            full_page_raster_page_ratio: 0.0,
+            hidden_text_layer_page_ratio: 0.0,
+            duplicate_text_page_ratio: 0.0,
             pages: Vec::new(),
             error: None,
         }

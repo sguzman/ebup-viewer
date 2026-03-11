@@ -1,8 +1,9 @@
 use super::{
-    PdfBookmarkPolicy, PdfClassificationSummary, PdfDocumentClass, PdfGeometryMode,
-    PdfOcrRecommendation, PdfPageClass, PdfPageClassCount, PdfPageClassificationSummary,
-    PdfProbeFeatureSummary, PdfProbePageSummary, PdfRuntimePolicySummary, PdfSearchPolicy,
-    PdfSentenceHighlightPolicy, PdfSyncStrategy, PdfTextOnlyPolicy, SourceContent,
+    PdfBookmarkPolicy, PdfClassificationSummary, PdfDocumentClass, PdfEmbeddedTextTrustDiagnostics,
+    PdfGeometryMode, PdfOcrRecommendation, PdfPageClass, PdfPageClassCount,
+    PdfPageClassificationSummary, PdfProbeFeatureSummary, PdfProbePageSummary,
+    PdfRuntimePolicySummary, PdfSearchPolicy, PdfSentenceHighlightPolicy, PdfSyncStrategy,
+    PdfTextOnlyPolicy, SourceContent,
 };
 use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
 use crate::cancellation::CancellationToken;
@@ -21,9 +22,9 @@ use tracing::{info, warn};
 const PANDOC_FILTER_REL_PATH: &str = "conf/pandoc/strip-nontext.lua";
 const PANDOC_PIPELINE_REV: &str = "pandoc-clean-v1";
 const QUACK_CHECK_CONFIG_REL_PATH: &str = "conf/quack-check.toml";
-const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v3";
+const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v4";
 const QUACK_CHECK_TEXT_FILENAME_DEFAULT: &str = "transcript.txt";
-const PDF_CLASSIFICATION_VERSION: u32 = 1;
+const PDF_CLASSIFICATION_VERSION: u32 = 2;
 const AVAILABILITY_LOG_EVERY: u64 = 20;
 
 static LOAD_COUNT_TOTAL: AtomicU64 = AtomicU64::new(0);
@@ -681,12 +682,18 @@ fn classify_pdf_runtime(
         noisy_text_page_ratio: sample.noisy_text_page_ratio,
         repeated_header_ratio: sample.repeated_header_ratio,
         repeated_footer_ratio: sample.repeated_footer_ratio,
+        image_page_ratio: sample.image_page_ratio,
+        mixed_text_image_page_ratio: sample.mixed_text_image_page_ratio,
+        full_page_raster_page_ratio: sample.full_page_raster_page_ratio,
+        hidden_text_layer_page_ratio: sample.hidden_text_layer_page_ratio,
+        duplicate_text_page_ratio: sample.duplicate_text_page_ratio,
         avg_chars_per_page: sample.avg_chars_per_page,
         garbage_ratio: sample.garbage_ratio,
         whitespace_ratio: sample.whitespace_ratio,
     };
     let page_classes: Vec<PdfPageClassificationSummary> =
         sample.pages.iter().map(classify_pdf_sample_page).collect();
+    let trust_diagnostics = derive_pdf_trust_diagnostics(sample);
 
     let clean_count = count_page_class(&page_classes, PdfPageClass::EmbeddedClean);
     let noisy_count = count_page_class(&page_classes, PdfPageClass::EmbeddedNoisy);
@@ -703,6 +710,15 @@ fn classify_pdf_runtime(
     let clean_ratio = clean_count as f32 / sampled;
     let sparse_ratio = sparse_count as f32 / sampled;
     let hostile_ratio = (noisy_count + layout_hostile_count) as f32 / sampled;
+    let mixed_image_ratio = feature_summary.mixed_text_image_page_ratio;
+    let full_page_raster_ratio = feature_summary.full_page_raster_page_ratio;
+    let hidden_overlay_signal = feature_summary.hidden_text_layer_page_ratio.max(
+        if trust_diagnostics.hidden_text_layer_suspected {
+            0.6
+        } else {
+            0.0
+        },
+    );
 
     let (document_class, confidence, mut reasons) = if transcript_text.trim().is_empty() {
         (
@@ -713,16 +729,18 @@ fn classify_pdf_runtime(
                 "sampled_pages_have_no_usable_text".to_string(),
             ],
         )
-    } else if hidden_overlay_count as f32 / sampled >= 0.45 {
+    } else if hidden_overlay_signal >= 0.40
+        || (full_page_raster_ratio >= 0.35 && hidden_overlay_count as f32 / sampled >= 0.25)
+    {
         (
             PdfDocumentClass::HiddenOcrOverlay,
-            0.79,
+            0.82,
             vec![
                 "many_pages_have_sparse_overlay_like_text".to_string(),
-                "native_text_presence_looks_too_thin_for_clean_sync".to_string(),
+                "raster_coverage_and_hidden_text_signals_align".to_string(),
             ],
         )
-    } else if scanish_ratio >= 0.65 {
+    } else if scanish_ratio >= 0.65 || full_page_raster_ratio >= 0.55 {
         let class = if transcript_chars_per_page >= 450.0 && sample.garbage_ratio <= 0.03 {
             PdfDocumentClass::ScanWithGoodOcr
         } else {
@@ -736,11 +754,29 @@ fn classify_pdf_runtime(
                 format!("ocr_enabled={}", report.decision.do_ocr),
             ],
         )
-    } else if clean_ratio >= 0.70 && hostile_ratio <= 0.15 && sparse_ratio <= 0.20 {
+    } else if clean_ratio >= 0.70
+        && hostile_ratio <= 0.15
+        && sparse_ratio <= 0.20
+        && trust_diagnostics.block_coherence >= 0.72
+        && trust_diagnostics.coordinate_sanity >= 0.65
+        && trust_diagnostics.reading_order_stability >= 0.65
+    {
         (
             PdfDocumentClass::EmbeddedClean,
             0.88,
-            vec!["sampled_pages_show_dense_low-garbage_text".to_string()],
+            vec![
+                "sampled_pages_show_dense_low-garbage_text".to_string(),
+                "trust_diagnostics_support_exact_sync".to_string(),
+            ],
+        )
+    } else if mixed_image_ratio >= 0.30 && clean_ratio >= 0.20 {
+        (
+            PdfDocumentClass::HybridMixedDocument,
+            0.8,
+            vec![
+                "sampled_pages_mix_image_heavy_and_embedded_text_signals".to_string(),
+                "borderline_pdf_kept_in_explicit_mixed_class".to_string(),
+            ],
         )
     } else if sparse_ratio >= 0.50 {
         (
@@ -782,11 +818,19 @@ fn classify_pdf_runtime(
         "class_distribution={}",
         describe_page_distribution(&page_classes)
     ));
+    reasons.extend(trust_diagnostics.rationale.iter().take(3).cloned());
+    reasons.sort();
+    reasons.dedup();
 
     let ocr_recommendation = match document_class {
         PdfDocumentClass::EmbeddedClean => PdfOcrRecommendation::NotNeeded,
         PdfDocumentClass::EmbeddedNoisy | PdfDocumentClass::EmbeddedSparse => {
-            PdfOcrRecommendation::GeometryOnly
+            if trust_diagnostics.coordinate_sanity < 0.48 || trust_diagnostics.block_coherence < 0.5
+            {
+                PdfOcrRecommendation::GeometryOnly
+            } else {
+                PdfOcrRecommendation::NotNeeded
+            }
         }
         PdfDocumentClass::HiddenOcrOverlay => PdfOcrRecommendation::GeometryOnly,
         PdfDocumentClass::HybridMixedDocument | PdfDocumentClass::LayoutHostileDocument => {
@@ -814,6 +858,7 @@ fn classify_pdf_runtime(
         ocr_recommendation,
         reasons,
         feature_summary,
+        trust_diagnostics,
         class_distribution: page_class_distribution(&page_classes),
         page_classes,
     })
@@ -839,6 +884,16 @@ fn classify_pdf_sample_page(
         short_line_ratio: page.short_line_ratio,
         repeated_line_ratio: page.repeated_line_ratio,
         hyphenated_line_ratio: page.hyphenated_line_ratio,
+        image_object_count: page.image_object_count,
+        image_coverage_ratio: page.image_coverage_ratio,
+        duplicate_text_ratio: page.duplicate_text_ratio,
+        block_coherence: page.block_coherence,
+        coordinate_sanity: page.coordinate_sanity,
+        reading_order_stability: page.reading_order_stability,
+        hidden_text_layer_suspected: page.hidden_text_layer_suspected,
+        duplicate_text_suspected: page.duplicate_text_suspected,
+        mixed_text_image_suspected: page.mixed_text_image_suspected,
+        full_page_raster_suspected: page.full_page_raster_suspected,
         first_line: page.first_line.clone(),
         last_line: page.last_line.clone(),
     };
@@ -855,11 +910,16 @@ fn classify_pdf_sample_page(
     let looks_layout_hostile = (page.short_line_ratio >= 0.65 && page.line_count >= 8)
         || page.repeated_line_ratio >= 0.25
         || page.hyphenated_line_ratio >= 0.22
-        || (avg_line_length <= 18.0 && page.line_count >= 10);
-    let looks_hidden_overlay = page.char_count <= 80
-        && page.token_count <= 18
-        && page.alpha_token_ratio >= 0.55
-        && page.short_line_ratio <= 0.60;
+        || (avg_line_length <= 18.0 && page.line_count >= 10)
+        || page.block_coherence <= 0.42
+        || page.reading_order_stability <= 0.4;
+    let looks_hidden_overlay = page.hidden_text_layer_suspected
+        || (page.char_count <= 80
+            && page.token_count <= 18
+            && page.alpha_token_ratio >= 0.55
+            && page.short_line_ratio <= 0.60);
+    let looks_scan = page.full_page_raster_suspected
+        || (page.image_coverage_ratio >= 0.82 && page.char_count <= 140);
 
     let (class, confidence, reasons) = if page.char_count == 0 {
         (
@@ -870,10 +930,20 @@ fn classify_pdf_sample_page(
     } else if looks_hidden_overlay {
         (
             PdfPageClass::HiddenOcrOverlay,
-            0.78,
+            0.82,
             vec![
                 "very_sparse_text_layer_detected".to_string(),
                 "overlay_like_alpha_token_mix".to_string(),
+                format!("image_coverage_ratio={:.3}", page.image_coverage_ratio),
+            ],
+        )
+    } else if looks_scan {
+        (
+            PdfPageClass::ScanWithWeakOcr,
+            0.79,
+            vec![
+                "full_page_raster_or_high_image_coverage_detected".to_string(),
+                "text_density_is_too_thin_for_embedded_sync".to_string(),
             ],
         )
     } else if looks_corrupt {
@@ -942,6 +1012,74 @@ fn classify_pdf_sample_page(
         confidence,
         reasons,
         features,
+    }
+}
+
+fn derive_pdf_trust_diagnostics(
+    sample: &crate::quack_check::probe::ProbeSampleStats,
+) -> PdfEmbeddedTextTrustDiagnostics {
+    let page_count = sample.pages.len().max(1) as f32;
+    let avg_block_coherence = sample
+        .pages
+        .iter()
+        .map(|page| page.block_coherence)
+        .sum::<f32>()
+        / page_count;
+    let avg_coordinate_sanity = sample
+        .pages
+        .iter()
+        .map(|page| page.coordinate_sanity)
+        .sum::<f32>()
+        / page_count;
+    let avg_reading_order_stability = sample
+        .pages
+        .iter()
+        .map(|page| page.reading_order_stability)
+        .sum::<f32>()
+        / page_count;
+    let duplicate_text_suppression_needed = sample.duplicate_text_page_ratio >= 0.22
+        || sample
+            .pages
+            .iter()
+            .any(|page| page.duplicate_text_suspected || page.duplicate_text_ratio >= 0.2);
+    let hidden_text_layer_suspected = sample.hidden_text_layer_page_ratio >= 0.2
+        || sample
+            .pages
+            .iter()
+            .any(|page| page.hidden_text_layer_suspected);
+    let mut rationale = Vec::new();
+    rationale.push(format!("block_coherence={avg_block_coherence:.3}"));
+    rationale.push(format!("coordinate_sanity={avg_coordinate_sanity:.3}"));
+    rationale.push(format!(
+        "reading_order_stability={avg_reading_order_stability:.3}"
+    ));
+    if hidden_text_layer_suspected {
+        rationale.push("hidden_text_layer_suspected=true".to_string());
+    }
+    if duplicate_text_suppression_needed {
+        rationale.push("duplicate_text_suppression_needed=true".to_string());
+    }
+    if sample.full_page_raster_page_ratio >= 0.25 {
+        rationale.push(format!(
+            "full_page_raster_ratio={:.3}",
+            sample.full_page_raster_page_ratio
+        ));
+    }
+    if sample.mixed_text_image_page_ratio >= 0.2 {
+        rationale.push(format!(
+            "mixed_text_image_ratio={:.3}",
+            sample.mixed_text_image_page_ratio
+        ));
+    }
+    PdfEmbeddedTextTrustDiagnostics {
+        block_coherence: avg_block_coherence,
+        coordinate_sanity: avg_coordinate_sanity,
+        reading_order_stability: avg_reading_order_stability,
+        duplicate_text_suppression_needed,
+        hidden_text_layer_suspected,
+        full_page_raster_ratio: sample.full_page_raster_page_ratio,
+        mixed_text_image_ratio: sample.mixed_text_image_page_ratio,
+        rationale,
     }
 }
 
@@ -1753,6 +1891,11 @@ mod tests {
                 noisy_text_page_ratio: 0.0,
                 repeated_header_ratio: 0.5,
                 repeated_footer_ratio: 0.5,
+                image_page_ratio: 0.0,
+                mixed_text_image_page_ratio: 0.0,
+                full_page_raster_page_ratio: 0.0,
+                hidden_text_layer_page_ratio: 0.0,
+                duplicate_text_page_ratio: 0.0,
                 pages: vec![
                     crate::quack_check::probe::ProbePageStats {
                         page_index: 1,
@@ -1771,6 +1914,16 @@ mod tests {
                         short_line_ratio: 0.22,
                         repeated_line_ratio: 0.03,
                         hyphenated_line_ratio: 0.04,
+                        image_object_count: 0,
+                        image_coverage_ratio: 0.0,
+                        duplicate_text_ratio: 0.03,
+                        block_coherence: 0.92,
+                        coordinate_sanity: 0.9,
+                        reading_order_stability: 0.88,
+                        hidden_text_layer_suspected: false,
+                        duplicate_text_suspected: false,
+                        mixed_text_image_suspected: false,
+                        full_page_raster_suspected: false,
                         first_line: "chapter #".to_string(),
                         last_line: "publisher footer".to_string(),
                     },
@@ -1791,6 +1944,16 @@ mod tests {
                         short_line_ratio: 0.21,
                         repeated_line_ratio: 0.03,
                         hyphenated_line_ratio: 0.04,
+                        image_object_count: 0,
+                        image_coverage_ratio: 0.0,
+                        duplicate_text_ratio: 0.03,
+                        block_coherence: 0.91,
+                        coordinate_sanity: 0.89,
+                        reading_order_stability: 0.87,
+                        hidden_text_layer_suspected: false,
+                        duplicate_text_suspected: false,
+                        mixed_text_image_suspected: false,
+                        full_page_raster_suspected: false,
                         first_line: "chapter #".to_string(),
                         last_line: "publisher footer".to_string(),
                     },
@@ -1937,6 +2100,16 @@ mod tests {
                 short_line_ratio: 0.0,
                 repeated_line_ratio: 0.0,
                 hyphenated_line_ratio: 0.0,
+                image_object_count: 1,
+                image_coverage_ratio: 0.96,
+                duplicate_text_ratio: 0.0,
+                block_coherence: 0.0,
+                coordinate_sanity: 0.05,
+                reading_order_stability: 0.0,
+                hidden_text_layer_suspected: false,
+                duplicate_text_suspected: false,
+                mixed_text_image_suspected: false,
+                full_page_raster_suspected: true,
                 first_line: String::new(),
                 last_line: String::new(),
             },
@@ -1957,6 +2130,16 @@ mod tests {
                 short_line_ratio: 0.0,
                 repeated_line_ratio: 0.0,
                 hyphenated_line_ratio: 0.0,
+                image_object_count: 1,
+                image_coverage_ratio: 0.9,
+                duplicate_text_ratio: 0.0,
+                block_coherence: 0.1,
+                coordinate_sanity: 0.12,
+                reading_order_stability: 0.1,
+                hidden_text_layer_suspected: true,
+                duplicate_text_suspected: false,
+                mixed_text_image_suspected: false,
+                full_page_raster_suspected: true,
                 first_line: String::new(),
                 last_line: String::new(),
             },
@@ -1964,6 +2147,9 @@ mod tests {
         report.sample.empty_text_page_ratio = 0.5;
         report.sample.sparse_text_page_ratio = 0.5;
         report.sample.text_page_ratio = 0.5;
+        report.sample.image_page_ratio = 1.0;
+        report.sample.full_page_raster_page_ratio = 1.0;
+        report.sample.hidden_text_layer_page_ratio = 0.5;
 
         let classification =
             classify_pdf_runtime(Some(&report), "Recovered OCR text.", "").expect("classification");
@@ -1997,6 +2183,16 @@ mod tests {
             short_line_ratio: 0.82,
             repeated_line_ratio: 0.31,
             hyphenated_line_ratio: 0.28,
+            image_object_count: 0,
+            image_coverage_ratio: 0.0,
+            duplicate_text_ratio: 0.31,
+            block_coherence: 0.32,
+            coordinate_sanity: 0.44,
+            reading_order_stability: 0.28,
+            hidden_text_layer_suspected: false,
+            duplicate_text_suspected: true,
+            mixed_text_image_suspected: false,
+            full_page_raster_suspected: false,
             first_line: "item".to_string(),
             last_line: "item".to_string(),
         }];
@@ -2010,6 +2206,162 @@ mod tests {
         assert_eq!(
             classification.document_class,
             PdfDocumentClass::LayoutHostileDocument
+        );
+    }
+
+    #[test]
+    fn classification_prefers_hidden_overlay_when_raster_and_sparse_text_align() {
+        let mut report = sample_report();
+        report.sample.pages = vec![crate::quack_check::probe::ProbePageStats {
+            page_index: 1,
+            char_count: 42,
+            token_count: 9,
+            line_count: 2,
+            whitespace_ratio: 0.12,
+            garbage_ratio: 0.0,
+            punctuation_ratio: 0.01,
+            digit_ratio: 0.0,
+            non_latin_ratio: 0.0,
+            alpha_char_ratio: 0.78,
+            uppercase_char_ratio: 0.02,
+            alpha_token_ratio: 1.0,
+            avg_token_length: 4.5,
+            short_line_ratio: 0.0,
+            repeated_line_ratio: 0.0,
+            hyphenated_line_ratio: 0.0,
+            image_object_count: 1,
+            image_coverage_ratio: 0.91,
+            duplicate_text_ratio: 0.0,
+            block_coherence: 0.22,
+            coordinate_sanity: 0.15,
+            reading_order_stability: 0.14,
+            hidden_text_layer_suspected: true,
+            duplicate_text_suspected: false,
+            mixed_text_image_suspected: false,
+            full_page_raster_suspected: true,
+            first_line: "alpha beta".to_string(),
+            last_line: "gamma".to_string(),
+        }];
+        report.sample.hidden_text_layer_page_ratio = 1.0;
+        report.sample.image_page_ratio = 1.0;
+        report.sample.full_page_raster_page_ratio = 1.0;
+
+        let classification = classify_pdf_runtime(Some(&report), "Recovered text from OCR.", "")
+            .expect("classification");
+        assert_eq!(
+            classification.document_class,
+            PdfDocumentClass::HiddenOcrOverlay
+        );
+        assert!(classification.trust_diagnostics.hidden_text_layer_suspected);
+    }
+
+    #[test]
+    fn classification_keeps_borderline_image_text_mix_in_hybrid_class() {
+        let mut report = sample_report();
+        report.sample.pages = vec![
+            crate::quack_check::probe::ProbePageStats {
+                page_index: 1,
+                char_count: 1200,
+                token_count: 220,
+                line_count: 30,
+                whitespace_ratio: 0.18,
+                garbage_ratio: 0.01,
+                punctuation_ratio: 0.06,
+                digit_ratio: 0.01,
+                non_latin_ratio: 0.0,
+                alpha_char_ratio: 0.74,
+                uppercase_char_ratio: 0.04,
+                alpha_token_ratio: 0.9,
+                avg_token_length: 5.3,
+                short_line_ratio: 0.18,
+                repeated_line_ratio: 0.02,
+                hyphenated_line_ratio: 0.03,
+                image_object_count: 2,
+                image_coverage_ratio: 0.33,
+                duplicate_text_ratio: 0.02,
+                block_coherence: 0.88,
+                coordinate_sanity: 0.8,
+                reading_order_stability: 0.78,
+                hidden_text_layer_suspected: false,
+                duplicate_text_suspected: false,
+                mixed_text_image_suspected: true,
+                full_page_raster_suspected: false,
+                first_line: "chapter one".to_string(),
+                last_line: "body".to_string(),
+            },
+            crate::quack_check::probe::ProbePageStats {
+                page_index: 2,
+                char_count: 0,
+                token_count: 0,
+                line_count: 0,
+                whitespace_ratio: 0.0,
+                garbage_ratio: 0.0,
+                punctuation_ratio: 0.0,
+                digit_ratio: 0.0,
+                non_latin_ratio: 0.0,
+                alpha_char_ratio: 0.0,
+                uppercase_char_ratio: 0.0,
+                alpha_token_ratio: 0.0,
+                avg_token_length: 0.0,
+                short_line_ratio: 0.0,
+                repeated_line_ratio: 0.0,
+                hyphenated_line_ratio: 0.0,
+                image_object_count: 1,
+                image_coverage_ratio: 0.95,
+                duplicate_text_ratio: 0.0,
+                block_coherence: 0.0,
+                coordinate_sanity: 0.1,
+                reading_order_stability: 0.0,
+                hidden_text_layer_suspected: false,
+                duplicate_text_suspected: false,
+                mixed_text_image_suspected: false,
+                full_page_raster_suspected: true,
+                first_line: String::new(),
+                last_line: String::new(),
+            },
+        ];
+        report.sample.image_page_ratio = 1.0;
+        report.sample.mixed_text_image_page_ratio = 0.5;
+        report.sample.full_page_raster_page_ratio = 0.5;
+        report.sample.text_page_ratio = 0.5;
+        report.sample.empty_text_page_ratio = 0.5;
+
+        let classification =
+            classify_pdf_runtime(Some(&report), "Text exists in some chapters.", "")
+                .expect("classification");
+        assert_eq!(
+            classification.document_class,
+            PdfDocumentClass::HybridMixedDocument
+        );
+        assert!(
+            classification
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("borderline_pdf_kept_in_explicit_mixed_class"))
+        );
+    }
+
+    #[test]
+    fn trust_diagnostics_flag_duplicate_suppression_when_page_text_repeats() {
+        let mut report = sample_report();
+        report.sample.pages[0].duplicate_text_ratio = 0.34;
+        report.sample.pages[0].duplicate_text_suspected = true;
+        report.sample.pages[0].block_coherence = 0.38;
+        report.sample.duplicate_text_page_ratio = 0.5;
+
+        let classification = classify_pdf_runtime(Some(&report), "Repeated text still loads.", "")
+            .expect("classification");
+        assert!(
+            classification
+                .trust_diagnostics
+                .duplicate_text_suppression_needed
+        );
+        assert!(
+            classification
+                .trust_diagnostics
+                .rationale
+                .iter()
+                .any(|reason| reason.contains("duplicate_text_suppression_needed"))
         );
     }
 
@@ -2028,9 +2380,24 @@ mod tests {
                 noisy_text_page_ratio: 0.0,
                 repeated_header_ratio: 0.0,
                 repeated_footer_ratio: 0.0,
+                image_page_ratio: 0.0,
+                mixed_text_image_page_ratio: 0.0,
+                full_page_raster_page_ratio: 0.0,
+                hidden_text_layer_page_ratio: 0.0,
+                duplicate_text_page_ratio: 0.0,
                 avg_chars_per_page: 1400,
                 garbage_ratio: 0.01,
                 whitespace_ratio: 0.18,
+            },
+            trust_diagnostics: PdfEmbeddedTextTrustDiagnostics {
+                block_coherence: 0.92,
+                coordinate_sanity: 0.91,
+                reading_order_stability: 0.89,
+                duplicate_text_suppression_needed: false,
+                hidden_text_layer_suspected: false,
+                full_page_raster_ratio: 0.0,
+                mixed_text_image_ratio: 0.0,
+                rationale: vec!["clean".to_string()],
             },
             page_classes: Vec::new(),
             class_distribution: vec![PdfPageClassCount {
@@ -2071,9 +2438,24 @@ mod tests {
                 noisy_text_page_ratio: 0.0,
                 repeated_header_ratio: 0.0,
                 repeated_footer_ratio: 0.0,
+                image_page_ratio: 1.0,
+                mixed_text_image_page_ratio: 0.0,
+                full_page_raster_page_ratio: 1.0,
+                hidden_text_layer_page_ratio: 1.0,
+                duplicate_text_page_ratio: 0.0,
                 avg_chars_per_page: 40,
                 garbage_ratio: 0.0,
                 whitespace_ratio: 0.1,
+            },
+            trust_diagnostics: PdfEmbeddedTextTrustDiagnostics {
+                block_coherence: 0.1,
+                coordinate_sanity: 0.12,
+                reading_order_stability: 0.08,
+                duplicate_text_suppression_needed: false,
+                hidden_text_layer_suspected: true,
+                full_page_raster_ratio: 1.0,
+                mixed_text_image_ratio: 0.0,
+                rationale: vec!["scan".to_string()],
             },
             page_classes: Vec::new(),
             class_distribution: vec![PdfPageClassCount {

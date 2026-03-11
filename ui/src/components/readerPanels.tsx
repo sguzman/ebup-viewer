@@ -147,6 +147,10 @@ function formatPercent(value: number): string {
   return `${value.toFixed(3)}%`;
 }
 
+function formatPdfTokenLabel(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
 function NumericSettingControl({
   label,
   value,
@@ -798,6 +802,85 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
               reader.settings.time_remaining_display
             )}
           </Typography>
+          {reader.pdf_classification ? (
+            <>
+              <Divider />
+              <Typography variant="body2" fontWeight={700}>
+                PDF Diagnostics
+              </Typography>
+              <Typography variant="body2">
+                Document class: {formatPdfTokenLabel(reader.pdf_classification.document_class)}
+              </Typography>
+              <Typography variant="body2">
+                OCR recommendation: {formatPdfTokenLabel(reader.pdf_classification.ocr_recommendation)}
+              </Typography>
+              <Typography variant="body2">
+                Confidence: {reader.pdf_classification.confidence.toFixed(2)}
+              </Typography>
+              <Typography variant="body2">
+                Sampled pages: {reader.pdf_classification.feature_summary.sampled_pages}
+              </Typography>
+              <Typography variant="body2">
+                Image-heavy sampled pages:{" "}
+                {formatPercent(reader.pdf_classification.feature_summary.image_page_ratio * 100)}
+              </Typography>
+              <Typography variant="body2">
+                Mixed text/image sampled pages:{" "}
+                {formatPercent(reader.pdf_classification.feature_summary.mixed_text_image_page_ratio * 100)}
+              </Typography>
+              <Typography variant="body2">
+                Full-page raster sampled pages:{" "}
+                {formatPercent(reader.pdf_classification.feature_summary.full_page_raster_page_ratio * 100)}
+              </Typography>
+              <Typography variant="body2">
+                Hidden text-layer sampled pages:{" "}
+                {formatPercent(reader.pdf_classification.feature_summary.hidden_text_layer_page_ratio * 100)}
+              </Typography>
+              <Typography variant="body2">
+                Duplicate-text sampled pages:{" "}
+                {formatPercent(reader.pdf_classification.feature_summary.duplicate_text_page_ratio * 100)}
+              </Typography>
+              <Typography variant="body2">
+                Trust: block {reader.pdf_classification.trust_diagnostics.block_coherence.toFixed(2)} | coordinates{" "}
+                {reader.pdf_classification.trust_diagnostics.coordinate_sanity.toFixed(2)} | reading order{" "}
+                {reader.pdf_classification.trust_diagnostics.reading_order_stability.toFixed(2)}
+              </Typography>
+              <Typography variant="body2">
+                Suppression needed:{" "}
+                {reader.pdf_classification.trust_diagnostics.duplicate_text_suppression_needed ? "yes" : "no"}
+                {" | "}Hidden text layer suspected:{" "}
+                {reader.pdf_classification.trust_diagnostics.hidden_text_layer_suspected ? "yes" : "no"}
+              </Typography>
+              {reader.pdf_classification.reasons.length > 0 ? (
+                <Typography variant="body2">
+                  Why: {reader.pdf_classification.reasons.slice(0, 4).map(formatPdfTokenLabel).join("; ")}
+                </Typography>
+              ) : null}
+              {reader.pdf_classification.trust_diagnostics.rationale.length > 0 ? (
+                <Typography variant="body2">
+                  Trust rationale:{" "}
+                  {reader.pdf_classification.trust_diagnostics.rationale
+                    .slice(0, 4)
+                    .map(formatPdfTokenLabel)
+                    .join("; ")}
+                </Typography>
+              ) : null}
+              {reader.pdf_classification.page_classes.length > 0 ? (
+                <Stack spacing={0.35}>
+                  <Typography variant="body2" fontWeight={700}>
+                    Sampled Page Classes
+                  </Typography>
+                  {reader.pdf_classification.page_classes.slice(0, 6).map((page) => (
+                    <Typography key={`pdf-page-class-${page.page_index}`} variant="body2">
+                      Page {page.page_index}: {formatPdfTokenLabel(page.class)} ({page.confidence.toFixed(2)}) | image coverage{" "}
+                      {formatPercent(page.features.image_coverage_ratio * 100)} | block{" "}
+                      {page.features.block_coherence.toFixed(2)} | order {page.features.reading_order_stability.toFixed(2)}
+                    </Typography>
+                  ))}
+                </Stack>
+              ) : null}
+            </>
+          ) : null}
         </Stack>
       ) : null}
       {stats.statsTab === "session" ? (

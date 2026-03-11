@@ -26,7 +26,122 @@ def _normalize_boundary_line(text: str) -> str:
     return line[:160]
 
 
-def _page_features(text: str, page_index: int) -> dict:
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _count_pdf_images(page) -> int:
+    try:
+        resources = page.get("/Resources")
+        if resources is None:
+            return 0
+        resources = resources.get_object()
+        xobjects = resources.get("/XObject")
+        if xobjects is None:
+            return 0
+        xobjects = xobjects.get_object()
+        count = 0
+        for _, obj in xobjects.items():
+            try:
+                resolved = obj.get_object()
+                if resolved.get("/Subtype") == "/Image":
+                    count += 1
+            except Exception:
+                continue
+        return count
+    except Exception:
+        return 0
+
+
+def _estimate_render_coverage(page) -> float:
+    if pdfium is None:
+        return 0.0
+    try:
+        bitmap = page.render(scale=0.2)
+        pil = bitmap.to_pil().convert("L")
+        pixels = list(pil.getdata())
+        if not pixels:
+            return 0.0
+        non_white = sum(1 for px in pixels if px < 245)
+        return float(non_white / len(pixels))
+    except Exception:
+        return 0.0
+
+
+def _page_quality_features(text: str, image_object_count: int, image_coverage_ratio: float) -> dict:
+    total_chars = len(text)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    normalized_lines = [" ".join(line.split()) for line in lines]
+    unique_lines = len(set(normalized_lines))
+    repeated_lines = len(normalized_lines) - unique_lines
+    duplicate_text_ratio = float(repeated_lines / max(1, len(lines)))
+    avg_line_length = float(sum(len(line) for line in lines) / max(1, len(lines)))
+    line_length_variance = float(
+        sum((len(line) - avg_line_length) ** 2 for line in lines) / max(1, len(lines))
+    )
+    block_coherence = max(
+        0.0,
+        min(
+            1.0,
+            1.0
+            - min(0.55, line_length_variance / 5000.0)
+            - min(0.3, duplicate_text_ratio * 0.8),
+        ),
+    )
+    coordinate_sanity = max(
+        0.0,
+        min(
+            1.0,
+            1.0
+            - min(0.4, image_coverage_ratio * 0.5)
+            - min(0.35, duplicate_text_ratio * 0.9)
+            - (0.15 if total_chars > 0 and avg_line_length <= 18 else 0.0),
+        ),
+    )
+    reading_order_stability = max(
+        0.0,
+        min(
+            1.0,
+            1.0
+            - min(0.4, duplicate_text_ratio * 0.9)
+            - min(0.25, image_coverage_ratio * 0.3)
+            - (0.2 if total_chars > 0 and avg_line_length <= 18 else 0.0),
+        ),
+    )
+    hidden_text_layer_suspected = (
+        total_chars > 0
+        and total_chars <= 120
+        and image_coverage_ratio >= 0.70
+        and image_object_count >= 1
+    )
+    duplicate_text_suspected = duplicate_text_ratio >= 0.22
+    mixed_text_image_suspected = (
+        total_chars >= 150
+        and image_object_count >= 1
+        and image_coverage_ratio >= 0.18
+        and image_coverage_ratio <= 0.88
+    )
+    full_page_raster_suspected = (
+        image_object_count >= 1 and image_coverage_ratio >= 0.82 and total_chars <= 240
+    )
+    return {
+        "image_object_count": int(image_object_count),
+        "image_coverage_ratio": float(image_coverage_ratio),
+        "duplicate_text_ratio": duplicate_text_ratio,
+        "block_coherence": block_coherence,
+        "coordinate_sanity": coordinate_sanity,
+        "reading_order_stability": reading_order_stability,
+        "hidden_text_layer_suspected": hidden_text_layer_suspected,
+        "duplicate_text_suspected": duplicate_text_suspected,
+        "mixed_text_image_suspected": mixed_text_image_suspected,
+        "full_page_raster_suspected": full_page_raster_suspected,
+    }
+
+
+def _page_features(text: str, page_index: int, image_object_count: int, image_coverage_ratio: float) -> dict:
     total_chars = len(text)
     total_ws = sum(1 for c in text if c.isspace())
     total_garbage = len(GARBAGE_RE.findall(text))
@@ -40,8 +155,7 @@ def _page_features(text: str, page_index: int) -> dict:
     upper_chars = sum(1 for c in text if c.isupper())
     short_lines = sum(1 for line in lines if len(line) <= 24)
     hyphenated_lines = sum(1 for line in lines if line.endswith("-"))
-    normalized_lines = [" ".join(line.split()) for line in lines]
-    repeated_lines = len(normalized_lines) - len(set(normalized_lines))
+    quality = _page_quality_features(text, image_object_count, image_coverage_ratio)
     return {
         "page_index": page_index + 1,
         "char_count": total_chars,
@@ -57,8 +171,18 @@ def _page_features(text: str, page_index: int) -> dict:
         "alpha_token_ratio": float(alpha_tokens / max(1, len(tokens))),
         "avg_token_length": float(sum(len(token) for token in tokens) / max(1, len(tokens))),
         "short_line_ratio": float(short_lines / max(1, len(lines))),
-        "repeated_line_ratio": float(repeated_lines / max(1, len(lines))),
+        "repeated_line_ratio": quality["duplicate_text_ratio"],
         "hyphenated_line_ratio": float(hyphenated_lines / max(1, len(lines))),
+        "image_object_count": quality["image_object_count"],
+        "image_coverage_ratio": quality["image_coverage_ratio"],
+        "duplicate_text_ratio": quality["duplicate_text_ratio"],
+        "block_coherence": quality["block_coherence"],
+        "coordinate_sanity": quality["coordinate_sanity"],
+        "reading_order_stability": quality["reading_order_stability"],
+        "hidden_text_layer_suspected": quality["hidden_text_layer_suspected"],
+        "duplicate_text_suspected": quality["duplicate_text_suspected"],
+        "mixed_text_image_suspected": quality["mixed_text_image_suspected"],
+        "full_page_raster_suspected": quality["full_page_raster_suspected"],
         "first_line": _normalize_boundary_line(lines[0]) if lines else "",
         "last_line": _normalize_boundary_line(lines[-1]) if lines else "",
     }
@@ -147,17 +271,24 @@ def main() -> None:
 
     for i in idxs:
         if reader is not None:
-            txt = reader.pages[i].extract_text() or ""
+            pdf_page = reader.pages[i]
+            txt = pdf_page.extract_text() or ""
+            image_object_count = _count_pdf_images(pdf_page)
         else:
             page = doc[i]
             text_page = page.get_textpage()
             txt = text_page.get_text_range() or ""
             text_page.close()
+            image_object_count = 0
+        image_coverage_ratio = 0.0
+        if doc is not None:
+            page = doc[i]
+            image_coverage_ratio = _safe_float(_estimate_render_coverage(page), 0.0)
             page.close()
         total_chars += len(txt)
         total_ws += sum(1 for c in txt if c.isspace())
         total_garbage += len(GARBAGE_RE.findall(txt))
-        page_stats.append(_page_features(txt, i))
+        page_stats.append(_page_features(txt, i, image_object_count, image_coverage_ratio))
 
     avg = int(total_chars / max(1, len(idxs)))
     garbage_ratio = float(total_garbage / max(1, total_chars))
@@ -166,6 +297,15 @@ def main() -> None:
     empty_pages = sum(1 for page in page_stats if page["char_count"] == 0)
     sparse_pages = sum(1 for page in page_stats if 0 < page["char_count"] < 120)
     noisy_pages = sum(1 for page in page_stats if page["garbage_ratio"] >= 0.03)
+    image_pages = sum(
+        1
+        for page in page_stats
+        if page["image_object_count"] > 0 or page["image_coverage_ratio"] >= 0.15
+    )
+    mixed_text_image_pages = sum(1 for page in page_stats if page["mixed_text_image_suspected"])
+    full_page_raster_pages = sum(1 for page in page_stats if page["full_page_raster_suspected"])
+    hidden_text_layer_pages = sum(1 for page in page_stats if page["hidden_text_layer_suspected"])
+    duplicate_text_pages = sum(1 for page in page_stats if page["duplicate_text_suspected"])
 
     first_lines = [page["first_line"] for page in page_stats if page["first_line"]]
     last_lines = [page["last_line"] for page in page_stats if page["last_line"]]
@@ -185,6 +325,11 @@ def main() -> None:
         noisy_text_page_ratio=float(noisy_pages / denom),
         repeated_header_ratio=float(repeated_headers / denom),
         repeated_footer_ratio=float(repeated_footers / denom),
+        image_page_ratio=float(image_pages / denom),
+        mixed_text_image_page_ratio=float(mixed_text_image_pages / denom),
+        full_page_raster_page_ratio=float(full_page_raster_pages / denom),
+        hidden_text_layer_page_ratio=float(hidden_text_layer_pages / denom),
+        duplicate_text_page_ratio=float(duplicate_text_pages / denom),
         pages=page_stats,
     )
     print(json.dumps(out))

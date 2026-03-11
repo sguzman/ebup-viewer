@@ -128,30 +128,27 @@ export function useReaderHighlightSync({
       const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
       return Number.isFinite(parsed) ? parsed : null;
     }
+    for (const [sentenceIdx, spans] of prettyAnchorElementsRef.current.htmlSentenceSpans.entries()) {
+      if (spans.some((span) => span === target || span.contains(target))) {
+        return sentenceIdx;
+      }
+    }
+    for (const [sentenceIdx, element] of prettyAnchorElementsRef.current.html.entries()) {
+      if (element === target || element.contains(target)) {
+        return sentenceIdx;
+      }
+    }
     const anchorElement = target.closest("[data-ll-html-anchor]");
     if (!anchorElement) {
       return null;
     }
-    let bestSentenceIdx: number | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    const currentGlobalIdx =
-      reader.stats.sentences_read_up_to_page_start + (reader.highlighted_sentence_idx ?? 0);
     for (const [sentenceIdx, element] of prettyAnchorElementsRef.current.html.entries()) {
-      if (element !== anchorElement) {
-        continue;
-      }
-      const distance = Math.abs(sentenceIdx - currentGlobalIdx);
-      if (distance < bestDistance) {
-        bestSentenceIdx = sentenceIdx;
-        bestDistance = distance;
+      if (element === anchorElement || element.contains(anchorElement) || anchorElement.contains(element)) {
+        return sentenceIdx;
       }
     }
-    return bestSentenceIdx;
-  }, [
-    prettyAnchorElementsRef,
-    reader.highlighted_sentence_idx,
-    reader.stats.sentences_read_up_to_page_start
-  ]);
+    return null;
+  }, [prettyAnchorElementsRef]);
 
   const handlePrettyContentClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;

@@ -81,6 +81,8 @@ pub struct AppConfig {
     pub auto_scroll_tts: bool,
     #[serde(default = "crate::config::defaults::default_center_spoken_sentence")]
     pub center_spoken_sentence: bool,
+    #[serde(default = "crate::config::defaults::default_text_only_show_original_text")]
+    pub text_only_show_original_text: bool,
     #[serde(default = "crate::config::defaults::default_tts_pause_resume_behavior")]
     pub tts_pause_resume_behavior: TtsPauseResumeBehavior,
     #[serde(default = "crate::config::defaults::default_time_remaining_display")]
@@ -151,6 +153,8 @@ impl Default for AppConfig {
             pause_after_sentence: crate::config::defaults::default_pause_after_sentence(),
             auto_scroll_tts: crate::config::defaults::default_auto_scroll_tts(),
             center_spoken_sentence: crate::config::defaults::default_center_spoken_sentence(),
+            text_only_show_original_text:
+                crate::config::defaults::default_text_only_show_original_text(),
             tts_pause_resume_behavior: crate::config::defaults::default_tts_pause_resume_behavior(),
             time_remaining_display: crate::config::defaults::default_time_remaining_display(),
             key_toggle_play_pause: crate::config::defaults::default_key_toggle_play_pause(),

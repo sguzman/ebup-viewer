@@ -330,6 +330,7 @@ const mockReaderSnapshot = (): ReaderSnapshot => ({
     pause_after_sentence: 0.06,
     auto_scroll_tts: true,
     center_spoken_sentence: true,
+    text_only_show_original_text: false,
     time_remaining_display: "adaptive",
     tts_speed: 2.5,
     tts_volume: 1.0

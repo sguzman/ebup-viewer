@@ -18,6 +18,7 @@ impl ReaderSession {
             pause_after_sentence: self.config.pause_after_sentence,
             auto_scroll_tts: self.config.auto_scroll_tts,
             center_spoken_sentence: self.config.center_spoken_sentence,
+            text_only_show_original_text: self.config.text_only_show_original_text,
             time_remaining_display: self.config.time_remaining_display,
             tts_speed: self.config.tts_speed,
             tts_volume: self.config.tts_volume,
@@ -99,6 +100,13 @@ impl ReaderSession {
         if let Some(center_spoken_sentence) = patch.center_spoken_sentence {
             self.config.center_spoken_sentence = center_spoken_sentence;
         }
+        let mut text_only_display_mode_changed = false;
+        if let Some(text_only_show_original_text) = patch.text_only_show_original_text {
+            if self.config.text_only_show_original_text != text_only_show_original_text {
+                self.config.text_only_show_original_text = text_only_show_original_text;
+                text_only_display_mode_changed = true;
+            }
+        }
         if let Some(tts_speed) = patch.tts_speed {
             self.config.tts_speed = tts_speed.clamp(0.25, 4.0);
         }
@@ -108,6 +116,22 @@ impl ReaderSession {
 
         if repaginate {
             self.repaginate(normalizer, preserve);
+        }
+        if text_only_display_mode_changed {
+            let highlighted_audio_idx = self.current_audio_highlight_idx(normalizer);
+            self.highlighted_audio_idx = highlighted_audio_idx;
+            self.highlighted_display_idx = highlighted_audio_idx
+                .and_then(|audio_idx| self.map_audio_to_display_idx(normalizer, audio_idx));
+            self.update_search_matches(normalizer);
+            self.reselect_search_match_for_current_highlight();
+            tracing::debug!(
+                path = %self.source_path.display(),
+                text_only_mode = self.text_only_mode,
+                text_only_show_original_text = self.config.text_only_show_original_text,
+                highlighted_audio_idx = self.highlighted_audio_idx,
+                highlighted_display_idx = self.highlighted_display_idx,
+                "Updated text-only display mode without changing canonical TTS ownership"
+            );
         }
     }
 }

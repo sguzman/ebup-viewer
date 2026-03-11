@@ -676,6 +676,25 @@ export function ReaderSettingsPanel({ onApplySettings, reader }: ReaderSettingsP
           }
         />
       </Stack>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
+        <Stack spacing={0.25}>
+          <Typography variant="caption" fontWeight={700}>
+            Show Original Text
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Text-only view only. TTS still uses normalized text.
+          </Typography>
+        </Stack>
+        <Switch
+          checked={reader.settings.text_only_show_original_text}
+          disabled={!reader.text_only_mode}
+          onChange={(event) =>
+            void onApplySettings({
+              text_only_show_original_text: event.target.checked
+            })
+          }
+        />
+      </Stack>
     </Stack>
   );
 }

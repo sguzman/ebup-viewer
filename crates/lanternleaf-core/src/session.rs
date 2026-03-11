@@ -57,6 +57,7 @@ pub struct ReaderSettingsView {
     pub pause_after_sentence: f32,
     pub auto_scroll_tts: bool,
     pub center_spoken_sentence: bool,
+    pub text_only_show_original_text: bool,
     pub time_remaining_display: config::TimeRemainingDisplay,
     pub tts_speed: f32,
     pub tts_volume: f32,
@@ -106,6 +107,8 @@ pub struct ReaderSettingsPatch {
     pub auto_scroll_tts: Option<bool>,
     #[ts(optional)]
     pub center_spoken_sentence: Option<bool>,
+    #[ts(optional)]
+    pub text_only_show_original_text: Option<bool>,
     #[ts(optional)]
     pub tts_speed: Option<f32>,
     #[ts(optional)]
@@ -440,6 +443,13 @@ impl ReaderSession {
 
     fn current_sentences(&mut self, normalizer: &normalizer::TextNormalizer) -> Vec<String> {
         if self.text_only_mode {
+            if self.config.text_only_show_original_text {
+                return self
+                    .raw_page_sentences
+                    .get(self.current_page)
+                    .cloned()
+                    .unwrap_or_default();
+            }
             return self.ensure_current_plan(normalizer).audio_sentences;
         }
         self.raw_page_sentences
@@ -549,6 +559,9 @@ impl ReaderSession {
 
     fn current_highlight_idx(&self) -> Option<usize> {
         if self.text_only_mode {
+            if self.config.text_only_show_original_text {
+                return self.highlighted_display_idx;
+            }
             self.highlighted_audio_idx
         } else {
             self.highlighted_display_idx
@@ -1006,6 +1019,7 @@ mod tests {
                 pause_after_sentence: Some(0.056),
                 auto_scroll_tts: None,
                 center_spoken_sentence: None,
+                text_only_show_original_text: None,
                 tts_speed: Some(4.9),
                 tts_volume: Some(-1.0),
             },
@@ -1099,6 +1113,7 @@ mod tests {
                     pause_after_sentence: Some(0.056),
                     auto_scroll_tts: None,
                     center_spoken_sentence: None,
+                    text_only_show_original_text: None,
                     tts_speed: Some(2.5),
                     tts_volume: Some(1.3),
                 },
@@ -1145,6 +1160,56 @@ mod tests {
         assert_eq!(session.highlighted_display_idx, Some(1));
         assert_eq!(session.selected_search_match, Some(0));
         assert_eq!(session.search_matches, vec![1]);
+    }
+
+    #[test]
+    fn text_only_original_text_changes_display_but_not_tts_audio_plan() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let mut session = build_test_session(&[&[
+            "This claim remains disputed1.",
+            "The next sentence still aligns."
+        ]]);
+
+        session.toggle_text_only(&normalizer);
+        let normalized_sentences = session.current_sentences(&normalizer);
+        let audio_sentences = session.current_audio_sentences(&normalizer);
+
+        session.apply_settings_patch(
+            ReaderSettingsPatch {
+                theme: None,
+                day_highlight: None,
+                night_highlight: None,
+                font_family: None,
+                font_weight: None,
+                font_size: None,
+                line_spacing: None,
+                word_spacing: None,
+                letter_spacing: None,
+                margin_horizontal: None,
+                margin_vertical: None,
+                lines_per_page: None,
+                pause_after_sentence: None,
+                auto_scroll_tts: None,
+                center_spoken_sentence: None,
+                text_only_show_original_text: Some(true),
+                tts_speed: None,
+                tts_volume: None,
+            },
+            &normalizer,
+        );
+
+        let original_display_sentences = session.current_sentences(&normalizer);
+        let audio_sentences_after = session.current_audio_sentences(&normalizer);
+
+        assert_ne!(normalized_sentences, original_display_sentences);
+        assert_eq!(audio_sentences, audio_sentences_after);
+        assert_eq!(
+            original_display_sentences,
+            vec![
+                "This claim remains disputed1.".to_string(),
+                "The next sentence still aligns.".to_string()
+            ]
+        );
     }
 
     #[test]

@@ -135,6 +135,10 @@ pub(crate) fn default_center_spoken_sentence() -> bool {
     true
 }
 
+pub(crate) fn default_text_only_show_original_text() -> bool {
+    false
+}
+
 pub(crate) fn default_tts_pause_resume_behavior() -> crate::config::TtsPauseResumeBehavior {
     crate::config::TtsPauseResumeBehavior::ResumeFromPausePoint
 }

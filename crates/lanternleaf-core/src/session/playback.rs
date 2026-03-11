@@ -3,6 +3,22 @@ use super::*;
 impl ReaderSession {
     pub fn sentence_click(&mut self, sentence_idx: usize, normalizer: &normalizer::TextNormalizer) {
         if self.text_only_mode {
+            if self.config.text_only_show_original_text {
+                if sentence_idx >= self.current_display_len() {
+                    return;
+                }
+                self.highlighted_display_idx = Some(sentence_idx);
+                self.highlighted_audio_idx = self.map_display_to_audio_idx(normalizer, sentence_idx);
+                tracing::trace!(
+                    path = %self.source_path.display(),
+                    mode = "text_only_original",
+                    owner = "tts_text",
+                    highlighted_audio_idx = self.highlighted_audio_idx,
+                    highlighted_display_idx = self.highlighted_display_idx,
+                    "Updated reader highlight from text-only original sentence click"
+                );
+                return;
+            }
             let plan = self.ensure_current_plan(normalizer);
             if sentence_idx >= plan.audio_sentences.len() {
                 return;

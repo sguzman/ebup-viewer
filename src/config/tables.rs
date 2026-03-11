@@ -46,6 +46,7 @@ impl From<ConfigTables> for AppConfig {
             pause_after_sentence: tables.reading_behavior.pause_after_sentence,
             auto_scroll_tts: tables.reading_behavior.auto_scroll_tts,
             center_spoken_sentence: tables.reading_behavior.center_spoken_sentence,
+            text_only_show_original_text: tables.reading_behavior.text_only_show_original_text,
             tts_pause_resume_behavior: tables.reading_behavior.tts_pause_resume_behavior,
             time_remaining_display: tables.reading_behavior.time_remaining_display,
             key_toggle_play_pause: tables.keybindings.toggle_play_pause,
@@ -109,6 +110,7 @@ impl From<&AppConfig> for ConfigTables {
                 pause_after_sentence: config.pause_after_sentence,
                 auto_scroll_tts: config.auto_scroll_tts,
                 center_spoken_sentence: config.center_spoken_sentence,
+                text_only_show_original_text: config.text_only_show_original_text,
                 tts_pause_resume_behavior: config.tts_pause_resume_behavior,
                 time_remaining_display: config.time_remaining_display,
             },
@@ -234,6 +236,8 @@ struct ReadingBehaviorConfig {
     auto_scroll_tts: bool,
     #[serde(default = "defaults::default_center_spoken_sentence")]
     center_spoken_sentence: bool,
+    #[serde(default = "defaults::default_text_only_show_original_text")]
+    text_only_show_original_text: bool,
     #[serde(default = "defaults::default_tts_pause_resume_behavior")]
     tts_pause_resume_behavior: super::models::TtsPauseResumeBehavior,
     #[serde(default = "defaults::default_time_remaining_display")]
@@ -246,6 +250,7 @@ impl Default for ReadingBehaviorConfig {
             pause_after_sentence: defaults::default_pause_after_sentence(),
             auto_scroll_tts: defaults::default_auto_scroll_tts(),
             center_spoken_sentence: defaults::default_center_spoken_sentence(),
+            text_only_show_original_text: defaults::default_text_only_show_original_text(),
             tts_pause_resume_behavior: defaults::default_tts_pause_resume_behavior(),
             time_remaining_display: defaults::default_time_remaining_display(),
         }

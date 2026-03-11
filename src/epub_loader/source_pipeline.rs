@@ -1,9 +1,9 @@
 use super::{
     PdfBookmarkPolicy, PdfClassificationSummary, PdfDocumentClass, PdfEmbeddedTextTrustDiagnostics,
-    PdfGeometryMode, PdfOcrRecommendation, PdfPageClass, PdfPageClassCount,
-    PdfPageClassificationSummary, PdfProbeFeatureSummary, PdfProbePageSummary,
-    PdfRuntimePolicySummary, PdfSearchPolicy, PdfSentenceHighlightPolicy, PdfSyncStrategy,
-    PdfTextOnlyPolicy, SourceContent,
+    PdfGeometryMode, PdfOcrEnginePolicy, PdfOcrFallbackDecision, PdfOcrPipelineSummary,
+    PdfOcrRecommendation, PdfPageClass, PdfPageClassCount, PdfPageClassificationSummary,
+    PdfProbeFeatureSummary, PdfProbePageSummary, PdfRuntimePolicySummary, PdfSearchPolicy,
+    PdfSentenceHighlightPolicy, PdfSyncStrategy, PdfTextOnlyPolicy, SourceContent,
 };
 use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
 use crate::cancellation::CancellationToken;
@@ -76,6 +76,7 @@ pub(super) fn load_source_content(
             pdf_sync_strategy: None,
             pdf_classification: None,
             pdf_runtime_policy: None,
+            pdf_ocr_pipeline: None,
         });
     }
 
@@ -101,6 +102,7 @@ pub(super) fn load_source_content(
             pdf_sync_strategy: None,
             pdf_classification: None,
             pdf_runtime_policy: None,
+            pdf_ocr_pipeline: None,
         });
     }
 
@@ -129,6 +131,7 @@ pub(super) fn load_source_content(
             pdf_sync_strategy: None,
             pdf_classification: None,
             pdf_runtime_policy: None,
+            pdf_ocr_pipeline: None,
         };
         info!(
             path = %path.display(),
@@ -158,6 +161,7 @@ pub(super) fn load_source_content(
             pdf_sync_strategy: None,
             pdf_classification: None,
             pdf_runtime_policy: None,
+            pdf_ocr_pipeline: None,
         };
         info!(
             path = %path.display(),
@@ -183,6 +187,7 @@ pub(super) fn load_source_content(
             pdf_sync_strategy: None,
             pdf_classification: None,
             pdf_runtime_policy: None,
+            pdf_ocr_pipeline: None,
         });
     }
 
@@ -321,6 +326,7 @@ fn load_pdf_with_quack_check(
             sampled_pages = cached.sampled_pages,
             reading_order_mode = cached.reading_order_mode,
             fallback_strategies = ?cached.fallback_strategies,
+            pdf_ocr_engine_policy = ?cached.pdf_ocr_pipeline.as_ref().map(|value| value.engine_policy),
             chunk_ranges = cached.chunk_ranges.len(),
             pdf_geometry_mode = ?cached.pdf_geometry_mode,
             pdf_sync_strategy = ?cached.pdf_sync_strategy,
@@ -339,6 +345,7 @@ fn load_pdf_with_quack_check(
             pdf_sync_strategy: Some(cached.pdf_sync_strategy),
             pdf_classification: cached.pdf_classification,
             pdf_runtime_policy: cached.pdf_runtime_policy,
+            pdf_ocr_pipeline: cached.pdf_ocr_pipeline,
         });
     }
 
@@ -384,6 +391,7 @@ fn load_pdf_with_quack_check(
         report.as_ref(),
         resolved.pdf_classification.as_ref(),
         resolved.pdf_runtime_policy.as_ref(),
+        resolved.pdf_ocr_pipeline.as_ref(),
     )?;
     info!(
         path = %path.display(),
@@ -410,6 +418,10 @@ fn load_pdf_with_quack_check(
                 .unwrap_or(PdfSyncStrategy::ParagraphFallback)
         ),
         chunk_ranges = report.as_ref().map(|value| value.chunk_reports.len()).unwrap_or(0),
+        pdf_ocr_engine_policy = ?resolved
+            .pdf_ocr_pipeline
+            .as_ref()
+            .map(|value| value.engine_policy),
         pdf_geometry_mode = ?resolved.pdf_geometry_mode,
         pdf_sync_strategy = ?resolved.pdf_sync_strategy,
         pdf_document_class = ?resolved
@@ -438,6 +450,7 @@ fn load_pdf_with_quack_check(
         pdf_sync_strategy: resolved.pdf_sync_strategy,
         pdf_classification: resolved.pdf_classification,
         pdf_runtime_policy: resolved.pdf_runtime_policy,
+        pdf_ocr_pipeline: resolved.pdf_ocr_pipeline,
     })
 }
 
@@ -469,6 +482,12 @@ pub(super) fn resolve_pdf_dual_view_content(
         pdf_sync_strategy,
         transcript_text,
     );
+    let pdf_ocr_pipeline = derive_pdf_ocr_pipeline_summary(
+        report,
+        pdf_geometry_mode,
+        pdf_sync_strategy,
+        pdf_classification.as_ref(),
+    );
     SourceContent {
         tts_text,
         reading_html: None,
@@ -478,6 +497,7 @@ pub(super) fn resolve_pdf_dual_view_content(
         pdf_sync_strategy: Some(pdf_sync_strategy),
         pdf_classification,
         pdf_runtime_policy: Some(pdf_runtime_policy),
+        pdf_ocr_pipeline: Some(pdf_ocr_pipeline),
     }
 }
 
@@ -665,6 +685,100 @@ fn derive_pdf_fallback_strategies(
     strategies.sort();
     strategies.dedup();
     strategies
+}
+
+fn derive_pdf_ocr_engine_policy(
+    classification: Option<&PdfClassificationSummary>,
+    report: Option<&crate::quack_check::report::JobReport>,
+) -> PdfOcrEnginePolicy {
+    match (
+        report.map(|value| value.decision.do_ocr).unwrap_or(false),
+        classification.map(|value| value.document_class),
+    ) {
+        (false, _) => PdfOcrEnginePolicy::EmbeddedTextOnly,
+        (
+            true,
+            Some(PdfDocumentClass::HybridMixedDocument | PdfDocumentClass::LayoutHostileDocument),
+        ) => PdfOcrEnginePolicy::HybridEmbeddedOcrMerge,
+        (
+            true,
+            Some(
+                PdfDocumentClass::EmbeddedClean
+                | PdfDocumentClass::EmbeddedNoisy
+                | PdfDocumentClass::EmbeddedSparse,
+            ),
+        ) => PdfOcrEnginePolicy::HybridEmbeddedOcrMerge,
+        _ => PdfOcrEnginePolicy::OcrOnly,
+    }
+}
+
+fn derive_pdf_ocr_fallback_decisions(
+    report: Option<&crate::quack_check::report::JobReport>,
+    pdf_geometry_mode: PdfGeometryMode,
+    pdf_sync_strategy: PdfSyncStrategy,
+) -> Vec<PdfOcrFallbackDecision> {
+    let mut decisions = Vec::new();
+    let strategies = derive_pdf_fallback_strategies(report, pdf_geometry_mode, pdf_sync_strategy);
+    if strategies
+        .iter()
+        .any(|value| value == "native_text_to_docling_fallback")
+    {
+        decisions.push(PdfOcrFallbackDecision::NativeTextToOcrFallback);
+    }
+    if report
+        .map(|value| {
+            value.chunk_reports.iter().any(|chunk| {
+                chunk
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.contains("retry") || warning.contains("aggressive"))
+            })
+        })
+        .unwrap_or(false)
+    {
+        decisions.push(PdfOcrFallbackDecision::OcrRetryMoreAggressive);
+    }
+    if matches!(pdf_geometry_mode, PdfGeometryMode::OcrRequired)
+        && matches!(
+            pdf_sync_strategy,
+            PdfSyncStrategy::RenderOnly | PdfSyncStrategy::ParagraphFallback
+        )
+    {
+        decisions.push(PdfOcrFallbackDecision::OcrTextOnlyWithoutGeometry);
+    }
+    if matches!(pdf_sync_strategy, PdfSyncStrategy::RenderOnly) {
+        decisions.push(PdfOcrFallbackDecision::RenderOnlyNoSync);
+    }
+    decisions.sort_by_key(|value| format!("{value:?}"));
+    decisions.dedup();
+    decisions
+}
+
+fn derive_pdf_ocr_pipeline_summary(
+    report: Option<&crate::quack_check::report::JobReport>,
+    pdf_geometry_mode: PdfGeometryMode,
+    pdf_sync_strategy: PdfSyncStrategy,
+    classification: Option<&PdfClassificationSummary>,
+) -> PdfOcrPipelineSummary {
+    let fallback_strategy_labels =
+        derive_pdf_fallback_strategies(report, pdf_geometry_mode, pdf_sync_strategy);
+    let fallback_decisions =
+        derive_pdf_ocr_fallback_decisions(report, pdf_geometry_mode, pdf_sync_strategy);
+    PdfOcrPipelineSummary {
+        engine_policy: derive_pdf_ocr_engine_policy(classification, report),
+        fallback_decisions,
+        ocr_enabled: report.map(|value| value.decision.do_ocr).unwrap_or(false),
+        page_count: report.map(|value| value.input.page_count).unwrap_or(0),
+        sampled_pages: report.map(|value| value.sample.sampled_pages).unwrap_or(0),
+        chunk_count: report
+            .map(|value| value.chunk_reports.len() as u32)
+            .unwrap_or(0),
+        reading_order_mode: derive_pdf_reading_order_mode(
+            pdf_geometry_mode,
+            report.map(|value| value.decision.do_ocr).unwrap_or(false),
+        ),
+        fallback_strategy_labels,
+    }
 }
 
 fn classify_pdf_runtime(
@@ -1341,6 +1455,8 @@ struct PdfCacheMeta {
     #[serde(default)]
     pdf_runtime_policy: Option<PdfRuntimePolicySummary>,
     #[serde(default)]
+    pdf_ocr_pipeline: Option<PdfOcrPipelineSummary>,
+    #[serde(default)]
     pdf_classification_version: u32,
     #[serde(default)]
     extraction_mode: String,
@@ -1424,6 +1540,7 @@ fn pdf_signature(path: &Path, config_sha256: &str, text_filename: &str) -> Resul
         pdf_sync_strategy: None,
         pdf_classification: None,
         pdf_runtime_policy: None,
+        pdf_ocr_pipeline: None,
         pdf_classification_version: PDF_CLASSIFICATION_VERSION,
         extraction_mode: String::new(),
         ocr_enabled: false,
@@ -1533,6 +1650,7 @@ struct PdfCachedLoad {
     pdf_sync_strategy: PdfSyncStrategy,
     pdf_classification: Option<PdfClassificationSummary>,
     pdf_runtime_policy: Option<PdfRuntimePolicySummary>,
+    pdf_ocr_pipeline: Option<PdfOcrPipelineSummary>,
     extraction_mode: String,
     ocr_enabled: bool,
     page_count: u32,
@@ -1624,6 +1742,10 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
         sampled_pages = cached_meta.sampled_pages,
         reading_order_mode = cached_meta.reading_order_mode,
         fallback_strategies = ?cached_meta.fallback_strategies,
+        pdf_ocr_engine_policy = ?cached_meta
+            .pdf_ocr_pipeline
+            .as_ref()
+            .map(|value| value.engine_policy),
         chunk_ranges = cached_meta.chunk_ranges.len(),
         "PDF transcript cache hit"
     );
@@ -1637,6 +1759,7 @@ fn try_read_pdf_cache(path: &Path, signature: &PdfCacheMeta) -> Result<Option<Pd
             .unwrap_or(PdfSyncStrategy::ParagraphFallback),
         pdf_classification: cached_meta.pdf_classification,
         pdf_runtime_policy: cached_meta.pdf_runtime_policy,
+        pdf_ocr_pipeline: cached_meta.pdf_ocr_pipeline,
         extraction_mode: cached_meta.extraction_mode,
         ocr_enabled: cached_meta.ocr_enabled,
         page_count: cached_meta.page_count,
@@ -1689,6 +1812,7 @@ fn write_pdf_cache(
     report: Option<&crate::quack_check::report::JobReport>,
     pdf_classification: Option<&PdfClassificationSummary>,
     pdf_runtime_policy: Option<&PdfRuntimePolicySummary>,
+    pdf_ocr_pipeline: Option<&PdfOcrPipelineSummary>,
 ) -> Result<()> {
     let (text_path, meta_path, _) = pdf_cache_paths(path);
     if let Some(parent) = text_path.parent() {
@@ -1708,6 +1832,7 @@ fn write_pdf_cache(
     signature.pdf_sync_strategy = Some(pdf_sync_strategy);
     signature.pdf_classification = pdf_classification.cloned();
     signature.pdf_runtime_policy = pdf_runtime_policy.cloned();
+    signature.pdf_ocr_pipeline = pdf_ocr_pipeline.cloned();
     signature.pdf_classification_version = PDF_CLASSIFICATION_VERSION;
     signature.extraction_mode = extraction_mode.to_string();
     signature.ocr_enabled = ocr_enabled;
@@ -1754,6 +1879,10 @@ fn write_pdf_cache(
             .pdf_runtime_policy
             .as_ref()
             .map(|value| value.sentence_highlight_policy),
+        pdf_ocr_engine_policy = ?signature
+            .pdf_ocr_pipeline
+            .as_ref()
+            .map(|value| value.engine_policy),
         extraction_mode,
         ocr_enabled,
         page_count = signature.page_count,
@@ -2190,6 +2319,46 @@ mod tests {
     }
 
     #[test]
+    fn derive_pdf_ocr_pipeline_summary_captures_engine_and_fallback_policy() {
+        let report = sample_report();
+        let classification = classify_pdf_runtime(Some(&report), "Alpha. Beta.", "## pretty");
+        let pipeline = derive_pdf_ocr_pipeline_summary(
+            Some(&report),
+            PdfGeometryMode::MixedTextTrust,
+            PdfSyncStrategy::ParagraphFallback,
+            classification.as_ref(),
+        );
+
+        assert_eq!(
+            pipeline.engine_policy,
+            PdfOcrEnginePolicy::HybridEmbeddedOcrMerge
+        );
+        assert!(pipeline.ocr_enabled);
+        assert_eq!(pipeline.chunk_count, 2);
+        assert!(
+            pipeline
+                .fallback_decisions
+                .contains(&PdfOcrFallbackDecision::NativeTextToOcrFallback)
+        );
+        let text_only_pipeline = derive_pdf_ocr_pipeline_summary(
+            Some(&report),
+            PdfGeometryMode::OcrRequired,
+            PdfSyncStrategy::RenderOnly,
+            classification.as_ref(),
+        );
+        assert!(
+            text_only_pipeline
+                .fallback_decisions
+                .contains(&PdfOcrFallbackDecision::OcrTextOnlyWithoutGeometry)
+        );
+        assert!(
+            text_only_pipeline
+                .fallback_decisions
+                .contains(&PdfOcrFallbackDecision::RenderOnlyNoSync)
+        );
+    }
+
+    #[test]
     fn pdf_cache_roundtrip_preserves_chunk_page_ranges_and_meta() {
         let path = unique_pdf_path();
         fs::write(&path, b"pdf").expect("write source");
@@ -2207,6 +2376,12 @@ mod tests {
             Some(&report),
             classify_pdf_runtime(Some(&report), "Alpha. Beta.", "## pretty").as_ref(),
             None,
+            Some(&derive_pdf_ocr_pipeline_summary(
+                Some(&report),
+                PdfGeometryMode::MixedTextTrust,
+                PdfSyncStrategy::ParagraphFallback,
+                classify_pdf_runtime(Some(&report), "Alpha. Beta.", "## pretty").as_ref(),
+            )),
         )
         .expect("write pdf cache");
 
@@ -2228,6 +2403,13 @@ mod tests {
         assert_eq!(
             cached.chunk_ranges[0].meta["applied_flags"],
             serde_json::json!(["generate_parsed_pages"])
+        );
+        assert_eq!(
+            cached
+                .pdf_ocr_pipeline
+                .as_ref()
+                .map(|value| value.engine_policy),
+            Some(PdfOcrEnginePolicy::HybridEmbeddedOcrMerge)
         );
 
         let _ = fs::remove_file(&path);

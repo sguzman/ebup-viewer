@@ -53,6 +53,7 @@ pub struct LoadedBook {
     pub pdf_sync_strategy: Option<PdfSyncStrategy>,
     pub pdf_classification: Option<PdfClassificationSummary>,
     pub pdf_runtime_policy: Option<PdfRuntimePolicySummary>,
+    pub pdf_ocr_pipeline: Option<PdfOcrPipelineSummary>,
     pub images: Vec<BookImage>,
 }
 
@@ -310,9 +311,47 @@ pub struct PdfOcrAlignmentSummary {
     pub token_lineage_available: bool,
     pub deterministic: bool,
     pub coverage_ratio: f32,
+    pub reused_alignment_count: u32,
+    pub rebuilt_alignment_count: u32,
+    pub cached_page_bucket_count: u32,
+    pub alignment_build_ms: u32,
     #[serde(default)]
     pub degraded_reasons: Vec<String>,
     pub explanation: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfOcrEnginePolicy {
+    EmbeddedTextOnly,
+    OcrOnly,
+    HybridEmbeddedOcrMerge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfOcrFallbackDecision {
+    NativeTextToOcrFallback,
+    OcrRetryMoreAggressive,
+    OcrTextOnlyWithoutGeometry,
+    RenderOnlyNoSync,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct PdfOcrPipelineSummary {
+    pub engine_policy: PdfOcrEnginePolicy,
+    #[serde(default)]
+    pub fallback_decisions: Vec<PdfOcrFallbackDecision>,
+    pub ocr_enabled: bool,
+    pub page_count: u32,
+    pub sampled_pages: u32,
+    pub chunk_count: u32,
+    pub reading_order_mode: String,
+    #[serde(default)]
+    pub fallback_strategy_labels: Vec<String>,
 }
 
 /// Load a supported source file and return plain text plus extracted image paths.
@@ -383,6 +422,10 @@ pub fn load_book_content_with_cancel(
             .pdf_runtime_policy
             .as_ref()
             .map(|value| value.sentence_highlight_policy),
+        pdf_ocr_engine_policy = ?content
+            .pdf_ocr_pipeline
+            .as_ref()
+            .map(|value| value.engine_policy),
         image_count = images.len(),
         elapsed_ms = start.elapsed().as_millis(),
         "Source load complete"
@@ -396,6 +439,7 @@ pub fn load_book_content_with_cancel(
         pdf_sync_strategy: content.pdf_sync_strategy,
         pdf_classification: content.pdf_classification,
         pdf_runtime_policy: content.pdf_runtime_policy,
+        pdf_ocr_pipeline: content.pdf_ocr_pipeline,
         images,
     })
 }
@@ -410,6 +454,7 @@ struct SourceContent {
     pdf_sync_strategy: Option<PdfSyncStrategy>,
     pdf_classification: Option<PdfClassificationSummary>,
     pdf_runtime_policy: Option<PdfRuntimePolicySummary>,
+    pdf_ocr_pipeline: Option<PdfOcrPipelineSummary>,
 }
 
 fn collect_images(path: &Path) -> Result<Vec<BookImage>> {

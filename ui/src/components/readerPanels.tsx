@@ -925,6 +925,12 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
                     {" | "}Token lineage available: {reader.pdf_ocr_alignment.token_lineage_available ? "yes" : "no"}
                   </Typography>
                   <Typography variant="body2">
+                    Alignment cache reuse: {reader.pdf_ocr_alignment.reused_alignment_count} reused |{" "}
+                    {reader.pdf_ocr_alignment.rebuilt_alignment_count} rebuilt | page buckets{" "}
+                    {reader.pdf_ocr_alignment.cached_page_bucket_count} | build{" "}
+                    {reader.pdf_ocr_alignment.alignment_build_ms} ms
+                  </Typography>
+                  <Typography variant="body2">
                     OCR geometry note: {reader.pdf_ocr_alignment.explanation}
                   </Typography>
                   {reader.pdf_ocr_alignment.degraded_reasons.length > 0 ? (
@@ -932,6 +938,38 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
                       OCR degraded reasons:{" "}
                       {reader.pdf_ocr_alignment.degraded_reasons
                         .slice(0, 4)
+                        .map(formatPdfTokenLabel)
+                        .join("; ")}
+                    </Typography>
+                  ) : null}
+                </>
+              ) : null}
+              {reader.pdf_ocr_pipeline ? (
+                <>
+                  <Typography variant="body2">
+                    OCR engine policy: {formatPdfTokenLabel(reader.pdf_ocr_pipeline.engine_policy)}
+                  </Typography>
+                  <Typography variant="body2">
+                    OCR enabled: {reader.pdf_ocr_pipeline.ocr_enabled ? "yes" : "no"}
+                    {" | "}Reading order mode: {formatPdfTokenLabel(reader.pdf_ocr_pipeline.reading_order_mode)}
+                  </Typography>
+                  <Typography variant="body2">
+                    OCR chunks: {reader.pdf_ocr_pipeline.chunk_count} | sampled pages{" "}
+                    {reader.pdf_ocr_pipeline.sampled_pages} | total pages {reader.pdf_ocr_pipeline.page_count}
+                  </Typography>
+                  {reader.pdf_ocr_pipeline.fallback_decisions.length > 0 ? (
+                    <Typography variant="body2">
+                      OCR fallback decisions:{" "}
+                      {reader.pdf_ocr_pipeline.fallback_decisions
+                        .map(formatPdfTokenLabel)
+                        .join("; ")}
+                    </Typography>
+                  ) : null}
+                  {reader.pdf_ocr_pipeline.fallback_strategy_labels.length > 0 ? (
+                    <Typography variant="body2">
+                      OCR fallback strategies:{" "}
+                      {reader.pdf_ocr_pipeline.fallback_strategy_labels
+                        .slice(0, 5)
                         .map(formatPdfTokenLabel)
                         .join("; ")}
                     </Typography>

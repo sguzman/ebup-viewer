@@ -304,6 +304,7 @@ const mockReaderSnapshot = (): ReaderSnapshot => ({
   pdf_classification: null,
   pdf_runtime_policy: null,
   pdf_ocr_alignment: null,
+  pdf_ocr_pipeline: null,
   images: [],
   tts_text_page: MOCK_PAGES[0].text,
   reading_markdown_page: null,
@@ -513,8 +514,24 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
         token_lineage_available: false,
         deterministic: true,
         coverage_ratio: 1,
+        reused_alignment_count: 0,
+        rebuilt_alignment_count: MOCK_PAGES.flatMap((page) => page.sentences).length,
+        cached_page_bucket_count: 3,
+        alignment_build_ms: 3,
         degraded_reasons: [],
         explanation: "Mock OCR alignment artifact indicates stable sentence-level geometry."
+      }
+    : null;
+  reader.pdf_ocr_pipeline = reader.source_path.toLowerCase().endsWith(".pdf")
+    ? {
+        engine_policy: "embedded_text_only",
+        fallback_decisions: [],
+        ocr_enabled: false,
+        page_count: 3,
+        sampled_pages: 3,
+        chunk_count: 1,
+        reading_order_mode: "embedded_text_order",
+        fallback_strategy_labels: []
       }
     : null;
   reader.page_text = pageData.text;

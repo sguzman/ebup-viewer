@@ -122,28 +122,28 @@
 - [ ] Support reverse navigation from OCR overlay clicks back to the nearest canonical sentence.
 
 ## Phase 8: Engine Strategy and Fallback Policy
-- [ ] Decide and document OCR engine policy:
-- [ ] embedded text only
-- [ ] OCR only
-- [ ] hybrid embedded + OCR merge
-- [ ] Add engine fallback rules:
-- [ ] native text -> OCR fallback
-- [ ] OCR retry with more aggressive settings
-- [ ] OCR text-only without geometry
-- [ ] render-only with no sync
-- [ ] Persist all fallback decisions in cache and logs.
+- [x] Decide and document OCR engine policy:
+- [x] embedded text only
+- [x] OCR only
+- [x] hybrid embedded + OCR merge
+- [x] Add engine fallback rules:
+- [x] native text -> OCR fallback
+- [x] OCR retry with more aggressive settings
+- [x] OCR text-only without geometry
+- [x] render-only with no sync
+- [x] Persist all fallback decisions in cache and logs.
 
 ## Phase 9: Performance and Incrementality
 - [ ] Keep OCR alignment incremental for large documents:
-- [ ] page-local alignment cache
-- [ ] sentence-range cache invalidation
+- [x] page-local alignment cache
+- [x] sentence-range cache invalidation
 - [ ] viewport-local overlay recomputation only
-- [ ] avoid rebuilding whole-document alignment on every playback tick
+- [x] avoid rebuilding whole-document alignment on every playback tick
 - [ ] Add profiling for:
 - [ ] OCR time per page/chunk
-- [ ] alignment build time
+- [x] alignment build time
 - [ ] overlay update time
-- [ ] cache hit rates
+- [x] cache hit rates
 - [ ] fallback rates by PDF class
 
 ## Phase 10: Validation Matrix
@@ -181,5 +181,5 @@
 - [x] Step 4: build sentence-to-geometry OCR alignment artifact
 - [ ] Step 5: move OCR-first highlight rendering to rect overlays
 - [x] Step 6: wire search/bookmark/resume through OCR location metadata
-- [ ] Step 7: add performance instrumentation and cache invalidation rules
+- [x] Step 7: add performance instrumentation and cache invalidation rules
 - [ ] Step 8: add regression fixtures and manual QA matrix

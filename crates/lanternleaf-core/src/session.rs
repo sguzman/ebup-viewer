@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Instant;
 use ts_rs::TS;
 
 mod command_transitions;
@@ -156,6 +157,7 @@ pub struct ReaderSnapshot {
     pub pdf_classification: Option<crate::epub_loader::PdfClassificationSummary>,
     pub pdf_runtime_policy: Option<crate::epub_loader::PdfRuntimePolicySummary>,
     pub pdf_ocr_alignment: Option<crate::epub_loader::PdfOcrAlignmentSummary>,
+    pub pdf_ocr_pipeline: Option<crate::epub_loader::PdfOcrPipelineSummary>,
     pub images: Vec<ReaderImageRef>,
     pub tts_text_page: String,
     pub reading_markdown_page: Option<String>,
@@ -236,6 +238,7 @@ pub struct ReaderSession {
     pdf_classification: Option<crate::epub_loader::PdfClassificationSummary>,
     pdf_runtime_policy: Option<crate::epub_loader::PdfRuntimePolicySummary>,
     pdf_ocr_alignment: Option<crate::epub_loader::PdfOcrAlignmentSummary>,
+    pdf_ocr_pipeline: Option<crate::epub_loader::PdfOcrPipelineSummary>,
     images: Vec<SessionImage>,
     pub config: config::AppConfig,
     pages: Vec<String>,
@@ -326,11 +329,30 @@ fn build_pdf_ocr_alignment_artifact(
     classification: Option<&crate::epub_loader::PdfClassificationSummary>,
     runtime_policy: Option<&crate::epub_loader::PdfRuntimePolicySummary>,
 ) -> crate::cache::PdfOcrAlignmentArtifact {
+    let build_started = Instant::now();
     let locations = crate::cache::load_pdf_sentence_map(source_path).unwrap_or_default();
+    let previous_artifact = crate::cache::load_pdf_ocr_alignment_artifact(source_path);
     let location_map: HashMap<usize, crate::cache::PdfSentenceLocation> = locations
         .into_iter()
         .map(|location| (location.sentence_idx, location))
         .collect();
+    let previous_alignment_map: HashMap<(usize, String), crate::cache::PdfOcrSentenceAlignment> =
+        previous_artifact
+            .as_ref()
+            .map(|artifact| {
+                artifact
+                    .alignments
+                    .iter()
+                    .cloned()
+                    .map(|alignment| {
+                        (
+                            (alignment.sentence_idx, alignment.sentence_text_hash.clone()),
+                            alignment,
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
     let source_kind = derive_pdf_ocr_source_kind(classification);
     let mut alignments = Vec::with_capacity(sentences.len());
     let mut rect_mapped = 0usize;
@@ -338,73 +360,121 @@ fn build_pdf_ocr_alignment_artifact(
     let mut block_mapped = 0usize;
     let mut page_only = 0usize;
     let mut unmappable = 0usize;
+    let mut reused_alignment_count = 0usize;
+    let mut rebuilt_alignment_count = 0usize;
     let mut degraded_reasons = Vec::new();
 
     for (sentence_idx, sentence_text) in sentences.iter().enumerate() {
         let sentence_hash = crate::cache::stable_sentence_text_hash(sentence_text);
-        let location = location_map.get(&sentence_idx);
-        let (page_idx, rects, line_rects, block_rects, score, fallback_reason) = location
-            .map(|value| {
-                (
-                    value.page_idx,
-                    value.rects.clone(),
-                    value.line_rects.clone(),
-                    value.block_rects.clone(),
-                    value.score,
-                    value.reason.clone(),
-                )
-            })
-            .unwrap_or_else(|| {
-                (
-                    None,
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    0.0,
-                    "missing".to_string(),
-                )
-            });
-        let confidence_tier = if !rects.is_empty() {
+        let alignment = if let Some(existing) = previous_alignment_map
+            .get(&(sentence_idx, sentence_hash.clone()))
+            .cloned()
+        {
+            reused_alignment_count += 1;
+            existing
+        } else {
+            rebuilt_alignment_count += 1;
+            let location = location_map.get(&sentence_idx);
+            let (page_idx, rects, line_rects, block_rects, score, fallback_reason) = location
+                .map(|value| {
+                    (
+                        value.page_idx,
+                        value.rects.clone(),
+                        value.line_rects.clone(),
+                        value.block_rects.clone(),
+                        value.score,
+                        value.reason.clone(),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    (
+                        None,
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                        0.0,
+                        "missing".to_string(),
+                    )
+                });
+            let confidence_tier = if !rects.is_empty() {
+                "sentence_rects".to_string()
+            } else if !line_rects.is_empty() {
+                "line_fallback".to_string()
+            } else if !block_rects.is_empty() {
+                "block_fallback".to_string()
+            } else if page_idx.is_some() {
+                "page_only".to_string()
+            } else {
+                "missing".to_string()
+            };
+            crate::cache::PdfOcrSentenceAlignment {
+                sentence_idx,
+                sentence_text_hash: sentence_hash,
+                page_idx,
+                rects,
+                line_rects,
+                block_rects,
+                confidence_tier,
+                fallback_reason,
+                token_lineage: Vec::new(),
+                score,
+            }
+        };
+        if !alignment.rects.is_empty() {
             rect_mapped += 1;
-            "sentence_rects".to_string()
-        } else if !line_rects.is_empty() {
+        } else if !alignment.line_rects.is_empty() {
             line_mapped += 1;
-            "line_fallback".to_string()
-        } else if !block_rects.is_empty() {
+        } else if !alignment.block_rects.is_empty() {
             block_mapped += 1;
-            "block_fallback".to_string()
-        } else if page_idx.is_some() {
+        } else if alignment.page_idx.is_some() {
             page_only += 1;
-            "page_only".to_string()
         } else {
             unmappable += 1;
-            "missing".to_string()
-        };
-        if fallback_reason != "exact_geometry"
-            && fallback_reason != "missing"
-            && !fallback_reason.is_empty()
+        }
+        if alignment.fallback_reason != "exact_geometry"
+            && alignment.fallback_reason != "missing"
+            && !alignment.fallback_reason.is_empty()
             && !degraded_reasons
                 .iter()
-                .any(|reason| reason == &fallback_reason)
+                .any(|reason| reason == &alignment.fallback_reason)
         {
-            degraded_reasons.push(fallback_reason.clone());
+            degraded_reasons.push(alignment.fallback_reason.clone());
         }
-        alignments.push(crate::cache::PdfOcrSentenceAlignment {
-            sentence_idx,
-            sentence_text_hash: sentence_hash,
-            page_idx,
-            rects,
-            line_rects,
-            block_rects,
-            confidence_tier,
-            fallback_reason,
-            token_lineage: Vec::new(),
-            score,
-        });
+        alignments.push(alignment);
     }
 
     let mapped = rect_mapped + line_mapped + block_mapped + page_only;
     let highlightable = rect_mapped + line_mapped + block_mapped;
+    let mut page_bucket_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    for alignment in &alignments {
+        if let Some(page_idx) = alignment.page_idx {
+            page_bucket_map
+                .entry(page_idx)
+                .or_default()
+                .push(alignment.sentence_idx);
+        }
+    }
+    let mut page_buckets: Vec<crate::cache::PdfOcrPageAlignmentBucket> = page_bucket_map
+        .into_iter()
+        .map(|(page_idx, mut sentence_indexes)| {
+            sentence_indexes.sort_unstable();
+            let highlightable_sentence_count = alignments
+                .iter()
+                .filter(|alignment| {
+                    alignment.page_idx == Some(page_idx)
+                        && (!alignment.rects.is_empty()
+                            || !alignment.line_rects.is_empty()
+                            || !alignment.block_rects.is_empty())
+                })
+                .count();
+            crate::cache::PdfOcrPageAlignmentBucket {
+                page_idx,
+                sentence_indexes,
+                highlightable_sentence_count,
+            }
+        })
+        .collect();
+    page_buckets.sort_by_key(|bucket| bucket.page_idx);
     let quality_class = derive_pdf_ocr_quality_class(
         sentences.len(),
         rect_mapped,
@@ -443,8 +513,15 @@ fn build_pdf_ocr_alignment_artifact(
         highlightable_sentence_count: highlightable,
         token_lineage_available: false,
         deterministic: true,
+        reused_alignment_count,
+        rebuilt_alignment_count,
+        alignment_build_ms: build_started
+            .elapsed()
+            .as_millis()
+            .min(u128::from(u32::MAX)) as u32,
         degraded_reasons,
         explanation,
+        page_buckets,
         alignments,
     }
 }
@@ -531,6 +608,10 @@ fn pdf_ocr_alignment_summary_from_artifact(
         } else {
             artifact.mapped_sentence_count as f32 / artifact.sentence_count as f32
         },
+        reused_alignment_count: artifact.reused_alignment_count as u32,
+        rebuilt_alignment_count: artifact.rebuilt_alignment_count as u32,
+        cached_page_bucket_count: artifact.page_buckets.len() as u32,
+        alignment_build_ms: artifact.alignment_build_ms,
         degraded_reasons: artifact.degraded_reasons.clone(),
         explanation: artifact.explanation.clone(),
     }
@@ -600,6 +681,10 @@ impl ReaderSession {
             block_mapped_sentence_count = artifact.block_mapped_sentence_count,
             page_only_sentence_count = artifact.page_only_sentence_count,
             unmappable_sentence_count = artifact.unmappable_sentence_count,
+            reused_alignment_count = artifact.reused_alignment_count,
+            rebuilt_alignment_count = artifact.rebuilt_alignment_count,
+            cached_page_bucket_count = artifact.page_buckets.len(),
+            alignment_build_ms = artifact.alignment_build_ms,
             quality_class = ?artifact.quality_class,
             source_kind = ?artifact.source_kind,
             coverage_ratio = ((summary.coverage_ratio as f64) * 100.0).round() / 100.0,
@@ -689,6 +774,7 @@ impl ReaderSession {
             pdf_classification: self.pdf_classification.clone(),
             pdf_runtime_policy: self.pdf_runtime_policy.clone(),
             pdf_ocr_alignment: self.pdf_ocr_alignment.clone(),
+            pdf_ocr_pipeline: self.pdf_ocr_pipeline.clone(),
             images: self.current_page_images(),
             tts_text_page: tts_text_page.clone(),
             reading_markdown_page,
@@ -1198,6 +1284,7 @@ mod tests {
             pdf_classification: None,
             pdf_runtime_policy: None,
             pdf_ocr_alignment: None,
+            pdf_ocr_pipeline: None,
             images: Vec::new(),
             config: config::AppConfig::default(),
             pages,
@@ -1841,6 +1928,63 @@ mod tests {
             bookmark.pdf_sentence_text_hash.as_deref(),
             Some(crate::cache::stable_sentence_text_hash("Gamma.").as_str())
         );
+
+        let _ = crate::cache::delete_recent_source_and_cache(&source_path);
+    }
+
+    #[test]
+    fn refresh_pdf_ocr_alignment_artifact_reuses_unchanged_sentence_alignments() {
+        let source_path = unique_pdf_source_path();
+        fs::write(&source_path, b"pdf").expect("write source");
+        let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
+        session.source_path = source_path.clone();
+        crate::cache::persist_pdf_sentence_map(
+            &source_path,
+            &[
+                crate::cache::PdfSentenceLocation {
+                    sentence_idx: 0,
+                    page_idx: Some(1),
+                    rects: vec![crate::cache::PdfRect {
+                        left: 0.1,
+                        top: 0.2,
+                        width: 0.3,
+                        height: 0.04,
+                    }],
+                    line_rects: vec![],
+                    block_rects: vec![],
+                    confidence: "exact".to_string(),
+                    reason: "exact_geometry".to_string(),
+                    score: 1.0,
+                },
+                crate::cache::PdfSentenceLocation {
+                    sentence_idx: 1,
+                    page_idx: Some(1),
+                    rects: vec![],
+                    line_rects: vec![crate::cache::PdfRect {
+                        left: 0.1,
+                        top: 0.25,
+                        width: 0.3,
+                        height: 0.04,
+                    }],
+                    block_rects: vec![],
+                    confidence: "fallback".to_string(),
+                    reason: "line_window_fuzzy_alignment".to_string(),
+                    score: 0.7,
+                },
+            ],
+        );
+
+        session.refresh_pdf_ocr_alignment_artifact();
+        let first = crate::cache::load_pdf_ocr_alignment_artifact(&source_path)
+            .expect("alignment artifact should exist");
+        session.refresh_pdf_ocr_alignment_artifact();
+        let second = crate::cache::load_pdf_ocr_alignment_artifact(&source_path)
+            .expect("alignment artifact should still exist");
+
+        assert_eq!(first.alignments, second.alignments);
+        assert_eq!(second.reused_alignment_count, 4);
+        assert_eq!(second.rebuilt_alignment_count, 0);
+        assert_eq!(second.page_buckets.len(), 1);
 
         let _ = crate::cache::delete_recent_source_and_cache(&source_path);
     }

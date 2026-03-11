@@ -66,6 +66,14 @@ pub struct PdfOcrSentenceAlignment {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfOcrPageAlignmentBucket {
+    pub page_idx: usize,
+    #[serde(default)]
+    pub sentence_indexes: Vec<usize>,
+    pub highlightable_sentence_count: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct PdfOcrAlignmentArtifact {
     pub version: u32,
     pub quality_class: PdfOcrGeometryQualityClass,
@@ -80,9 +88,14 @@ pub struct PdfOcrAlignmentArtifact {
     pub highlightable_sentence_count: usize,
     pub token_lineage_available: bool,
     pub deterministic: bool,
+    pub reused_alignment_count: usize,
+    pub rebuilt_alignment_count: usize,
+    pub alignment_build_ms: u32,
     #[serde(default)]
     pub degraded_reasons: Vec<String>,
     pub explanation: String,
+    #[serde(default)]
+    pub page_buckets: Vec<PdfOcrPageAlignmentBucket>,
     #[serde(default)]
     pub alignments: Vec<PdfOcrSentenceAlignment>,
 }

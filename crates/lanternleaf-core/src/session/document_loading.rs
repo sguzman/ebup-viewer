@@ -91,6 +91,7 @@ impl ReaderSession {
             pdf_classification,
             pdf_runtime_policy,
             pdf_ocr_alignment: None,
+            pdf_ocr_pipeline: loaded.pdf_ocr_pipeline,
             images: loaded
                 .images
                 .into_iter()

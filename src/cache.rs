@@ -64,8 +64,8 @@ pub use browser_tab_cache::{
     rehydrate_browser_tab_manifest_assets,
 };
 pub use content_artifacts::{
-    PdfOcrAlignmentArtifact, PdfOcrSentenceAlignment, PdfSentenceLocation,
-    stable_sentence_text_hash,
+    PdfOcrAlignmentArtifact, PdfOcrPageAlignmentBucket, PdfOcrSentenceAlignment,
+    PdfSentenceLocation, stable_sentence_text_hash,
 };
 
 #[derive(Debug, Clone)]
@@ -1214,8 +1214,16 @@ sentence_text = "legacy bookmark entry"
             highlightable_sentence_count: 2,
             token_lineage_available: false,
             deterministic: true,
+            reused_alignment_count: 1,
+            rebuilt_alignment_count: 1,
+            alignment_build_ms: 4,
             degraded_reasons: vec!["line_window_fuzzy_alignment".to_string()],
             explanation: "Test OCR alignment".to_string(),
+            page_buckets: vec![PdfOcrPageAlignmentBucket {
+                page_idx: 2,
+                sentence_indexes: vec![1],
+                highlightable_sentence_count: 1,
+            }],
             alignments: vec![PdfOcrSentenceAlignment {
                 sentence_idx: 1,
                 sentence_text_hash: stable_sentence_text_hash("Example sentence."),

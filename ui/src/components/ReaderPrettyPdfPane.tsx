@@ -1453,7 +1453,20 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             {reader.pdf_ocr_alignment.line_mapped_sentence_count} | Block:{" "}
             {reader.pdf_ocr_alignment.block_mapped_sentence_count} | Page-only:{" "}
             {reader.pdf_ocr_alignment.page_only_sentence_count} | Missing:{" "}
-            {reader.pdf_ocr_alignment.unmappable_sentence_count}
+            {reader.pdf_ocr_alignment.unmappable_sentence_count} | Reused:{" "}
+            {reader.pdf_ocr_alignment.reused_alignment_count} | Rebuilt:{" "}
+            {reader.pdf_ocr_alignment.rebuilt_alignment_count} | Build:{" "}
+            {reader.pdf_ocr_alignment.alignment_build_ms} ms
+          </Typography>
+        ) : null}
+        {!error && reader.pdf_ocr_pipeline ? (
+          <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-ocr-pipeline">
+            OCR engine: {reader.pdf_ocr_pipeline.engine_policy.replaceAll("_", " ")} | OCR enabled:{" "}
+            {reader.pdf_ocr_pipeline.ocr_enabled ? "yes" : "no"} | Chunks: {reader.pdf_ocr_pipeline.chunk_count} | Order:{" "}
+            {reader.pdf_ocr_pipeline.reading_order_mode.replaceAll("_", " ")}
+            {reader.pdf_ocr_pipeline.fallback_decisions.length > 0
+              ? ` | Fallbacks: ${reader.pdf_ocr_pipeline.fallback_decisions.join("; ").replaceAll("_", " ")}`
+              : ""}
           </Typography>
         ) : null}
         {!error && canSyncHighlights && mappingSummary ? (

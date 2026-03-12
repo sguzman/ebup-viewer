@@ -666,6 +666,10 @@ function isPdfScrollTargetMostlyVisible(target: HTMLElement): boolean {
   return (visibleArea / totalArea) >= 0.55;
 }
 
+function isConnectedPdfElement(target: Element | null | undefined): target is HTMLElement {
+  return Boolean(target) && target instanceof HTMLElement && target.isConnected;
+}
+
 function applyPdfHighlightColor(root: HTMLElement, reader: ReaderSnapshot): void {
   const color = reader.settings.theme === "night"
     ? reader.settings.night_highlight
@@ -1618,19 +1622,28 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (activeHighlight.useOverlay) {
         if (activeHighlight.match.reason === "page_location_only" && activeHighlight.match.pageIndex !== null) {
           return highlightedPagesRef.current.some(
-            (page) => page.getAttribute("data-page-index") === String(activeHighlight.match.pageIndex)
+            (page) => (
+              isConnectedPdfElement(page)
+              && page.getAttribute("data-page-index") === String(activeHighlight.match.pageIndex)
+            )
           );
         }
         return highlightedOverlayNodesRef.current.some((overlay) => (
-          overlay.getAttribute("data-ll-pdf-overlay-sentence-idx") === String(activeHighlight.sentenceIdx)
+          isConnectedPdfElement(overlay)
+          && overlay.getAttribute("data-ll-pdf-overlay-sentence-idx") === String(activeHighlight.sentenceIdx)
         ));
       }
       if (activeHighlight.match.reason === "page_location_only" && activeHighlight.match.pageIndex !== null) {
         return highlightedPagesRef.current.some(
-          (page) => page.getAttribute("data-page-index") === String(activeHighlight.match.pageIndex)
+          (page) => (
+            isConnectedPdfElement(page)
+            && page.getAttribute("data-page-index") === String(activeHighlight.match.pageIndex)
+          )
         );
       }
-      return highlightedNodesRef.current.length > 0;
+      return highlightedNodesRef.current.some((node) => (
+        isConnectedPdfElement(node) && node.classList.contains("reader-pdf-highlight")
+      ));
     }, []);
 
     const requestScheduleVisiblePdfWork = useCallback((reason: string) => {
@@ -1663,9 +1676,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return false;
       }
       const activeHighlight = activeHighlightStateRef.current;
-      const overlayTarget = highlightedOverlayNodesRef.current[0] ?? null;
-      const spanTarget = highlightedNodesRef.current[0] ?? null;
-      const pageTarget = highlightedPagesRef.current[0] ?? null;
+      const overlayTarget = highlightedOverlayNodesRef.current.find((node) => isConnectedPdfElement(node)) ?? null;
+      const spanTarget = highlightedNodesRef.current.find((node) => isConnectedPdfElement(node)) ?? null;
+      const pageTarget = highlightedPagesRef.current.find((node) => isConnectedPdfElement(node)) ?? null;
       const allowPageFallback = force || activeHighlight?.match.reason === "page_location_only";
       const target = overlayTarget
         ?? spanTarget

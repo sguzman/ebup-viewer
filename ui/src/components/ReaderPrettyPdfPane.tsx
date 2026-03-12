@@ -2315,6 +2315,16 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (loading) {
         return;
       }
+      const activeHighlight = activeHighlightStateRef.current;
+      if (
+        activeHighlight
+        && activeHighlight.sentenceIdx === highlightedSentenceIdx
+        && activeHighlight.useOverlay
+        && activeHighlight.match.reason !== "page_location_only"
+        && hasBoundActiveHighlight(activeHighlight)
+      ) {
+        return;
+      }
       let cancelled = false;
       void applyHighlight("auto").then(() => {
         if (cancelled) {
@@ -2324,7 +2334,16 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         cancelled = true;
       };
-    }, [applyHighlight, cachedSyncVersion, globalSentenceStart, highlightedSentenceIdx, loading, pdfPageTextVersion, renderZoom]);
+    }, [
+      applyHighlight,
+      cachedSyncVersion,
+      globalSentenceStart,
+      hasBoundActiveHighlight,
+      highlightedSentenceIdx,
+      loading,
+      pdfPageTextVersion,
+      renderZoom
+    ]);
 
     useEffect(() => {
       if (loading) {

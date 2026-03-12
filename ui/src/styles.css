@@ -148,7 +148,8 @@ body {
 .reader-pdf-highlight-overlay {
   position: absolute;
   border-radius: 0.22rem;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   background: rgba(
     var(--reader-pdf-highlight-r, 95),
     var(--reader-pdf-highlight-g, 143),
@@ -156,6 +157,16 @@ body {
     var(--reader-pdf-highlight-a, 0.18)
   );
   outline: 1.5px solid var(--reader-highlight-border);
+}
+
+.reader-pdf-highlight-overlay-page {
+  border-radius: 14px;
+  background: rgba(
+    var(--reader-pdf-highlight-r, 95),
+    var(--reader-pdf-highlight-g, 143),
+    var(--reader-pdf-highlight-b, 47),
+    calc(var(--reader-pdf-highlight-a, 0.18) * 0.75)
+  );
 }
 
 .reader-pdf-page.reader-pdf-page-active {

@@ -15,6 +15,11 @@ import {
 import { applyPdfHighlightDom } from "./pdfHighlightDom";
 import { orderPdfTextLayerSpans } from "./pdfTextLayer";
 import { normalizeSyncText } from "./htmlSync";
+import {
+  buildOverlayRectsFromLocation,
+  buildOverlayRectsFromMatch,
+  type PdfOverlayRect
+} from "./pdfOverlayGeometry";
 let pdfJsImportPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null = null;
 let pdfJsWorkerImportPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.worker.mjs")> | null = null;
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -160,6 +165,12 @@ interface RenderedPdfPage {
 interface DirectSentenceMatchResult {
   match: PdfSentenceMatch | null;
   spans: PdfTextSpan[];
+}
+
+interface HighlightOverlayResult {
+  highlightedNodes: HTMLElement[];
+  highlightedPages: HTMLDivElement[];
+  highlightedOverlays: HTMLDivElement[];
 }
 
 interface PdfShellMetric {
@@ -591,6 +602,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const lastScrollTargetRef = useRef<string | null>(null);
     const sentenceMatchesRef = useRef<PdfSentenceMatch[]>([]);
     const cachedPdfLocationsRef = useRef<PdfSentenceLocation[] | null>(null);
+    const overlaySentenceMapRef = useRef<Map<number, number>>(new Map());
     const [zoom, setZoom] = useState(1.2);
     const [viewportVersion, setViewportVersion] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -610,6 +622,11 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const canSyncHighlights = reader.pdf_runtime_policy
       ? reader.pdf_runtime_policy.pretty_sync_enabled
       : reader.pdf_sync_strategy !== "render_only";
+    const preferOverlayHighlights = Boolean(
+      reader.pdf_ocr_alignment
+      && reader.pdf_ocr_alignment.quality_class !== "ocr_failed_or_unusable"
+      && reader.pdf_ocr_pipeline?.engine_policy !== "embedded_text_only"
+    );
     const modeLabel = reader.pdf_geometry_mode ? reader.pdf_geometry_mode.replaceAll("_", " ") : "unknown";
     const strategyLabel = reader.pdf_sync_strategy ? reader.pdf_sync_strategy.replaceAll("_", " ") : "unknown";
     const documentClassLabel = reader.pdf_classification?.document_class
@@ -636,6 +653,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       );
       highlightedNodesRef.current = cleared.highlightedNodes;
       highlightedPagesRef.current = cleared.highlightedPages;
+      overlaySentenceMapRef.current.clear();
       renderedPagesRef.current = [];
       pageShellsRef.current.clear();
       pageMetricsRef.current.clear();
@@ -933,6 +951,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         if (idx === null || idx === undefined) {
           clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
           highlightedOverlayNodesRef.current = [];
+          overlaySentenceMapRef.current.clear();
           const cleared = applyPdfHighlightDom(
             highlightedNodesRef.current,
             highlightedPagesRef.current,
@@ -949,6 +968,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         if (!canSyncHighlights) {
           clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
           highlightedOverlayNodesRef.current = [];
+          overlaySentenceMapRef.current.clear();
           highlightedSentenceRef.current = idx;
           recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
           return;
@@ -985,6 +1005,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         if (!match) {
           clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
           highlightedOverlayNodesRef.current = [];
+          overlaySentenceMapRef.current.clear();
           highlightedSentenceRef.current = idx;
           lastScrollTargetRef.current = null;
           logPdfDebug("highlightMissing", {
@@ -1002,18 +1023,20 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           pageIndex: match.pageIndex,
           spanCount: match.spanIndexes.length
         });
-        let highlighted: { highlightedNodes: HTMLElement[]; highlightedPages: HTMLDivElement[] };
+        let highlighted: HighlightOverlayResult;
         if (cachedLocation) {
           const overlays = applyPdfLocationHighlightOverlays(
             highlightedOverlayNodesRef.current,
             highlightedPagesRef.current,
             renderedPagesRef.current,
-            cachedLocation
+            buildOverlayRectsFromLocation(cachedLocation, idx)
           );
           highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
+          overlaySentenceMapRef.current = overlays.overlaySentenceMap;
           highlighted = {
             highlightedNodes: overlays.highlightedOverlays,
-            highlightedPages: overlays.highlightedPages
+            highlightedPages: overlays.highlightedPages,
+            highlightedOverlays: overlays.highlightedOverlays
           };
           const clearedSpans = applyPdfHighlightDom(
             highlightedNodesRef.current,
@@ -1023,17 +1046,65 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             null
           );
           highlightedNodesRef.current = clearedSpans.highlightedNodes;
+        } else if (preferOverlayHighlights) {
+          const overlayRects = buildOverlayRectsFromMatch(spans, match, idx);
+          if (overlayRects.length > 0) {
+            const overlays = applyPdfLocationHighlightOverlays(
+              highlightedOverlayNodesRef.current,
+              highlightedPagesRef.current,
+              renderedPagesRef.current,
+              overlayRects
+            );
+            highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
+            overlaySentenceMapRef.current = overlays.overlaySentenceMap;
+            const clearedSpans = applyPdfHighlightDom(
+              highlightedNodesRef.current,
+              [],
+              [],
+              [],
+              null
+            );
+            highlightedNodesRef.current = clearedSpans.highlightedNodes;
+            highlighted = {
+              highlightedNodes: overlays.highlightedOverlays,
+              highlightedPages: overlays.highlightedPages,
+              highlightedOverlays: overlays.highlightedOverlays
+            };
+          } else {
+            clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
+            highlightedOverlayNodesRef.current = [];
+            overlaySentenceMapRef.current.clear();
+            const domHighlight = applyPdfHighlightDom(
+              highlightedNodesRef.current,
+              highlightedPagesRef.current,
+              spans,
+              renderedPagesRef.current,
+              match
+            );
+            highlightedNodesRef.current = domHighlight.highlightedNodes;
+            highlighted = {
+              highlightedNodes: domHighlight.highlightedNodes,
+              highlightedPages: domHighlight.highlightedPages,
+              highlightedOverlays: []
+            };
+          }
         } else {
           clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
           highlightedOverlayNodesRef.current = [];
-          highlighted = applyPdfHighlightDom(
+          overlaySentenceMapRef.current.clear();
+          const domHighlight = applyPdfHighlightDom(
             highlightedNodesRef.current,
             highlightedPagesRef.current,
             spans,
             renderedPagesRef.current,
             match
           );
-          highlightedNodesRef.current = highlighted.highlightedNodes;
+          highlightedNodesRef.current = domHighlight.highlightedNodes;
+          highlighted = {
+            highlightedNodes: domHighlight.highlightedNodes,
+            highlightedPages: domHighlight.highlightedPages,
+            highlightedOverlays: []
+          };
         }
         highlightedPagesRef.current = highlighted.highlightedPages;
         if (match.reason === "page_location_only" && match.pageIndex !== null) {
@@ -1097,7 +1168,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         });
         recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
       },
-      [canSyncHighlights, reader, resolveCurrentSentenceHighlight]
+      [canSyncHighlights, preferOverlayHighlights, reader, resolveCurrentSentenceHighlight]
     );
 
     useImperativeHandle(ref, () => ({
@@ -1323,6 +1394,19 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return;
       }
       const target = event.target as HTMLElement | null;
+      const overlay = target?.closest("[data-ll-pdf-overlay-sentence-idx]") as HTMLElement | null;
+      if (overlay) {
+        const rawOverlaySentence = overlay.getAttribute("data-ll-pdf-overlay-sentence-idx");
+        const overlaySentenceIdx = rawOverlaySentence === null ? Number.NaN : Number.parseInt(rawOverlaySentence, 10);
+        if (Number.isFinite(overlaySentenceIdx)) {
+          logPdfDebug("clickResolveSentence", {
+            reason: "overlay_click",
+            sentenceIdx: overlaySentenceIdx
+          });
+          void onSentenceClick(overlaySentenceIdx);
+          return;
+        }
+      }
       const span = target?.closest("[data-ll-pdf-span-idx]") as HTMLElement | null;
       if (!span) {
         return;
@@ -1366,6 +1450,16 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       }
       const sentenceIdx = findNearestSentenceForPageIndex(sentenceMatchesRef.current, pageIndex);
       if (sentenceIdx === null) {
+        const nearestOverlaySentence = Array.from(overlaySentenceMapRef.current.entries())
+          .find(([overlayPageIndex]) => overlayPageIndex === pageIndex)?.[1] ?? null;
+        if (nearestOverlaySentence !== null) {
+          logPdfDebug("clickResolveSentence", {
+            reason: "page_overlay_fallback",
+            pageIndex,
+            sentenceIdx: nearestOverlaySentence
+          });
+          void onSentenceClick(nearestOverlaySentence);
+        }
         return;
       }
       logPdfDebug("clickResolveSentence", {
@@ -1512,36 +1606,53 @@ function applyPdfLocationHighlightOverlays(
   previousOverlays: HTMLDivElement[],
   previousPages: HTMLDivElement[],
   pages: Array<{ pageIndex: number; container: HTMLDivElement }>,
-  location: PdfSentenceLocation
-): { highlightedOverlays: HTMLDivElement[]; highlightedPages: HTMLDivElement[] } {
+  overlayRects: PdfOverlayRect[]
+): {
+  highlightedOverlays: HTMLDivElement[];
+  highlightedPages: HTMLDivElement[];
+  overlaySentenceMap: Map<number, number>;
+} {
   clearPdfHighlightOverlays(previousOverlays, previousPages);
-  if (location.page_idx === null) {
-    return { highlightedOverlays: [], highlightedPages: [] };
+  if (overlayRects.length === 0) {
+    return { highlightedOverlays: [], highlightedPages: [], overlaySentenceMap: new Map() };
   }
-  const page = pages.find((candidate) => candidate.pageIndex === location.page_idx)?.container;
-  if (!page) {
-    return { highlightedOverlays: [], highlightedPages: [] };
+  const overlays: HTMLDivElement[] = [];
+  const highlightedPages: HTMLDivElement[] = [];
+  const overlaySentenceMap = new Map<number, number>();
+  const groupedByPage = new Map<number, PdfOverlayRect[]>();
+  for (const overlayRect of overlayRects) {
+    const pageRects = groupedByPage.get(overlayRect.pageIndex);
+    if (pageRects) {
+      pageRects.push(overlayRect);
+    } else {
+      groupedByPage.set(overlayRect.pageIndex, [overlayRect]);
+    }
   }
-  if (location.reason === "page_location_only") {
-    page.classList.add("reader-pdf-page-active");
-    return { highlightedOverlays: [], highlightedPages: [page] };
+  for (const [pageIndex, pageOverlays] of groupedByPage.entries()) {
+    const page = pages.find((candidate) => candidate.pageIndex === pageIndex)?.container;
+    if (!page) {
+      continue;
+    }
+    for (const overlayRect of pageOverlays) {
+      const overlay = document.createElement("div");
+      overlay.className = `reader-pdf-highlight-overlay reader-pdf-highlight-overlay-${overlayRect.kind}`;
+      overlay.style.left = `${overlayRect.left * 100}%`;
+      overlay.style.top = `${overlayRect.top * 100}%`;
+      overlay.style.width = `${overlayRect.width * 100}%`;
+      overlay.style.height = `${overlayRect.height * 100}%`;
+      overlay.setAttribute("data-ll-pdf-overlay-sentence-idx", String(overlayRect.sentenceIndex));
+      overlay.setAttribute("data-ll-pdf-overlay-page-idx", String(overlayRect.pageIndex));
+      overlay.setAttribute("data-ll-pdf-overlay-kind", overlayRect.kind);
+      page.appendChild(overlay);
+      overlays.push(overlay);
+      overlaySentenceMap.set(overlayRect.pageIndex, overlayRect.sentenceIndex);
+    }
+    if (pageOverlays.some((overlayRect) => overlayRect.kind === "page")) {
+      page.classList.add("reader-pdf-page-active");
+      highlightedPages.push(page);
+    }
   }
-  const rects = location.line_rects.length > 0
-    ? location.line_rects
-    : location.block_rects.length > 0
-      ? location.block_rects
-      : location.rects;
-  const overlays = rects.map((rect) => {
-    const overlay = document.createElement("div");
-    overlay.className = "reader-pdf-highlight-overlay";
-    overlay.style.left = `${rect.left * 100}%`;
-    overlay.style.top = `${rect.top * 100}%`;
-    overlay.style.width = `${rect.width * 100}%`;
-    overlay.style.height = `${rect.height * 100}%`;
-    page.appendChild(overlay);
-    return overlay;
-  });
-  return { highlightedOverlays: overlays, highlightedPages: [] };
+  return { highlightedOverlays: overlays, highlightedPages, overlaySentenceMap };
 }
 
 async function renderPdfPage(

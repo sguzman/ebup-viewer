@@ -18,11 +18,11 @@
 - [x] `ocr_mixed_trust`: OCR text is usable, but geometry requires line/block fallback.
 - [x] `ocr_text_only`: OCR text is usable for Text-only/TTS, but geometry is too weak for reliable highlight sync.
 - [x] `ocr_failed_or_unusable`: OCR did not produce trustworthy text for TTS ownership.
-- [ ] Define allowed guarantees by class:
-- [ ] `ocr_high_trust` -> sentence-level highlight with multi-rect support.
-- [ ] `ocr_mixed_trust` -> line/block highlight only, with downward-only fallback.
-- [ ] `ocr_text_only` -> text-only/TTS/search allowed, native PDF highlight disabled or page-level only.
-- [ ] `ocr_failed_or_unusable` -> native PDF render only, text/TTS gated.
+- [x] Define allowed guarantees by class:
+- [x] `ocr_high_trust` -> sentence-level highlight with multi-rect support.
+- [x] `ocr_mixed_trust` -> line/block highlight only, with downward-only fallback.
+- [x] `ocr_text_only` -> text-only/TTS/search allowed, native PDF highlight disabled or page-level only.
+- [x] `ocr_failed_or_unusable` -> native PDF render only, text/TTS gated.
 
 ## Phase 1: OCR Output Contract
 - [ ] Define a canonical OCR output contract independent of the renderer:
@@ -94,13 +94,13 @@
 - [ ] Reject matches that jump across distant regions when a weaker but local fallback exists.
 
 ## Phase 6: Native PDF Overlay Contract
-- [ ] Render OCR-derived highlight overlays directly on top of the native PDF viewport.
-- [ ] Prefer rect-based overlays over text-layer span classes for OCR-first PDFs.
-- [ ] Support:
-- [ ] sentence-level multi-rect overlays
-- [ ] line-level fallback overlays
-- [ ] block-level fallback overlays
-- [ ] page-active fallback when geometry is too weak
+- [x] Render OCR-derived highlight overlays directly on top of the native PDF viewport.
+- [x] Prefer rect-based overlays over text-layer span classes for OCR-first PDFs.
+- [x] Support:
+- [x] sentence-level multi-rect overlays
+- [x] line-level fallback overlays
+- [x] block-level fallback overlays
+- [x] page-active fallback when geometry is too weak
 - [ ] Ensure overlay alignment remains stable during:
 - [ ] zoom changes
 - [ ] page resize
@@ -108,7 +108,7 @@
 - [ ] rotation
 - [ ] DPI changes
 - [ ] rerender/rebind cycles
-- [ ] Remove stale overlays cleanly on page or sentence changes.
+- [x] Remove stale overlays cleanly on page or sentence changes.
 
 ## Phase 7: OCR Search, Cursor, and Resume Semantics
 - [x] Keep search, bookmarks, and resume owned by canonical `tts_text`.
@@ -119,7 +119,7 @@
 - [x] fallback reason
 - [x] OCR token lineage if available
 - [x] Ensure reopening a scanned PDF restores the nearest stable cursor even if OCR alignment was rebuilt.
-- [ ] Support reverse navigation from OCR overlay clicks back to the nearest canonical sentence.
+- [x] Support reverse navigation from OCR overlay clicks back to the nearest canonical sentence.
 
 ## Phase 8: Engine Strategy and Fallback Policy
 - [x] Decide and document OCR engine policy:

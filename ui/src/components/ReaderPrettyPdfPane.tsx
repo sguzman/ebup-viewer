@@ -24,11 +24,6 @@ import {
 } from "./pdfOverlayGeometry";
 import { applyPdfLocationHighlightOverlays, clearPdfHighlightOverlays } from "./pdfOverlayDom";
 import {
-  resolveSentenceForPdfPageSelection,
-  resolveSentenceFromPdfOverlayTarget,
-  resolveSentenceFromPdfSpanTarget
-} from "./pdfOverlayNavigation";
-import {
   buildPdfViewportRenderPlan,
   choosePdfViewportEvictions,
   computePdfPreviewScale,
@@ -649,6 +644,26 @@ function logPdfDebug(event: string, payload: Record<string, unknown>): void {
   console.debug(`ReaderPrettyPdfPane.${event}`, payload);
 }
 
+function isPdfScrollTargetMostlyVisible(target: HTMLElement): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  const rect = target.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return false;
+  }
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const visibleWidth = Math.max(0, Math.min(rect.right, viewportWidth) - Math.max(rect.left, 0));
+  const visibleHeight = Math.max(0, Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0));
+  const visibleArea = visibleWidth * visibleHeight;
+  const totalArea = rect.width * rect.height;
+  if (totalArea <= 0) {
+    return false;
+  }
+  return (visibleArea / totalArea) >= 0.55;
+}
+
 function applyPdfHighlightColor(root: HTMLElement, reader: ReaderSnapshot): void {
   const color = reader.settings.theme === "night"
     ? reader.settings.night_highlight
@@ -660,7 +675,7 @@ function applyPdfHighlightColor(root: HTMLElement, reader: ReaderSnapshot): void
 }
 
 export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderPrettyPdfPaneProps>(
-  function ReaderPrettyPdfPane({ onSentenceClick, reader, sourcePath }, ref) {
+  function ReaderPrettyPdfPane({ onSentenceClick: _onSentenceClick, reader, sourcePath }, ref) {
     const performanceProfileRef = useRef(resolvePdfPerformanceProfile({
       deviceMemory: typeof navigator !== "undefined" && "deviceMemory" in navigator
         ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory)
@@ -1533,11 +1548,58 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       renderZoom
     ]);
 
+    const maybeAutoScrollToRenderedHighlight = useCallback((
+      behavior: ScrollBehavior,
+      force = false,
+      reason: string
+    ) => {
+      const idx = reader.highlighted_sentence_idx;
+      if (idx === null || idx === undefined) {
+        return false;
+      }
+      if (!force && (!reader.settings.auto_scroll_tts || reader.tts.state !== "playing")) {
+        return false;
+      }
+      const activeHighlight = activeHighlightStateRef.current;
+      const target = highlightedOverlayNodesRef.current[0]
+        ?? highlightedNodesRef.current[0]
+        ?? highlightedPagesRef.current[0]
+        ?? (activeHighlight?.match.pageIndex !== null && activeHighlight?.match.pageIndex !== undefined
+          ? renderedPagesRef.current.find((entry) => entry.pageIndex === activeHighlight.match.pageIndex)?.container ?? null
+          : null);
+      if (!target) {
+        return false;
+      }
+      const globalIdx = globalSentenceStart + idx;
+      const pageIndex = activeHighlight?.match.pageIndex ?? target.closest(".reader-pdf-page")?.getAttribute("data-page-index") ?? "none";
+      const targetKey = `sentence:${globalIdx}:page:${pageIndex}:${activeHighlight?.useOverlay ? "overlay" : "dom"}`;
+      const shouldScroll = force
+        || lastScrollTargetRef.current !== targetKey
+        || !isPdfScrollTargetMostlyVisible(target);
+      if (!shouldScroll) {
+        lastScrollTargetRef.current = targetKey;
+        return false;
+      }
+      const scrollStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      target.scrollIntoView({
+        behavior,
+        block: reader.settings.center_spoken_sentence ? "center" : "nearest",
+        inline: "nearest"
+      });
+      recordPerfMeasure("ReaderPrettyPdfPane.autoScroll", scrollStartedAt);
+      lastScrollTargetRef.current = targetKey;
+      logPdfDebug("scrollTarget", {
+        reason,
+        target: targetKey,
+        force
+      });
+      return true;
+    }, [globalSentenceStart, reader]);
+
     const applyHighlight = useCallback(
       async (behavior: ScrollBehavior, force = false) => {
         const idx = reader.highlighted_sentence_idx;
         const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-        let resolvedScrollTarget: string | null = null;
 
         if (idx === null || idx === undefined) {
           activeHighlightStateRef.current = null;
@@ -1770,25 +1832,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           const page = highlighted.highlightedPages[0];
           if (page) {
             highlightedSentenceRef.current = idx;
-            const shouldAutoScroll =
-              force || (reader.settings.auto_scroll_tts && reader.tts.state === "playing");
-            resolvedScrollTarget = `page:${match.pageIndex}`;
-            const shouldScrollTarget =
-              force || (shouldAutoScroll && lastScrollTargetRef.current !== resolvedScrollTarget);
-            if (shouldScrollTarget) {
-              const scrollStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
-              page.scrollIntoView({
-                behavior,
-                block: reader.settings.center_spoken_sentence ? "center" : "nearest",
-                inline: "nearest"
-              });
-              recordPerfMeasure("ReaderPrettyPdfPane.autoScroll", scrollStartedAt);
-              logPdfDebug("scrollTarget", {
-                reason: force ? "manual_jump" : "page_location_change",
-                target: resolvedScrollTarget
-              });
-            }
-            lastScrollTargetRef.current = resolvedScrollTarget;
+            void page;
+            maybeAutoScrollToRenderedHighlight(
+              behavior,
+              force,
+              force ? "manual_jump" : "page_location_change"
+            );
             recordPerfMeasure("ReaderPrettyPdfPane.updateOverlay", overlayStartedAt);
             recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
             return;
@@ -1808,34 +1857,20 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         const shouldAutoScroll =
           force || (reader.settings.auto_scroll_tts && reader.tts.state === "playing");
         const anchor = elements[0];
-        resolvedScrollTarget = cachedLocation
-          ? `cached:${idx}:${cachedLocation.page_idx ?? "none"}`
-          : match.spanIndexes.join(",");
-        const shouldScrollTarget =
-          force || (shouldAutoScroll && lastScrollTargetRef.current !== resolvedScrollTarget);
-        if (!anchor || !shouldScrollTarget) {
-          lastScrollTargetRef.current = resolvedScrollTarget;
+        if (!anchor || !shouldAutoScroll) {
           recordPerfMeasure("ReaderPrettyPdfPane.updateOverlay", overlayStartedAt);
           recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
           return;
         }
-        const scrollStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
-        anchor.scrollIntoView({
+        maybeAutoScrollToRenderedHighlight(
           behavior,
-          block: reader.settings.center_spoken_sentence ? "center" : "nearest",
-          inline: "nearest"
-        });
-        recordPerfMeasure("ReaderPrettyPdfPane.autoScroll", scrollStartedAt);
-        lastScrollTargetRef.current = resolvedScrollTarget;
-        logPdfDebug("scrollTarget", {
-          reason: force ? "manual_jump" : "sentence_location_change",
-          target: resolvedScrollTarget,
-          matchReason: match.reason
-        });
+          force,
+          force ? "manual_jump" : "sentence_location_change"
+        );
         recordPerfMeasure("ReaderPrettyPdfPane.updateOverlay", overlayStartedAt);
         recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
       },
-      [canSyncHighlights, preferOverlayHighlights, reader, resolveCurrentSentenceHighlight]
+      [canSyncHighlights, maybeAutoScrollToRenderedHighlight, preferOverlayHighlights, reader, resolveCurrentSentenceHighlight]
     );
 
     useImperativeHandle(ref, () => ({
@@ -1857,9 +1892,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       const updateSelectionPageIndex = () => {
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed) {
-          if (selectionPageIndexRef.current !== null) {
-            selectionPageIndexRef.current = null;
-            void scheduleVisiblePdfWork();
+        if (selectionPageIndexRef.current !== null) {
+          selectionPageIndexRef.current = null;
           }
           return;
         }
@@ -1875,7 +1909,6 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           return;
         }
         selectionPageIndexRef.current = normalizedPageIndex;
-        void scheduleVisiblePdfWork();
       };
       document.addEventListener("selectionchange", updateSelectionPageIndex);
       root.addEventListener("mouseup", updateSelectionPageIndex);
@@ -2200,7 +2233,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return;
       }
       rebindActiveHighlightForRenderedPages();
-    }, [loading, reader.highlighted_sentence_idx, renderVersion, rebindActiveHighlightForRenderedPages]);
+      maybeAutoScrollToRenderedHighlight("auto", false, "highlight_rebind");
+    }, [loading, maybeAutoScrollToRenderedHighlight, reader.highlighted_sentence_idx, renderVersion, rebindActiveHighlightForRenderedPages]);
 
     useEffect(() => {
       recordPerfGauge("ReaderPrettyPdfPane.liveRenderedPages", renderedPagesRef.current.length);
@@ -2210,68 +2244,6 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       );
       recordPerfGauge("ReaderPrettyPdfPane.liveHighlightOverlays", highlightedOverlayNodesRef.current.length);
     }, [renderVersion, highlightedSentenceIdx, loading]);
-
-    const handlePdfClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-      if (!canSyncHighlights) {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      const overlaySentenceIdx = resolveSentenceFromPdfOverlayTarget(target);
-      if (overlaySentenceIdx !== null) {
-        logPdfDebug("clickResolveSentence", {
-          reason: "overlay_click",
-          sentenceIdx: overlaySentenceIdx
-        });
-        void onSentenceClick(overlaySentenceIdx);
-        return;
-      }
-      const { sentenceIdx, spanIdx } = resolveSentenceFromPdfSpanTarget(target, sentenceMatchesRef.current);
-      if (sentenceIdx === null || spanIdx === null) {
-        return;
-      }
-      logPdfDebug("clickResolveSentence", {
-        reason: "span_click",
-        spanIdx,
-        sentenceIdx
-      });
-      void onSentenceClick(sentenceIdx);
-    }, [canSyncHighlights, onSentenceClick]);
-
-    const handlePdfPageMouseUp = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-      if (!canSyncHighlights) {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      if (!target) {
-        return;
-      }
-      const page = target.closest(".reader-pdf-page") as HTMLElement | null;
-      if (!page) {
-        return;
-      }
-      if (target.closest("[data-ll-pdf-span-idx]")) {
-        return;
-      }
-      const rawPageIndex = page.dataset.pageIndex;
-      const pageIndex = rawPageIndex === undefined ? Number.NaN : Number.parseInt(rawPageIndex, 10);
-      if (!Number.isFinite(pageIndex)) {
-        return;
-      }
-      const resolution = resolveSentenceForPdfPageSelection(
-        pageIndex,
-        sentenceMatchesRef.current,
-        overlaySentenceMapRef.current
-      );
-      if (resolution.sentenceIdx === null) {
-        return;
-      }
-      logPdfDebug("clickResolveSentence", {
-        reason: resolution.reason,
-        pageIndex,
-        sentenceIdx: resolution.sentenceIdx
-      });
-      void onSentenceClick(resolution.sentenceIdx);
-    }, [canSyncHighlights, onSentenceClick]);
 
     return (
       <div className="reader-pdf-pane-shell">
@@ -2402,8 +2374,6 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           ref={containerRef}
           className="reader-pdf-document"
           data-testid="reader-pretty-pdf"
-          onClick={handlePdfClick}
-          onMouseUp={handlePdfPageMouseUp}
           style={{ opacity: loading ? 0.35 : 1 }}
         />
       </div>

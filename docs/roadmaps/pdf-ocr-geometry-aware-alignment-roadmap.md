@@ -8,7 +8,7 @@
 
 ## Success Criteria
 - [ ] High-quality scans can highlight the currently spoken sentence at the correct on-page location.
-- [ ] Medium-quality scans can degrade to stable line/block highlighting without visibly wrong sentence jumps.
+- [x] Medium-quality scans can degrade to stable line/block highlighting without visibly wrong sentence jumps.
 - [ ] Raw scans with unusable OCR never fake precise geometry and remain renderable with clearly gated or degraded TTS sync.
 - [x] The reader preserves deterministic reopen, bookmark, search, and playback behavior across OCR cache reuse and rebuilds.
 
@@ -102,12 +102,12 @@
 - [x] block-level fallback overlays
 - [x] page-active fallback when geometry is too weak
 - [ ] Ensure overlay alignment remains stable during:
-- [ ] zoom changes
-- [ ] page resize
-- [ ] scroll
+- [x] zoom changes
+- [x] page resize
+- [x] scroll
 - [ ] rotation
-- [ ] DPI changes
-- [ ] rerender/rebind cycles
+- [x] DPI changes
+- [x] rerender/rebind cycles
 - [x] Remove stale overlays cleanly on page or sentence changes.
 
 ## Phase 7: OCR Search, Cursor, and Resume Semantics
@@ -137,14 +137,14 @@
 - [ ] Keep OCR alignment incremental for large documents:
 - [x] page-local alignment cache
 - [x] sentence-range cache invalidation
-- [ ] viewport-local overlay recomputation only
+- [x] viewport-local overlay recomputation only
 - [x] avoid rebuilding whole-document alignment on every playback tick
 - [ ] Add profiling for:
 - [ ] OCR time per page/chunk
 - [x] alignment build time
 - [x] overlay update time
 - [x] cache hit rates
-- [ ] fallback rates by PDF class
+- [x] fallback rates by PDF class
 
 ## Phase 10: Validation Matrix
 - [ ] Add regression fixtures for:
@@ -161,8 +161,8 @@
 - [ ] mixed embedded-text + image PDFs
 - [ ] Add acceptance tests for:
 - [ ] sentence-following highlight continuity
-- [ ] degraded line/block fallback honesty
-- [ ] bookmark/reopen determinism
+- [x] degraded line/block fallback honesty
+- [x] bookmark/reopen determinism
 - [ ] page-click -> sentence resolution
 - [ ] TTS continuity across Pretty Text and Text-only views
 

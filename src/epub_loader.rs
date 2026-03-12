@@ -315,6 +315,10 @@ pub struct PdfOcrAlignmentSummary {
     pub rebuilt_alignment_count: u32,
     pub cached_page_bucket_count: u32,
     pub alignment_build_ms: u32,
+    pub exact_sentence_rate: f32,
+    pub degraded_fallback_rate: f32,
+    pub page_only_rate: f32,
+    pub unmappable_rate: f32,
     #[serde(default)]
     pub degraded_reasons: Vec<String>,
     pub explanation: String,

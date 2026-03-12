@@ -590,6 +590,7 @@ fn derive_pdf_ocr_quality_class(
 fn pdf_ocr_alignment_summary_from_artifact(
     artifact: &crate::cache::PdfOcrAlignmentArtifact,
 ) -> crate::epub_loader::PdfOcrAlignmentSummary {
+    let sentence_count = artifact.sentence_count.max(1) as f32;
     crate::epub_loader::PdfOcrAlignmentSummary {
         quality_class: artifact.quality_class,
         source_kind: artifact.source_kind,
@@ -612,6 +613,10 @@ fn pdf_ocr_alignment_summary_from_artifact(
         rebuilt_alignment_count: artifact.rebuilt_alignment_count as u32,
         cached_page_bucket_count: artifact.page_buckets.len() as u32,
         alignment_build_ms: artifact.alignment_build_ms,
+        exact_sentence_rate: artifact.rect_mapped_sentence_count as f32 / sentence_count,
+        degraded_fallback_rate: (artifact.line_mapped_sentence_count + artifact.block_mapped_sentence_count) as f32 / sentence_count,
+        page_only_rate: artifact.page_only_sentence_count as f32 / sentence_count,
+        unmappable_rate: artifact.unmappable_sentence_count as f32 / sentence_count,
         degraded_reasons: artifact.degraded_reasons.clone(),
         explanation: artifact.explanation.clone(),
     }
@@ -688,6 +693,10 @@ impl ReaderSession {
             quality_class = ?artifact.quality_class,
             source_kind = ?artifact.source_kind,
             coverage_ratio = ((summary.coverage_ratio as f64) * 100.0).round() / 100.0,
+            exact_sentence_rate_pct = ((summary.exact_sentence_rate as f64) * 10000.0).round() / 100.0,
+            degraded_fallback_rate_pct = ((summary.degraded_fallback_rate as f64) * 10000.0).round() / 100.0,
+            page_only_rate_pct = ((summary.page_only_rate as f64) * 10000.0).round() / 100.0,
+            unmappable_rate_pct = ((summary.unmappable_rate as f64) * 10000.0).round() / 100.0,
             "Refreshed PDF OCR alignment artifact from canonical sentence stream"
         );
         crate::cache::persist_pdf_ocr_alignment_artifact(&self.source_path, &artifact);
@@ -1985,6 +1994,72 @@ mod tests {
         assert_eq!(second.reused_alignment_count, 4);
         assert_eq!(second.rebuilt_alignment_count, 0);
         assert_eq!(second.page_buckets.len(), 1);
+
+        let _ = crate::cache::delete_recent_source_and_cache(&source_path);
+    }
+
+    #[test]
+    fn pdf_ocr_alignment_summary_reports_exact_fallback_and_page_only_rates() {
+        let source_path = unique_pdf_source_path();
+        fs::write(&source_path, b"pdf").expect("write source");
+        let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
+        session.source_path = source_path.clone();
+        crate::cache::persist_pdf_sentence_map(
+            &source_path,
+            &[
+                crate::cache::PdfSentenceLocation {
+                    sentence_idx: 0,
+                    page_idx: Some(1),
+                    rects: vec![crate::cache::PdfRect {
+                        left: 0.1,
+                        top: 0.2,
+                        width: 0.3,
+                        height: 0.04,
+                    }],
+                    line_rects: vec![],
+                    block_rects: vec![],
+                    confidence: "exact".to_string(),
+                    reason: "exact_geometry".to_string(),
+                    score: 1.0,
+                },
+                crate::cache::PdfSentenceLocation {
+                    sentence_idx: 1,
+                    page_idx: Some(1),
+                    rects: vec![],
+                    line_rects: vec![crate::cache::PdfRect {
+                        left: 0.1,
+                        top: 0.25,
+                        width: 0.3,
+                        height: 0.04,
+                    }],
+                    block_rects: vec![],
+                    confidence: "fallback".to_string(),
+                    reason: "line_window_fuzzy_alignment".to_string(),
+                    score: 0.7,
+                },
+                crate::cache::PdfSentenceLocation {
+                    sentence_idx: 2,
+                    page_idx: Some(2),
+                    rects: vec![],
+                    line_rects: vec![],
+                    block_rects: vec![],
+                    confidence: "page".to_string(),
+                    reason: "page_location_only".to_string(),
+                    score: 0.2,
+                },
+            ],
+        );
+
+        session.refresh_pdf_ocr_alignment_artifact();
+        let summary = session
+            .pdf_ocr_alignment
+            .clone()
+            .expect("pdf ocr summary should exist");
+
+        assert!((summary.exact_sentence_rate - 0.25).abs() < f32::EPSILON);
+        assert!((summary.degraded_fallback_rate - 0.25).abs() < f32::EPSILON);
+        assert!((summary.page_only_rate - 0.25).abs() < f32::EPSILON);
+        assert!((summary.unmappable_rate - 0.25).abs() < f32::EPSILON);
 
         let _ = crate::cache::delete_recent_source_and_cache(&source_path);
     }

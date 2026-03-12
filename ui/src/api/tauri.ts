@@ -518,6 +518,10 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
         rebuilt_alignment_count: MOCK_PAGES.flatMap((page) => page.sentences).length,
         cached_page_bucket_count: 3,
         alignment_build_ms: 3,
+        exact_sentence_rate: 1,
+        degraded_fallback_rate: 0,
+        page_only_rate: 0,
+        unmappable_rate: 0,
         degraded_reasons: [],
         explanation: "Mock OCR alignment artifact indicates stable sentence-level geometry."
       }

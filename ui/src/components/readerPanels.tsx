@@ -931,6 +931,12 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
                     {reader.pdf_ocr_alignment.alignment_build_ms} ms
                   </Typography>
                   <Typography variant="body2">
+                    Exact rate: {formatPercent(reader.pdf_ocr_alignment.exact_sentence_rate * 100)}
+                    {" | "}degraded fallback rate: {formatPercent(reader.pdf_ocr_alignment.degraded_fallback_rate * 100)}
+                    {" | "}page-only rate: {formatPercent(reader.pdf_ocr_alignment.page_only_rate * 100)}
+                    {" | "}unmappable rate: {formatPercent(reader.pdf_ocr_alignment.unmappable_rate * 100)}
+                  </Typography>
+                  <Typography variant="body2">
                     OCR geometry note: {reader.pdf_ocr_alignment.explanation}
                   </Typography>
                   {reader.pdf_ocr_alignment.degraded_reasons.length > 0 ? (

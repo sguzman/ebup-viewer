@@ -950,6 +950,7 @@ fn classify_reader_action(action: &str) -> &'static str {
     match action {
         "source_open" => "page_load",
         "reader_next_page" | "reader_prev_page" | "reader_set_page" => "page_transition",
+        "reader_tts_play" | "reader_tts_pause" | "reader_tts_toggle_play_pause" => "tts_playback",
         "reader_tts_runtime_step"
         | "reader_sentence_click"
         | "reader_next_sentence"
@@ -1000,8 +1001,8 @@ fn emit_reader_state(
                 .map(|path| path == reader.source_path.as_str())
                 .unwrap_or(false)
                 && telemetry.last_reader_document_page == Some(reader.current_page);
-            let playback_only =
-                action == "reader_tts_runtime_step" && same_document_as_last_full_emit;
+            let playback_only = same_document_as_last_full_emit
+                && matches!(update_kind, "cursor_move" | "tts_playback");
             if !playback_only {
                 telemetry.last_reader_document_source_path = Some(reader.source_path.clone());
                 telemetry.last_reader_document_page = Some(reader.current_page);

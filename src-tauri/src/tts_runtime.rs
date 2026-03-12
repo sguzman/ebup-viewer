@@ -86,6 +86,8 @@ fn persist_reader_progress(guard: &mut BackendState, reason: &'static str) {
         return;
     };
     let snapshot = reader.snapshot(guard.panels, &guard.normalizer);
+    let bookmark = reader.to_bookmark();
+    let source_path = reader.source_path.clone();
     tracing::debug!(
         path = %reader.source_path.display(),
         page = reader.current_page + 1,
@@ -94,7 +96,9 @@ fn persist_reader_progress(guard: &mut BackendState, reason: &'static str) {
         reason,
         "Persisting active reader progress"
     );
-    session::persist_session_housekeeping(reader);
+    tauri::async_runtime::spawn_blocking(move || {
+        cache::save_bookmark(Path::new(&source_path), &bookmark);
+    });
 }
 
 fn transition_tts_runtime_to_paused(

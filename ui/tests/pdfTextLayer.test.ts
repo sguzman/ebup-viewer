@@ -19,6 +19,26 @@ function createElement(
   } as HTMLElement;
 }
 
+function createStyledElement(
+  text: string,
+  style: { top: number; left: number; width?: number; height?: number }
+): HTMLElement {
+  return {
+    offsetHeight: style.height ?? 12,
+    offsetWidth: style.width ?? 40,
+    style: {
+      height: `${style.height ?? 12}px`,
+      left: `${style.left}px`,
+      top: `${style.top}px`,
+      width: `${style.width ?? 40}px`
+    },
+    textContent: text,
+    getBoundingClientRect() {
+      throw new Error("style geometry path should not call getBoundingClientRect");
+    }
+  } as unknown as HTMLElement;
+}
+
 describe("orderPdfTextLayerSpans", () => {
   it("sorts one-column spans by top then left", () => {
     const spans = orderPdfTextLayerSpans([
@@ -140,6 +160,18 @@ describe("orderPdfTextLayerSpans", () => {
     ], 0, 90);
 
     expect(spans.map((span) => span.text)).toEqual(["gamma", "beta", "alpha"]);
+  });
+
+  it("uses style and provided geometry before falling back to bounding rect measurement", () => {
+    const spans = orderPdfTextLayerSpans([
+      createStyledElement("second", { top: 42, left: 20 }),
+      createStyledElement("first", { top: 10, left: 18 })
+    ], 0, 0, [
+      { left: 20, text: "second", top: 42, width: 40, height: 12 },
+      { left: 18, text: "first", top: 10, width: 40, height: 12 }
+    ]);
+
+    expect(spans.map((span) => span.text)).toEqual(["first", "second"]);
   });
 
   it("defers outer-margin sidenotes until after the main two-column body", () => {

@@ -15,7 +15,7 @@ import {
   scorePdfSentenceMatch
 } from "./pdfTextSync";
 import { applyPdfHighlightDom } from "./pdfHighlightDom";
-import { orderPdfTextLayerSpans } from "./pdfTextLayer";
+import { orderPdfTextLayerSpans, type PdfTextLayerGeometry } from "./pdfTextLayer";
 import { normalizeSyncText } from "./htmlSync";
 import {
   buildOverlayRectsFromLocation,
@@ -35,7 +35,12 @@ import {
   type PdfPageLifecycleState,
   type PdfPageRegistryEntry
 } from "./pdfViewportScheduler";
-import { createLruCache, pdfSpanArtifactKey } from "./pdfArtifactCache";
+import {
+  createLruCache,
+  pdfBitmapArtifactKey,
+  pdfSpanArtifactKey,
+  type PdfBitmapArtifact
+} from "./pdfArtifactCache";
 import {
   buildCachedPdfHighlightTarget,
   canReuseCachedPdfHighlightTarget,
@@ -256,9 +261,65 @@ interface PdfShellMetric {
 const PDF_VISIBLE_OVERSCAN = 1;
 const PDF_MAX_LIVE_CANVASES = 8;
 const PDF_MAX_LIVE_TEXT_LAYERS = 4;
+const PDF_MAX_LIVE_TEXT_SPANS = 2200;
+const PDF_MAX_BITMAP_ARTIFACTS = 10;
 const PDF_MAX_SPAN_ARTIFACTS = 12;
 const PDF_MAX_SENTENCE_TARGETS = 256;
+const PDF_MAX_HIGHLIGHT_OVERLAYS = 48;
 const PDF_ZOOM_SETTLE_MS = 140;
+
+function resolvePdfVisibleOverscan(): number {
+  if (typeof window === "undefined") {
+    return PDF_VISIBLE_OVERSCAN;
+  }
+  const raw = window.localStorage.getItem("ll.pdfOverscan");
+  const parsed = Number.parseInt(raw ?? "", 10);
+  if (!Number.isFinite(parsed)) {
+    return PDF_VISIBLE_OVERSCAN;
+  }
+  return clamp(parsed, 0, 4);
+}
+
+function buildPdfTextLayerGeometry(
+  textContent: PdfPageTextContent,
+  elementCount?: number
+): PdfTextLayerGeometry[] {
+  const items = Array.isArray(textContent.items) ? textContent.items : [];
+  const geometry = items.map((item) => {
+    const candidate = item as {
+      height?: number;
+      str?: string;
+      transform?: [number, number, number, number, number, number];
+      width?: number;
+    };
+    return {
+      height: candidate.height,
+      left: candidate.transform?.[4],
+      text: candidate.str ?? "",
+      top: candidate.transform?.[5],
+      width: candidate.width
+    };
+  });
+  const filtered = geometry.filter((entry) => entry.text.trim().length > 0);
+  if (elementCount !== undefined && filtered.length >= elementCount) {
+    return filtered.slice(0, elementCount);
+  }
+  return filtered;
+}
+
+function clonePdfCanvas(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const clone = document.createElement("canvas");
+  clone.className = canvas.className;
+  clone.width = canvas.width;
+  clone.height = canvas.height;
+  clone.style.width = canvas.style.width;
+  clone.style.height = canvas.style.height;
+  const context = clone.getContext("2d");
+  if (context) {
+    context.drawImage(canvas, 0, 0);
+  }
+  return clone;
+}
 
 function flattenRenderedPdfSpans(pages: RenderedPdfPage[]): PdfTextSpan[] {
   return pages.flatMap((page) => page.spans);
@@ -290,6 +351,20 @@ function markPdfPageLifecycle(
     state,
     lastTouchedAt: Date.now()
   });
+}
+
+function bumpPageRenderVersion(map: Map<number, number>, pageIndex: number): number {
+  const next = (map.get(pageIndex) ?? 0) + 1;
+  map.set(pageIndex, next);
+  return next;
+}
+
+function hasCurrentPageRenderVersion(
+  map: Map<number, number>,
+  pageIndex: number,
+  version: number
+): boolean {
+  return (map.get(pageIndex) ?? 0) === version;
 }
 
 function globalSentenceStartForReader(reader: ReaderSnapshot): number {
@@ -590,10 +665,15 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const pageMetricsRef = useRef<Map<string, PdfShellMetric>>(new Map());
     const pdfPageTextsRef = useRef<Map<number, string>>(new Map());
     const pdfTextContentCacheRef = useRef<Map<number, PdfPageTextContent>>(new Map());
+    const bitmapArtifactCacheRef = useRef(createLruCache<string, PdfBitmapArtifact<HTMLCanvasElement>>(PDF_MAX_BITMAP_ARTIFACTS));
     const spanArtifactCacheRef = useRef(createLruCache<string, PdfTextSpan[]>(PDF_MAX_SPAN_ARTIFACTS));
     const sentenceTargetCacheRef = useRef(createLruCache<number, CachedPdfHighlightTarget>(PDF_MAX_SENTENCE_TARGETS));
+    const sentencePageTargetCacheRef = useRef(createLruCache<number, number>(PDF_MAX_SENTENCE_TARGETS));
     const renderedPageZoomRef = useRef<Map<number, number>>(new Map());
     const visiblePageIndexesRef = useRef<Set<number>>(new Set());
+    const selectionPageIndexRef = useRef<number | null>(null);
+    const canvasRenderVersionRef = useRef<Map<number, number>>(new Map());
+    const textLayerRenderVersionRef = useRef<Map<number, number>>(new Map());
     const zoomSettleTimerRef = useRef<number | null>(null);
     const pendingJumpTargetPageRef = useRef<number | null>(null);
     const defaultShellMetricRef = useRef<PdfShellMetric>({ width: 720, height: 980 });
@@ -611,6 +691,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const cachedPdfLocationsRef = useRef<PdfSentenceLocation[] | null>(null);
     const overlaySentenceMapRef = useRef<Map<number, number>>(new Map());
     const activeHighlightStateRef = useRef<ActivePdfHighlightState | null>(null);
+    const documentOpenStartedAtRef = useRef(0);
     const [zoom, setZoom] = useState(1.2);
     const [renderZoom, setRenderZoom] = useState(1.2);
     const [viewportVersion, setViewportVersion] = useState(0);
@@ -668,8 +749,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       pageShellsRef.current.clear();
       pageMetricsRef.current.clear();
       pdfTextContentCacheRef.current.clear();
+      bitmapArtifactCacheRef.current.clear();
       spanArtifactCacheRef.current.clear();
       sentenceTargetCacheRef.current.clear();
+      sentencePageTargetCacheRef.current.clear();
+      canvasRenderVersionRef.current.clear();
+      textLayerRenderVersionRef.current.clear();
       renderedPageZoomRef.current.clear();
       visiblePageIndexesRef.current.clear();
       if (lowPriorityPrefetchTimerRef.current !== null) {
@@ -797,10 +882,42 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return;
       }
       recordPerfCounter("ReaderPrettyPdfPane.pageCanvasCacheMiss");
+      const bitmapCacheKey = pdfBitmapArtifactKey(pageIndex, activeZoom);
+      const cachedBitmap = bitmapArtifactCacheRef.current.get(bitmapCacheKey);
+      if (cachedBitmap) {
+        shell.style.width = `${cachedBitmap.width}px`;
+        shell.style.minHeight = `${cachedBitmap.height}px`;
+        shell.innerHTML = "";
+        const pageContainer = document.createElement("div");
+        pageContainer.className = "reader-pdf-page";
+        pageContainer.dataset.pageIndex = String(pageIndex);
+        pageContainer.dataset.pdfRotation = String(cachedBitmap.rotation);
+        pageContainer.style.width = `${cachedBitmap.width}px`;
+        pageContainer.style.height = `${cachedBitmap.height}px`;
+        pageContainer.appendChild(clonePdfCanvas(cachedBitmap.bitmap));
+        shell.appendChild(pageContainer);
+        renderedPageZoomRef.current.set(pageIndex, activeZoom);
+        renderedPagesRef.current = [
+          ...renderedPagesRef.current.filter((entry) => entry.pageIndex !== pageIndex),
+          { container: pageContainer, pageIndex, spans: [], renderedZoom: activeZoom, textLayerZoom: null, textLayerDiv: null }
+        ].sort((left, right) => left.pageIndex - right.pageIndex);
+        markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "canvas_ready", { renderedZoom: activeZoom, textLayerZoom: null });
+        shell.dataset.pageLifecycle = "canvas_ready";
+        recordPerfCounter("ReaderPrettyPdfPane.pageBitmapCacheHit");
+        recordPerfGauge("ReaderPrettyPdfPane.bitmapArtifactCacheSize", bitmapArtifactCacheRef.current.size());
+        setRenderVersion((value) => value + 1);
+        syncPdfPreviewZoom(zoom);
+        return;
+      }
+      recordPerfCounter("ReaderPrettyPdfPane.pageBitmapCacheMiss");
+      const requestVersion = bumpPageRenderVersion(canvasRenderVersionRef.current, pageIndex);
       markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "scheduled");
       shell.dataset.pageLifecycle = "scheduled";
       const page = await pdf.getPage(pageIndex + 1);
-      if (renderGenerationRef.current !== generation) {
+      if (
+        renderGenerationRef.current !== generation
+        || !hasCurrentPageRenderVersion(canvasRenderVersionRef.current, pageIndex, requestVersion)
+      ) {
         recordPerfCounter("ReaderPrettyPdfPane.canceledPageRenders");
         return;
       }
@@ -837,7 +954,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       shell.appendChild(pageContainer);
 
       await page.render({ canvas, canvasContext: context, viewport }).promise;
-      if (renderGenerationRef.current !== generation) {
+      if (
+        renderGenerationRef.current !== generation
+        || !hasCurrentPageRenderVersion(canvasRenderVersionRef.current, pageIndex, requestVersion)
+      ) {
         recordPerfCounter("ReaderPrettyPdfPane.canceledPageRenders");
         return;
       }
@@ -850,6 +970,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "canvas_ready", { renderedZoom: activeZoom, textLayerZoom: null });
       shell.dataset.pageLifecycle = "canvas_ready";
       recordPerfMeasure("ReaderPrettyPdfPane.renderCanvas", startedAt);
+      if (visiblePageIndexesRef.current.has(pageIndex)) {
+        recordPerfMeasure("ReaderPrettyPdfPane.visiblePageRender", startedAt);
+      }
       recordPerfGauge("ReaderPrettyPdfPane.liveRenderedPages", renderedPagesRef.current.length);
       setRenderVersion((value) => value + 1);
       syncPdfPreviewZoom(zoom);
@@ -876,6 +999,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return;
       }
       recordPerfCounter("ReaderPrettyPdfPane.textLayerCacheMiss");
+      const requestVersion = bumpPageRenderVersion(textLayerRenderVersionRef.current, pageIndex);
       const page = await pdf.getPage(pageIndex + 1);
       const viewport = page.getViewport({ scale: clamp(activeZoom, 0.7, 2.5) });
       const pageContainer = renderedPage.container;
@@ -888,6 +1012,13 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       textLayerDiv.innerHTML = "";
       const extractStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
       const textContent = pdfTextContentCacheRef.current.get(pageIndex) ?? await page.getTextContent();
+      if (
+        renderGenerationRef.current !== generation
+        || !hasCurrentPageRenderVersion(textLayerRenderVersionRef.current, pageIndex, requestVersion)
+      ) {
+        recordPerfCounter("ReaderPrettyPdfPane.canceledPageRenders");
+        return;
+      }
       pdfTextContentCacheRef.current.set(pageIndex, textContent);
       recordPerfMeasure("ReaderPrettyPdfPane.extractTextLayer", extractStartedAt);
       const textLayerStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
@@ -897,12 +1028,23 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         viewport
       });
       await textLayer.render();
+      if (
+        renderGenerationRef.current !== generation
+        || !hasCurrentPageRenderVersion(textLayerRenderVersionRef.current, pageIndex, requestVersion)
+      ) {
+        recordPerfCounter("ReaderPrettyPdfPane.canceledPageRenders");
+        return;
+      }
       const spanElements = Array.from(textLayerDiv.querySelectorAll("span")) as HTMLElement[];
+      const visibleSpanElements = spanElements.filter((element) => isVisiblePdfTextSpan(element));
+      const postprocessStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
       const spans: PdfTextSpan[] = orderPdfTextLayerSpans(
-        spanElements.filter((element) => isVisiblePdfTextSpan(element)),
+        visibleSpanElements,
         pageIndex,
-        viewport.rotation
+        viewport.rotation,
+        buildPdfTextLayerGeometry(textContent, visibleSpanElements.length)
       );
+      recordPerfMeasure("ReaderPrettyPdfPane.textLayerPostprocess", postprocessStartedAt);
       const nextEntry = renderedPagesRef.current.find((entry) => entry.pageIndex === pageIndex);
       if (!nextEntry) {
         return;
@@ -917,6 +1059,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       }
       setRenderedPdfSpanIndexes(renderedPagesRef.current);
       recordPerfMeasure("ReaderPrettyPdfPane.mountTextLayer", textLayerStartedAt);
+      if (visiblePageIndexesRef.current.has(pageIndex) && documentOpenStartedAtRef.current > 0) {
+        recordPerfMeasure("ReaderPrettyPdfPane.firstVisibleTextLayer", documentOpenStartedAtRef.current);
+        documentOpenStartedAtRef.current = 0;
+      }
       recordPerfGauge("ReaderPrettyPdfPane.liveTextLayers", renderedPagesRef.current.filter((entry) => entry.textLayerDiv !== null).length);
       setRenderVersion((value) => value + 1);
     }, []);
@@ -928,6 +1074,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return;
       }
       if (mode === "text") {
+        bumpPageRenderVersion(textLayerRenderVersionRef.current, pageIndex);
         entry.spans = [];
         entry.textLayerZoom = null;
         entry.textLayerDiv?.remove();
@@ -937,6 +1084,22 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         recordPerfCounter("ReaderPrettyPdfPane.evictedTextLayers");
         logPdfDebug("evictArtifacts", { pageIndex, mode, reason: "budget" });
         return;
+      }
+      bumpPageRenderVersion(canvasRenderVersionRef.current, pageIndex);
+      bumpPageRenderVersion(textLayerRenderVersionRef.current, pageIndex);
+      const canvas = entry.container.querySelector("canvas");
+      if (canvas instanceof HTMLCanvasElement && entry.renderedZoom !== null) {
+        const width = Number.parseFloat(canvas.style.width || "0");
+        const height = Number.parseFloat(canvas.style.height || "0");
+        bitmapArtifactCacheRef.current.set(pdfBitmapArtifactKey(pageIndex, entry.renderedZoom), {
+          bitmap: clonePdfCanvas(canvas),
+          height: Number.isFinite(height) && height > 0 ? height : canvas.height,
+          pageIndex,
+          rotation: Number.parseInt(entry.container.dataset.pdfRotation ?? "0", 10) || 0,
+          width: Number.isFinite(width) && width > 0 ? width : canvas.width,
+          zoom: entry.renderedZoom
+        });
+        recordPerfGauge("ReaderPrettyPdfPane.bitmapArtifactCacheSize", bitmapArtifactCacheRef.current.size());
       }
       shell.innerHTML = "";
       renderedPagesRef.current = renderedPagesRef.current.filter((candidate) => candidate.pageIndex !== pageIndex);
@@ -992,7 +1155,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           highlightedOverlayNodesRef.current,
           highlightedPagesRef.current,
           renderedPages,
-          activeHighlight.overlayRects
+          activeHighlight.overlayRects,
+          PDF_MAX_HIGHLIGHT_OVERLAYS
         );
         highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
         highlightedPagesRef.current = overlays.highlightedPages;
@@ -1057,6 +1221,30 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       }
     }, []);
 
+    const enforceTextSpanBudget = useCallback((keepPageIndexes: Set<number>) => {
+      let liveTextSpanCount = renderedPagesRef.current.reduce((total, page) => total + page.spans.length, 0);
+      if (liveTextSpanCount <= PDF_MAX_LIVE_TEXT_SPANS) {
+        return;
+      }
+      const evictionCandidates = renderedPagesRef.current
+        .filter((page) => page.textLayerDiv !== null && !keepPageIndexes.has(page.pageIndex))
+        .map((page) => ({
+          lastTouchedAt: pageRegistryRef.current.get(page.pageIndex)?.lastTouchedAt ?? 0,
+          pageIndex: page.pageIndex,
+          spanCount: page.spans.length
+        }))
+        .sort((left, right) => left.lastTouchedAt - right.lastTouchedAt);
+      for (const candidate of evictionCandidates) {
+        if (liveTextSpanCount <= PDF_MAX_LIVE_TEXT_SPANS) {
+          break;
+        }
+        liveTextSpanCount -= candidate.spanCount;
+        recordPerfCounter("ReaderPrettyPdfPane.evictedTextSpans", candidate.spanCount);
+        evictPageArtifacts(candidate.pageIndex, "text");
+      }
+      recordPerfGauge("ReaderPrettyPdfPane.liveTextSpans", liveTextSpanCount);
+    }, [evictPageArtifacts]);
+
     const scheduleVisiblePdfWork = useCallback(async () => {
       const pdf = pdfDocRef.current;
       const pdfjs = pdfJsModuleRef.current;
@@ -1069,31 +1257,53 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         pdfPageCount,
         pdfPageTextsRef.current
       );
+      const overscan = resolvePdfVisibleOverscan();
       const renderPlan = buildPdfViewportRenderPlan({
         totalPages: pdfPageCount,
         visiblePageIndexes: Array.from(visiblePageIndexesRef.current),
-        overscan: PDF_VISIBLE_OVERSCAN,
+        overscan,
         activeTtsPageIndex: targetPage,
         jumpTargetPageIndex: pendingJumpTargetPageRef.current
       });
+      const selectionTextLayerPages = selectionPageIndexRef.current === null
+        ? []
+        : pageIndexesAround(selectionPageIndexRef.current, pdfPageCount, 1);
+      const textLayerPageIndexes = Array.from(new Set([
+        ...renderPlan.textLayerPageIndexes,
+        ...selectionTextLayerPages
+      ])).sort((left, right) => left - right);
       const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
       logPdfDebug("scheduleVisiblePages", {
         visiblePages: Array.from(visiblePageIndexesRef.current).sort((left, right) => left - right),
         canvasPages: renderPlan.canvasPageIndexes,
-        textLayerPages: renderPlan.textLayerPageIndexes,
+        textLayerPages: textLayerPageIndexes,
         priorityPages: renderPlan.priorityPageIndexes,
         mediumPages: renderPlan.mediumPriorityPageIndexes,
-        lowPages: renderPlan.lowPriorityPageIndexes
+        lowPages: renderPlan.lowPriorityPageIndexes,
+        overscan,
+        selectionPageIndex: selectionPageIndexRef.current
       });
       recordPerfGauge("ReaderPrettyPdfPane.visiblePages", visiblePageIndexesRef.current.size);
+      recordPerfGauge("ReaderPrettyPdfPane.overscan", overscan);
       const generation = renderGenerationRef.current;
+      const keepCanvasPages = new Set(renderPlan.canvasPageIndexes);
+      const keepTextPages = new Set(textLayerPageIndexes);
+      for (const [pageIndex, entry] of pageRegistryRef.current.entries()) {
+        if (!keepCanvasPages.has(pageIndex) && (entry.state === "scheduled" || entry.state === "rendering_canvas")) {
+          bumpPageRenderVersion(canvasRenderVersionRef.current, pageIndex);
+          recordPerfCounter("ReaderPrettyPdfPane.canceledPageRenders");
+        }
+        if (!keepTextPages.has(pageIndex) && entry.textLayerZoom !== null) {
+          bumpPageRenderVersion(textLayerRenderVersionRef.current, pageIndex);
+        }
+      }
       for (const pageIndex of renderPlan.priorityPageIndexes) {
         await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
       }
       for (const pageIndex of renderPlan.mediumPriorityPageIndexes) {
         await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
       }
-      for (const pageIndex of renderPlan.textLayerPageIndexes) {
+      for (const pageIndex of textLayerPageIndexes) {
         await ensurePageTextLayerRendered(pdfjs, pdf, pageIndex, renderZoom, generation);
       }
       if (lowPriorityPrefetchTimerRef.current !== null) {
@@ -1123,6 +1333,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       for (const pageIndex of eviction.evictCanvasPageIndexes) {
         evictPageArtifacts(pageIndex, "canvas");
       }
+      enforceTextSpanBudget(keepTextPages);
       recordPerfMeasure("ReaderPrettyPdfPane.scheduleVisiblePages", startedAt);
       recordPerfGauge("ReaderPrettyPdfPane.liveRenderedPages", renderedPagesRef.current.length);
       recordPerfGauge(
@@ -1131,8 +1342,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       );
       recordPerfGauge("ReaderPrettyPdfPane.liveTextSpans", flattenRenderedPdfSpans(renderedPagesRef.current).length);
       recordPerfGauge("ReaderPrettyPdfPane.sentenceTargetCacheSize", sentenceTargetCacheRef.current.size());
+      recordPerfGauge("ReaderPrettyPdfPane.sentencePageTargetCacheSize", sentencePageTargetCacheRef.current.size());
       recordPerfGauge("ReaderPrettyPdfPane.spanArtifactCacheSize", spanArtifactCacheRef.current.size());
-    }, [ensurePageCanvasRendered, ensurePageTextLayerRendered, evictPageArtifacts, pdfPageCount, reader, renderZoom]);
+      recordPerfGauge("ReaderPrettyPdfPane.bitmapArtifactCacheSize", bitmapArtifactCacheRef.current.size());
+    }, [enforceTextSpanBudget, ensurePageCanvasRendered, ensurePageTextLayerRendered, evictPageArtifacts, pdfPageCount, reader, renderZoom]);
 
     const resolveCurrentSentenceHighlight = useCallback(async (sentenceIdx: number) => {
       const sentence = reader.sentences[sentenceIdx] ?? "";
@@ -1178,6 +1391,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           buildOverlayRectsFromLocation(cachedLocation, sentenceIdx),
           true
         ));
+        if (cachedLocation.page_idx !== null && cachedLocation.page_idx !== undefined) {
+          sentencePageTargetCacheRef.current.set(globalSentenceIdx, cachedLocation.page_idx);
+        }
         return {
           match: cachedMatch,
           cachedLocation,
@@ -1201,7 +1417,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         sentence,
         pdfPageTextsRef.current,
         pdfPageCount,
-        targetPage
+        sentencePageTargetCacheRef.current.get(globalSentenceIdx) ?? targetPage
       );
 
       let bestResult: DirectSentenceMatchResult = { match: null, spans: [] };
@@ -1230,6 +1446,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         score: bestResult.match?.score ?? 0
       });
       if (bestResult.match) {
+        if (bestResult.match.pageIndex !== null && bestResult.match.pageIndex !== undefined) {
+          sentencePageTargetCacheRef.current.set(globalSentenceIdx, bestResult.match.pageIndex);
+        }
         sentenceTargetCacheRef.current.set(globalSentenceIdx, buildCachedPdfHighlightTarget(
           globalSentenceIdx,
           bestResult.match,
@@ -1243,6 +1462,64 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         spans: bestResult.spans
       };
     }, [ensureRenderedPageWindow, globalSentenceStart, pdfPageCount, reader]);
+
+    const jumpToResolvedSentenceTarget = useCallback(async () => {
+      const idx = reader.highlighted_sentence_idx;
+      if (idx === null || idx === undefined) {
+        return false;
+      }
+      const pdf = pdfDocRef.current;
+      const pdfjs = pdfJsModuleRef.current;
+      if (!pdf || !pdfjs) {
+        return false;
+      }
+      const globalIdx = globalSentenceStart + idx;
+      const cachedTarget = sentenceTargetCacheRef.current.get(globalIdx);
+      const activeHighlight = activeHighlightStateRef.current?.sentenceIdx === idx
+        ? activeHighlightStateRef.current
+        : null;
+      const targetPage =
+        cachedTarget?.pageIndex
+        ?? sentencePageTargetCacheRef.current.get(globalIdx)
+        ?? activeHighlight?.match.pageIndex
+        ?? null;
+      if (targetPage === null || targetPage === undefined) {
+        return false;
+      }
+      pendingJumpTargetPageRef.current = targetPage;
+      const generation = renderGenerationRef.current;
+      await ensurePageCanvasRendered(pdf, targetPage, renderZoom, generation);
+      if (!cachedTarget?.useOverlay && !activeHighlight?.useOverlay) {
+        await ensurePageTextLayerRendered(pdfjs, pdf, targetPage, renderZoom, generation);
+      }
+      rebindActiveHighlightForRenderedPages();
+      const page = renderedPagesRef.current.find((entry) => entry.pageIndex === targetPage)?.container ?? null;
+      const scrollTarget = highlightedOverlayNodesRef.current[0] ?? highlightedNodesRef.current[0] ?? page;
+      if (!scrollTarget) {
+        return false;
+      }
+      const scrollStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      scrollTarget.scrollIntoView({
+        behavior: "smooth",
+        block: reader.settings.center_spoken_sentence ? "center" : "nearest",
+        inline: "nearest"
+      });
+      recordPerfMeasure("ReaderPrettyPdfPane.autoScroll", scrollStartedAt);
+      recordPerfCounter("ReaderPrettyPdfPane.manualJumpFastPath");
+      lastScrollTargetRef.current = `manual_jump:${globalIdx}:${targetPage}`;
+      logPdfDebug("scrollTarget", {
+        reason: "manual_jump_fast_path",
+        target: lastScrollTargetRef.current
+      });
+      return true;
+    }, [
+      ensurePageCanvasRendered,
+      ensurePageTextLayerRendered,
+      globalSentenceStart,
+      reader,
+      rebindActiveHighlightForRenderedPages,
+      renderZoom
+    ]);
 
     const applyHighlight = useCallback(
       async (behavior: ScrollBehavior, force = false) => {
@@ -1338,7 +1615,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             highlightedOverlayNodesRef.current,
             highlightedPagesRef.current,
             renderedPagesRef.current,
-            cachedTarget.overlayRects
+            cachedTarget.overlayRects,
+            PDF_MAX_HIGHLIGHT_OVERLAYS
           );
           highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
           overlaySentenceMapRef.current = overlays.overlaySentenceMap;
@@ -1367,7 +1645,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             highlightedOverlayNodesRef.current,
             highlightedPagesRef.current,
             renderedPagesRef.current,
-            overlayRects
+            overlayRects,
+            PDF_MAX_HIGHLIGHT_OVERLAYS
           );
           highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
           overlaySentenceMapRef.current = overlays.overlaySentenceMap;
@@ -1398,7 +1677,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
               highlightedOverlayNodesRef.current,
               highlightedPagesRef.current,
               renderedPagesRef.current,
-              overlayRects
+              overlayRects,
+              PDF_MAX_HIGHLIGHT_OVERLAYS
             );
             highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
             overlaySentenceMapRef.current = overlays.overlaySentenceMap;
@@ -1548,9 +1828,50 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
 
     useImperativeHandle(ref, () => ({
       jumpToHighlightedSentence() {
-        void applyHighlight("smooth", true);
+        void (async () => {
+          const usedFastPath = await jumpToResolvedSentenceTarget();
+          if (!usedFastPath) {
+            await applyHighlight("smooth", true);
+          }
+        })();
       }
-    }), [applyHighlight]);
+    }), [applyHighlight, jumpToResolvedSentenceTarget]);
+
+    useEffect(() => {
+      const root = containerRef.current;
+      if (!root) {
+        return;
+      }
+      const updateSelectionPageIndex = () => {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) {
+          if (selectionPageIndexRef.current !== null) {
+            selectionPageIndexRef.current = null;
+            void scheduleVisiblePdfWork();
+          }
+          return;
+        }
+        const anchorNode = selection.anchorNode;
+        const page = (anchorNode instanceof Element
+          ? anchorNode.closest(".reader-pdf-page")
+          : anchorNode?.parentElement?.closest(".reader-pdf-page")) as HTMLDivElement | null;
+        const nextPageIndex = page
+          ? Number.parseInt(page.dataset.pageIndex ?? "", 10)
+          : null;
+        const normalizedPageIndex = Number.isFinite(nextPageIndex ?? NaN) ? nextPageIndex : null;
+        if (selectionPageIndexRef.current === normalizedPageIndex) {
+          return;
+        }
+        selectionPageIndexRef.current = normalizedPageIndex;
+        void scheduleVisiblePdfWork();
+      };
+      document.addEventListener("selectionchange", updateSelectionPageIndex);
+      root.addEventListener("mouseup", updateSelectionPageIndex);
+      return () => {
+        document.removeEventListener("selectionchange", updateSelectionPageIndex);
+        root.removeEventListener("mouseup", updateSelectionPageIndex);
+      };
+    }, [scheduleVisiblePdfWork]);
 
     useEffect(() => {
       const root = containerRef.current;
@@ -1695,11 +2016,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         if (!root) {
           return;
         }
-        setLoading(true);
-        setError(null);
-        applyPdfHighlightColor(root, reader);
-        const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-        let firstUsefulPagePainted = false;
+      setLoading(true);
+      setError(null);
+      applyPdfHighlightColor(root, reader);
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      documentOpenStartedAtRef.current = startedAt;
+      let firstUsefulPagePainted = false;
         logPdfDebug("renderInit", {
           sourcePath,
           zoom: renderZoom,

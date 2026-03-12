@@ -1,5 +1,13 @@
 import type { PdfTextSpan } from "./pdfTextSync";
 
+export interface PdfTextLayerGeometry {
+  height?: number;
+  left?: number;
+  text: string;
+  top?: number;
+  width?: number;
+}
+
 interface MeasuredPdfSpan {
   element: HTMLElement;
   text: string;
@@ -24,8 +32,47 @@ function measurePdfSpan(
   element: HTMLElement,
   text: string,
   pageIndex: number,
-  index: number
+  index: number,
+  geometry?: PdfTextLayerGeometry
 ): MeasuredPdfSpan {
+  const style = element.style ?? { height: "", left: "", top: "", width: "" };
+  const styleTop = Number.parseFloat(style.top || "");
+  const styleLeft = Number.parseFloat(style.left || "");
+  const styleWidth = Number.parseFloat(style.width || "");
+  const styleHeight = Number.parseFloat(style.height || "");
+  const geometryTop = geometry?.top;
+  const geometryLeft = geometry?.left;
+  const geometryWidth = geometry?.width;
+  const geometryHeight = geometry?.height;
+  const top = Number.isFinite(styleTop) ? styleTop : geometryTop;
+  const left = Number.isFinite(styleLeft) ? styleLeft : geometryLeft;
+  const width =
+    Number.isFinite(styleWidth)
+      ? styleWidth
+      : (Number.isFinite(geometryWidth ?? NaN) ? geometryWidth : element.offsetWidth);
+  const height =
+    Number.isFinite(styleHeight)
+      ? styleHeight
+      : (Number.isFinite(geometryHeight ?? NaN) ? geometryHeight : element.offsetHeight);
+  if (
+    Number.isFinite(top ?? NaN)
+    && Number.isFinite(left ?? NaN)
+    && Number.isFinite(width ?? NaN)
+    && Number.isFinite(height ?? NaN)
+    && (width ?? 0) > 0
+    && (height ?? 0) > 0
+  ) {
+    return {
+      element,
+      text,
+      pageIndex,
+      index,
+      top: top ?? 0,
+      left: left ?? 0,
+      width: width ?? 0,
+      height: height ?? 0
+    };
+  }
   const rect = element.getBoundingClientRect();
   return {
     element,
@@ -268,17 +315,19 @@ function sortSingleColumn(spans: MeasuredPdfSpan[]): MeasuredPdfSpan[] {
 export function orderPdfTextLayerSpans(
   elements: HTMLElement[],
   pageIndex: number,
-  rotationDegrees = 0
+  rotationDegrees = 0,
+  geometry: PdfTextLayerGeometry[] = []
 ): PdfTextSpan[] {
   const measured = elements
     .map((element, index) => ({
       element,
       text: element.textContent ?? "",
-      pageIndex,
-      index
+      geometry: geometry[index],
+      index,
+      pageIndex
     }))
     .filter((span) => span.text.trim().length > 0)
-    .map((span) => measurePdfSpan(span.element, span.text, span.pageIndex, span.index));
+    .map((span) => measurePdfSpan(span.element, span.text, span.pageIndex, span.index, span.geometry));
 
   const normalizedRotation = ((rotationDegrees % 360) + 360) % 360;
   const normalizedMeasured =

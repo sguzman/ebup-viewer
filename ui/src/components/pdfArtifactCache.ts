@@ -15,6 +15,15 @@ export interface PdfSpanArtifact<TSpan> {
   spans: TSpan[];
 }
 
+export interface PdfBitmapArtifact<TBitmap> {
+  bitmap: TBitmap;
+  height: number;
+  pageIndex: number;
+  rotation: number;
+  width: number;
+  zoom: number;
+}
+
 export interface LruCache<K, V> {
   clear(): void;
   delete(key: K): boolean;
@@ -74,4 +83,8 @@ export function createLruCache<K, V>(capacity: number): LruCache<K, V> {
 
 export function pdfSpanArtifactKey(pageIndex: number, zoom: number): string {
   return `${pageIndex}:${zoom.toFixed(3)}`;
+}
+
+export function pdfBitmapArtifactKey(pageIndex: number, zoom: number): string {
+  return `bitmap:${pageIndex}:${zoom.toFixed(3)}`;
 }

@@ -174,4 +174,22 @@ describe("applyPdfLocationHighlightOverlays", () => {
     expect(second.overlaySentenceMap.get(0)).toBeUndefined();
     expect(second.overlaySentenceMap.get(1)).toBe(4);
   });
+
+  it("caps rendered overlay nodes and reports truncated overlays", () => {
+    const page = createPage(0);
+    const overlays = Array.from({ length: 5 }, (_, index) => ({
+      pageIndex: 0,
+      sentenceIndex: index,
+      kind: "line" as const,
+      left: 0.1,
+      top: 0.1 + index * 0.05,
+      width: 0.4,
+      height: 0.03
+    }));
+
+    const result = applyPdfLocationHighlightOverlays([], [], [page], overlays, 3);
+
+    expect(result.highlightedOverlays).toHaveLength(3);
+    expect(result.truncatedOverlayCount).toBe(2);
+  });
 });

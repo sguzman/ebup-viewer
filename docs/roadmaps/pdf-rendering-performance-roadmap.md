@@ -11,12 +11,12 @@
 
 ## Problem Statement
 
-- [ ] The current PDF lag is not one isolated bug; it is a stacked hot path.
-- [ ] Page rasterization cost is still too high on interaction paths.
-- [ ] Text-layer creation and DOM weight are still too expensive.
-- [ ] Zoom invalidates too much work at once.
-- [ ] Too many page/text artifacts stay live simultaneously.
-- [ ] Highlight/sync work still competes with rendering work.
+- [x] The current PDF lag is not one isolated bug; it is a stacked hot path.
+- [x] Page rasterization cost is still too high on interaction paths.
+- [x] Text-layer creation and DOM weight are still too expensive.
+- [x] Zoom invalidates too much work at once.
+- [x] Too many page/text artifacts stay live simultaneously.
+- [x] Highlight/sync work still competes with rendering work.
 - [x] The viewer is still more React-driven than a high-performance PDF viewport should be.
 
 ## Success Criteria

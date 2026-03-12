@@ -18,6 +18,8 @@ export interface PdfViewportRenderPlan {
   canvasPageIndexes: number[];
   textLayerPageIndexes: number[];
   priorityPageIndexes: number[];
+  mediumPriorityPageIndexes: number[];
+  lowPriorityPageIndexes: number[];
 }
 
 export interface PdfViewportPlanInput {
@@ -63,7 +65,9 @@ export function buildPdfViewportRenderPlan(input: PdfViewportPlanInput): PdfView
     return {
       canvasPageIndexes: [],
       textLayerPageIndexes: [],
-      priorityPageIndexes: []
+      priorityPageIndexes: [],
+      mediumPriorityPageIndexes: [],
+      lowPriorityPageIndexes: []
     };
   }
 
@@ -89,6 +93,11 @@ export function buildPdfViewportRenderPlan(input: PdfViewportPlanInput): PdfView
     ...priorityPageIndexes
   ]);
 
+  const mediumPriorityPageIndexes = sortUnique([
+    ...visible.flatMap((pageIndex) => pageWindow(pageIndex, totalPages, Math.max(overscan, 1))),
+    ...priorityPageIndexes
+  ]).filter((pageIndex) => !priorityPageIndexes.includes(pageIndex));
+
   const textLayerPageIndexes = sortUnique([
     ...visible,
     ...(activeTtsPageIndex !== null && activeTtsPageIndex !== undefined
@@ -99,10 +108,18 @@ export function buildPdfViewportRenderPlan(input: PdfViewportPlanInput): PdfView
       : [])
   ]);
 
+  const lowPriorityPageIndexes = sortUnique([
+    ...visible.flatMap((pageIndex) => pageWindow(pageIndex, totalPages, overscan + 2))
+  ]).filter(
+    (pageIndex) => !priorityPageIndexes.includes(pageIndex) && !mediumPriorityPageIndexes.includes(pageIndex)
+  );
+
   return {
     canvasPageIndexes,
     textLayerPageIndexes,
-    priorityPageIndexes
+    priorityPageIndexes,
+    mediumPriorityPageIndexes,
+    lowPriorityPageIndexes
   };
 }
 

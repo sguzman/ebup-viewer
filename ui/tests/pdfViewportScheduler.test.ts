@@ -20,6 +20,8 @@ describe("pdfViewportScheduler", () => {
     expect(plan.canvasPageIndexes).toEqual([4, 5, 6, 7, 12, 18]);
     expect(plan.textLayerPageIndexes).toEqual([5, 6, 12, 18]);
     expect(plan.priorityPageIndexes).toEqual([6, 12, 18]);
+    expect(plan.mediumPriorityPageIndexes).toEqual([4, 5, 7]);
+    expect(plan.lowPriorityPageIndexes).toEqual([2, 3, 8, 9]);
   });
 
   it("evicts stale canvases and text layers outside the keep window", () => {

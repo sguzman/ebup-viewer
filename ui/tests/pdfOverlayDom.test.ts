@@ -115,4 +115,63 @@ describe("applyPdfLocationHighlightOverlays", () => {
     expect(result.renderedOverlayPageIndexes).toEqual([0]);
     expect(result.skippedOverlayPageIndexes).toEqual([4]);
   });
+
+  it("rotates normalized overlay geometry with the rendered PDF page rotation", () => {
+    const page = createPage(0);
+    page.container.dataset.pdfRotation = "90";
+
+    const result = applyPdfLocationHighlightOverlays([], [], [page], [{
+      pageIndex: 0,
+      sentenceIndex: 5,
+      kind: "sentence",
+      left: 0.1,
+      top: 0.2,
+      width: 0.3,
+      height: 0.4
+    } satisfies PdfOverlayRect]);
+
+    expect(result.highlightedOverlays).toHaveLength(1);
+    expect(result.highlightedOverlays[0]?.style.left).toBe("40%");
+    expect(result.highlightedOverlays[0]?.style.top).toBe("10%");
+    expect(result.highlightedOverlays[0]?.style.width).toBe("40%");
+    expect(result.highlightedOverlays[0]?.style.height).toBe("30%");
+  });
+
+  it("keeps sentence-following overlay continuity across sentence transitions", () => {
+    const firstPage = createPage(0);
+    const secondPage = createPage(1);
+    const first = applyPdfLocationHighlightOverlays([], [], [firstPage, secondPage], [{
+      pageIndex: 0,
+      sentenceIndex: 3,
+      kind: "line",
+      left: 0.15,
+      top: 0.12,
+      width: 0.6,
+      height: 0.08
+    } satisfies PdfOverlayRect]);
+
+    expect(first.highlightedOverlays).toHaveLength(1);
+    expect(first.overlaySentenceMap.get(0)).toBe(3);
+
+    const second = applyPdfLocationHighlightOverlays(
+      first.highlightedOverlays,
+      first.highlightedPages,
+      [firstPage, secondPage],
+      [{
+        pageIndex: 1,
+        sentenceIndex: 4,
+        kind: "line",
+        left: 0.2,
+        top: 0.22,
+        width: 0.55,
+        height: 0.08
+      } satisfies PdfOverlayRect]
+    );
+
+    expect(firstPage.container.children).toHaveLength(0);
+    expect(secondPage.container.children).toHaveLength(1);
+    expect(second.highlightedOverlays).toHaveLength(1);
+    expect(second.overlaySentenceMap.get(0)).toBeUndefined();
+    expect(second.overlaySentenceMap.get(1)).toBe(4);
+  });
 });

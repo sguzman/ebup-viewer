@@ -1,15 +1,15 @@
 # PDF OCR Geometry-Aware Alignment Roadmap
 
 ## Objective
-- [ ] Build a dedicated OCR geometry pipeline for scanned and OCR-heavy PDFs that can align canonical `tts_text` sentences back onto the native PDF render with explicit confidence and stable visual behavior.
+- [x] Build a dedicated OCR geometry pipeline for scanned and OCR-heavy PDFs that can align canonical `tts_text` sentences back onto the native PDF render with explicit confidence and stable visual behavior.
 - [x] Keep `tts_text` as the only owner of playback, search, bookmarks, resume, and sentence indexing.
 - [x] Treat OCR geometry as a probabilistic alignment surface, never as guaranteed truth.
 - [x] Support degraded but honest behavior for PDFs where OCR text exists but sentence-level geometry is weak.
 
 ## Success Criteria
-- [ ] High-quality scans can highlight the currently spoken sentence at the correct on-page location.
+- [x] High-quality scans can highlight the currently spoken sentence at the correct on-page location.
 - [x] Medium-quality scans can degrade to stable line/block highlighting without visibly wrong sentence jumps.
-- [ ] Raw scans with unusable OCR never fake precise geometry and remain renderable with clearly gated or degraded TTS sync.
+- [x] Raw scans with unusable OCR never fake precise geometry and remain renderable with clearly gated or degraded TTS sync.
 - [x] The reader preserves deterministic reopen, bookmark, search, and playback behavior across OCR cache reuse and rebuilds.
 
 ## PDF Classes and Guarantees
@@ -38,7 +38,7 @@
 
 ## Phase 2: OCR Text Ownership and Normalization
 - [x] Derive canonical `tts_text` from OCR output without losing page-local sentence provenance.
-- [ ] Define OCR normalization parity rules:
+- [x] Define OCR normalization parity rules:
 - [x] broken line joins
 - [x] hyphenated word recovery
 - [x] ligatures and OCR unicode noise
@@ -46,7 +46,7 @@
 - [x] margin note and sidenote suppression or segregation
 - [x] table cell reading-order normalization
 - [x] footnote marker and citation handling
-- [ ] punctuation repair only when confidence permits
+- [x] punctuation repair only when confidence permits
 - [x] Keep a sentence-to-source-token trail so each `tts_text` sentence can be traced back to OCR blocks/lines/words.
 - [x] Add tracing for normalization edits, dropped noise, merged lines, and repeated boilerplate suppression.
 
@@ -101,11 +101,11 @@
 - [x] line-level fallback overlays
 - [x] block-level fallback overlays
 - [x] page-active fallback when geometry is too weak
-- [ ] Ensure overlay alignment remains stable during:
+- [x] Ensure overlay alignment remains stable during:
 - [x] zoom changes
 - [x] page resize
 - [x] scroll
-- [ ] rotation
+- [x] rotation
 - [x] DPI changes
 - [x] rerender/rebind cycles
 - [x] Remove stale overlays cleanly on page or sentence changes.
@@ -134,12 +134,12 @@
 - [x] Persist all fallback decisions in cache and logs.
 
 ## Phase 9: Performance and Incrementality
-- [ ] Keep OCR alignment incremental for large documents:
+- [x] Keep OCR alignment incremental for large documents:
 - [x] page-local alignment cache
 - [x] sentence-range cache invalidation
 - [x] viewport-local overlay recomputation only
 - [x] avoid rebuilding whole-document alignment on every playback tick
-- [ ] Add profiling for:
+- [x] Add profiling for:
 - [x] OCR time per page/chunk
 - [x] alignment build time
 - [x] overlay update time
@@ -159,8 +159,8 @@
 - [x] rotated scans
 - [x] scans with marginal annotations
 - [x] mixed embedded-text + image PDFs
-- [ ] Add acceptance tests for:
-- [ ] sentence-following highlight continuity
+- [x] Add acceptance tests for:
+- [x] sentence-following highlight continuity
 - [x] degraded line/block fallback honesty
 - [x] bookmark/reopen determinism
 - [x] page-click -> sentence resolution

@@ -57,19 +57,21 @@ export function applyPdfLocationHighlightOverlays(
       continue;
     }
     renderedOverlayPageIndexes.push(pageIndex);
+    const rotation = Number.parseInt(page.dataset.pdfRotation ?? "0", 10);
     for (const overlayRect of pageOverlays) {
+      const normalizedRect = rotateOverlayRect(overlayRect, rotation);
       const overlay = document.createElement("div");
-      overlay.className = `reader-pdf-highlight-overlay reader-pdf-highlight-overlay-${overlayRect.kind}`;
-      overlay.style.left = `${overlayRect.left * 100}%`;
-      overlay.style.top = `${overlayRect.top * 100}%`;
-      overlay.style.width = `${overlayRect.width * 100}%`;
-      overlay.style.height = `${overlayRect.height * 100}%`;
-      overlay.setAttribute("data-ll-pdf-overlay-sentence-idx", String(overlayRect.sentenceIndex));
-      overlay.setAttribute("data-ll-pdf-overlay-page-idx", String(overlayRect.pageIndex));
-      overlay.setAttribute("data-ll-pdf-overlay-kind", overlayRect.kind);
+      overlay.className = `reader-pdf-highlight-overlay reader-pdf-highlight-overlay-${normalizedRect.kind}`;
+      overlay.style.left = formatPercentStyle(normalizedRect.left);
+      overlay.style.top = formatPercentStyle(normalizedRect.top);
+      overlay.style.width = formatPercentStyle(normalizedRect.width);
+      overlay.style.height = formatPercentStyle(normalizedRect.height);
+      overlay.setAttribute("data-ll-pdf-overlay-sentence-idx", String(normalizedRect.sentenceIndex));
+      overlay.setAttribute("data-ll-pdf-overlay-page-idx", String(normalizedRect.pageIndex));
+      overlay.setAttribute("data-ll-pdf-overlay-kind", normalizedRect.kind);
       page.appendChild(overlay);
       overlays.push(overlay);
-      overlaySentenceMap.set(overlayRect.pageIndex, overlayRect.sentenceIndex);
+      overlaySentenceMap.set(normalizedRect.pageIndex, normalizedRect.sentenceIndex);
     }
     if (pageOverlays.some((overlayRect) => overlayRect.kind === "page")) {
       page.classList.add("reader-pdf-page-active");
@@ -83,4 +85,38 @@ export function applyPdfLocationHighlightOverlays(
     renderedOverlayPageIndexes,
     skippedOverlayPageIndexes
   };
+}
+
+function formatPercentStyle(value: number): string {
+  return `${Number((value * 100).toFixed(4))}%`;
+}
+
+function rotateOverlayRect(rect: PdfOverlayRect, rotationDegrees: number): PdfOverlayRect {
+  const normalizedRotation = ((rotationDegrees % 360) + 360) % 360;
+  switch (normalizedRotation) {
+    case 90:
+      return {
+        ...rect,
+        left: 1 - (rect.top + rect.height),
+        top: rect.left,
+        width: rect.height,
+        height: rect.width
+      };
+    case 180:
+      return {
+        ...rect,
+        left: 1 - (rect.left + rect.width),
+        top: 1 - (rect.top + rect.height)
+      };
+    case 270:
+      return {
+        ...rect,
+        left: rect.top,
+        top: 1 - (rect.left + rect.width),
+        width: rect.height,
+        height: rect.width
+      };
+    default:
+      return rect;
+  }
 }

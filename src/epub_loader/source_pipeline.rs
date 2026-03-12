@@ -655,6 +655,45 @@ fn replace_ligatures_and_measure(value: &str) -> (String, u32) {
     (out, replacements)
 }
 
+fn can_repair_pdf_paragraph_punctuation(
+    paragraph: &str,
+    report: Option<&crate::quack_check::report::JobReport>,
+) -> bool {
+    let trimmed = paragraph.trim_end();
+    if trimmed.len() < 24 {
+        return false;
+    }
+    let last = match trimmed.chars().last() {
+        Some(value) => value,
+        None => return false,
+    };
+    if matches!(last, '.' | '!' | '?' | ':' | ';' | '"' | '\'' | ')' | ']' | '}') {
+        return false;
+    }
+    if !last.is_alphanumeric() {
+        return false;
+    }
+    let Some(report) = report else {
+        return false;
+    };
+    report.sample.garbage_ratio <= 0.08
+        && report.sample.text_page_ratio >= 0.5
+        && report.sample.full_page_raster_page_ratio <= 0.7
+}
+
+fn finalize_pdf_paragraph(
+    out: &mut String,
+    paragraph: &mut String,
+    report: Option<&crate::quack_check::report::JobReport>,
+    state: &mut PdfTranscriptNormalizationState,
+) {
+    if can_repair_pdf_paragraph_punctuation(paragraph, report) {
+        paragraph.push('.');
+        state.punctuation_repair_count += 1;
+    }
+    flush_pdf_paragraph(out, paragraph);
+}
+
 fn is_probable_margin_or_sidenote_line(line: &str) -> bool {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.len() > 28 {
@@ -689,7 +728,7 @@ fn normalize_pdf_text_for_reader_with_summary(
     for line in normalized.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
-            flush_pdf_paragraph(&mut out, &mut paragraph);
+            finalize_pdf_paragraph(&mut out, &mut paragraph, report, &mut state);
             continue;
         }
         if header_lines.contains_key(trimmed) {
@@ -758,7 +797,7 @@ fn normalize_pdf_text_for_reader_with_summary(
         }
     }
 
-    flush_pdf_paragraph(&mut out, &mut paragraph);
+    finalize_pdf_paragraph(&mut out, &mut paragraph, report, &mut state);
     if state.broken_line_join_count > 0 {
         state
             .trace_notes
@@ -788,6 +827,11 @@ fn normalize_pdf_text_for_reader_with_summary(
         state
             .trace_notes
             .push("ligatures_and_unicode_noise_normalized".to_string());
+    }
+    if state.punctuation_repair_count > 0 {
+        state
+            .trace_notes
+            .push("terminal_punctuation_repaired_when_confident".to_string());
     }
     let summary = PdfOcrNormalizationSummary {
         canonical_text_derived_from_ocr: report.map(|value| value.decision.do_ocr).unwrap_or(false),
@@ -2808,21 +2852,28 @@ mod tests {
     #[test]
     fn normalize_pdf_text_for_reader_tracks_ocr_normalization_edits() {
         let report = sample_report();
-        let raw = "chapter #\nAlpha-\nbeta line\n[12]\n3\npublisher footer";
+        let raw = "chapter #\nAlpha-\nbeta line\n[12]\n3\npublisher footer\n";
 
         let (normalized, summary) = normalize_pdf_text_for_reader_with_summary(raw, Some(&report));
 
-        assert!(normalized.contains("Alphabeta line"));
+        assert!(normalized.contains("Alphabeta line."));
         assert!(summary.hyphen_recovery_count >= 1);
         assert!(summary.repeated_header_suppression_count >= 1);
         assert!(summary.repeated_footer_suppression_count >= 1);
         assert!(summary.footnote_marker_adjustment_count >= 1);
+        assert!(summary.punctuation_repair_count >= 1);
         assert!(summary.dropped_noise_line_count >= 2);
         assert!(
             summary
                 .trace_notes
                 .iter()
                 .any(|value| value == "repeated_boundary_boilerplate_suppressed")
+        );
+        assert!(
+            summary
+                .trace_notes
+                .iter()
+                .any(|value| value == "terminal_punctuation_repaired_when_confident")
         );
     }
 

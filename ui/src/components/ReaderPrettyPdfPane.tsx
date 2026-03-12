@@ -691,6 +691,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       const pageContainer = document.createElement("div");
       pageContainer.className = "reader-pdf-page";
       pageContainer.dataset.pageIndex = String(pageIndex);
+      pageContainer.dataset.pdfRotation = String(viewport.rotation);
       pageContainer.style.width = `${viewport.width}px`;
       pageContainer.style.height = `${viewport.height}px`;
 
@@ -1627,6 +1628,7 @@ async function renderPdfPage(
   const pageContainer = document.createElement("div");
   pageContainer.className = "reader-pdf-page";
   pageContainer.dataset.pageIndex = String(pageIndex);
+  pageContainer.dataset.pdfRotation = String(viewport.rotation);
   pageContainer.style.width = `${viewport.width}px`;
   pageContainer.style.height = `${viewport.height}px`;
 

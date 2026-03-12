@@ -323,6 +323,287 @@ fn maybe_log_mapping_summary(path: &Path) {
     );
 }
 
+fn tokenize_sentence_for_ocr_lineage(sentence: &str) -> Vec<String> {
+    sentence
+        .split_whitespace()
+        .map(|token| token.trim_matches(|ch: char| !ch.is_alphanumeric()))
+        .filter(|token| !token.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+fn build_pdf_ocr_token_lineage(
+    sentence_idx: usize,
+    sentence_text: &str,
+    page_idx: Option<usize>,
+) -> Vec<String> {
+    let page = page_idx.unwrap_or(usize::MAX);
+    tokenize_sentence_for_ocr_lineage(sentence_text)
+        .into_iter()
+        .enumerate()
+        .map(|(token_idx, token)| {
+            format!(
+                "p{page}:s{sentence_idx}:t{token_idx}:{}",
+                crate::cache::stable_sentence_text_hash(&token)
+            )
+        })
+        .collect()
+}
+
+fn union_pdf_rects(rects: &[crate::cache::PdfRect]) -> Option<crate::cache::PdfRect> {
+    let first = rects.first()?;
+    let mut left = first.left;
+    let mut top = first.top;
+    let mut right = first.left + first.width;
+    let mut bottom = first.top + first.height;
+    for rect in rects.iter().skip(1) {
+        left = left.min(rect.left);
+        top = top.min(rect.top);
+        right = right.max(rect.left + rect.width);
+        bottom = bottom.max(rect.top + rect.height);
+    }
+    Some(crate::cache::PdfRect {
+        left,
+        top,
+        width: (right - left).max(0.0),
+        height: (bottom - top).max(0.0),
+    })
+}
+
+fn detect_cross_column_alignment(
+    alignment: &crate::cache::PdfOcrSentenceAlignment,
+) -> (bool, bool) {
+    let geometry = if alignment.rects.len() >= 2 {
+        &alignment.rects
+    } else if alignment.line_rects.len() >= 2 {
+        &alignment.line_rects
+    } else {
+        &alignment.block_rects
+    };
+    if geometry.len() < 2 {
+        return (false, false);
+    }
+    let min_left = geometry.iter().map(|rect| rect.left).fold(f32::INFINITY, f32::min);
+    let max_left = geometry
+        .iter()
+        .map(|rect| rect.left)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let avg_width = geometry.iter().map(|rect| rect.width).sum::<f32>() / geometry.len() as f32;
+    let crosses = (max_left - min_left) >= 0.32 && avg_width <= 0.48;
+    let confident = crosses && alignment.score >= 0.82 && alignment.fallback_reason != "page_location_only";
+    (crosses, confident)
+}
+
+fn build_pdf_ocr_geometry_contract(
+    sentences: &[String],
+    alignments: &mut [crate::cache::PdfOcrSentenceAlignment],
+    source_kind: crate::epub_loader::PdfOcrSourceKind,
+) -> (
+    Vec<crate::cache::PdfOcrBlockGeometry>,
+    Vec<crate::cache::PdfOcrLineGeometry>,
+    Vec<crate::cache::PdfOcrTokenGeometry>,
+    Vec<crate::cache::PdfOcrPageGeometry>,
+    Vec<u32>,
+    Vec<u32>,
+    usize,
+    usize,
+) {
+    let mut blocks = Vec::new();
+    let mut lines = Vec::new();
+    let mut tokens = Vec::new();
+    let mut page_geometry_map: HashMap<usize, crate::cache::PdfOcrPageGeometry> = HashMap::new();
+    let mut page_build_ms = Vec::new();
+    let mut cross_column_alignment_count = 0usize;
+    let mut cross_column_confident_alignment_count = 0usize;
+
+    for alignment in alignments.iter_mut() {
+        let page_idx = match alignment.page_idx {
+            Some(value) => value,
+            None => continue,
+        };
+        let page_started = Instant::now();
+        if alignment.token_lineage.is_empty() {
+            alignment.token_lineage =
+                build_pdf_ocr_token_lineage(alignment.sentence_idx, &sentences[alignment.sentence_idx], Some(page_idx));
+        }
+        let (crosses_column_boundaries, cross_column_confident) = detect_cross_column_alignment(alignment);
+        alignment.crosses_column_boundaries = crosses_column_boundaries;
+        alignment.cross_column_confident = cross_column_confident;
+        if crosses_column_boundaries {
+            cross_column_alignment_count += 1;
+        }
+        if cross_column_confident {
+            cross_column_confident_alignment_count += 1;
+        }
+
+        let block_rects = if alignment.block_rects.is_empty() {
+            union_pdf_rects(if !alignment.line_rects.is_empty() {
+                &alignment.line_rects
+            } else {
+                &alignment.rects
+            })
+            .into_iter()
+            .collect::<Vec<_>>()
+        } else {
+            alignment.block_rects.clone()
+        };
+        let line_rects = if alignment.line_rects.is_empty() {
+            if !alignment.rects.is_empty() {
+                alignment.rects.clone()
+            } else {
+                block_rects.clone()
+            }
+        } else {
+            alignment.line_rects.clone()
+        };
+        let token_rects = if alignment.rects.is_empty() {
+            if !line_rects.is_empty() {
+                line_rects.clone()
+            } else {
+                block_rects.clone()
+            }
+        } else {
+            alignment.rects.clone()
+        };
+        if block_rects.is_empty() && line_rects.is_empty() && token_rects.is_empty() {
+            continue;
+        }
+
+        let sentence_text = sentences[alignment.sentence_idx].clone();
+        let sentence_tokens = tokenize_sentence_for_ocr_lineage(&sentence_text);
+
+        let block_ids: Vec<String> = block_rects
+            .iter()
+            .enumerate()
+            .map(|(block_offset, block_rect)| {
+                let block_id = format!("p{page_idx}:s{}:b{block_offset}", alignment.sentence_idx);
+                blocks.push(crate::cache::PdfOcrBlockGeometry {
+                    block_id: block_id.clone(),
+                    page_idx,
+                    reading_order_idx: blocks.len(),
+                    text: sentence_text.clone(),
+                    rect: block_rect.clone(),
+                    confidence: alignment.score,
+                    line_ids: Vec::new(),
+                });
+                block_id
+            })
+            .collect();
+
+        let line_ids: Vec<String> = line_rects
+            .iter()
+            .enumerate()
+            .map(|(line_offset, line_rect)| {
+                let block_idx = if block_ids.is_empty() {
+                    0
+                } else {
+                    line_offset.min(block_ids.len() - 1)
+                };
+                let line_id = format!("p{page_idx}:s{}:l{line_offset}", alignment.sentence_idx);
+                lines.push(crate::cache::PdfOcrLineGeometry {
+                    line_id: line_id.clone(),
+                    page_idx,
+                    block_idx,
+                    reading_order_idx: lines.len(),
+                    text: sentence_text.clone(),
+                    rect: line_rect.clone(),
+                    confidence: alignment.score,
+                    token_ids: Vec::new(),
+                });
+                if let Some(block) = block_ids
+                    .get(block_idx)
+                    .and_then(|block_id| blocks.iter_mut().find(|candidate| candidate.block_id == *block_id))
+                {
+                    block.line_ids.push(line_id.clone());
+                }
+                line_id
+            })
+            .collect();
+
+        let token_ids: Vec<String> = alignment
+            .token_lineage
+            .iter()
+            .enumerate()
+            .map(|(token_offset, token_id)| {
+                let rect_idx = token_offset.min(token_rects.len().saturating_sub(1));
+                let line_idx = token_offset.min(line_ids.len().saturating_sub(1));
+                let block_idx = token_offset.min(block_ids.len().saturating_sub(1));
+                let token_text = sentence_tokens.get(token_offset).cloned().unwrap_or_default();
+                tokens.push(crate::cache::PdfOcrTokenGeometry {
+                    token_id: token_id.clone(),
+                    page_idx,
+                    block_idx,
+                    line_idx,
+                    reading_order_idx: tokens.len(),
+                    text: token_text,
+                    rect: token_rects
+                        .get(rect_idx)
+                        .cloned()
+                        .or_else(|| union_pdf_rects(&token_rects))
+                        .unwrap_or(crate::cache::PdfRect {
+                            left: 0.0,
+                            top: 0.0,
+                            width: 1.0,
+                            height: 0.05,
+                        }),
+                    confidence: alignment.score,
+                    source_kind,
+                });
+                if let Some(line) = line_ids
+                    .get(line_idx)
+                    .and_then(|line_id| lines.iter_mut().find(|candidate| candidate.line_id == *line_id))
+                {
+                    line.token_ids.push(token_id.clone());
+                }
+                token_id.clone()
+            })
+            .collect();
+
+        let elapsed_ms = page_started.elapsed().as_millis().min(u128::from(u32::MAX)) as u32;
+        page_build_ms.push(elapsed_ms);
+        let page_entry = page_geometry_map
+            .entry(page_idx)
+            .or_insert_with(|| crate::cache::PdfOcrPageGeometry {
+                page_idx,
+                confidence: alignment.score,
+                build_ms: 0,
+                reading_order_mode: if cross_column_confident {
+                    "cross_column_confident".to_string()
+                } else if crosses_column_boundaries {
+                    "cross_column_low_confidence".to_string()
+                } else {
+                    "single_stream".to_string()
+                },
+                block_ids: Vec::new(),
+                line_ids: Vec::new(),
+                token_ids: Vec::new(),
+            });
+        page_entry.confidence = page_entry.confidence.max(alignment.score);
+        page_entry.build_ms = page_entry.build_ms.saturating_add(elapsed_ms);
+        page_entry.block_ids.extend(block_ids);
+        page_entry.line_ids.extend(line_ids);
+        page_entry.token_ids.extend(token_ids);
+    }
+
+    let mut page_geometry: Vec<crate::cache::PdfOcrPageGeometry> = page_geometry_map.into_values().collect();
+    page_geometry.sort_by_key(|page| page.page_idx);
+    let chunk_build_ms = page_build_ms
+        .chunks(8)
+        .map(|chunk| chunk.iter().copied().sum())
+        .collect();
+
+    (
+        blocks,
+        lines,
+        tokens,
+        page_geometry,
+        page_build_ms,
+        chunk_build_ms,
+        cross_column_alignment_count,
+        cross_column_confident_alignment_count,
+    )
+}
+
 fn build_pdf_ocr_alignment_artifact(
     source_path: &Path,
     sentences: &[String],
@@ -416,8 +697,10 @@ fn build_pdf_ocr_alignment_artifact(
                 block_rects,
                 confidence_tier,
                 fallback_reason,
-                token_lineage: Vec::new(),
+                token_lineage: build_pdf_ocr_token_lineage(sentence_idx, sentence_text, page_idx),
                 score,
+                crosses_column_boundaries: false,
+                cross_column_confident: false,
             }
         };
         if !alignment.rects.is_empty() {
@@ -442,6 +725,17 @@ fn build_pdf_ocr_alignment_artifact(
         }
         alignments.push(alignment);
     }
+
+    let (
+        blocks,
+        lines,
+        tokens,
+        page_geometry,
+        page_build_ms,
+        chunk_build_ms,
+        cross_column_alignment_count,
+        cross_column_confident_alignment_count,
+    ) = build_pdf_ocr_geometry_contract(sentences, &mut alignments, source_kind);
 
     let mapped = rect_mapped + line_mapped + block_mapped + page_only;
     let highlightable = rect_mapped + line_mapped + block_mapped;
@@ -511,7 +805,7 @@ fn build_pdf_ocr_alignment_artifact(
         page_only_sentence_count: page_only,
         unmappable_sentence_count: unmappable,
         highlightable_sentence_count: highlightable,
-        token_lineage_available: false,
+        token_lineage_available: !tokens.is_empty(),
         deterministic: true,
         reused_alignment_count,
         rebuilt_alignment_count,
@@ -519,9 +813,17 @@ fn build_pdf_ocr_alignment_artifact(
             .elapsed()
             .as_millis()
             .min(u128::from(u32::MAX)) as u32,
+        page_build_ms,
+        chunk_build_ms,
+        cross_column_alignment_count,
+        cross_column_confident_alignment_count,
         degraded_reasons,
         explanation,
         page_buckets,
+        blocks,
+        lines,
+        tokens,
+        page_geometry,
         alignments,
     }
 }
@@ -613,6 +915,15 @@ fn pdf_ocr_alignment_summary_from_artifact(
         rebuilt_alignment_count: artifact.rebuilt_alignment_count as u32,
         cached_page_bucket_count: artifact.page_buckets.len() as u32,
         alignment_build_ms: artifact.alignment_build_ms,
+        geometry_block_count: artifact.blocks.len() as u32,
+        geometry_line_count: artifact.lines.len() as u32,
+        geometry_token_count: artifact.tokens.len() as u32,
+        page_timing_count: artifact.page_build_ms.len() as u32,
+        chunk_timing_count: artifact.chunk_build_ms.len() as u32,
+        max_page_build_ms: artifact.page_build_ms.iter().copied().max().unwrap_or(0),
+        max_chunk_build_ms: artifact.chunk_build_ms.iter().copied().max().unwrap_or(0),
+        cross_column_alignment_count: artifact.cross_column_alignment_count as u32,
+        cross_column_confident_alignment_count: artifact.cross_column_confident_alignment_count as u32,
         exact_sentence_rate: artifact.rect_mapped_sentence_count as f32 / sentence_count,
         degraded_fallback_rate: (artifact.line_mapped_sentence_count + artifact.block_mapped_sentence_count) as f32 / sentence_count,
         page_only_rate: artifact.page_only_sentence_count as f32 / sentence_count,
@@ -690,6 +1001,15 @@ impl ReaderSession {
             rebuilt_alignment_count = artifact.rebuilt_alignment_count,
             cached_page_bucket_count = artifact.page_buckets.len(),
             alignment_build_ms = artifact.alignment_build_ms,
+            geometry_block_count = artifact.blocks.len(),
+            geometry_line_count = artifact.lines.len(),
+            geometry_token_count = artifact.tokens.len(),
+            page_timing_count = artifact.page_build_ms.len(),
+            chunk_timing_count = artifact.chunk_build_ms.len(),
+            max_page_build_ms = artifact.page_build_ms.iter().copied().max().unwrap_or(0),
+            max_chunk_build_ms = artifact.chunk_build_ms.iter().copied().max().unwrap_or(0),
+            cross_column_alignment_count = artifact.cross_column_alignment_count,
+            cross_column_confident_alignment_count = artifact.cross_column_confident_alignment_count,
             quality_class = ?artifact.quality_class,
             source_kind = ?artifact.source_kind,
             coverage_ratio = ((summary.coverage_ratio as f64) * 100.0).round() / 100.0,
@@ -2060,6 +2380,95 @@ mod tests {
         assert!((summary.degraded_fallback_rate - 0.25).abs() < f32::EPSILON);
         assert!((summary.page_only_rate - 0.25).abs() < f32::EPSILON);
         assert!((summary.unmappable_rate - 0.25).abs() < f32::EPSILON);
+        assert_eq!(summary.geometry_block_count, 2);
+        assert_eq!(summary.geometry_line_count, 2);
+        assert!(summary.geometry_token_count >= 2);
+        assert_eq!(summary.page_timing_count, 2);
+        assert_eq!(summary.chunk_timing_count, 1);
+
+        let _ = crate::cache::delete_recent_source_and_cache(&source_path);
+    }
+
+    #[test]
+    fn pdf_ocr_alignment_artifact_populates_token_lineage_and_cross_column_contract() {
+        let source_path = unique_pdf_source_path();
+        fs::write(&source_path, b"pdf").expect("write source");
+        let mut session = build_test_session(&[&["Alpha beta gamma."], &["Delta epsilon."]]);
+        session.source_path = source_path.clone();
+        crate::cache::persist_pdf_sentence_map(
+            &source_path,
+            &[crate::cache::PdfSentenceLocation {
+                sentence_idx: 0,
+                page_idx: Some(3),
+                rects: vec![
+                    crate::cache::PdfRect {
+                        left: 0.08,
+                        top: 0.2,
+                        width: 0.18,
+                        height: 0.04,
+                    },
+                    crate::cache::PdfRect {
+                        left: 0.62,
+                        top: 0.2,
+                        width: 0.18,
+                        height: 0.04,
+                    },
+                ],
+                line_rects: vec![
+                    crate::cache::PdfRect {
+                        left: 0.08,
+                        top: 0.2,
+                        width: 0.18,
+                        height: 0.04,
+                    },
+                    crate::cache::PdfRect {
+                        left: 0.62,
+                        top: 0.2,
+                        width: 0.18,
+                        height: 0.04,
+                    },
+                ],
+                block_rects: vec![
+                    crate::cache::PdfRect {
+                        left: 0.08,
+                        top: 0.18,
+                        width: 0.18,
+                        height: 0.08,
+                    },
+                    crate::cache::PdfRect {
+                        left: 0.62,
+                        top: 0.18,
+                        width: 0.18,
+                        height: 0.08,
+                    },
+                ],
+                confidence: "exact".to_string(),
+                reason: "exact_geometry".to_string(),
+                score: 0.93,
+            }],
+        );
+
+        session.refresh_pdf_ocr_alignment_artifact();
+        let artifact = crate::cache::load_pdf_ocr_alignment_artifact(&source_path)
+            .expect("alignment artifact should exist");
+        let alignment = artifact
+            .alignments
+            .iter()
+            .find(|alignment| alignment.sentence_idx == 0)
+            .expect("sentence alignment should exist");
+
+        assert!(artifact.token_lineage_available);
+        assert!(!alignment.token_lineage.is_empty());
+        assert!(alignment.crosses_column_boundaries);
+        assert!(alignment.cross_column_confident);
+        assert_eq!(artifact.cross_column_alignment_count, 1);
+        assert_eq!(artifact.cross_column_confident_alignment_count, 1);
+        assert_eq!(artifact.blocks.len(), 2);
+        assert_eq!(artifact.lines.len(), 2);
+        assert_eq!(artifact.page_geometry.len(), 1);
+        assert_eq!(artifact.page_geometry[0].reading_order_mode, "cross_column_confident");
+        assert_eq!(artifact.page_build_ms.len(), 1);
+        assert_eq!(artifact.chunk_build_ms.len(), 1);
 
         let _ = crate::cache::delete_recent_source_and_cache(&source_path);
     }

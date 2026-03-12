@@ -17,7 +17,7 @@ const CONTENT_PDF_SYNC_META_FILE: &str = "content/pdf-sync-meta.toml";
 const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
 const CONTENT_PDF_OCR_ALIGNMENT_FILE: &str = "content/pdf-ocr-alignment.toml";
 const PDF_SYNC_META_CLASSIFICATION_VERSION: u32 = 3;
-const PDF_OCR_ALIGNMENT_VERSION: u32 = 1;
+const PDF_OCR_ALIGNMENT_VERSION: u32 = 2;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PdfSyncMeta {
@@ -63,6 +63,10 @@ pub struct PdfOcrSentenceAlignment {
     #[serde(default)]
     pub token_lineage: Vec<String>,
     pub score: f32,
+    #[serde(default)]
+    pub crosses_column_boundaries: bool,
+    #[serde(default)]
+    pub cross_column_confident: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -71,6 +75,58 @@ pub struct PdfOcrPageAlignmentBucket {
     #[serde(default)]
     pub sentence_indexes: Vec<usize>,
     pub highlightable_sentence_count: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfOcrTokenGeometry {
+    pub token_id: String,
+    pub page_idx: usize,
+    pub block_idx: usize,
+    pub line_idx: usize,
+    pub reading_order_idx: usize,
+    pub text: String,
+    pub rect: PdfRect,
+    pub confidence: f32,
+    pub source_kind: PdfOcrSourceKind,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfOcrLineGeometry {
+    pub line_id: String,
+    pub page_idx: usize,
+    pub block_idx: usize,
+    pub reading_order_idx: usize,
+    pub text: String,
+    pub rect: PdfRect,
+    pub confidence: f32,
+    #[serde(default)]
+    pub token_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfOcrBlockGeometry {
+    pub block_id: String,
+    pub page_idx: usize,
+    pub reading_order_idx: usize,
+    pub text: String,
+    pub rect: PdfRect,
+    pub confidence: f32,
+    #[serde(default)]
+    pub line_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfOcrPageGeometry {
+    pub page_idx: usize,
+    pub confidence: f32,
+    pub build_ms: u32,
+    pub reading_order_mode: String,
+    #[serde(default)]
+    pub block_ids: Vec<String>,
+    #[serde(default)]
+    pub line_ids: Vec<String>,
+    #[serde(default)]
+    pub token_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -92,10 +148,24 @@ pub struct PdfOcrAlignmentArtifact {
     pub rebuilt_alignment_count: usize,
     pub alignment_build_ms: u32,
     #[serde(default)]
+    pub page_build_ms: Vec<u32>,
+    #[serde(default)]
+    pub chunk_build_ms: Vec<u32>,
+    pub cross_column_alignment_count: usize,
+    pub cross_column_confident_alignment_count: usize,
+    #[serde(default)]
     pub degraded_reasons: Vec<String>,
     pub explanation: String,
     #[serde(default)]
     pub page_buckets: Vec<PdfOcrPageAlignmentBucket>,
+    #[serde(default)]
+    pub blocks: Vec<PdfOcrBlockGeometry>,
+    #[serde(default)]
+    pub lines: Vec<PdfOcrLineGeometry>,
+    #[serde(default)]
+    pub tokens: Vec<PdfOcrTokenGeometry>,
+    #[serde(default)]
+    pub page_geometry: Vec<PdfOcrPageGeometry>,
     #[serde(default)]
     pub alignments: Vec<PdfOcrSentenceAlignment>,
 }

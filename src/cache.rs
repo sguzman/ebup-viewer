@@ -64,7 +64,8 @@ pub use browser_tab_cache::{
     rehydrate_browser_tab_manifest_assets,
 };
 pub use content_artifacts::{
-    PdfOcrAlignmentArtifact, PdfOcrPageAlignmentBucket, PdfOcrSentenceAlignment,
+    PdfOcrAlignmentArtifact, PdfOcrBlockGeometry, PdfOcrLineGeometry, PdfOcrPageAlignmentBucket,
+    PdfOcrPageGeometry, PdfOcrSentenceAlignment, PdfOcrTokenGeometry,
     PdfSentenceLocation, stable_sentence_text_hash,
 };
 
@@ -1217,6 +1218,10 @@ sentence_text = "legacy bookmark entry"
             reused_alignment_count: 1,
             rebuilt_alignment_count: 1,
             alignment_build_ms: 4,
+            page_build_ms: vec![2, 2],
+            chunk_build_ms: vec![4],
+            cross_column_alignment_count: 0,
+            cross_column_confident_alignment_count: 0,
             degraded_reasons: vec!["line_window_fuzzy_alignment".to_string()],
             explanation: "Test OCR alignment".to_string(),
             page_buckets: vec![PdfOcrPageAlignmentBucket {
@@ -1224,6 +1229,10 @@ sentence_text = "legacy bookmark entry"
                 sentence_indexes: vec![1],
                 highlightable_sentence_count: 1,
             }],
+            blocks: vec![],
+            lines: vec![],
+            tokens: vec![],
+            page_geometry: vec![],
             alignments: vec![PdfOcrSentenceAlignment {
                 sentence_idx: 1,
                 sentence_text_hash: stable_sentence_text_hash("Example sentence."),
@@ -1240,6 +1249,8 @@ sentence_text = "legacy bookmark entry"
                 fallback_reason: "line_window_fuzzy_alignment".to_string(),
                 token_lineage: Vec::new(),
                 score: 0.74,
+                crosses_column_boundaries: false,
+                cross_column_confident: false,
             }],
         };
 

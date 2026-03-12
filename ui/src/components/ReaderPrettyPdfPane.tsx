@@ -1557,7 +1557,13 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             {reader.pdf_ocr_alignment.alignment_build_ms} ms | Exact rate:{" "}
             {(reader.pdf_ocr_alignment.exact_sentence_rate * 100).toFixed(1)}% | Fallback rate:{" "}
             {(reader.pdf_ocr_alignment.degraded_fallback_rate * 100).toFixed(1)}% | Page-only rate:{" "}
-            {(reader.pdf_ocr_alignment.page_only_rate * 100).toFixed(1)}%
+            {(reader.pdf_ocr_alignment.page_only_rate * 100).toFixed(1)}% | Blocks:{" "}
+            {reader.pdf_ocr_alignment.geometry_block_count} | Lines:{" "}
+            {reader.pdf_ocr_alignment.geometry_line_count} | Tokens:{" "}
+            {reader.pdf_ocr_alignment.geometry_token_count} | Cross-column:{" "}
+            {reader.pdf_ocr_alignment.cross_column_alignment_count}/{reader.pdf_ocr_alignment.cross_column_confident_alignment_count} | Page max:{" "}
+            {reader.pdf_ocr_alignment.max_page_build_ms} ms | Chunk max:{" "}
+            {reader.pdf_ocr_alignment.max_chunk_build_ms} ms
           </Typography>
         ) : null}
         {!error && reader.pdf_ocr_pipeline ? (

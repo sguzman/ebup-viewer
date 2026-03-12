@@ -25,13 +25,13 @@
 - [x] `ocr_failed_or_unusable` -> native PDF render only, text/TTS gated.
 
 ## Phase 1: OCR Output Contract
-- [ ] Define a canonical OCR output contract independent of the renderer:
-- [ ] recognized text blocks
-- [ ] recognized lines
-- [ ] recognized words or tokens
-- [ ] page-local bounding boxes for each level
-- [ ] reading-order indices at block and line granularity
-- [ ] confidence per word, line, block, and page
+- [x] Define a canonical OCR output contract independent of the renderer:
+- [x] recognized text blocks
+- [x] recognized lines
+- [x] recognized words or tokens
+- [x] page-local bounding boxes for each level
+- [x] reading-order indices at block and line granularity
+- [x] confidence per word, line, block, and page
 - [x] source markers distinguishing embedded text, OCR text, and mixed merged text
 - [x] Persist the contract in cache as a versioned OCR geometry artifact.
 - [x] Add tracing for OCR engine, OCR mode, per-page confidence summary, and total recognized token counts.
@@ -69,9 +69,9 @@
 - [x] `sentence_idx -> page_idx + rects[] + line_rects[] + block_rects[]`
 - [x] support one sentence spanning multiple lines
 - [x] support one sentence spanning multiple OCR blocks
-- [ ] support one sentence crossing column boundaries only when confidence justifies it
+- [x] support one sentence crossing column boundaries only when confidence justifies it
 - [x] store confidence and fallback reason per mapping
-- [ ] store contributing OCR token ids for auditability
+- [x] store contributing OCR token ids for auditability
 - [x] Build the artifact deterministically from canonical `tts_text` and OCR geometry, not from renderer DOM guesses alone.
 - [x] Persist the artifact alongside OCR text output and cache signatures.
 
@@ -140,7 +140,7 @@
 - [x] viewport-local overlay recomputation only
 - [x] avoid rebuilding whole-document alignment on every playback tick
 - [ ] Add profiling for:
-- [ ] OCR time per page/chunk
+- [x] OCR time per page/chunk
 - [x] alignment build time
 - [x] overlay update time
 - [x] cache hit rates

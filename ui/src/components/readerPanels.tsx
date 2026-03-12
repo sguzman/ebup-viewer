@@ -931,6 +931,21 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
                     {reader.pdf_ocr_alignment.alignment_build_ms} ms
                   </Typography>
                   <Typography variant="body2">
+                    Geometry blocks: {reader.pdf_ocr_alignment.geometry_block_count} | lines{" "}
+                    {reader.pdf_ocr_alignment.geometry_line_count} | tokens{" "}
+                    {reader.pdf_ocr_alignment.geometry_token_count}
+                  </Typography>
+                  <Typography variant="body2">
+                    Page timings: {reader.pdf_ocr_alignment.page_timing_count} pages | max{" "}
+                    {reader.pdf_ocr_alignment.max_page_build_ms} ms | chunk timings{" "}
+                    {reader.pdf_ocr_alignment.chunk_timing_count} | max{" "}
+                    {reader.pdf_ocr_alignment.max_chunk_build_ms} ms
+                  </Typography>
+                  <Typography variant="body2">
+                    Cross-column alignments: {reader.pdf_ocr_alignment.cross_column_alignment_count}
+                    {" | "}confident cross-column: {reader.pdf_ocr_alignment.cross_column_confident_alignment_count}
+                  </Typography>
+                  <Typography variant="body2">
                     Exact rate: {formatPercent(reader.pdf_ocr_alignment.exact_sentence_rate * 100)}
                     {" | "}degraded fallback rate: {formatPercent(reader.pdf_ocr_alignment.degraded_fallback_rate * 100)}
                     {" | "}page-only rate: {formatPercent(reader.pdf_ocr_alignment.page_only_rate * 100)}

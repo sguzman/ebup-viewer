@@ -114,14 +114,62 @@ def convert(req: dict, cfg: dict) -> None:
         doc.close()
 
 
+def extract_page_texts(input_pdf: Path, cfg: dict) -> None:
+    native_cfg = cfg.get("native_text", {})
+
+    reader = None
+    doc = None
+    if PdfReader is not None:
+        try:
+            reader = PdfReader(str(input_pdf))
+        except Exception as e:
+            print(json.dumps({"ok": False, "page_texts": [], "warnings": [f"failed to read pdf: {e}"], "meta": {}, "error": str(e)}))
+            return
+        n_pages = len(reader.pages)
+    elif pdfium is not None:
+        try:
+            doc = pdfium.PdfDocument(str(input_pdf))
+        except Exception as e:
+            print(json.dumps({"ok": False, "page_texts": [], "warnings": [f"failed to read pdf via pypdfium2: {e}"], "meta": {}, "error": str(e)}))
+            return
+        n_pages = len(doc)
+    else:
+        print(json.dumps({"ok": False, "page_texts": [], "warnings": ["missing pypdf and pypdfium2 imports"], "meta": {}, "error": "missing pdf backends"}))
+        return
+
+    page_texts = []
+    for page_index in range(n_pages):
+        if reader is not None:
+            text = reader.pages[page_index].extract_text() or ""
+        else:
+            page = doc[page_index]
+            text_page = page.get_textpage()
+            text = text_page.get_text_range() or ""
+            text_page.close()
+            page.close()
+        page_texts.append(normalize_text(text, native_cfg))
+
+    print(json.dumps({
+        "ok": True,
+        "page_texts": page_texts,
+        "warnings": [],
+        "meta": {"page_count": n_pages, "engine": "native_text"}
+    }))
+    if doc is not None:
+        doc.close()
+
+
 def main() -> None:
     payload = json.loads(sys.stdin.read().strip() or "{}")
     cmd = payload.get("cmd")
-    if cmd != "convert":
-        print(json.dumps({"ok": False, "warnings": [f"unknown cmd: {cmd}"], "markdown": "", "meta": {}}))
+    if cmd == "convert":
+        convert(payload.get("req", {}), payload.get("cfg", {}))
         return
-
-    convert(payload.get("req", {}), payload.get("cfg", {}))
+    if cmd == "extract_page_texts":
+        input_pdf = Path(payload.get("input_pdf", ""))
+        extract_page_texts(input_pdf, payload.get("cfg", {}))
+        return
+    print(json.dumps({"ok": False, "warnings": [f"unknown cmd: {cmd}"], "markdown": "", "meta": {}, "error": f"unknown cmd: {cmd}"}))
 
 
 if __name__ == "__main__":

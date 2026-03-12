@@ -1972,6 +1972,47 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     }, [sourcePath]);
 
     useEffect(() => {
+      let cancelled = false;
+      pdfPageTextsRef.current.clear();
+      sentencePageTargetCacheRef.current.clear();
+      setPdfPageTextVersion((value) => value + 1);
+      void backendApi.readerLoadPdfRenderPrecomputed(sourcePath)
+        .then((artifact) => {
+          if (cancelled) {
+            return;
+          }
+          artifact.page_texts.forEach((pageText, pageIndex) => {
+            pdfPageTextsRef.current.set(pageIndex, pageText);
+          });
+          artifact.sentence_page_hints.forEach((pageIndex, sentenceIndex) => {
+            if (pageIndex === null || pageIndex === undefined) {
+              return;
+            }
+            sentencePageTargetCacheRef.current.set(sentenceIndex, pageIndex);
+          });
+          setPdfPageTextVersion((value) => value + 1);
+          logPdfDebug("loadedBackendRenderPrecompute", {
+            sourcePath,
+            pageTextCount: artifact.page_texts.length,
+            sentenceHintCount: artifact.sentence_page_hints.filter((value) => value !== null).length,
+            source: artifact.source
+          });
+        })
+        .catch((cause: unknown) => {
+          if (cancelled) {
+            return;
+          }
+          logPdfDebug("loadBackendRenderPrecomputeError", {
+            sourcePath,
+            error: cause instanceof Error ? cause.message : String(cause)
+          });
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [sourcePath]);
+
+    useEffect(() => {
       syncPdfPreviewZoom(zoom);
     }, [renderVersion, syncPdfPreviewZoom, zoom]);
 

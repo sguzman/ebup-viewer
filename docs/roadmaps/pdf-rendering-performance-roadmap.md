@@ -6,7 +6,7 @@
 - [ ] Achieve very fast initial open on typical PDFs.
 - [ ] Make zoom feel immediate instead of blocking.
 - [ ] Keep scrolling smooth on large and complex documents.
-- [ ] Preserve stable TTS highlight, jump, and auto-scroll behavior without introducing viewer jank.
+- [x] Preserve stable TTS highlight, jump, and auto-scroll behavior without introducing viewer jank.
 - [ ] Eliminate any interaction path that still behaves like a whole-document rerender.
 
 ## Problem Statement
@@ -25,13 +25,13 @@
 - [ ] Zoom gives immediate visual feedback and settles without long stalls.
 - [ ] Scrolling through large PDFs does not produce visible blocking or jank.
 - [ ] Only visible or near-visible pages are expensive at any given time.
-- [ ] TTS highlight and jump behavior do not trigger large rerender cascades.
-- [ ] Runtime behavior is measurable with repeatable before/after metrics.
+- [x] TTS highlight and jump behavior do not trigger large rerender cascades.
+- [x] Runtime behavior is measurable with repeatable before/after metrics.
 
 ## Performance Contract
 
 - [x] Treat PDF viewing as a dedicated subsystem with explicit scheduling, caching, and lifecycle ownership.
-- [ ] Keep React responsible for shell composition and high-level state, not the hot render loop for PDF pages.
+- [x] Keep React responsible for shell composition and high-level state, not the hot render loop for PDF pages.
 - [x] Never eagerly render the entire PDF document at interactive fidelity.
 - [x] Treat text-layer work separately from canvas paint work.
 - [x] Ensure TTS sync/highlight consumes cached mapping artifacts where possible instead of rebuilding mappings on hot paths.
@@ -79,7 +79,7 @@
 - [x] Split the current PDF pane into an explicit text-layer cache.
 - [x] Split the current PDF pane into an explicit highlight/sync overlay controller.
 - [x] Make the render scheduler imperative and ref-driven rather than React-state-driven for hot paths.
-- [ ] Keep React responsible for shell composition, settings, and user intent only.
+- [x] Keep React responsible for shell composition, settings, and user intent only.
 - [x] Define strict page lifecycle states.
 - [x] Add a `placeholder` lifecycle state.
 - [x] Add a `scheduled` lifecycle state.
@@ -208,21 +208,21 @@
 
 ## Phase 14: Backend and Precompute Support
 
-- [ ] Use the Rust/backend layer for page text extraction where it helps.
-- [ ] Use the Rust/backend layer for sentence-to-page metadata where it helps.
-- [ ] Use the Rust/backend layer for reusable PDF sync artifacts where it helps.
-- [ ] Avoid assuming Rust-side rasterization alone solves interaction lag.
-- [ ] Keep the interactive viewer optimized on the frontend even if preprocessing moves backend-side.
+- [x] Use the Rust/backend layer for page text extraction where it helps.
+- [x] Use the Rust/backend layer for sentence-to-page metadata where it helps.
+- [x] Use the Rust/backend layer for reusable PDF sync artifacts where it helps.
+- [x] Avoid assuming Rust-side rasterization alone solves interaction lag.
+- [x] Keep the interactive viewer optimized on the frontend even if preprocessing moves backend-side.
 
 ## Phase 15: Alignment With Stock PDF.js Viewer Behavior
 
-- [ ] Audit the current custom viewer against stock PDF.js viewer viewport virtualization behavior.
-- [ ] Audit the current custom viewer against stock PDF.js viewer render queue prioritization behavior.
-- [ ] Audit the current custom viewer against stock PDF.js viewer zoom behavior.
-- [ ] Audit the current custom viewer against stock PDF.js viewer text-layer lifecycle behavior.
-- [ ] Audit the current custom viewer against stock PDF.js viewer cancellation semantics.
-- [ ] Where the custom path is materially worse, adopt the proven PDF.js lifecycle pattern instead of inventing new behavior.
-- [ ] Increase direct reuse of stock PDF.js viewer concepts if the bespoke path remains slower.
+- [x] Audit the current custom viewer against stock PDF.js viewer viewport virtualization behavior.
+- [x] Audit the current custom viewer against stock PDF.js viewer render queue prioritization behavior.
+- [x] Audit the current custom viewer against stock PDF.js viewer zoom behavior.
+- [x] Audit the current custom viewer against stock PDF.js viewer text-layer lifecycle behavior.
+- [x] Audit the current custom viewer against stock PDF.js viewer cancellation semantics.
+- [x] Where the custom path is materially worse, adopt the proven PDF.js lifecycle pattern instead of inventing new behavior.
+- [x] Increase direct reuse of stock PDF.js viewer concepts if the bespoke path remains slower.
 
 ## Recommended Implementation Order
 
@@ -234,13 +234,13 @@
 - [x] Step 6: Add render cancellation and page-priority scheduling.
 - [x] Step 7: Cache page text/span artifacts and isolate TTS highlight from hot render work.
 - [x] Step 8: Tune open/jump flow and memory budgets.
-- [ ] Step 9: Compare against stock PDF.js viewer behavior and adopt missing lifecycle patterns.
+- [x] Step 9: Compare against stock PDF.js viewer behavior and adopt missing lifecycle patterns.
 
 ## Acceptance Criteria
 
 - [ ] The first visible PDF page becomes usable quickly on large documents.
 - [ ] Zoom feels immediate instead of blocking.
 - [ ] Scrolling through long PDFs does not stall on page creation.
-- [ ] TTS highlight and jump behavior remain stable without degrading render responsiveness.
-- [ ] No interaction path causes whole-document rerendering.
+- [x] TTS highlight and jump behavior remain stable without degrading render responsiveness.
+- [x] No interaction path causes whole-document rerendering.
 - [x] Build verification passes after implementation, excluding `deb`, `rpm`, and AppImage packaging targets.

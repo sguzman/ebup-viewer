@@ -65,7 +65,8 @@ pub use browser_tab_cache::{
 };
 pub use content_artifacts::{
     PdfOcrAlignmentArtifact, PdfOcrBlockGeometry, PdfOcrLineGeometry, PdfOcrPageAlignmentBucket,
-    PdfOcrPageGeometry, PdfOcrSentenceAlignment, PdfOcrTokenGeometry, PdfSentenceLocation,
+    PdfOcrPageGeometry, PdfOcrSentenceAlignment, PdfOcrTokenGeometry, PdfRenderPrecomputedState,
+    PdfSentenceLocation,
     stable_sentence_text_hash,
 };
 
@@ -294,6 +295,17 @@ pub fn persist_pdf_ocr_alignment_artifact(source_path: &Path, artifact: &PdfOcrA
 
 pub fn load_pdf_ocr_alignment_artifact(source_path: &Path) -> Option<PdfOcrAlignmentArtifact> {
     content_artifacts::load_pdf_ocr_alignment_artifact(source_path)
+}
+
+pub fn persist_pdf_render_precomputed_state(
+    source_path: &Path,
+    artifact: &PdfRenderPrecomputedState,
+) {
+    content_artifacts::persist_pdf_render_precomputed_state(source_path, artifact)
+}
+
+pub fn load_pdf_render_precomputed_state(source_path: &Path) -> Option<PdfRenderPrecomputedState> {
+    content_artifacts::load_pdf_render_precomputed_state(source_path)
 }
 
 pub fn remember_source_path(source_path: &Path) {
@@ -1263,6 +1275,30 @@ sentence_text = "legacy bookmark entry"
         assert_eq!(loaded.source_kind, artifact.source_kind);
         assert_eq!(loaded.mapped_sentence_count, artifact.mapped_sentence_count);
         assert_eq!(loaded.alignments, artifact.alignments);
+
+        cleanup_source_and_cache(&source);
+    }
+
+    #[test]
+    fn pdf_render_precomputed_state_roundtrip_preserves_page_texts_and_sentence_hints() {
+        let source = unique_source_path("pdf");
+        write_source_file(&source);
+
+        let artifact = PdfRenderPrecomputedState {
+            version: 0,
+            page_texts: vec!["Page one".to_string(), "Page two".to_string()],
+            sentence_page_hints: vec![Some(0), Some(1), None],
+            source: "native_python_backend".to_string(),
+        };
+
+        persist_pdf_render_precomputed_state(&source, &artifact);
+        let loaded = load_pdf_render_precomputed_state(&source)
+            .expect("pdf render precompute artifact should load");
+
+        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.page_texts, artifact.page_texts);
+        assert_eq!(loaded.sentence_page_hints, artifact.sentence_page_hints);
+        assert_eq!(loaded.source, artifact.source);
 
         cleanup_source_and_cache(&source);
     }

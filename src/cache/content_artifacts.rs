@@ -16,8 +16,10 @@ use crate::epub_loader::{
 const CONTENT_PDF_SYNC_META_FILE: &str = "content/pdf-sync-meta.toml";
 const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
 const CONTENT_PDF_OCR_ALIGNMENT_FILE: &str = "content/pdf-ocr-alignment.toml";
+const CONTENT_PDF_RENDER_PRECOMPUTE_FILE: &str = "content/pdf-render-precompute.toml";
 const PDF_SYNC_META_CLASSIFICATION_VERSION: u32 = 3;
 const PDF_OCR_ALIGNMENT_VERSION: u32 = 2;
+const PDF_RENDER_PRECOMPUTE_VERSION: u32 = 1;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct PdfSyncMeta {
@@ -170,6 +172,17 @@ pub struct PdfOcrAlignmentArtifact {
     pub alignments: Vec<PdfOcrSentenceAlignment>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfRenderPrecomputedState {
+    pub version: u32,
+    #[serde(default)]
+    pub page_texts: Vec<String>,
+    #[serde(default)]
+    pub sentence_page_hints: Vec<Option<usize>>,
+    #[serde(default)]
+    pub source: String,
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PdfSentenceMap {
     locations: Vec<PdfSentenceLocation>,
@@ -178,6 +191,11 @@ struct PdfSentenceMap {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PdfOcrAlignmentEnvelope {
     artifact: PdfOcrAlignmentArtifact,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PdfRenderPrecomputedEnvelope {
+    artifact: PdfRenderPrecomputedState,
 }
 
 pub fn stable_sentence_text_hash(text: &str) -> String {
@@ -554,6 +572,59 @@ pub(super) fn load_pdf_ocr_alignment_artifact(
         quality_class = ?parsed.artifact.quality_class,
         "Loaded cached PDF OCR alignment artifact"
     );
+    Some(parsed.artifact)
+}
+
+pub(super) fn persist_pdf_render_precomputed_state(
+    source_path: &Path,
+    artifact: &PdfRenderPrecomputedState,
+) {
+    ensure_content_layout(source_path);
+    let path = hash_dir(source_path).join(CONTENT_PDF_RENDER_PRECOMPUTE_FILE);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let envelope = PdfRenderPrecomputedEnvelope {
+        artifact: PdfRenderPrecomputedState {
+            version: PDF_RENDER_PRECOMPUTE_VERSION,
+            ..artifact.clone()
+        },
+    };
+    match toml::to_string(&envelope) {
+        Ok(serialized) => match fs::write(&path, serialized) {
+            Ok(()) => debug!(
+                path = %path.display(),
+                page_count = envelope.artifact.page_texts.len(),
+                sentence_hint_count = envelope.artifact.sentence_page_hints.len(),
+                "Persisted PDF render precompute artifact"
+            ),
+            Err(err) => warn!(
+                path = %path.display(),
+                "Failed to persist PDF render precompute artifact: {err}"
+            ),
+        },
+        Err(err) => warn!(
+            path = %path.display(),
+            "Failed to serialize PDF render precompute artifact: {err}"
+        ),
+    }
+}
+
+pub(super) fn load_pdf_render_precomputed_state(
+    source_path: &Path,
+) -> Option<PdfRenderPrecomputedState> {
+    let path = hash_dir(source_path).join(CONTENT_PDF_RENDER_PRECOMPUTE_FILE);
+    let raw = fs::read_to_string(&path).ok()?;
+    let parsed = toml::from_str::<PdfRenderPrecomputedEnvelope>(&raw).ok()?;
+    if parsed.artifact.version != PDF_RENDER_PRECOMPUTE_VERSION {
+        debug!(
+            path = %path.display(),
+            found = parsed.artifact.version,
+            expected = PDF_RENDER_PRECOMPUTE_VERSION,
+            "Ignoring stale PDF render precompute artifact version"
+        );
+        return None;
+    }
     Some(parsed.artifact)
 }
 

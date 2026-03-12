@@ -70,6 +70,13 @@ export interface PdfSentenceLocation {
   score: number;
 }
 
+export interface PdfRenderPrecomputedState {
+  version: number;
+  page_texts: string[];
+  sentence_page_hints: Array<number | null>;
+  source: string;
+}
+
 const MAX_RECENT_LIMIT = 512;
 const DEFAULT_RECENT_LIMIT = 64;
 
@@ -1036,6 +1043,7 @@ export interface BackendApi {
   readerTtsRepeatSentence: () => Promise<ReaderSnapshot>;
   readerTtsPrecomputePage: () => Promise<ReaderSnapshot>;
   readerLoadPdfBytes: (path: string) => Promise<Uint8Array>;
+  readerLoadPdfRenderPrecomputed: (path: string) => Promise<PdfRenderPrecomputedState>;
   readerLoadPdfSyncMap: (path: string) => Promise<PdfSentenceLocation[]>;
   readerPersistPdfSyncMap: (path: string, locations: PdfSentenceLocation[]) => Promise<void>;
   readerCloseSession: () => Promise<SessionState>;
@@ -1108,6 +1116,8 @@ function createTauriBackendApi(): BackendApi {
     readerTtsPrecomputePage: () => invokeCommand<ReaderSnapshot>("reader_tts_precompute_page"),
     readerLoadPdfBytes: async (path) =>
       Uint8Array.from(await invokeCommand<number[]>("reader_load_pdf_bytes", { path })),
+    readerLoadPdfRenderPrecomputed: (path) =>
+      invokeCommand<PdfRenderPrecomputedState>("reader_load_pdf_render_precomputed", { path }),
     readerLoadPdfSyncMap: (path) =>
       invokeCommand<PdfSentenceLocation[]>("reader_load_pdf_sync_map", { path }),
     readerPersistPdfSyncMap: (path, locations) =>
@@ -1193,6 +1203,12 @@ function createMockBackendApi(): BackendApi {
     readerTtsRepeatSentence: mockReaderTtsRepeatSentence,
     readerTtsPrecomputePage: mockReaderTtsPrecomputePage,
     readerLoadPdfBytes: async () => new Uint8Array(),
+    readerLoadPdfRenderPrecomputed: async () => ({
+      version: 1,
+      page_texts: [],
+      sentence_page_hints: [],
+      source: "mock"
+    }),
     readerLoadPdfSyncMap: async () => [],
     readerPersistPdfSyncMap: async () => {},
     readerCloseSession: mockSessionReturnToStarter,

@@ -59,6 +59,23 @@ impl PythonEngine {
         self.scripts_dir.join(name)
     }
 
+    pub fn extract_pdf_page_texts(&self, input: &Path) -> Result<Vec<String>> {
+        let script = self.script("pdf_text.py");
+        let req = serde_json::json!({
+            "cmd": "extract_page_texts",
+            "input_pdf": input,
+            "cfg": &self.cfg,
+        });
+        let out: PdfPageTextOut = self.run_json(&script, &req, Some(180), &[])?;
+        if !out.ok {
+            let message = out
+                .error
+                .unwrap_or_else(|| "extract_page_texts returned ok=false".to_string());
+            return Err(anyhow!(message));
+        }
+        Ok(out.page_texts)
+    }
+
     fn run_json<I: serde::Serialize, O: for<'de> serde::Deserialize<'de>>(
         &self,
         script: &Path,

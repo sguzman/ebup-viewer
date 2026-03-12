@@ -118,6 +118,19 @@ pub struct ConvertOut {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfPageTextOut {
+    pub ok: bool,
+    #[serde(default)]
+    pub page_texts: Vec<String>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    #[serde(default)]
+    pub meta: serde_json::Value,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SplitChunk {
     pub chunk_index: u32,
     pub start_page: u32,

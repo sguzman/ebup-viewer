@@ -1,4 +1,94 @@
 use super::*;
+use crate::quack_check::engine::python::PythonEngine;
+use tracing::{debug, warn};
+
+fn quack_check_config_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../conf/quack-check.toml")
+}
+
+fn build_pdf_sentence_page_hints(source_path: &Path) -> Vec<Option<usize>> {
+    let mut highest_sentence_idx = 0usize;
+    let mut hints: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+
+    if let Some(locations) = cache::load_pdf_sentence_map(source_path) {
+        for location in locations {
+            highest_sentence_idx = highest_sentence_idx.max(location.sentence_idx);
+            if let Some(page_idx) = location.page_idx {
+                hints.entry(location.sentence_idx).or_insert(page_idx);
+            }
+        }
+    }
+
+    if let Some(artifact) = cache::load_pdf_ocr_alignment_artifact(source_path) {
+        for alignment in artifact.alignments {
+            highest_sentence_idx = highest_sentence_idx.max(alignment.sentence_idx);
+            if let Some(page_idx) = alignment.page_idx {
+                hints.insert(alignment.sentence_idx, page_idx);
+            }
+        }
+    }
+
+    if hints.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = vec![None; highest_sentence_idx + 1];
+    for (sentence_idx, page_idx) in hints {
+        if let Some(slot) = out.get_mut(sentence_idx) {
+            *slot = Some(page_idx);
+        }
+    }
+    out
+}
+
+fn build_pdf_render_precomputed_state(
+    source_path: &Path,
+) -> Result<cache::PdfRenderPrecomputedState, BridgeError> {
+    if let Some(cached) = cache::load_pdf_render_precomputed_state(source_path) {
+        debug!(
+            path = %source_path.display(),
+            page_count = cached.page_texts.len(),
+            hint_count = cached.sentence_page_hints.len(),
+            "Loaded cached PDF render precompute artifact"
+        );
+        return Ok(cached);
+    }
+
+    let cfg = quack_check::config::Config::load(&quack_check_config_path()).map_err(|err| {
+        bridge_error(
+            "pdf_render_precompute_config_failed",
+            format!("Failed to load quack-check config: {err}"),
+        )
+    })?;
+    let engine = PythonEngine::new(&cfg).map_err(|err| {
+        bridge_error(
+            "pdf_render_precompute_engine_failed",
+            format!("Failed to initialize Python PDF text engine: {err}"),
+        )
+    })?;
+    let page_texts = engine.extract_pdf_page_texts(source_path).map_err(|err| {
+        bridge_error(
+            "pdf_render_precompute_extract_failed",
+            format!("Failed to extract PDF page texts: {err}"),
+        )
+    })?;
+    let sentence_page_hints = build_pdf_sentence_page_hints(source_path);
+    let artifact = cache::PdfRenderPrecomputedState {
+        version: 1,
+        page_texts,
+        sentence_page_hints,
+        source: "rust_backend_native_text".to_string(),
+    };
+    cache::persist_pdf_render_precomputed_state(source_path, &artifact);
+    debug!(
+        path = %source_path.display(),
+        page_count = artifact.page_texts.len(),
+        hint_count = artifact.sentence_page_hints.len(),
+        "Built PDF render precompute artifact from backend"
+    );
+    Ok(artifact)
+}
 
 #[tauri::command]
 pub(crate) fn reader_load_pdf_bytes(path: String) -> Result<Vec<u8>, BridgeError> {
@@ -48,6 +138,31 @@ pub(crate) fn reader_load_pdf_sync_map(
         "Loaded cached PDF sentence sync map for native PDF renderer"
     );
     Ok(locations)
+}
+
+#[tauri::command]
+pub(crate) fn reader_load_pdf_render_precomputed(
+    path: String,
+) -> Result<cache::PdfRenderPrecomputedState, BridgeError> {
+    let source_path = PathBuf::from(path.trim());
+    if source_path.as_os_str().is_empty() {
+        return Err(bridge_error("invalid_input", "Path cannot be empty"));
+    }
+    if !source_path.exists() {
+        return Err(bridge_error(
+            "pdf_render_precompute_missing",
+            format!("PDF path does not exist: {}", source_path.display()),
+        ));
+    }
+    let artifact = build_pdf_render_precomputed_state(&source_path)?;
+    if artifact.sentence_page_hints.is_empty() {
+        warn!(
+            path = %source_path.display(),
+            page_count = artifact.page_texts.len(),
+            "PDF render precompute built without sentence-page hints"
+        );
+    }
+    Ok(artifact)
 }
 
 #[tauri::command]

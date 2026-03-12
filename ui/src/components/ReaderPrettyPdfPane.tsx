@@ -1226,23 +1226,36 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
         highlightedOverlayNodesRef.current = [];
         overlaySentenceMapRef.current.clear();
+        const preferredPages = activeHighlight.match.pageIndex === null
+          ? renderedPages
+          : renderedPages.filter((page) => Math.abs(page.pageIndex - activeHighlight.match.pageIndex!) <= 1);
+        const reboundResult = findCachedSentenceMatchInRenderedPages(
+          preferredPages.length > 0 ? preferredPages : renderedPages,
+          reader.sentences[activeHighlight.sentenceIdx] ?? "",
+          spanArtifactCacheRef.current
+        );
+        const reboundMatch = reboundResult.match ?? activeHighlight.match;
         const domHighlight = applyPdfHighlightDom(
           highlightedNodesRef.current,
           highlightedPagesRef.current,
-          flattenRenderedPdfSpans(renderedPages),
+          reboundResult.spans,
           renderedPages,
-          activeHighlight.match
+          reboundMatch
         );
         highlightedNodesRef.current = domHighlight.highlightedNodes;
         highlightedPagesRef.current = domHighlight.highlightedPages;
+        activeHighlightStateRef.current = {
+          ...activeHighlight,
+          match: reboundMatch
+        };
         logPdfDebug("rebindActiveSpanHighlight", {
           sentenceIdx: activeHighlight.sentenceIdx,
           renderedPageCount: renderedPages.length,
-          reason: activeHighlight.match.reason
+          reason: reboundMatch.reason
         });
       }
       recordPerfMeasure("ReaderPrettyPdfPane.rebindOverlay", startedAt);
-    }, []);
+    }, [reader.sentences]);
 
     const ensurePdfPageTexts = useCallback(async (pdf: PDFDocumentProxy, generation: number) => {
       if (pdfPageTextsRef.current.size === pdf.numPages) {

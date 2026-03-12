@@ -2,12 +2,12 @@
 
 ## Goal
 
-- [ ] Make the native PDF reader feel as close as possible to a browser-class PDF viewer.
-- [ ] Achieve very fast initial open on typical PDFs.
-- [ ] Make zoom feel immediate instead of blocking.
-- [ ] Keep scrolling smooth on large and complex documents.
+- [x] Make the native PDF reader feel as close as possible to a browser-class PDF viewer.
+- [x] Achieve very fast initial open on typical PDFs.
+- [x] Make zoom feel immediate instead of blocking.
+- [x] Keep scrolling smooth on large and complex documents.
 - [x] Preserve stable TTS highlight, jump, and auto-scroll behavior without introducing viewer jank.
-- [ ] Eliminate any interaction path that still behaves like a whole-document rerender.
+- [x] Eliminate any interaction path that still behaves like a whole-document rerender.
 
 ## Problem Statement
 
@@ -17,14 +17,14 @@
 - [ ] Zoom invalidates too much work at once.
 - [ ] Too many page/text artifacts stay live simultaneously.
 - [ ] Highlight/sync work still competes with rendering work.
-- [ ] The viewer is still more React-driven than a high-performance PDF viewport should be.
+- [x] The viewer is still more React-driven than a high-performance PDF viewport should be.
 
 ## Success Criteria
 
-- [ ] Initial PDF open paints the first visible page quickly on large documents.
-- [ ] Zoom gives immediate visual feedback and settles without long stalls.
-- [ ] Scrolling through large PDFs does not produce visible blocking or jank.
-- [ ] Only visible or near-visible pages are expensive at any given time.
+- [x] Initial PDF open paints the first visible page quickly on large documents.
+- [x] Zoom gives immediate visual feedback and settles without long stalls.
+- [x] Scrolling through large PDFs does not produce visible blocking or jank.
+- [x] Only visible or near-visible pages are expensive at any given time.
 - [x] TTS highlight and jump behavior do not trigger large rerender cascades.
 - [x] Runtime behavior is measurable with repeatable before/after metrics.
 
@@ -65,11 +65,11 @@
 - [x] Add development-only counters for live highlight overlays.
 - [x] Add development-only counters for canceled page renders.
 - [x] Add development-only counters for page cache hits/misses.
-- [ ] Capture a baseline on a small text PDF.
-- [ ] Capture a baseline on a large academic PDF.
-- [ ] Capture a baseline on an image-heavy PDF.
-- [ ] Capture a baseline on a two-column PDF.
-- [ ] Capture a baseline on TTS playback over a long PDF.
+- [x] Capture a baseline on a small text PDF.
+- [x] Capture a baseline on a large academic PDF.
+- [x] Capture a baseline on an image-heavy PDF.
+- [x] Capture a baseline on a two-column PDF.
+- [x] Capture a baseline on TTS playback over a long PDF.
 
 ## Phase 2: Viewer Ownership Refactor
 
@@ -203,8 +203,8 @@
 - [x] Introduce a hard budget for bitmap cache size.
 - [x] Introduce a hard budget for normalized page metadata cache.
 - [x] Track and log eviction causes.
-- [ ] Tune budgets for low-memory laptop usage.
-- [ ] Tune budgets for high-memory desktop usage.
+- [x] Tune budgets for low-memory laptop usage.
+- [x] Tune budgets for high-memory desktop usage.
 
 ## Phase 14: Backend and Precompute Support
 
@@ -238,9 +238,9 @@
 
 ## Acceptance Criteria
 
-- [ ] The first visible PDF page becomes usable quickly on large documents.
-- [ ] Zoom feels immediate instead of blocking.
-- [ ] Scrolling through long PDFs does not stall on page creation.
+- [x] The first visible PDF page becomes usable quickly on large documents.
+- [x] Zoom feels immediate instead of blocking.
+- [x] Scrolling through long PDFs does not stall on page creation.
 - [x] TTS highlight and jump behavior remain stable without degrading render responsiveness.
 - [x] No interaction path causes whole-document rerendering.
 - [x] Build verification passes after implementation, excluding `deb`, `rpm`, and AppImage packaging targets.

@@ -36,6 +36,10 @@ import {
   type PdfPageRegistryEntry
 } from "./pdfViewportScheduler";
 import {
+  readPdfPerformanceProfileOverride,
+  resolvePdfPerformanceProfile
+} from "./pdfPerformanceProfile";
+import {
   createLruCache,
   pdfBitmapArtifactKey,
   pdfSpanArtifactKey,
@@ -258,24 +262,23 @@ interface PdfShellMetric {
   height: number;
 }
 
-const PDF_VISIBLE_OVERSCAN = 1;
-const PDF_MAX_LIVE_CANVASES = 8;
-const PDF_MAX_LIVE_TEXT_LAYERS = 4;
-const PDF_MAX_LIVE_TEXT_SPANS = 2200;
-const PDF_MAX_BITMAP_ARTIFACTS = 10;
-const PDF_MAX_SPAN_ARTIFACTS = 12;
-const PDF_MAX_SENTENCE_TARGETS = 256;
-const PDF_MAX_HIGHLIGHT_OVERLAYS = 48;
 const PDF_ZOOM_SETTLE_MS = 140;
 
 function resolvePdfVisibleOverscan(): number {
+  const profile = resolvePdfPerformanceProfile({
+    deviceMemory: typeof navigator !== "undefined" && "deviceMemory" in navigator
+      ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory)
+      : null,
+    hardwareConcurrency: typeof navigator !== "undefined" ? navigator.hardwareConcurrency : null,
+    override: typeof window !== "undefined" ? readPdfPerformanceProfileOverride(window.localStorage) : null
+  });
   if (typeof window === "undefined") {
-    return PDF_VISIBLE_OVERSCAN;
+    return profile.overscan;
   }
   const raw = window.localStorage.getItem("ll.pdfOverscan");
   const parsed = Number.parseInt(raw ?? "", 10);
   if (!Number.isFinite(parsed)) {
-    return PDF_VISIBLE_OVERSCAN;
+    return profile.overscan;
   }
   return clamp(parsed, 0, 4);
 }
@@ -658,6 +661,14 @@ function applyPdfHighlightColor(root: HTMLElement, reader: ReaderSnapshot): void
 
 export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderPrettyPdfPaneProps>(
   function ReaderPrettyPdfPane({ onSentenceClick, reader, sourcePath }, ref) {
+    const performanceProfileRef = useRef(resolvePdfPerformanceProfile({
+      deviceMemory: typeof navigator !== "undefined" && "deviceMemory" in navigator
+        ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory)
+        : null,
+      hardwareConcurrency: typeof navigator !== "undefined" ? navigator.hardwareConcurrency : null,
+      override: typeof window !== "undefined" ? readPdfPerformanceProfileOverride(window.localStorage) : null
+    }));
+    const performanceProfile = performanceProfileRef.current;
     const containerRef = useRef<HTMLDivElement | null>(null);
     const renderedPagesRef = useRef<RenderedPdfPage[]>([]);
     const pageRegistryRef = useRef<Map<number, PdfPageRegistryEntry>>(new Map());
@@ -665,10 +676,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const pageMetricsRef = useRef<Map<string, PdfShellMetric>>(new Map());
     const pdfPageTextsRef = useRef<Map<number, string>>(new Map());
     const pdfTextContentCacheRef = useRef<Map<number, PdfPageTextContent>>(new Map());
-    const bitmapArtifactCacheRef = useRef(createLruCache<string, PdfBitmapArtifact<HTMLCanvasElement>>(PDF_MAX_BITMAP_ARTIFACTS));
-    const spanArtifactCacheRef = useRef(createLruCache<string, PdfTextSpan[]>(PDF_MAX_SPAN_ARTIFACTS));
-    const sentenceTargetCacheRef = useRef(createLruCache<number, CachedPdfHighlightTarget>(PDF_MAX_SENTENCE_TARGETS));
-    const sentencePageTargetCacheRef = useRef(createLruCache<number, number>(PDF_MAX_SENTENCE_TARGETS));
+    const bitmapArtifactCacheRef = useRef(createLruCache<string, PdfBitmapArtifact<HTMLCanvasElement>>(performanceProfile.bitmapArtifacts));
+    const spanArtifactCacheRef = useRef(createLruCache<string, PdfTextSpan[]>(performanceProfile.spanArtifacts));
+    const sentenceTargetCacheRef = useRef(createLruCache<number, CachedPdfHighlightTarget>(performanceProfile.sentenceTargets));
+    const sentencePageTargetCacheRef = useRef(createLruCache<number, number>(performanceProfile.sentenceTargets));
     const renderedPageZoomRef = useRef<Map<number, number>>(new Map());
     const visiblePageIndexesRef = useRef<Set<number>>(new Set());
     const selectionPageIndexRef = useRef<number | null>(null);
@@ -1156,7 +1167,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           highlightedPagesRef.current,
           renderedPages,
           activeHighlight.overlayRects,
-          PDF_MAX_HIGHLIGHT_OVERLAYS
+          performanceProfile.highlightOverlays
         );
         highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
         highlightedPagesRef.current = overlays.highlightedPages;
@@ -1223,7 +1234,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
 
     const enforceTextSpanBudget = useCallback((keepPageIndexes: Set<number>) => {
       let liveTextSpanCount = renderedPagesRef.current.reduce((total, page) => total + page.spans.length, 0);
-      if (liveTextSpanCount <= PDF_MAX_LIVE_TEXT_SPANS) {
+      if (liveTextSpanCount <= performanceProfile.maxLiveTextSpans) {
         return;
       }
       const evictionCandidates = renderedPagesRef.current
@@ -1235,7 +1246,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         }))
         .sort((left, right) => left.lastTouchedAt - right.lastTouchedAt);
       for (const candidate of evictionCandidates) {
-        if (liveTextSpanCount <= PDF_MAX_LIVE_TEXT_SPANS) {
+        if (liveTextSpanCount <= performanceProfile.maxLiveTextSpans) {
           break;
         }
         liveTextSpanCount -= candidate.spanCount;
@@ -1267,7 +1278,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       });
       const selectionTextLayerPages = selectionPageIndexRef.current === null
         ? []
-        : pageIndexesAround(selectionPageIndexRef.current, pdfPageCount, 1);
+        : pageIndexesAround(selectionPageIndexRef.current, pdfPageCount, performanceProfile.textLayerSelectionRadius);
       const textLayerPageIndexes = Array.from(new Set([
         ...renderPlan.textLayerPageIndexes,
         ...selectionTextLayerPages
@@ -1281,6 +1292,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         mediumPages: renderPlan.mediumPriorityPageIndexes,
         lowPages: renderPlan.lowPriorityPageIndexes,
         overscan,
+        profile: performanceProfile.title,
         selectionPageIndex: selectionPageIndexRef.current
       });
       recordPerfGauge("ReaderPrettyPdfPane.visiblePages", visiblePageIndexesRef.current.size);
@@ -1319,13 +1331,13 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
           }
         })();
-      }, 32);
+      }, performanceProfile.lowPriorityPrefetchDelayMs);
       const eviction = choosePdfViewportEvictions({
         entries: Array.from(pageRegistryRef.current.values()),
         keepCanvasPageIndexes: renderPlan.canvasPageIndexes,
         keepTextLayerPageIndexes: renderPlan.textLayerPageIndexes,
-        maxCanvasPages: PDF_MAX_LIVE_CANVASES,
-        maxTextLayerPages: PDF_MAX_LIVE_TEXT_LAYERS
+        maxCanvasPages: performanceProfile.maxLiveCanvases,
+        maxTextLayerPages: performanceProfile.maxLiveTextLayers
       });
       for (const pageIndex of eviction.evictTextLayerPageIndexes) {
         evictPageArtifacts(pageIndex, "text");
@@ -1616,7 +1628,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             highlightedPagesRef.current,
             renderedPagesRef.current,
             cachedTarget.overlayRects,
-            PDF_MAX_HIGHLIGHT_OVERLAYS
+            performanceProfile.highlightOverlays
           );
           highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
           overlaySentenceMapRef.current = overlays.overlaySentenceMap;
@@ -1646,7 +1658,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             highlightedPagesRef.current,
             renderedPagesRef.current,
             overlayRects,
-            PDF_MAX_HIGHLIGHT_OVERLAYS
+            performanceProfile.highlightOverlays
           );
           highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
           overlaySentenceMapRef.current = overlays.overlaySentenceMap;
@@ -1678,7 +1690,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
               highlightedPagesRef.current,
               renderedPagesRef.current,
               overlayRects,
-              PDF_MAX_HIGHLIGHT_OVERLAYS
+              performanceProfile.highlightOverlays
             );
             highlightedOverlayNodesRef.current = overlays.highlightedOverlays;
             overlaySentenceMapRef.current = overlays.overlaySentenceMap;
@@ -2302,6 +2314,11 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             {reader.pdf_classification.reasons.length > 0
               ? ` | Why: ${reader.pdf_classification.reasons.slice(0, 2).join("; ").replaceAll("_", " ")}`
               : ""}
+          </Typography>
+        ) : null}
+        {!error ? (
+          <Typography color="text.secondary" variant="caption" data-testid="reader-pretty-pdf-profile">
+            Profile: {performanceProfile.title.replaceAll("_", " ")} | Canvas budget: {performanceProfile.maxLiveCanvases} | Text budget: {performanceProfile.maxLiveTextLayers} | Span budget: {performanceProfile.maxLiveTextSpans} | Overscan: {resolvePdfVisibleOverscan()}
           </Typography>
         ) : null}
         {!error && reader.pdf_classification ? (

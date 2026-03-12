@@ -116,3 +116,48 @@ export function recordEventIngestion(name: string, payload: unknown): void {
   eventCounters.set(name, current);
   scheduleFlush();
 }
+
+export interface PerfSnapshot {
+  counters: Record<string, number>;
+  eventCounters: Record<string, { avgBytes: number; count: number }>;
+  gauges: Record<string, number>;
+  measures: Record<string, { avgMs: number; count: number }>;
+  selectorCounters: Record<string, number>;
+}
+
+export function getPerfSnapshot(): PerfSnapshot {
+  return {
+    counters: Object.fromEntries(counters.entries()),
+    eventCounters: Object.fromEntries(
+      Array.from(eventCounters.entries()).map(([name, summary]) => [
+        name,
+        {
+          avgBytes: summary.count > 0 ? Math.round(summary.bytes / summary.count) : 0,
+          count: summary.count
+        }
+      ])
+    ),
+    gauges: Object.fromEntries(gauges.entries()),
+    measures: Object.fromEntries(
+      Array.from(measures.entries()).map(([name, values]) => [
+        name,
+        {
+          avgMs:
+            values.length > 0
+              ? Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2))
+              : 0,
+          count: values.length
+        }
+      ])
+    ),
+    selectorCounters: Object.fromEntries(selectorCounters.entries())
+  };
+}
+
+export function resetPerfSnapshot(): void {
+  counters.clear();
+  measures.clear();
+  gauges.clear();
+  selectorCounters.clear();
+  eventCounters.clear();
+}

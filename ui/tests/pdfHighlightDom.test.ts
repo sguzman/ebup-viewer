@@ -47,7 +47,7 @@ function createPage(pageIndex: number): { pageIndex: number; container: HTMLDivE
 function exactMatch(spanIndexes: number[]): PdfSentenceMatch {
   return {
     confidence: "exact",
-    reason: "exact_geometry",
+    reason: "exact_token_chain_alignment",
     pageIndex: 0,
     spanIndexes,
     score: 1

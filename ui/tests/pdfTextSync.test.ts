@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildPdfSentenceSpanMap,
   findNearestSentenceForPageIndex,
-  findNearestSentenceForSpanIndex
+  findNearestSentenceForSpanIndex,
+  scorePdfSentenceMatch
 } from "../src/components/pdfTextSync";
 
 function createSpan(pageIndex: number, text: string): { pageIndex: number; text: string; element: HTMLElement } {
@@ -27,22 +28,26 @@ describe("buildPdfSentenceSpanMap", () => {
 
     expect(result.matches[0]).toMatchObject({
       confidence: "exact",
-      reason: "exact_geometry",
+      reason: "exact_token_chain_alignment",
       pageIndex: 0,
       spanIndexes: [0, 1, 2]
     });
     expect(result.matches[1]).toMatchObject({
       confidence: "exact",
-      reason: "exact_geometry",
+      reason: "exact_token_chain_alignment",
       pageIndex: 1,
       spanIndexes: [3, 4]
     });
     expect(result.diagnostics).toEqual({
       exactMatches: 2,
+      normalizedMatches: 0,
+      lineWindowMatches: 0,
+      blockFallbackMatches: 0,
       fallbackMatches: 0,
       pageOnlyMatches: 0,
       missingMatches: 0,
-      cappedLeaps: 0
+      cappedLeaps: 0,
+      distantRejects: 0
     });
   });
 
@@ -57,11 +62,12 @@ describe("buildPdfSentenceSpanMap", () => {
 
     expect(result.matches[0]).toMatchObject({
       confidence: "fallback",
-      reason: "paragraph_fallback",
+      reason: "block_fallback_alignment",
       pageIndex: 0,
       spanIndexes: [0]
     });
     expect(result.diagnostics.fallbackMatches).toBe(1);
+    expect(result.diagnostics.blockFallbackMatches).toBe(1);
   });
 
   it("uses fuzzy sentence geometry before paragraph fallback when local tokens align", () => {
@@ -77,11 +83,30 @@ describe("buildPdfSentenceSpanMap", () => {
 
     expect(result.matches[0]).toMatchObject({
       confidence: "fallback",
-      reason: "fuzzy_sentence_geometry",
+      reason: "line_window_fuzzy_alignment",
+      pageIndex: 0,
+      spanIndexes: [1, 2]
+    });
+    expect(result.diagnostics.fallbackMatches).toBe(1);
+    expect(result.diagnostics.lineWindowMatches).toBe(1);
+  });
+
+  it("uses normalized sentence alignment when token ordering is strong and only punctuation drifts", () => {
+    const spans = [
+      createSpan(0, "The quick"),
+      createSpan(0, "brown a fox"),
+      createSpan(0, "jumps over")
+    ];
+
+    const result = buildPdfSentenceSpanMap(spans, ["The quick brown fox jumps over."]);
+
+    expect(result.matches[0]).toMatchObject({
+      confidence: "fallback",
+      reason: "normalized_sentence_alignment",
       pageIndex: 0,
       spanIndexes: [0, 1, 2]
     });
-    expect(result.diagnostics.fallbackMatches).toBe(1);
+    expect(result.diagnostics.normalizedMatches).toBe(1);
   });
 
   it("degrades to page-only location when neither exact nor stable local fallback exists", () => {
@@ -128,7 +153,7 @@ describe("buildPdfSentenceSpanMap", () => {
 
     expect(result.matches[0]).toMatchObject({
       confidence: "exact",
-      reason: "exact_geometry",
+      reason: "exact_token_chain_alignment",
       pageIndex: 0,
       spanIndexes: [0, 1]
     });
@@ -145,7 +170,7 @@ describe("buildPdfSentenceSpanMap", () => {
 
     expect(result.matches[0]).toMatchObject({
       confidence: "exact",
-      reason: "exact_geometry",
+      reason: "exact_token_chain_alignment",
       pageIndex: 0,
       spanIndexes: [0, 1]
     });
@@ -162,13 +187,13 @@ describe("buildPdfSentenceSpanMap", () => {
 
     expect(result.matches[0]).toMatchObject({
       confidence: "exact",
-      reason: "exact_geometry",
+      reason: "exact_token_chain_alignment",
       pageIndex: 0,
       spanIndexes: [0]
     });
     expect(result.matches[1]).toMatchObject({
       confidence: "exact",
-      reason: "exact_geometry",
+      reason: "exact_token_chain_alignment",
       pageIndex: 0,
       spanIndexes: [2]
     });
@@ -191,7 +216,7 @@ describe("buildPdfSentenceSpanMap", () => {
 
     expect(result.matches[0]).toMatchObject({
       confidence: "fallback",
-      reason: "paragraph_fallback",
+      reason: "block_fallback_alignment",
       pageIndex: 1,
       spanIndexes: [4]
     });
@@ -229,9 +254,53 @@ describe("buildPdfSentenceSpanMap", () => {
     });
     expect(lateHint.matches[0]).toMatchObject({
       confidence: "fallback",
-      reason: "paragraph_fallback",
+      reason: "block_fallback_alignment",
       spanIndexes: [7]
     });
+  });
+
+  it("prefers the stronger local confidence tier over a page-only fallback", () => {
+    const spans = [
+      createSpan(0, "Alpha"),
+      createSpan(0, "beta"),
+      createSpan(0, "gamma"),
+      createSpan(1, "Appendix")
+    ];
+
+    const result = buildPdfSentenceSpanMap(spans, ["Alpha beta gamma."]);
+
+    expect(scorePdfSentenceMatch(result.matches[0])).toBeGreaterThan(
+      scorePdfSentenceMatch({
+        confidence: "page",
+        reason: "page_location_only",
+        pageIndex: 0,
+        spanIndexes: [],
+        score: 0.2
+      })
+    );
+  });
+
+  it("keeps distant fuzzy candidates from outranking a stronger local region", () => {
+    const spans = [
+      createSpan(0, "Opening section"),
+      createSpan(0, "Target body summary"),
+      createSpan(3, "Target"),
+      createSpan(3, "body a summary final"),
+      createSpan(3, "Trailing appendix")
+    ];
+
+    const result = buildPdfSentenceSpanMap(
+      spans,
+      ["Opening section", "Target body summary final"]
+    );
+
+    expect(result.matches[1]).toMatchObject({
+      confidence: "fallback",
+      reason: "line_window_fuzzy_alignment",
+      pageIndex: 0,
+      spanIndexes: [0, 1]
+    });
+    expect(result.matches[1]?.pageIndex).not.toBe(3);
   });
 
   it("finds the nearest sentence for a clicked span index", () => {
@@ -278,7 +347,7 @@ describe("buildPdfSentenceSpanMap", () => {
     expect(first.matches).toEqual(second.matches);
     expect(first.matches[0]).toMatchObject({
       confidence: "exact",
-      reason: "exact_geometry",
+      reason: "exact_token_chain_alignment",
       pageIndex: 0,
       spanIndexes: [0, 1, 2, 3, 4, 5]
     });

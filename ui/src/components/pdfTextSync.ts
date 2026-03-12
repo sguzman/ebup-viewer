@@ -9,9 +9,10 @@ export interface PdfTextSpan {
 export interface PdfSentenceMatch {
   confidence: "exact" | "fallback" | "page" | "missing";
   reason:
-    | "exact_geometry"
-    | "fuzzy_sentence_geometry"
-    | "paragraph_fallback"
+    | "exact_token_chain_alignment"
+    | "normalized_sentence_alignment"
+    | "line_window_fuzzy_alignment"
+    | "block_fallback_alignment"
     | "page_location_only"
     | "missing";
   pageIndex: number | null;
@@ -21,10 +22,14 @@ export interface PdfSentenceMatch {
 
 export interface PdfSentenceMatchDiagnostics {
   exactMatches: number;
+  normalizedMatches: number;
+  lineWindowMatches: number;
+  blockFallbackMatches: number;
   fallbackMatches: number;
   pageOnlyMatches: number;
   missingMatches: number;
   cappedLeaps: number;
+  distantRejects: number;
 }
 
 interface NormalizedRange {
@@ -37,11 +42,13 @@ interface FuzzyCandidate {
   pageIndex: number | null;
   score: number;
   spanIndexes: number[];
+  reason: "normalized_sentence_alignment" | "line_window_fuzzy_alignment";
 }
 
 const MIN_FUZZY_TOKENS = 4;
 const MIN_FUZZY_SCORE = 0.58;
 const MAX_LOCAL_LEAP_SPANS = 40;
+const MAX_DISTANT_PAGE_DELTA = 2;
 const MIN_REPEATABLE_BOILERPLATE_LENGTH = 3;
 const MAX_REPEATABLE_BOILERPLATE_LENGTH = 72;
 
@@ -233,6 +240,49 @@ function scoreFuzzyWindow(
   return hits / sentenceTokens.length;
 }
 
+function computeMatchScore(
+  textSimilarity: number,
+  readingOrderContinuity: number,
+  pageContinuity: number,
+  geometryCompactness: number,
+  ocrConfidence: number,
+  distancePenalty: number
+): number {
+  return Number(
+    Math.max(
+      0,
+      (
+        textSimilarity * 0.42
+        + readingOrderContinuity * 0.16
+        + pageContinuity * 0.14
+        + geometryCompactness * 0.14
+        + ocrConfidence * 0.14
+        - distancePenalty
+      )
+    ).toFixed(2)
+  );
+}
+
+export function scorePdfSentenceMatch(match: PdfSentenceMatch | null | undefined): number {
+  if (!match) {
+    return -1;
+  }
+  switch (match.reason) {
+    case "exact_token_chain_alignment":
+      return 5 + match.score;
+    case "normalized_sentence_alignment":
+      return 4 + match.score;
+    case "line_window_fuzzy_alignment":
+      return 3 + match.score;
+    case "block_fallback_alignment":
+      return 2 + match.score;
+    case "page_location_only":
+      return 1 + match.score;
+    default:
+      return match.score;
+  }
+}
+
 function buildPageFallbackMap(spans: PdfTextSpan[]): number[] {
   const firstByPage = new Map<number, number>();
   for (let idx = 0; idx < spans.length; idx += 1) {
@@ -281,8 +331,20 @@ function findParagraphFallbackSpan(
       bestIdx = idx;
     }
   }
+  const geometryCompactness = 0.72;
+  const readingOrderContinuity = 0.82;
   return bestIdx !== null && bestScore >= 0.34
-    ? { spanIndex: bestIdx, score: bestScore }
+    ? {
+      spanIndex: bestIdx,
+      score: computeMatchScore(
+        bestScore,
+        readingOrderContinuity,
+        0.76,
+        geometryCompactness,
+        0.58,
+        0
+      )
+    }
     : null;
 }
 
@@ -326,6 +388,19 @@ function findFuzzySentenceCandidate(
       if (!endRange || endRange.end <= startRange.start) {
         continue;
       }
+      const windowSpanIndexes = localSpanIndexes.slice(startOffset, endOffset + 1);
+      const windowPages = new Set(
+        windowSpanIndexes.map((idx) => spans[idx]?.pageIndex).filter((value): value is number => value !== undefined)
+      );
+      const sortedWindowPages = Array.from(windowPages).sort((left, right) => left - right);
+      const firstWindowPage = sortedWindowPages[0] ?? null;
+      const lastWindowPage = sortedWindowPages.at(-1) ?? firstWindowPage;
+      const pageSpread = firstWindowPage !== null && lastWindowPage !== null
+        ? lastWindowPage - firstWindowPage
+        : 0;
+      if (pageSpread > 1) {
+        continue;
+      }
       const windowText = spanTexts
         .slice(startSpanIdx, endSpanIdx + 1)
         .filter((value) => value.length > 0)
@@ -338,22 +413,37 @@ function findFuzzySentenceCandidate(
         0.2,
         Math.abs(windowText.length - sentence.length) / Math.max(sentence.length, 1)
       );
-      const pageIndex = spans[startSpanIdx]?.pageIndex ?? null;
-      const pagePenalty =
-        previousPageIndex !== null && pageIndex !== null && pageIndex > previousPageIndex + 1
-          ? 0.15
-          : 0;
-      const score = tokenScore - windowLengthPenalty - pagePenalty;
-      if (score < MIN_FUZZY_SCORE) {
+      const pageIndex = firstWindowPage;
+      const pageDistance = previousPageIndex !== null && pageIndex !== null
+        ? Math.abs(pageIndex - previousPageIndex)
+        : 0;
+      const pagePenalty = pageDistance > MAX_DISTANT_PAGE_DELTA ? 0.22 : pageDistance > 1 ? 0.1 : 0;
+      const readingOrderContinuity = endOffset === startOffset
+        ? 0.88
+        : Math.max(0.7, 1 - ((endOffset - startOffset) / 16));
+      const pageContinuity = pageDistance === 0 ? 1 : pageDistance === 1 ? 0.88 : 0.62;
+      const geometryCompactness = Math.max(0.55, 1 - ((endOffset - startOffset) / 14));
+      const ocrConfidence = tokenScore >= 0.92 ? 0.9 : 0.72;
+      const score = computeMatchScore(
+        tokenScore,
+        readingOrderContinuity,
+        pageContinuity,
+        geometryCompactness,
+        ocrConfidence,
+        windowLengthPenalty + pagePenalty
+      );
+      if (score < 0.6) {
         continue;
       }
-      const spanIndexes = localSpanIndexes.slice(startOffset, endOffset + 1);
       if (!best || score > best.score) {
         best = {
           end: endRange.end,
           pageIndex,
           score,
-          spanIndexes
+          spanIndexes: windowSpanIndexes,
+          reason: tokenScore >= 0.94 && windowLengthPenalty <= 0.08
+            ? "normalized_sentence_alignment"
+            : "line_window_fuzzy_alignment"
         };
       }
     }
@@ -381,10 +471,14 @@ export function buildPdfSentenceSpanMap(
       })),
       diagnostics: {
         exactMatches: 0,
+        normalizedMatches: 0,
+        lineWindowMatches: 0,
+        blockFallbackMatches: 0,
         fallbackMatches: 0,
         pageOnlyMatches: 0,
         missingMatches: sentences.length,
-        cappedLeaps: 0
+        cappedLeaps: 0,
+        distantRejects: 0
       }
     };
   }
@@ -417,10 +511,14 @@ export function buildPdfSentenceSpanMap(
   let scanStart = 0;
   let previousPageIndex: number | null = null;
   let exactMatches = 0;
+  let normalizedMatches = 0;
+  let lineWindowMatches = 0;
+  let blockFallbackMatches = 0;
   let fallbackMatches = 0;
   let pageOnlyMatches = 0;
   let missingMatches = 0;
   let cappedLeaps = 0;
+  let distantRejects = 0;
 
   for (let sentenceIdx = 0; sentenceIdx < sentences.length; sentenceIdx += 1) {
     const sentence = normalizePdfSpanText(sentences[sentenceIdx] ?? "");
@@ -451,7 +549,7 @@ export function buildPdfSentenceSpanMap(
         const pageIndex = spans[spanIndexes[0]]?.pageIndex ?? null;
         matches.push({
           confidence: "exact",
-          reason: "exact_geometry",
+          reason: "exact_token_chain_alignment",
           pageIndex,
           spanIndexes,
           score: 1
@@ -478,9 +576,15 @@ export function buildPdfSentenceSpanMap(
       if (leapDistance > MAX_LOCAL_LEAP_SPANS) {
         cappedLeaps += 1;
       } else {
+        const pageDistance = previousPageIndex !== null && fuzzyCandidate.pageIndex !== null
+          ? Math.abs(fuzzyCandidate.pageIndex - previousPageIndex)
+          : 0;
+        if (pageDistance > MAX_DISTANT_PAGE_DELTA && matches.length > 0) {
+          distantRejects += 1;
+        } else {
         matches.push({
           confidence: "fallback",
-          reason: "fuzzy_sentence_geometry",
+          reason: fuzzyCandidate.reason,
           pageIndex: fuzzyCandidate.pageIndex,
           spanIndexes: fuzzyCandidate.spanIndexes,
           score: Number(fuzzyCandidate.score.toFixed(2))
@@ -488,7 +592,13 @@ export function buildPdfSentenceSpanMap(
         scanStart = Math.max(scanStart, fuzzyCandidate.end);
         previousPageIndex = fuzzyCandidate.pageIndex;
         fallbackMatches += 1;
+        if (fuzzyCandidate.reason === "normalized_sentence_alignment") {
+          normalizedMatches += 1;
+        } else {
+          lineWindowMatches += 1;
+        }
         continue;
+        }
       }
     }
 
@@ -516,7 +626,7 @@ export function buildPdfSentenceSpanMap(
       } else {
         matches.push({
           confidence: "fallback",
-          reason: "paragraph_fallback",
+          reason: "block_fallback_alignment",
           pageIndex: fallbackPageIndex,
           spanIndexes: [fallbackIdx.spanIndex],
           score: Number(fallbackIdx.score.toFixed(2))
@@ -524,6 +634,7 @@ export function buildPdfSentenceSpanMap(
         previousPageIndex = fallbackPageIndex;
         scanStart = Math.max(scanStart, ranges[fallbackIdx.spanIndex]?.end ?? scanStart);
         fallbackMatches += 1;
+        blockFallbackMatches += 1;
         continue;
       }
     }
@@ -558,12 +669,16 @@ export function buildPdfSentenceSpanMap(
   return {
     matches,
     diagnostics: {
-      exactMatches,
-      fallbackMatches,
-      pageOnlyMatches,
-      missingMatches,
-      cappedLeaps
-    }
+        exactMatches,
+        normalizedMatches,
+        lineWindowMatches,
+        blockFallbackMatches,
+        fallbackMatches,
+        pageOnlyMatches,
+        missingMatches,
+        cappedLeaps,
+        distantRejects
+      }
   };
 }
 

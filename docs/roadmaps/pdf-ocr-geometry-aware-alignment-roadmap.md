@@ -76,22 +76,22 @@
 - [x] Persist the artifact alongside OCR text output and cache signatures.
 
 ## Phase 5: Matching and Confidence Model
-- [ ] Implement OCR sentence matching tiers:
-- [ ] exact token-chain alignment
-- [ ] normalized sentence alignment
-- [ ] line-window fuzzy alignment
-- [ ] block fallback alignment
-- [ ] page-only fallback
-- [ ] missing/unmappable
-- [ ] Add score components for:
-- [ ] text similarity
-- [ ] reading-order continuity
-- [ ] page continuity
-- [ ] geometry compactness
-- [ ] OCR confidence
-- [ ] distance penalties for visually implausible matches
-- [ ] Require fallback to move only downward in confidence.
-- [ ] Reject matches that jump across distant regions when a weaker but local fallback exists.
+- [x] Implement OCR sentence matching tiers:
+- [x] exact token-chain alignment
+- [x] normalized sentence alignment
+- [x] line-window fuzzy alignment
+- [x] block fallback alignment
+- [x] page-only fallback
+- [x] missing/unmappable
+- [x] Add score components for:
+- [x] text similarity
+- [x] reading-order continuity
+- [x] page continuity
+- [x] geometry compactness
+- [x] OCR confidence
+- [x] distance penalties for visually implausible matches
+- [x] Require fallback to move only downward in confidence.
+- [x] Reject matches that jump across distant regions when a weaker but local fallback exists.
 
 ## Phase 6: Native PDF Overlay Contract
 - [x] Render OCR-derived highlight overlays directly on top of the native PDF viewport.
@@ -142,7 +142,7 @@
 - [ ] Add profiling for:
 - [ ] OCR time per page/chunk
 - [x] alignment build time
-- [ ] overlay update time
+- [x] overlay update time
 - [x] cache hit rates
 - [ ] fallback rates by PDF class
 
@@ -179,7 +179,7 @@
 - [ ] Step 2: derive canonical `tts_text` with OCR token lineage
 - [ ] Step 3: build page reading-order resolver
 - [x] Step 4: build sentence-to-geometry OCR alignment artifact
-- [ ] Step 5: move OCR-first highlight rendering to rect overlays
+- [x] Step 5: move OCR-first highlight rendering to rect overlays
 - [x] Step 6: wire search/bookmark/resume through OCR location metadata
 - [x] Step 7: add performance instrumentation and cache invalidation rules
 - [ ] Step 8: add regression fixtures and manual QA matrix

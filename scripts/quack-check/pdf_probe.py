@@ -193,7 +193,9 @@ def _page_features(text: str, page_index: int, image_object_count: int, image_co
         "coordinate_sanity": quality["coordinate_sanity"],
         "reading_order_stability": quality["reading_order_stability"],
         "hidden_text_layer_suspected": quality["hidden_text_layer_suspected"],
+        "invisible_text_suspected": quality["invisible_text_suspected"],
         "duplicate_text_suspected": quality["duplicate_text_suspected"],
+        "stacked_duplicate_text_suspected": quality["stacked_duplicate_text_suspected"],
         "mixed_text_image_suspected": quality["mixed_text_image_suspected"],
         "full_page_raster_suspected": quality["full_page_raster_suspected"],
         "first_line": _normalize_boundary_line(lines[0]) if lines else "",
@@ -315,13 +317,23 @@ def main() -> None:
         for page in page_stats
         if page["image_object_count"] > 0 or page["image_coverage_ratio"] >= 0.15
     )
-    mixed_text_image_pages = sum(1 for page in page_stats if page["mixed_text_image_suspected"])
-    full_page_raster_pages = sum(1 for page in page_stats if page["full_page_raster_suspected"])
-    hidden_text_layer_pages = sum(1 for page in page_stats if page["hidden_text_layer_suspected"])
-    invisible_text_layer_pages = sum(1 for page in page_stats if page["invisible_text_suspected"])
-    duplicate_text_pages = sum(1 for page in page_stats if page["duplicate_text_suspected"])
+    mixed_text_image_pages = sum(
+        1 for page in page_stats if page.get("mixed_text_image_suspected", False)
+    )
+    full_page_raster_pages = sum(
+        1 for page in page_stats if page.get("full_page_raster_suspected", False)
+    )
+    hidden_text_layer_pages = sum(
+        1 for page in page_stats if page.get("hidden_text_layer_suspected", False)
+    )
+    invisible_text_layer_pages = sum(
+        1 for page in page_stats if page.get("invisible_text_suspected", False)
+    )
+    duplicate_text_pages = sum(
+        1 for page in page_stats if page.get("duplicate_text_suspected", False)
+    )
     stacked_duplicate_text_pages = sum(
-        1 for page in page_stats if page["stacked_duplicate_text_suspected"]
+        1 for page in page_stats if page.get("stacked_duplicate_text_suspected", False)
     )
 
     first_lines = [page["first_line"] for page in page_stats if page["first_line"]]

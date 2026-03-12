@@ -115,7 +115,7 @@ export const ReaderShell = memo(function ReaderShell({
   void onTtsPrecomputePage;
 
   useRenderDebugCounter("ReaderShell");
-  const playback = useReaderPlaybackState(documentReader.source_path, documentReader.current_page);
+  const playback = useReaderPlaybackState(documentReader.source_path);
   const reader = useMemo(
     () =>
       playback

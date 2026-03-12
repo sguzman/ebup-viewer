@@ -309,13 +309,13 @@ export function useReaderTtsMetaState() {
   return useAppStore((state) => state.readerPlaybackDomain.ttsStateEvent);
 }
 
-export function useReaderPlaybackState(sourcePath: string, currentPage: number) {
+export function useReaderPlaybackState(sourcePath: string) {
   return useAppStore((state) => {
     const playback = state.readerPlaybackDomain.playback;
     if (!playback) {
       return null;
     }
-    if (playback.source_path !== sourcePath || playback.current_page !== currentPage) {
+    if (playback.source_path !== sourcePath) {
       return null;
     }
     return playback;

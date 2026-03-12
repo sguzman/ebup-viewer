@@ -1223,9 +1223,6 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           reason: activeHighlight.match.reason
         });
       } else {
-        clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
-        highlightedOverlayNodesRef.current = [];
-        overlaySentenceMapRef.current.clear();
         const preferredPages = activeHighlight.match.pageIndex === null
           ? renderedPages
           : renderedPages.filter((page) => Math.abs(page.pageIndex - activeHighlight.match.pageIndex!) <= 1);
@@ -1234,7 +1231,18 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           reader.sentences[activeHighlight.sentenceIdx] ?? "",
           spanArtifactCacheRef.current
         );
-        const reboundMatch = reboundResult.match ?? activeHighlight.match;
+        if (!reboundResult.match) {
+          logPdfDebug("rebindActiveSpanHighlightSkipped", {
+            sentenceIdx: activeHighlight.sentenceIdx,
+            renderedPageCount: renderedPages.length,
+            reason: activeHighlight.match.reason
+          });
+          return;
+        }
+        clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
+        highlightedOverlayNodesRef.current = [];
+        overlaySentenceMapRef.current.clear();
+        const reboundMatch = reboundResult.match;
         const domHighlight = applyPdfHighlightDom(
           highlightedNodesRef.current,
           highlightedPagesRef.current,

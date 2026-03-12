@@ -3,7 +3,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { backendApi, type PdfSentenceLocation } from "../api/tauri";
-import type { ReaderSnapshot } from "../types";
+import type { ReaderPlaybackState, ReaderSnapshot } from "../types";
 import { recordPerfCounter, recordPerfGauge, recordPerfMeasure } from "../perf/debug";
 import { clamp, normalizeNumber } from "./readerShared";
 import {
@@ -176,6 +176,7 @@ async function ensurePdfJsFakeWorkerGlobal(): Promise<void> {
 
 interface ReaderPrettyPdfPaneProps {
   onSentenceClick: (idx: number) => Promise<void>;
+  playback: ReaderPlaybackState;
   reader: ReaderSnapshot;
   sourcePath: string;
 }
@@ -365,26 +366,27 @@ function hasCurrentPageRenderVersion(
   return (map.get(pageIndex) ?? 0) === version;
 }
 
-function globalSentenceStartForReader(reader: ReaderSnapshot): number {
-  return reader.stats.sentences_read_up_to_page_start;
-}
-
 function estimatePdfTargetPage(
   locations: PdfSentenceLocation[] | null,
-  reader: ReaderSnapshot,
   totalPages: number,
+  options: {
+    globalSentenceStart: number;
+    highlightedSentenceIdx: number | null;
+    pageStartPercent: number;
+    pageText: string;
+    sentences: string[];
+  },
   pageTexts?: Map<number, string>
 ): number {
   if (totalPages <= 1) {
     return 0;
   }
-  const globalSentenceStart = globalSentenceStartForReader(reader);
-  const globalSentenceIdx = globalSentenceStart + (reader.highlighted_sentence_idx ?? 0);
+  const globalSentenceIdx = options.globalSentenceStart + (options.highlightedSentenceIdx ?? 0);
   const direct = locations?.find((location) => location.sentence_idx === globalSentenceIdx);
   if (direct?.page_idx !== null && direct?.page_idx !== undefined) {
     return clamp(direct.page_idx, 0, totalPages - 1);
   }
-  const normalizedQuery = normalizeSyncText(reader.page_text || reader.sentences.join(" "));
+  const normalizedQuery = normalizeSyncText(options.pageText || options.sentences.join(" "));
   if (pageTexts && normalizedQuery.length > 24) {
     const queryTokens = normalizedQuery.split(" ").filter((token) => token.length > 2);
     let bestPage = -1;
@@ -409,7 +411,7 @@ function estimatePdfTargetPage(
       return clamp(bestPage, 0, totalPages - 1);
     }
   }
-  const startPct = clamp(reader.stats.page_start_percent, 0, 100) / 100;
+  const startPct = clamp(options.pageStartPercent, 0, 100) / 100;
   return clamp(Math.round(startPct * Math.max(0, totalPages - 1)), 0, totalPages - 1);
 }
 
@@ -675,7 +677,7 @@ function applyPdfHighlightColor(root: HTMLElement, reader: ReaderSnapshot): void
 }
 
 export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderPrettyPdfPaneProps>(
-  function ReaderPrettyPdfPane({ onSentenceClick: _onSentenceClick, reader, sourcePath }, ref) {
+  function ReaderPrettyPdfPane({ onSentenceClick: _onSentenceClick, playback, reader, sourcePath }, ref) {
     const performanceProfileRef = useRef(resolvePdfPerformanceProfile({
       deviceMemory: typeof navigator !== "undefined" && "deviceMemory" in navigator
         ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory)
@@ -754,8 +756,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const highlightPolicyLabel = reader.pdf_runtime_policy?.sentence_highlight_policy
       ? reader.pdf_runtime_policy.sentence_highlight_policy.replaceAll("_", " ")
       : strategyLabel;
-    const globalSentenceStart = globalSentenceStartForReader(reader);
-    const highlightedSentenceIdx = reader.highlighted_sentence_idx ?? null;
+    const globalSentenceStart = playback.stats.sentences_read_up_to_page_start;
+    const highlightedSentenceIdx = playback.highlighted_sentence_idx ?? null;
 
     const resetRenderedPdfDocument = useCallback(() => {
       clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
@@ -1145,8 +1147,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       const generation = renderGenerationRef.current;
       const targetPage = estimatePdfTargetPage(
         cachedPdfLocationsRef.current,
-        reader,
         pdfPageCount,
+        {
+          globalSentenceStart,
+          highlightedSentenceIdx,
+          pageStartPercent: playback.stats.page_start_percent,
+          pageText: reader.page_text,
+          sentences: reader.sentences
+        },
         pdfPageTextsRef.current
       );
       pendingJumpTargetPageRef.current = targetPage;
@@ -1154,7 +1162,17 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
         await ensurePageTextLayerRendered(pdfjs, pdf, pageIndex, renderZoom, generation);
       }
-    }, [ensurePageCanvasRendered, ensurePageTextLayerRendered, pdfPageCount, reader, renderZoom]);
+    }, [
+      ensurePageCanvasRendered,
+      ensurePageTextLayerRendered,
+      globalSentenceStart,
+      highlightedSentenceIdx,
+      pdfPageCount,
+      playback.stats.page_start_percent,
+      reader.page_text,
+      reader.sentences,
+      renderZoom
+    ]);
 
     const ensureRenderedPageWindow = useCallback(async (targetPage: number, radius: number) => {
       const pdf = pdfDocRef.current;
@@ -1279,8 +1297,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       }
       const targetPage = estimatePdfTargetPage(
         cachedPdfLocationsRef.current,
-        reader,
         pdfPageCount,
+        {
+          globalSentenceStart,
+          highlightedSentenceIdx,
+          pageStartPercent: playback.stats.page_start_percent,
+          pageText: reader.page_text,
+          sentences: reader.sentences
+        },
         pdfPageTextsRef.current
       );
       const overscan = resolvePdfVisibleOverscan();
@@ -1372,7 +1396,19 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       recordPerfGauge("ReaderPrettyPdfPane.sentencePageTargetCacheSize", sentencePageTargetCacheRef.current.size());
       recordPerfGauge("ReaderPrettyPdfPane.spanArtifactCacheSize", spanArtifactCacheRef.current.size());
       recordPerfGauge("ReaderPrettyPdfPane.bitmapArtifactCacheSize", bitmapArtifactCacheRef.current.size());
-    }, [enforceTextSpanBudget, ensurePageCanvasRendered, ensurePageTextLayerRendered, evictPageArtifacts, pdfPageCount, reader, renderZoom]);
+    }, [
+      enforceTextSpanBudget,
+      ensurePageCanvasRendered,
+      ensurePageTextLayerRendered,
+      evictPageArtifacts,
+      globalSentenceStart,
+      highlightedSentenceIdx,
+      pdfPageCount,
+      playback.stats.page_start_percent,
+      reader.page_text,
+      reader.sentences,
+      renderZoom
+    ]);
 
     const resolveCurrentSentenceHighlight = useCallback(async (sentenceIdx: number) => {
       const sentence = reader.sentences[sentenceIdx] ?? "";
@@ -1430,8 +1466,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
 
       const fallbackTargetPage = estimatePdfTargetPage(
         cachedPdfLocationsRef.current,
-        reader,
         pdfPageCount,
+        {
+          globalSentenceStart,
+          highlightedSentenceIdx,
+          pageStartPercent: playback.stats.page_start_percent,
+          pageText: reader.page_text,
+          sentences: reader.sentences
+        },
         pdfPageTextsRef.current
       );
       const targetPage = estimatePdfTargetPageForSentence(
@@ -1488,7 +1530,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         cachedLocation: null,
         spans: bestResult.spans
       };
-    }, [ensureRenderedPageWindow, globalSentenceStart, pdfPageCount, reader]);
+    }, [ensureRenderedPageWindow, globalSentenceStart, pdfPageCount, reader.sentences]);
 
     const jumpToResolvedSentenceTarget = useCallback(async () => {
       const idx = reader.highlighted_sentence_idx;
@@ -1557,7 +1599,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (idx === null || idx === undefined) {
         return false;
       }
-      if (!force && (!reader.settings.auto_scroll_tts || reader.tts.state !== "playing")) {
+      if (!force && (!reader.settings.auto_scroll_tts || playback.tts.state !== "playing")) {
         return false;
       }
       const activeHighlight = activeHighlightStateRef.current;
@@ -1594,7 +1636,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         force
       });
       return true;
-    }, [globalSentenceStart, reader]);
+    }, [globalSentenceStart, playback.tts.state, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence]);
 
     const applyHighlight = useCallback(
       async (behavior: ScrollBehavior, force = false) => {
@@ -1855,7 +1897,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         highlightedSentenceRef.current = idx;
 
         const shouldAutoScroll =
-          force || (reader.settings.auto_scroll_tts && reader.tts.state === "playing");
+          force || (reader.settings.auto_scroll_tts && playback.tts.state === "playing");
         const anchor = elements[0];
         if (!anchor || !shouldAutoScroll) {
           recordPerfMeasure("ReaderPrettyPdfPane.updateOverlay", overlayStartedAt);
@@ -1870,7 +1912,15 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         recordPerfMeasure("ReaderPrettyPdfPane.updateOverlay", overlayStartedAt);
         recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
       },
-      [canSyncHighlights, maybeAutoScrollToRenderedHighlight, preferOverlayHighlights, reader, resolveCurrentSentenceHighlight]
+      [
+        canSyncHighlights,
+        maybeAutoScrollToRenderedHighlight,
+        playback.tts.state,
+        preferOverlayHighlights,
+        reader.sentences,
+        reader.settings.auto_scroll_tts,
+        resolveCurrentSentenceHighlight
+      ]
     );
 
     useImperativeHandle(ref, () => ({
@@ -1997,7 +2047,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           logPdfDebug("loadedCachedSyncMap", {
             sourcePath,
             count: locations.length,
-            currentPage: reader.current_page
+            currentPage: playback.current_page
           });
         })
         .catch((cause: unknown) => {
@@ -2126,8 +2176,14 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           }
           const openPlan = buildPdfOpenPlan(pdf.numPages, estimatePdfTargetPage(
             cachedPdfLocationsRef.current,
-            reader,
             pdf.numPages,
+            {
+              globalSentenceStart,
+              highlightedSentenceIdx,
+              pageStartPercent: playback.stats.page_start_percent,
+              pageText: reader.page_text,
+              sentences: reader.sentences
+            },
             pdfPageTextsRef.current
           ));
           logPdfDebug("openPlan", {
@@ -2169,7 +2225,21 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         cancelled = true;
       };
-    }, [ensurePageShells, ensurePdfDocumentLoaded, ensurePdfPageTexts, renderZoom, resetRenderedPdfDocument, scheduleVisiblePdfWork, sourcePath, viewportVersion]);
+    }, [
+      ensurePageShells,
+      ensurePdfDocumentLoaded,
+      ensurePdfPageTexts,
+      globalSentenceStart,
+      highlightedSentenceIdx,
+      playback.stats.page_start_percent,
+      reader.page_text,
+      reader.sentences,
+      renderZoom,
+      resetRenderedPdfDocument,
+      scheduleVisiblePdfWork,
+      sourcePath,
+      viewportVersion
+    ]);
 
     useEffect(() => {
       const root = containerRef.current;
@@ -2229,12 +2299,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (!activeHighlight) {
         return;
       }
-      if (reader.highlighted_sentence_idx !== activeHighlight.sentenceIdx) {
+      if (playback.highlighted_sentence_idx !== activeHighlight.sentenceIdx) {
         return;
       }
       rebindActiveHighlightForRenderedPages();
       maybeAutoScrollToRenderedHighlight("auto", false, "highlight_rebind");
-    }, [loading, maybeAutoScrollToRenderedHighlight, reader.highlighted_sentence_idx, renderVersion, rebindActiveHighlightForRenderedPages]);
+    }, [loading, maybeAutoScrollToRenderedHighlight, playback.highlighted_sentence_idx, renderVersion, rebindActiveHighlightForRenderedPages]);
 
     useEffect(() => {
       recordPerfGauge("ReaderPrettyPdfPane.liveRenderedPages", renderedPagesRef.current.length);

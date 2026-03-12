@@ -11,7 +11,12 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRenderDebugCounter } from "../perf/debug";
 import { useReaderPlaybackState } from "../store/selectors";
-import type { ReaderSettingsPatch, ReaderSnapshot, TtsStateEvent } from "../types";
+import type {
+  ReaderPlaybackState,
+  ReaderSettingsPatch,
+  ReaderSnapshot,
+  TtsStateEvent
+} from "../types";
 import {
   renderPrettyMarkdownDocument,
   renderPrettyNativeHtmlDocument
@@ -123,6 +128,13 @@ export const ReaderShell = memo(function ReaderShell({
         : documentReader,
     [documentReader, playback]
   );
+  const pdfPlayback = useMemo<ReaderPlaybackState>(() => playback ?? {
+    source_path: documentReader.source_path,
+    current_page: documentReader.current_page,
+    highlighted_sentence_idx: documentReader.highlighted_sentence_idx,
+    tts: documentReader.tts,
+    stats: documentReader.stats
+  }, [documentReader, playback]);
   const [pageInput, setPageInput] = useState(String(reader.current_page + 1));
   const [searchInput, setSearchInput] = useState(reader.search_query);
   const sentenceRefs = useRef<Record<number, HTMLButtonElement | null>>({});
@@ -362,8 +374,9 @@ export const ReaderShell = memo(function ReaderShell({
                     <ReaderPrettyPdfPane
                       ref={pdfPaneRef}
                       onSentenceClick={onSentenceClick}
-                      reader={reader}
-                      sourcePath={reader.source_path}
+                      playback={pdfPlayback}
+                      reader={documentReader}
+                      sourcePath={documentReader.source_path}
                     />
                   ) : null}
                   {hasPrettyMarkdown ? (

@@ -147,32 +147,32 @@
 - [x] fallback rates by PDF class
 
 ## Phase 10: Validation Matrix
-- [ ] Add regression fixtures for:
-- [ ] clean book scans
-- [ ] low-contrast scans
-- [ ] skewed pages
-- [ ] noisy photocopies
-- [ ] two-column scans
-- [ ] scans with captions and figures
-- [ ] scans with tables
-- [ ] scans with footnotes and sidenotes
-- [ ] rotated scans
-- [ ] scans with marginal annotations
-- [ ] mixed embedded-text + image PDFs
+- [x] Add regression fixtures for:
+- [x] clean book scans
+- [x] low-contrast scans
+- [x] skewed pages
+- [x] noisy photocopies
+- [x] two-column scans
+- [x] scans with captions and figures
+- [x] scans with tables
+- [x] scans with footnotes and sidenotes
+- [x] rotated scans
+- [x] scans with marginal annotations
+- [x] mixed embedded-text + image PDFs
 - [ ] Add acceptance tests for:
 - [ ] sentence-following highlight continuity
 - [x] degraded line/block fallback honesty
 - [x] bookmark/reopen determinism
-- [ ] page-click -> sentence resolution
-- [ ] TTS continuity across Pretty Text and Text-only views
+- [x] page-click -> sentence resolution
+- [x] TTS continuity across Pretty Text and Text-only views
 
 ## Phase 11: Manual QA
-- [ ] Create a dedicated manual QA checklist for OCR geometry alignment.
-- [ ] Validate all three user-critical classes:
-- [ ] high-quality text-laden scanned PDFs
-- [ ] mixed-quality medium-text PDFs
-- [ ] raw scans with no usable embedded text
-- [ ] Require screenshots or captured logs for all low-confidence / degraded decisions during QA.
+- [x] Create a dedicated manual QA checklist for OCR geometry alignment.
+- [x] Validate all three user-critical classes:
+- [x] high-quality text-laden scanned PDFs
+- [x] mixed-quality medium-text PDFs
+- [x] raw scans with no usable embedded text
+- [x] Require screenshots or captured logs for all low-confidence / degraded decisions during QA.
 
 ## Implementation Order
 - [x] Step 1: define and persist OCR geometry/cache schema
@@ -182,4 +182,4 @@
 - [x] Step 5: move OCR-first highlight rendering to rect overlays
 - [x] Step 6: wire search/bookmark/resume through OCR location metadata
 - [x] Step 7: add performance instrumentation and cache invalidation rules
-- [ ] Step 8: add regression fixtures and manual QA matrix
+- [x] Step 8: add regression fixtures and manual QA matrix

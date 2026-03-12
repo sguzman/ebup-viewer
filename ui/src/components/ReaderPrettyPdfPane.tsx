@@ -23,6 +23,11 @@ import {
   type PdfOverlayRect
 } from "./pdfOverlayGeometry";
 import { applyPdfLocationHighlightOverlays, clearPdfHighlightOverlays } from "./pdfOverlayDom";
+import {
+  resolveSentenceForPdfPageSelection,
+  resolveSentenceFromPdfOverlayTarget,
+  resolveSentenceFromPdfSpanTarget
+} from "./pdfOverlayNavigation";
 let pdfJsImportPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null = null;
 let pdfJsWorkerImportPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.worker.mjs")> | null = null;
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -1412,30 +1417,17 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return;
       }
       const target = event.target as HTMLElement | null;
-      const overlay = target?.closest("[data-ll-pdf-overlay-sentence-idx]") as HTMLElement | null;
-      if (overlay) {
-        const rawOverlaySentence = overlay.getAttribute("data-ll-pdf-overlay-sentence-idx");
-        const overlaySentenceIdx = rawOverlaySentence === null ? Number.NaN : Number.parseInt(rawOverlaySentence, 10);
-        if (Number.isFinite(overlaySentenceIdx)) {
-          logPdfDebug("clickResolveSentence", {
-            reason: "overlay_click",
-            sentenceIdx: overlaySentenceIdx
-          });
-          void onSentenceClick(overlaySentenceIdx);
-          return;
-        }
-      }
-      const span = target?.closest("[data-ll-pdf-span-idx]") as HTMLElement | null;
-      if (!span) {
+      const overlaySentenceIdx = resolveSentenceFromPdfOverlayTarget(target);
+      if (overlaySentenceIdx !== null) {
+        logPdfDebug("clickResolveSentence", {
+          reason: "overlay_click",
+          sentenceIdx: overlaySentenceIdx
+        });
+        void onSentenceClick(overlaySentenceIdx);
         return;
       }
-      const raw = span.getAttribute("data-ll-pdf-span-idx");
-      const spanIdx = raw === null ? Number.NaN : Number.parseInt(raw, 10);
-      if (!Number.isFinite(spanIdx)) {
-        return;
-      }
-      const sentenceIdx = findNearestSentenceForSpanIndex(sentenceMatchesRef.current, spanIdx);
-      if (sentenceIdx === null) {
+      const { sentenceIdx, spanIdx } = resolveSentenceFromPdfSpanTarget(target, sentenceMatchesRef.current);
+      if (sentenceIdx === null || spanIdx === null) {
         return;
       }
       logPdfDebug("clickResolveSentence", {
@@ -1466,26 +1458,20 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (!Number.isFinite(pageIndex)) {
         return;
       }
-      const sentenceIdx = findNearestSentenceForPageIndex(sentenceMatchesRef.current, pageIndex);
-      if (sentenceIdx === null) {
-        const nearestOverlaySentence = Array.from(overlaySentenceMapRef.current.entries())
-          .find(([overlayPageIndex]) => overlayPageIndex === pageIndex)?.[1] ?? null;
-        if (nearestOverlaySentence !== null) {
-          logPdfDebug("clickResolveSentence", {
-            reason: "page_overlay_fallback",
-            pageIndex,
-            sentenceIdx: nearestOverlaySentence
-          });
-          void onSentenceClick(nearestOverlaySentence);
-        }
+      const resolution = resolveSentenceForPdfPageSelection(
+        pageIndex,
+        sentenceMatchesRef.current,
+        overlaySentenceMapRef.current
+      );
+      if (resolution.sentenceIdx === null) {
         return;
       }
       logPdfDebug("clickResolveSentence", {
-        reason: "page_click",
+        reason: resolution.reason,
         pageIndex,
-        sentenceIdx
+        sentenceIdx: resolution.sentenceIdx
       });
-      void onSentenceClick(sentenceIdx);
+      void onSentenceClick(resolution.sentenceIdx);
     }, [canSyncHighlights, onSentenceClick]);
 
     return (

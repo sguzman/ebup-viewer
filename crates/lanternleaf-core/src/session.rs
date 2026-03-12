@@ -2063,4 +2063,85 @@ mod tests {
 
         let _ = crate::cache::delete_recent_source_and_cache(&source_path);
     }
+
+    #[test]
+    fn pdf_toggle_text_only_preserves_tts_highlight_and_ocr_summary() {
+        let source_path = unique_pdf_source_path();
+        fs::write(&source_path, b"pdf").expect("write source");
+        let normalizer = normalizer::TextNormalizer::default();
+        let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
+        session.source_path = source_path.clone();
+        apply_pdf_runtime_policy(
+            &mut session,
+            crate::epub_loader::PdfRuntimePolicySummary {
+                text_only_policy: crate::epub_loader::PdfTextOnlyPolicy::FullText,
+                sentence_highlight_policy: crate::epub_loader::PdfSentenceHighlightPolicy::ParagraphFallback,
+                search_policy: crate::epub_loader::PdfSearchPolicy::FullText,
+                bookmark_policy: crate::epub_loader::PdfBookmarkPolicy::CanonicalText,
+                tts_allowed: true,
+                pretty_sync_enabled: true,
+                exact_sentence_sync: false,
+                explanation: "test".to_string(),
+                degraded_reasons: vec!["sentence_sync_not_exact".to_string()],
+            },
+        );
+        crate::cache::persist_pdf_sentence_map(
+            &source_path,
+            &[crate::cache::PdfSentenceLocation {
+                sentence_idx: 2,
+                page_idx: Some(7),
+                rects: vec![],
+                line_rects: vec![crate::cache::PdfRect {
+                    left: 0.1,
+                    top: 0.2,
+                    width: 0.4,
+                    height: 0.05,
+                }],
+                block_rects: vec![],
+                confidence: "fallback".to_string(),
+                reason: "line_window_fuzzy_alignment".to_string(),
+                score: 0.63,
+            }],
+        );
+        session.current_page = 1;
+        session.highlighted_display_idx = Some(0);
+        session.refresh_pdf_ocr_alignment_artifact();
+        let baseline_summary = session
+            .pdf_ocr_alignment
+            .clone()
+            .expect("pdf summary should exist");
+        let baseline_highlight = session.current_highlight_idx();
+
+        session.toggle_text_only(&normalizer);
+        let text_only_highlight = session.current_highlight_idx();
+        let text_only_audio_highlight = session.highlighted_audio_idx;
+        let text_only_summary = session
+            .pdf_ocr_alignment
+            .clone()
+            .expect("pdf summary should still exist");
+
+        session.toggle_text_only(&normalizer);
+        let pretty_highlight = session.current_highlight_idx();
+        let pretty_summary = session
+            .pdf_ocr_alignment
+            .clone()
+            .expect("pdf summary should still exist after toggling back");
+
+        assert_eq!(baseline_highlight, Some(0));
+        assert_eq!(text_only_highlight, Some(0));
+        assert_eq!(text_only_audio_highlight, baseline_highlight);
+        assert_eq!(pretty_highlight, baseline_highlight);
+        assert_eq!(text_only_summary.quality_class, baseline_summary.quality_class);
+        assert_eq!(text_only_summary.source_kind, baseline_summary.source_kind);
+        assert_eq!(text_only_summary.coverage_ratio, baseline_summary.coverage_ratio);
+        assert_eq!(text_only_summary.degraded_fallback_rate, baseline_summary.degraded_fallback_rate);
+        assert_eq!(text_only_summary.page_only_rate, baseline_summary.page_only_rate);
+        assert_eq!(pretty_summary.quality_class, baseline_summary.quality_class);
+        assert_eq!(pretty_summary.source_kind, baseline_summary.source_kind);
+        assert_eq!(pretty_summary.coverage_ratio, baseline_summary.coverage_ratio);
+        assert_eq!(pretty_summary.degraded_fallback_rate, baseline_summary.degraded_fallback_rate);
+        assert_eq!(pretty_summary.page_only_rate, baseline_summary.page_only_rate);
+
+        let _ = crate::cache::delete_recent_source_and_cache(&source_path);
+    }
 }

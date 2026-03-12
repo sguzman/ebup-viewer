@@ -721,6 +721,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const cachedPdfLocationsRef = useRef<PdfSentenceLocation[] | null>(null);
     const overlaySentenceMapRef = useRef<Map<number, number>>(new Map());
     const activeHighlightStateRef = useRef<ActivePdfHighlightState | null>(null);
+    const scheduleVisiblePdfWorkRef = useRef<(() => Promise<void>) | null>(null);
     const documentOpenStartedAtRef = useRef(0);
     const [zoom, setZoom] = useState(1.2);
     const [renderZoom, setRenderZoom] = useState(1.2);
@@ -1411,6 +1412,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       reader.sentences,
       renderZoom
     ]);
+
+    useEffect(() => {
+      scheduleVisiblePdfWorkRef.current = scheduleVisiblePdfWork;
+    }, [scheduleVisiblePdfWork]);
 
     const resolveCurrentSentenceHighlight = useCallback(async (sentenceIdx: number) => {
       const sentence = reader.sentences[sentenceIdx] ?? "";
@@ -2278,7 +2283,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           for (const pageIndex of openPlan.adjacentPageIndexes) {
             await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
           }
-          await scheduleVisiblePdfWork();
+          await scheduleVisiblePdfWorkRef.current?.();
           recordPerfMeasure("ReaderPrettyPdfPane.renderDocument", startedAt);
           logPdfDebug("renderInitComplete", {
             sourcePath,
@@ -2304,14 +2309,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       ensurePageShells,
       ensurePdfDocumentLoaded,
       ensurePdfPageTexts,
-      globalSentenceStart,
-      highlightedSentenceIdx,
-      playback.stats.page_start_percent,
-      reader.page_text,
-      reader.sentences,
       renderZoom,
       resetRenderedPdfDocument,
-      scheduleVisiblePdfWork,
       sourcePath,
       viewportVersion
     ]);

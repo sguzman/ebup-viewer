@@ -13,7 +13,7 @@ export function canReuseCachedPdfHighlightTarget(
   cached: CachedPdfHighlightTarget | undefined,
   sentenceIndex: number
 ): cached is CachedPdfHighlightTarget {
-  return cached !== undefined && cached.sentenceIndex === sentenceIndex;
+  return cached !== undefined && cached.sentenceIndex === sentenceIndex && cached.useOverlay;
 }
 
 export function buildCachedPdfHighlightTarget(

@@ -1642,10 +1642,16 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return false;
       }
       const activeHighlight = activeHighlightStateRef.current;
-      const target = highlightedOverlayNodesRef.current[0]
-        ?? highlightedNodesRef.current[0]
-        ?? highlightedPagesRef.current[0]
-        ?? (activeHighlight?.match.pageIndex !== null && activeHighlight?.match.pageIndex !== undefined
+      const overlayTarget = highlightedOverlayNodesRef.current[0] ?? null;
+      const spanTarget = highlightedNodesRef.current[0] ?? null;
+      const pageTarget = highlightedPagesRef.current[0] ?? null;
+      const allowPageFallback = force || activeHighlight?.match.reason === "page_location_only";
+      const target = overlayTarget
+        ?? spanTarget
+        ?? (allowPageFallback ? pageTarget : null)
+        ?? (allowPageFallback
+          && activeHighlight?.match.pageIndex !== null
+          && activeHighlight?.match.pageIndex !== undefined
           ? renderedPagesRef.current.find((entry) => entry.pageIndex === activeHighlight.match.pageIndex)?.container ?? null
           : null);
       if (!target) {

@@ -81,6 +81,22 @@ fn clear_tts_request_if_current(app: &tauri::AppHandle, runtime_request_id: u64)
     }
 }
 
+fn persist_reader_progress(guard: &mut BackendState, reason: &'static str) {
+    let Some(reader) = guard.reader.as_mut() else {
+        return;
+    };
+    let snapshot = reader.snapshot(guard.panels, &guard.normalizer);
+    tracing::debug!(
+        path = %reader.source_path.display(),
+        page = reader.current_page + 1,
+        highlighted_sentence_idx = snapshot.highlighted_sentence_idx,
+        tts_state = ?snapshot.tts.state,
+        reason,
+        "Persisting active reader progress"
+    );
+    session::persist_session_housekeeping(reader);
+}
+
 fn transition_tts_runtime_to_paused(
     app: &tauri::AppHandle,
     runtime_request_id: u64,
@@ -106,6 +122,7 @@ fn transition_tts_runtime_to_paused(
         };
 
         let event = reader.apply_command(session::SessionCommand::TtsPause, panels, &normalizer);
+        persist_reader_progress(&mut guard, "tts_runtime_pause");
         let request_id = allocate_request_id(&mut guard);
         Some((request_id, event.snapshot))
     };
@@ -155,6 +172,7 @@ fn advance_tts_runtime_cursor(app: &tauri::AppHandle, runtime_request_id: u64) -
         }
 
         let event = reader.apply_command(session::SessionCommand::TtsSeekNext, panels, &normalizer);
+        persist_reader_progress(&mut guard, "tts_runtime_step");
         let emit_request_id = allocate_request_id(&mut guard);
         Some((emit_request_id, event.snapshot))
     };
@@ -536,6 +554,7 @@ pub(crate) fn apply_reader_command_with_sync(
             .as_mut()
             .ok_or_else(|| bridge_error("no_reader", "No active reader session"))?;
         let event = reader.apply_command(command, panels, &normalizer);
+        persist_reader_progress(&mut guard, "reader_command");
         (event.snapshot, request_id)
     };
     emit_reader_state(app, request_id, action, &snapshot);

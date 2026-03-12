@@ -28,8 +28,28 @@ export function applyPdfLocationHighlightOverlays(
   overlayRects: PdfOverlayRect[],
   maxOverlayCount = Number.POSITIVE_INFINITY
 ): PdfOverlayDomResult {
-  clearPdfHighlightOverlays(previousOverlays, previousPages);
+  const previousByPage = new Map<number, HTMLDivElement[]>();
+  for (const overlay of previousOverlays) {
+    const rawPageIndex = overlay.getAttribute("data-ll-pdf-overlay-page-idx");
+    const pageIndex = rawPageIndex ? Number.parseInt(rawPageIndex, 10) : Number.NaN;
+    if (!Number.isFinite(pageIndex)) {
+      overlay.remove();
+      continue;
+    }
+    const pageOverlays = previousByPage.get(pageIndex);
+    if (pageOverlays) {
+      pageOverlays.push(overlay);
+    } else {
+      previousByPage.set(pageIndex, [overlay]);
+    }
+  }
+  for (const page of previousPages) {
+    page.classList.remove("reader-pdf-page-active");
+  }
   if (overlayRects.length === 0) {
+    for (const overlay of previousOverlays) {
+      overlay.remove();
+    }
     return {
       highlightedOverlays: [],
       highlightedPages: [],
@@ -57,19 +77,25 @@ export function applyPdfLocationHighlightOverlays(
   let renderedCount = 0;
   for (const [pageIndex, pageOverlays] of groupedByPage.entries()) {
     const page = pages.find((candidate) => candidate.pageIndex === pageIndex)?.container;
+    const previousPageOverlays = previousByPage.get(pageIndex) ?? [];
+    previousByPage.delete(pageIndex);
     if (!page) {
+      for (const overlay of previousPageOverlays) {
+        overlay.remove();
+      }
       skippedOverlayPageIndexes.push(pageIndex);
       continue;
     }
     renderedOverlayPageIndexes.push(pageIndex);
     const rotation = Number.parseInt(page.dataset.pdfRotation ?? "0", 10);
+    const nextPageOverlays: HTMLDivElement[] = [];
     for (const overlayRect of pageOverlays) {
       if (renderedCount >= maxOverlayCount) {
         truncatedOverlayCount += 1;
         continue;
       }
       const normalizedRect = rotateOverlayRect(overlayRect, rotation);
-      const overlay = document.createElement("div");
+      const overlay = previousPageOverlays[nextPageOverlays.length] ?? document.createElement("div");
       overlay.className = `reader-pdf-highlight-overlay reader-pdf-highlight-overlay-${normalizedRect.kind}`;
       overlay.style.left = formatPercentStyle(normalizedRect.left);
       overlay.style.top = formatPercentStyle(normalizedRect.top);
@@ -78,14 +104,25 @@ export function applyPdfLocationHighlightOverlays(
       overlay.setAttribute("data-ll-pdf-overlay-sentence-idx", String(normalizedRect.sentenceIndex));
       overlay.setAttribute("data-ll-pdf-overlay-page-idx", String(normalizedRect.pageIndex));
       overlay.setAttribute("data-ll-pdf-overlay-kind", normalizedRect.kind);
-      page.appendChild(overlay);
+      if (overlay.parentElement !== page) {
+        page.appendChild(overlay);
+      }
       overlays.push(overlay);
+      nextPageOverlays.push(overlay);
       renderedCount += 1;
       overlaySentenceMap.set(normalizedRect.pageIndex, normalizedRect.sentenceIndex);
+    }
+    for (let index = nextPageOverlays.length; index < previousPageOverlays.length; index += 1) {
+      previousPageOverlays[index]?.remove();
     }
     if (pageOverlays.some((overlayRect) => overlayRect.kind === "page")) {
       page.classList.add("reader-pdf-page-active");
       highlightedPages.push(page);
+    }
+  }
+  for (const leftoverOverlays of previousByPage.values()) {
+    for (const overlay of leftoverOverlays) {
+      overlay.remove();
     }
   }
   return {

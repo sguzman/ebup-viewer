@@ -1144,42 +1144,6 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       logPdfDebug("evictArtifacts", { pageIndex, mode, reason: "budget_or_visibility" });
     }, []);
 
-    const ensureTargetPagesRendered = useCallback(async () => {
-      const pdf = pdfDocRef.current;
-      const pdfjs = pdfJsModuleRef.current;
-      if (!pdf || !pdfjs || pdfPageCount <= 0) {
-        return;
-      }
-      const generation = renderGenerationRef.current;
-      const targetPage = estimatePdfTargetPage(
-        cachedPdfLocationsRef.current,
-        pdfPageCount,
-        {
-          globalSentenceStart,
-          highlightedSentenceIdx,
-          pageStartPercent: playback.stats.page_start_percent,
-          pageText: reader.page_text,
-          sentences: reader.sentences
-        },
-        pdfPageTextsRef.current
-      );
-      pendingJumpTargetPageRef.current = targetPage;
-      for (const pageIndex of pageIndexesAround(targetPage, pdfPageCount, 1)) {
-        await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
-        await ensurePageTextLayerRendered(pdfjs, pdf, pageIndex, renderZoom, generation);
-      }
-    }, [
-      ensurePageCanvasRendered,
-      ensurePageTextLayerRendered,
-      globalSentenceStart,
-      highlightedSentenceIdx,
-      pdfPageCount,
-      playback.stats.page_start_percent,
-      reader.page_text,
-      reader.sentences,
-      renderZoom
-    ]);
-
     const ensureRenderedPageWindow = useCallback(async (targetPage: number, radius: number) => {
       const pdf = pdfDocRef.current;
       const pdfjs = pdfJsModuleRef.current;
@@ -1192,6 +1156,38 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         await ensurePageTextLayerRendered(pdfjs, pdf, pageIndex, renderZoom, generation);
       }
     }, [ensurePageCanvasRendered, ensurePageTextLayerRendered, pdfPageCount, renderZoom]);
+
+    const ensureHighlightTargetReady = useCallback(async (
+      pageIndex: number | null | undefined,
+      needsTextLayer: boolean
+    ) => {
+      if (pageIndex === null || pageIndex === undefined || pageIndex < 0) {
+        return;
+      }
+      const pdf = pdfDocRef.current;
+      if (!pdf) {
+        return;
+      }
+      const generation = renderGenerationRef.current;
+      const renderedEntry = renderedPagesRef.current.find((entry) => entry.pageIndex === pageIndex) ?? null;
+      const canvasReady = renderedEntry?.renderedZoom === renderZoom;
+      const textReady = renderedEntry?.textLayerZoom === renderZoom && renderedEntry.textLayerDiv !== null;
+      if (!canvasReady) {
+        await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
+      }
+      if (!needsTextLayer) {
+        return;
+      }
+      const pdfjs = pdfJsModuleRef.current;
+      if (!pdfjs) {
+        return;
+      }
+      const latestEntry = renderedPagesRef.current.find((entry) => entry.pageIndex === pageIndex) ?? null;
+      const latestTextReady = latestEntry?.textLayerZoom === renderZoom && latestEntry.textLayerDiv !== null;
+      if (!latestTextReady) {
+        await ensurePageTextLayerRendered(pdfjs, pdf, pageIndex, renderZoom, generation);
+      }
+    }, [ensurePageCanvasRendered, ensurePageTextLayerRendered, renderZoom]);
 
     const rebindActiveHighlightForRenderedPages = useCallback(() => {
       const activeHighlight = activeHighlightStateRef.current;
@@ -1597,6 +1593,25 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       renderZoom
     ]);
 
+    const hasBoundActiveHighlight = useCallback((activeHighlight: ActivePdfHighlightState) => {
+      if (activeHighlight.useOverlay) {
+        if (activeHighlight.match.reason === "page_location_only" && activeHighlight.match.pageIndex !== null) {
+          return highlightedPagesRef.current.some(
+            (page) => page.getAttribute("data-page-index") === String(activeHighlight.match.pageIndex)
+          );
+        }
+        return highlightedOverlayNodesRef.current.some((overlay) => (
+          overlay.getAttribute("data-ll-pdf-overlay-sentence-idx") === String(activeHighlight.sentenceIdx)
+        ));
+      }
+      if (activeHighlight.match.reason === "page_location_only" && activeHighlight.match.pageIndex !== null) {
+        return highlightedPagesRef.current.some(
+          (page) => page.getAttribute("data-page-index") === String(activeHighlight.match.pageIndex)
+        );
+      }
+      return highlightedNodesRef.current.length > 0;
+    }, []);
+
     const requestScheduleVisiblePdfWork = useCallback((reason: string) => {
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
       const remainingSuppressionMs = suppressViewportSchedulingUntilRef.current - now;
@@ -1703,10 +1718,26 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return;
       }
         const globalIdx = globalSentenceStart + idx;
-        const cachedTarget = sentenceTargetCacheRef.current.get(globalIdx);
+        const initialCachedTarget = sentenceTargetCacheRef.current.get(globalIdx);
+        if (
+          canReuseCachedPdfHighlightTarget(initialCachedTarget, globalIdx)
+          && initialCachedTarget.pageIndex !== null
+          && initialCachedTarget.pageIndex !== undefined
+        ) {
+          await ensureHighlightTargetReady(initialCachedTarget.pageIndex, !initialCachedTarget.useOverlay);
+        }
         const resolved = await resolveCurrentSentenceHighlight(idx);
         const cachedLocation = resolved.cachedLocation;
         const match = resolved.match;
+        const cachedTarget = sentenceTargetCacheRef.current.get(globalIdx);
+        if (
+          cachedTarget
+          && (!initialCachedTarget || cachedTarget !== initialCachedTarget)
+          && cachedTarget.pageIndex !== null
+          && cachedTarget.pageIndex !== undefined
+        ) {
+          await ensureHighlightTargetReady(cachedTarget.pageIndex, !cachedTarget.useOverlay);
+        }
         const spans = resolved.spans;
         const overlayStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
         sentenceMatchesRef.current = reader.sentences.map((_, sentenceIndex) => (
@@ -1949,6 +1980,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       },
       [
         canSyncHighlights,
+        ensureHighlightTargetReady,
         highlightedSentenceIdx,
         maybeAutoScrollToRenderedHighlight,
         playback.tts.state,
@@ -2317,16 +2349,15 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return;
       }
       let cancelled = false;
-      void ensureTargetPagesRendered().then(() => {
+      void applyHighlight("auto").then(() => {
         if (cancelled) {
           return;
         }
-        void applyHighlight("auto");
       });
       return () => {
         cancelled = true;
       };
-    }, [applyHighlight, cachedSyncVersion, ensureTargetPagesRendered, globalSentenceStart, highlightedSentenceIdx, loading, pdfPageTextVersion, renderZoom]);
+    }, [applyHighlight, cachedSyncVersion, globalSentenceStart, highlightedSentenceIdx, loading, pdfPageTextVersion, renderZoom]);
 
     useEffect(() => {
       if (loading) {
@@ -2339,9 +2370,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (playback.highlighted_sentence_idx !== activeHighlight.sentenceIdx) {
         return;
       }
+      if (hasBoundActiveHighlight(activeHighlight)) {
+        return;
+      }
       rebindActiveHighlightForRenderedPages();
       maybeAutoScrollToRenderedHighlight("auto", false, "highlight_rebind");
-    }, [loading, maybeAutoScrollToRenderedHighlight, playback.highlighted_sentence_idx, renderVersion, rebindActiveHighlightForRenderedPages]);
+    }, [hasBoundActiveHighlight, loading, maybeAutoScrollToRenderedHighlight, playback.highlighted_sentence_idx, renderVersion, rebindActiveHighlightForRenderedPages]);
 
     useEffect(() => {
       recordPerfGauge("ReaderPrettyPdfPane.liveRenderedPages", renderedPagesRef.current.length);

@@ -128,22 +128,30 @@ export const ReaderShell = memo(function ReaderShell({
         : documentReader,
     [documentReader, playback]
   );
-  const pdfPlayback = useMemo<ReaderPlaybackState>(() => {
-    const fallback = {
-      source_path: documentReader.source_path,
-      current_page: documentReader.current_page,
-      highlighted_sentence_idx: documentReader.highlighted_sentence_idx,
-      tts: documentReader.tts,
-      stats: documentReader.stats
-    } satisfies ReaderPlaybackState;
+  const pdfReader = useMemo<ReaderSnapshot>(() => {
     if (!playback) {
-      return fallback;
+      return documentReader;
     }
-    if (playback.current_page !== documentReader.current_page) {
-      return fallback;
+    if (
+      playback.source_path !== documentReader.source_path
+      || playback.current_page !== documentReader.current_page
+    ) {
+      return documentReader;
     }
-    return playback;
+    return {
+      ...documentReader,
+      highlighted_sentence_idx: playback.highlighted_sentence_idx,
+      tts: playback.tts,
+      stats: playback.stats
+    };
   }, [documentReader, playback]);
+  const pdfPlayback = useMemo<ReaderPlaybackState>(() => ({
+    source_path: pdfReader.source_path,
+    current_page: pdfReader.current_page,
+    highlighted_sentence_idx: pdfReader.highlighted_sentence_idx,
+    tts: pdfReader.tts,
+    stats: pdfReader.stats
+  }), [pdfReader]);
   const [pageInput, setPageInput] = useState(String(reader.current_page + 1));
   const [searchInput, setSearchInput] = useState(reader.search_query);
   const sentenceRefs = useRef<Record<number, HTMLButtonElement | null>>({});
@@ -384,8 +392,8 @@ export const ReaderShell = memo(function ReaderShell({
                       ref={pdfPaneRef}
                       onSentenceClick={onSentenceClick}
                       playback={pdfPlayback}
-                      reader={documentReader}
-                      sourcePath={documentReader.source_path}
+                      reader={pdfReader}
+                      sourcePath={pdfReader.source_path}
                     />
                   ) : null}
                   {hasPrettyMarkdown ? (

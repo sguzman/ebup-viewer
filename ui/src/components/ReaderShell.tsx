@@ -128,12 +128,21 @@ export const ReaderShell = memo(function ReaderShell({
         : documentReader,
     [documentReader, playback]
   );
-  const pdfPlayback = useMemo<ReaderPlaybackState>(() => playback ?? {
-    source_path: documentReader.source_path,
-    current_page: documentReader.current_page,
-    highlighted_sentence_idx: documentReader.highlighted_sentence_idx,
-    tts: documentReader.tts,
-    stats: documentReader.stats
+  const pdfPlayback = useMemo<ReaderPlaybackState>(() => {
+    const fallback = {
+      source_path: documentReader.source_path,
+      current_page: documentReader.current_page,
+      highlighted_sentence_idx: documentReader.highlighted_sentence_idx,
+      tts: documentReader.tts,
+      stats: documentReader.stats
+    } satisfies ReaderPlaybackState;
+    if (!playback) {
+      return fallback;
+    }
+    if (playback.current_page !== documentReader.current_page) {
+      return fallback;
+    }
+    return playback;
   }, [documentReader, playback]);
   const [pageInput, setPageInput] = useState(String(reader.current_page + 1));
   const [searchInput, setSearchInput] = useState(reader.search_query);

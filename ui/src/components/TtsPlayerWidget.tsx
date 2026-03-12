@@ -4,7 +4,7 @@ import PauseRoundedIcon from "@mui/icons-material/PauseRounded";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import SkipNextRoundedIcon from "@mui/icons-material/SkipNextRounded";
 import SkipPreviousRoundedIcon from "@mui/icons-material/SkipPreviousRounded";
-import { Box, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, IconButton, Paper, Stack, Typography } from "@mui/material";
 import { memo, useMemo, type ReactNode } from "react";
 
 interface TtsPlayerWidgetProps {
@@ -124,7 +124,9 @@ export const TtsPlayerWidget = memo(function TtsPlayerWidget({
           "linear-gradient(180deg, rgba(248,250,252,0.96) 0%, rgba(255,255,255,0.98) 100%)",
         px: { xs: 1, sm: 1.5 },
         py: 1.25,
-        flexShrink: 0
+        flexShrink: 0,
+        contain: "layout paint style",
+        isolation: "isolate"
       }}
     >
       <Stack spacing={1} alignItems="center">
@@ -177,44 +179,48 @@ export const TtsPlayerWidget = memo(function TtsPlayerWidget({
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                minWidth: action.prominent ? { xs: 82, sm: 96 } : { xs: 64, sm: 72 }
+                minWidth: action.prominent ? { xs: 82, sm: 96 } : { xs: 64, sm: 72 },
+                contain: "layout paint style"
               }}
             >
-              <Tooltip title={action.label}>
-                <span>
-                  <IconButton
-                    color={action.prominent ? "primary" : "default"}
-                    onClick={() => void action.onClick()}
-                    disabled={action.disabled}
-                    aria-label={action.label}
-                    data-testid={`reader-tts-player-${action.key}`}
-                    data-prominent={action.prominent ? "1" : "0"}
-                    sx={{
-                      width: action.prominent ? 64 : 44,
-                      height: action.prominent ? 64 : 44,
-                      border: "1px solid rgba(148, 163, 184, 0.24)",
-                      background: action.prominent
-                        ? "linear-gradient(135deg, rgba(37,99,235,0.14) 0%, rgba(56,189,248,0.18) 100%)"
-                        : "rgba(255,255,255,0.88)",
-                      boxShadow: action.prominent
-                        ? "0 10px 22px rgba(37, 99, 235, 0.16)"
-                        : "0 1px 2px rgba(15, 23, 42, 0.06)",
-                      transition: "background-color 120ms ease, transform 120ms ease",
-                      "&:hover": {
-                        background: action.prominent
-                          ? "linear-gradient(135deg, rgba(37,99,235,0.18) 0%, rgba(56,189,248,0.22) 100%)"
-                          : "rgba(241,245,249,0.96)",
-                        transform: "translateY(-1px)"
-                      },
-                      "&.Mui-disabled": {
-                        opacity: 0.42
-                      }
-                    }}
-                  >
-                    {action.icon}
-                  </IconButton>
-                </span>
-              </Tooltip>
+              <span>
+                <IconButton
+                  color={action.prominent ? "primary" : "default"}
+                  onClick={() => void action.onClick()}
+                  disabled={action.disabled}
+                  aria-label={action.label}
+                  data-testid={`reader-tts-player-${action.key}`}
+                  data-prominent={action.prominent ? "1" : "0"}
+                  sx={{
+                    width: action.prominent ? 64 : 44,
+                    height: action.prominent ? 64 : 44,
+                    border: "1px solid rgba(148, 163, 184, 0.24)",
+                    backgroundColor: action.prominent
+                      ? "rgba(223, 238, 255, 0.92)"
+                      : "rgba(255,255,255,0.9)",
+                    boxShadow: action.prominent
+                      ? "0 4px 10px rgba(37, 99, 235, 0.12)"
+                      : "0 1px 2px rgba(15, 23, 42, 0.05)",
+                    contain: "layout paint style",
+                    willChange: "transform",
+                    transition: "transform 90ms ease, background-color 90ms ease, border-color 90ms ease",
+                    "&:hover": {
+                      backgroundColor: action.prominent
+                        ? "rgba(213, 232, 255, 0.96)"
+                        : "rgba(241,245,249,0.94)",
+                      borderColor: action.prominent
+                        ? "rgba(37, 99, 235, 0.28)"
+                        : "rgba(148, 163, 184, 0.34)",
+                      transform: "translate3d(0, -1px, 0)"
+                    },
+                    "&.Mui-disabled": {
+                      opacity: 0.42
+                    }
+                  }}
+                >
+                  {action.icon}
+                </IconButton>
+              </span>
               <Typography
                 variant="caption"
                 color="text.secondary"

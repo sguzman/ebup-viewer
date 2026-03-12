@@ -199,6 +199,11 @@ interface DirectSentenceMatchResult {
   spans: PdfTextSpan[];
 }
 
+interface CachedSentenceTargetResolution {
+  match: PdfSentenceMatch | null;
+  spans: PdfTextSpan[];
+}
+
 function normalizeCachedPdfMatchReason(reason: string): PdfSentenceMatch["reason"] {
   switch (reason) {
     case "exact_token_chain_alignment":
@@ -540,7 +545,8 @@ function collectPageSentenceSpanIndexes(
 
 function findSentenceMatchInRenderedPages(
   pages: RenderedPdfPage[],
-  sentence: string
+  sentence: string,
+  sentenceAnchorHint?: number | null
 ): DirectSentenceMatchResult {
   const normalizedSentence = normalizePdfMatchText(sentence);
   if (!normalizedSentence || pages.length === 0) {
@@ -548,7 +554,11 @@ function findSentenceMatchInRenderedPages(
   }
 
   const spans = flattenRenderedPdfSpans(pages);
-  const result = buildPdfSentenceSpanMap(spans, [sentence]);
+  const result = buildPdfSentenceSpanMap(
+    spans,
+    [sentence],
+    sentenceAnchorHint === null || sentenceAnchorHint === undefined ? undefined : [sentenceAnchorHint]
+  );
   return {
     match: result.matches[0] ?? null,
     spans
@@ -558,7 +568,8 @@ function findSentenceMatchInRenderedPages(
 function findCachedSentenceMatchInRenderedPages(
   pages: RenderedPdfPage[],
   sentence: string,
-  spanCache: ReturnType<typeof createLruCache<string, PdfTextSpan[]>>
+  spanCache: ReturnType<typeof createLruCache<string, PdfTextSpan[]>>,
+  sentenceAnchorHint?: number | null
 ): DirectSentenceMatchResult {
   const normalizedSentence = normalizePdfMatchText(sentence);
   if (!normalizedSentence || pages.length === 0) {
@@ -576,9 +587,52 @@ function findCachedSentenceMatchInRenderedPages(
     spanCache.set(cacheKey, page.spans);
     spans.push(...page.spans);
   }
-  const result = buildPdfSentenceSpanMap(spans, [sentence]);
+  const result = buildPdfSentenceSpanMap(
+    spans,
+    [sentence],
+    sentenceAnchorHint === null || sentenceAnchorHint === undefined ? undefined : [sentenceAnchorHint]
+  );
   return {
     match: result.matches[0] ?? null,
+    spans
+  };
+}
+
+function resolveCachedSentenceTargetInRenderedPages(
+  pages: RenderedPdfPage[],
+  cachedTarget: CachedPdfHighlightTarget | undefined
+): CachedSentenceTargetResolution | null {
+  if (!cachedTarget || cachedTarget.useOverlay) {
+    return null;
+  }
+  const spans = flattenRenderedPdfSpans(pages);
+  if (spans.length === 0) {
+    return null;
+  }
+  if (cachedTarget.match.reason === "page_location_only") {
+    return {
+      match: cachedTarget.match,
+      spans
+    };
+  }
+  const spanIndexes = cachedTarget.match.spanIndexes;
+  if (spanIndexes.length === 0) {
+    return null;
+  }
+  const maxSpanIndex = Math.max(...spanIndexes);
+  if (maxSpanIndex >= spans.length) {
+    return null;
+  }
+  const pageIndex = cachedTarget.match.pageIndex;
+  if (
+    pageIndex !== null
+    && pageIndex !== undefined
+    && spans[spanIndexes[0] ?? -1]?.pageIndex !== pageIndex
+  ) {
+    return null;
+  }
+  return {
+    match: cachedTarget.match,
     spans
   };
 }
@@ -1230,12 +1284,11 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         const preferredPages = activeHighlight.match.pageIndex === null
           ? renderedPages
           : renderedPages.filter((page) => Math.abs(page.pageIndex - activeHighlight.match.pageIndex!) <= 1);
-        const reboundResult = findCachedSentenceMatchInRenderedPages(
-          preferredPages.length > 0 ? preferredPages : renderedPages,
-          reader.sentences[activeHighlight.sentenceIdx] ?? "",
-          spanArtifactCacheRef.current
-        );
-        if (!reboundResult.match) {
+        const pagesForRebind = preferredPages.length > 0 ? preferredPages : renderedPages;
+        const globalSentenceIdx = globalSentenceStart + activeHighlight.sentenceIdx;
+        const cachedTarget = sentenceTargetCacheRef.current.get(globalSentenceIdx);
+        const reboundResult = resolveCachedSentenceTargetInRenderedPages(pagesForRebind, cachedTarget);
+        if (!reboundResult?.match) {
           logPdfDebug("rebindActiveSpanHighlightSkipped", {
             sentenceIdx: activeHighlight.sentenceIdx,
             renderedPageCount: renderedPages.length,
@@ -1267,7 +1320,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         });
       }
       recordPerfMeasure("ReaderPrettyPdfPane.rebindOverlay", startedAt);
-    }, [reader.sentences]);
+    }, [globalSentenceStart]);
 
     const ensurePdfPageTexts = useCallback(async (pdf: PDFDocumentProxy, generation: number) => {
       if (pdfPageTextsRef.current.size === pdf.numPages) {
@@ -1453,19 +1506,44 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       }
       const globalSentenceIdx = globalSentenceStart + sentenceIdx;
       const cachedTarget = sentenceTargetCacheRef.current.get(globalSentenceIdx);
-      if (canReuseCachedPdfHighlightTarget(cachedTarget, globalSentenceIdx)) {
+      const sentenceAnchorHint = reader.sentence_anchor_map[sentenceIdx] ?? null;
+      if (cachedTarget?.sentenceIndex === globalSentenceIdx) {
         logPdfDebug("currentSentenceResolveCacheHit", {
           sentenceIdx,
           pageIndex: cachedTarget.pageIndex,
+          useOverlay: cachedTarget.useOverlay,
           confidence: cachedTarget.match.confidence,
           reason: cachedTarget.match.reason
         });
+        if (cachedTarget.useOverlay) {
+          return {
+            match: cachedTarget.match,
+            cachedLocation: null,
+            spans: []
+          };
+        }
+        const cachedPages = renderedPagesRef.current.filter(
+          (page) => page.pageIndex === cachedTarget.pageIndex || cachedTarget.pageIndex === null
+        );
+        const resolvedCachedTarget = resolveCachedSentenceTargetInRenderedPages(cachedPages, cachedTarget);
+        if (resolvedCachedTarget) {
+          return {
+            match: resolvedCachedTarget.match,
+            cachedLocation: null,
+            spans: resolvedCachedTarget.spans
+          };
+        }
+        logPdfDebug("currentSentenceResolveCacheMiss", {
+          sentenceIdx,
+          pageIndex: cachedTarget.pageIndex,
+          reason: "cached_dom_target_not_renderable"
+        });
+      }
+      if (canReuseCachedPdfHighlightTarget(cachedTarget, globalSentenceIdx)) {
         return {
           match: cachedTarget.match,
           cachedLocation: null,
-          spans: cachedTarget.useOverlay ? [] : flattenRenderedPdfSpans(renderedPagesRef.current.filter(
-            (page) => page.pageIndex === cachedTarget.pageIndex || cachedTarget.pageIndex === null
-          ))
+          spans: []
         };
       }
       const cachedLocation = cachedPdfLocationsRef.current?.find(
@@ -1528,7 +1606,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         const result = findCachedSentenceMatchInRenderedPages(
           candidatePages,
           sentence,
-          spanArtifactCacheRef.current
+          spanArtifactCacheRef.current,
+          sentenceAnchorHint
         );
         if (scorePdfSentenceMatch(result.match) > scorePdfSentenceMatch(bestResult.match)) {
           bestResult = result;
@@ -1556,7 +1635,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         cachedLocation: null,
         spans: bestResult.spans
       };
-    }, [ensureRenderedPageWindow, globalSentenceStart, pdfPageCount, reader.sentences]);
+    }, [ensureRenderedPageWindow, globalSentenceStart, pdfPageCount, reader.sentence_anchor_map, reader.sentences]);
 
     const jumpToResolvedSentenceTarget = useCallback(async () => {
       const idx = highlightedSentenceIdx;
@@ -1945,6 +2024,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
               overlayRects: [],
               useOverlay: false
             };
+            sentenceTargetCacheRef.current.set(globalIdx, buildCachedPdfHighlightTarget(globalIdx, match, [], false));
           }
         } else {
           clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
@@ -1969,6 +2049,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             overlayRects: [],
             useOverlay: false
           };
+          sentenceTargetCacheRef.current.set(globalIdx, buildCachedPdfHighlightTarget(globalIdx, match, [], false));
         }
         activeHighlightStateRef.current = activeHighlightState;
         highlightedPagesRef.current = highlighted.highlightedPages;

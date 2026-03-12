@@ -706,6 +706,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const pendingJumpTargetPageRef = useRef<number | null>(null);
     const defaultShellMetricRef = useRef<PdfShellMetric>({ width: 720, height: 980 });
     const lowPriorityPrefetchTimerRef = useRef<number | null>(null);
+    const deferredViewportScheduleTimerRef = useRef<number | null>(null);
+    const suppressViewportSchedulingUntilRef = useRef(0);
     const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
     const pdfDocSourcePathRef = useRef<string | null>(null);
     const pdfJsModuleRef = useRef<PdfJsModule | null>(null);
@@ -788,6 +790,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       if (lowPriorityPrefetchTimerRef.current !== null) {
         window.clearTimeout(lowPriorityPrefetchTimerRef.current);
         lowPriorityPrefetchTimerRef.current = null;
+      }
+      if (deferredViewportScheduleTimerRef.current !== null) {
+        window.clearTimeout(deferredViewportScheduleTimerRef.current);
+        deferredViewportScheduleTimerRef.current = null;
       }
       lastScrollTargetRef.current = null;
       const root = containerRef.current;
@@ -1591,6 +1597,23 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       renderZoom
     ]);
 
+    const requestScheduleVisiblePdfWork = useCallback((reason: string) => {
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      const remainingSuppressionMs = suppressViewportSchedulingUntilRef.current - now;
+      if (remainingSuppressionMs > 0) {
+        if (deferredViewportScheduleTimerRef.current !== null) {
+          return;
+        }
+        deferredViewportScheduleTimerRef.current = window.setTimeout(() => {
+          deferredViewportScheduleTimerRef.current = null;
+          logPdfDebug("scheduleVisiblePagesDeferred", { reason });
+          void scheduleVisiblePdfWork();
+        }, Math.max(remainingSuppressionMs, 16));
+        return;
+      }
+      void scheduleVisiblePdfWork();
+    }, [scheduleVisiblePdfWork]);
+
     const maybeAutoScrollToRenderedHighlight = useCallback((
       behavior: ScrollBehavior,
       force = false,
@@ -1623,6 +1646,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         lastScrollTargetRef.current = targetKey;
         return false;
       }
+      suppressViewportSchedulingUntilRef.current =
+        (typeof performance !== "undefined" ? performance.now() : Date.now()) + 220;
       const scrollStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
       target.scrollIntoView({
         behavior,
@@ -1674,9 +1699,9 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           highlightedOverlayNodesRef.current = [];
           overlaySentenceMapRef.current.clear();
           highlightedSentenceRef.current = idx;
-          recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
-          return;
-        }
+        recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
+        return;
+      }
         const globalIdx = globalSentenceStart + idx;
         const cachedTarget = sentenceTargetCacheRef.current.get(globalIdx);
         const resolved = await resolveCurrentSentenceHighlight(idx);
@@ -1695,20 +1720,23 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
               score: 0
             } satisfies PdfSentenceMatch
         ));
-        setMappingSummary(match
-          ? {
-              exact: match.confidence === "exact" ? 1 : 0,
-              fallback: match.confidence === "fallback" ? 1 : 0,
-              pageOnly: match.confidence === "page" ? 1 : 0,
-              missing: match.confidence === "missing" ? 1 : 0
-            }
-          : {
-              exact: 0,
-              fallback: 0,
-              pageOnly: 0,
-              missing: 1
-            });
-        setActiveMatch(match ?? null);
+        const shouldUpdateDiagnostics = import.meta.env.DEV || reader.panels.show_stats || playback.tts.state !== "playing";
+        if (shouldUpdateDiagnostics) {
+          setMappingSummary(match
+            ? {
+                exact: match.confidence === "exact" ? 1 : 0,
+                fallback: match.confidence === "fallback" ? 1 : 0,
+                pageOnly: match.confidence === "page" ? 1 : 0,
+                missing: match.confidence === "missing" ? 1 : 0
+              }
+            : {
+                exact: 0,
+                fallback: 0,
+                pageOnly: 0,
+                missing: 1
+              });
+          setActiveMatch(match ?? null);
+        }
         if (!match) {
           activeHighlightStateRef.current = null;
           clearPdfHighlightOverlays(highlightedOverlayNodesRef.current, highlightedPagesRef.current);
@@ -1924,6 +1952,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         highlightedSentenceIdx,
         maybeAutoScrollToRenderedHighlight,
         playback.tts.state,
+        reader.panels.show_stats,
         preferOverlayHighlights,
         reader.sentences,
         reader.settings.auto_scroll_tts,
@@ -2269,7 +2298,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             visiblePageIndexesRef.current.delete(pageIndex);
           }
         }
-        void scheduleVisiblePdfWork();
+        requestScheduleVisiblePdfWork("intersection_observer");
       }, {
         root: null,
         rootMargin: "100% 0px 100% 0px",
@@ -2281,7 +2310,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         observer.disconnect();
       };
-    }, [pdfPageCount, renderVersion, scheduleVisiblePdfWork]);
+    }, [pdfPageCount, renderVersion, requestScheduleVisiblePdfWork]);
 
     useEffect(() => {
       if (loading) {

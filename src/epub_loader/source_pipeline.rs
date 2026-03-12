@@ -1,6 +1,7 @@
 use super::{
     PdfBookmarkPolicy, PdfClassificationSummary, PdfDocumentClass, PdfEmbeddedTextTrustDiagnostics,
-    PdfGeometryMode, PdfOcrEnginePolicy, PdfOcrFallbackDecision, PdfOcrPipelineSummary,
+    PdfGeometryMode, PdfOcrEnginePolicy, PdfOcrFallbackDecision, PdfOcrNormalizationSummary,
+    PdfOcrPageLayoutClass, PdfOcrPageReadingOrderDecision, PdfOcrPipelineSummary,
     PdfOcrRecommendation, PdfPageClass, PdfPageClassCount, PdfPageClassificationSummary,
     PdfProbeFeatureSummary, PdfProbePageSummary, PdfRuntimePolicySummary, PdfSearchPolicy,
     PdfSentenceHighlightPolicy, PdfSyncStrategy, PdfTextOnlyPolicy, SourceContent,
@@ -11,6 +12,7 @@ use anyhow::{Context, Result};
 use epub::doc::EpubDoc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,9 +24,9 @@ use tracing::{info, warn};
 const PANDOC_FILTER_REL_PATH: &str = "conf/pandoc/strip-nontext.lua";
 const PANDOC_PIPELINE_REV: &str = "pandoc-clean-v1";
 const QUACK_CHECK_CONFIG_REL_PATH: &str = "conf/quack-check.toml";
-const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v5";
+const QUACK_CHECK_PIPELINE_REV: &str = "quack-check-pdf-v6";
 const QUACK_CHECK_TEXT_FILENAME_DEFAULT: &str = "transcript.txt";
-const PDF_CLASSIFICATION_VERSION: u32 = 3;
+const PDF_CLASSIFICATION_VERSION: u32 = 4;
 const AVAILABILITY_LOG_EVERY: u64 = 20;
 
 static LOAD_COUNT_TOTAL: AtomicU64 = AtomicU64::new(0);
@@ -459,10 +461,12 @@ pub(super) fn resolve_pdf_dual_view_content(
     markdown: &str,
     report: Option<&crate::quack_check::report::JobReport>,
 ) -> SourceContent {
+    let (normalized_tts_text, normalization_summary) =
+        normalize_pdf_text_for_reader_with_summary(transcript_text, report);
     let tts_text = if transcript_text.trim().is_empty() {
         "No textual content found in this file.".to_string()
     } else {
-        normalize_pdf_text_for_reader(transcript_text)
+        normalized_tts_text
     };
     let reading_markdown = if markdown.trim().is_empty() {
         None
@@ -487,7 +491,29 @@ pub(super) fn resolve_pdf_dual_view_content(
         pdf_geometry_mode,
         pdf_sync_strategy,
         pdf_classification.as_ref(),
+        normalization_summary,
     );
+    if let Some(report) = report {
+        info!(
+            page_count = report.input.page_count,
+            broken_line_joins = pdf_ocr_pipeline.normalization_summary.broken_line_join_count,
+            hyphen_recoveries = pdf_ocr_pipeline.normalization_summary.hyphen_recovery_count,
+            ligature_replacements = pdf_ocr_pipeline.normalization_summary.ligature_replacement_count,
+            repeated_header_suppressed = pdf_ocr_pipeline
+                .normalization_summary
+                .repeated_header_suppression_count,
+            repeated_footer_suppressed = pdf_ocr_pipeline
+                .normalization_summary
+                .repeated_footer_suppression_count,
+            margin_sidenote_suppressed = pdf_ocr_pipeline
+                .normalization_summary
+                .margin_sidenote_suppression_count,
+            dropped_noise_lines = pdf_ocr_pipeline.normalization_summary.dropped_noise_line_count,
+            merged_lines = pdf_ocr_pipeline.normalization_summary.merged_line_count,
+            normalization_trace = ?pdf_ocr_pipeline.normalization_summary.trace_notes,
+            "Derived canonical OCR transcript normalization summary"
+        );
+    }
     SourceContent {
         tts_text,
         reading_html: None,
@@ -568,9 +594,96 @@ fn load_epub_native_html(path: &Path, cancel: Option<&CancellationToken>) -> Res
     }
 }
 
-pub(super) fn normalize_pdf_text_for_reader(input: &str) -> String {
+#[derive(Debug, Default)]
+struct PdfTranscriptNormalizationState {
+    broken_line_join_count: u32,
+    hyphen_recovery_count: u32,
+    ligature_replacement_count: u32,
+    unicode_normalization_count: u32,
+    repeated_header_suppression_count: u32,
+    repeated_footer_suppression_count: u32,
+    margin_sidenote_suppression_count: u32,
+    table_cell_normalization_count: u32,
+    footnote_marker_adjustment_count: u32,
+    punctuation_repair_count: u32,
+    dropped_noise_line_count: u32,
+    merged_line_count: u32,
+    trace_notes: Vec<String>,
+}
+
+fn frequent_boundary_lines(
+    report: Option<&crate::quack_check::report::JobReport>,
+    first: bool,
+) -> HashMap<String, u32> {
+    let mut counts = HashMap::new();
+    if let Some(report) = report {
+        for page in &report.sample.pages {
+            let raw = if first {
+                page.first_line.trim()
+            } else {
+                page.last_line.trim()
+            };
+            if raw.len() < 3 || raw.len() > 80 {
+                continue;
+            }
+            *counts.entry(raw.to_string()).or_insert(0) += 1;
+        }
+    }
+    counts.retain(|_, count| *count >= 2);
+    counts
+}
+
+fn replace_ligatures_and_measure(value: &str) -> (String, u32) {
+    let ligatures = [
+        ('\u{fb00}', "ff"),
+        ('\u{fb01}', "fi"),
+        ('\u{fb02}', "fl"),
+        ('\u{fb03}', "ffi"),
+        ('\u{fb04}', "ffl"),
+        ('\u{fb05}', "ft"),
+        ('\u{fb06}', "st"),
+    ];
+    let mut out = value.to_string();
+    let mut replacements = 0u32;
+    for (ligature, replacement) in ligatures {
+        let count = out.matches(ligature).count() as u32;
+        if count > 0 {
+            out = out.replace(ligature, replacement);
+            replacements += count;
+        }
+    }
+    (out, replacements)
+}
+
+fn is_probable_margin_or_sidenote_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.len() > 28 {
+        return false;
+    }
+    let word_count = trimmed.split_whitespace().count();
+    let digit_or_punct = trimmed
+        .chars()
+        .filter(|ch| ch.is_ascii_digit() || ch.is_ascii_punctuation())
+        .count();
+    word_count <= 4 && digit_or_punct * 2 >= trimmed.chars().count().max(1)
+}
+
+fn normalize_pdf_text_for_reader_with_summary(
+    input: &str,
+    report: Option<&crate::quack_check::report::JobReport>,
+) -> (String, PdfOcrNormalizationSummary) {
     let mut out = String::with_capacity(input.len());
-    let normalized = input.replace("\r\n", "\n").replace('\r', "\n");
+    let normalized_newlines = input.replace("\r\n", "\n").replace('\r', "\n");
+    let unicode_normalization_count = 0;
+    let (normalized, ligature_replacement_count) =
+        replace_ligatures_and_measure(&normalized_newlines);
+    let header_lines = frequent_boundary_lines(report, true);
+    let footer_lines = frequent_boundary_lines(report, false);
+    let mut state = PdfTranscriptNormalizationState {
+        ligature_replacement_count,
+        unicode_normalization_count,
+        ..PdfTranscriptNormalizationState::default()
+    };
     let mut paragraph = String::new();
 
     for line in normalized.lines() {
@@ -579,9 +692,43 @@ pub(super) fn normalize_pdf_text_for_reader(input: &str) -> String {
             flush_pdf_paragraph(&mut out, &mut paragraph);
             continue;
         }
+        if header_lines.contains_key(trimmed) {
+            state.repeated_header_suppression_count += 1;
+            state.dropped_noise_line_count += 1;
+            continue;
+        }
+        if footer_lines.contains_key(trimmed) {
+            state.repeated_footer_suppression_count += 1;
+            state.dropped_noise_line_count += 1;
+            continue;
+        }
+        if is_probable_margin_or_sidenote_line(trimmed) {
+            state.margin_sidenote_suppression_count += 1;
+            state.dropped_noise_line_count += 1;
+            continue;
+        }
+        if trimmed.starts_with('[')
+            && trimmed.ends_with(']')
+            && trimmed[1..trimmed.len() - 1]
+                .chars()
+                .all(|ch| ch.is_ascii_digit())
+        {
+            state.footnote_marker_adjustment_count += 1;
+            state.dropped_noise_line_count += 1;
+            continue;
+        }
+        let trimmed = if trimmed.contains('\t') {
+            state.table_cell_normalization_count += 1;
+            state
+                .trace_notes
+                .push("table_cell_tab_normalization".to_string());
+            trimmed.replace('\t', " | ")
+        } else {
+            trimmed.to_string()
+        };
 
         if paragraph.is_empty() {
-            paragraph.push_str(trimmed);
+            paragraph.push_str(&trimmed);
             continue;
         }
 
@@ -593,15 +740,80 @@ pub(super) fn normalize_pdf_text_for_reader(input: &str) -> String {
                 .unwrap_or(false)
         {
             paragraph.pop();
-            paragraph.push_str(trimmed);
+            paragraph.push_str(&trimmed);
+            state.hyphen_recovery_count += 1;
+            state.merged_line_count += 1;
         } else {
+            if !paragraph.ends_with('.')
+                && !paragraph.ends_with('!')
+                && !paragraph.ends_with('?')
+                && !paragraph.ends_with(':')
+                && !paragraph.ends_with(';')
+            {
+                state.broken_line_join_count += 1;
+            }
             paragraph.push(' ');
-            paragraph.push_str(trimmed);
+            paragraph.push_str(&trimmed);
+            state.merged_line_count += 1;
         }
     }
 
     flush_pdf_paragraph(&mut out, &mut paragraph);
-    out.trim().to_string()
+    if state.broken_line_join_count > 0 {
+        state
+            .trace_notes
+            .push("broken_line_join_normalization_applied".to_string());
+    }
+    if state.hyphen_recovery_count > 0 {
+        state
+            .trace_notes
+            .push("hyphenated_word_recovery_applied".to_string());
+    }
+    if state.repeated_header_suppression_count > 0 || state.repeated_footer_suppression_count > 0 {
+        state
+            .trace_notes
+            .push("repeated_boundary_boilerplate_suppressed".to_string());
+    }
+    if state.margin_sidenote_suppression_count > 0 {
+        state
+            .trace_notes
+            .push("margin_sidenotes_suppressed".to_string());
+    }
+    if state.footnote_marker_adjustment_count > 0 {
+        state
+            .trace_notes
+            .push("footnote_markers_suppressed".to_string());
+    }
+    if state.ligature_replacement_count > 0 {
+        state
+            .trace_notes
+            .push("ligatures_and_unicode_noise_normalized".to_string());
+    }
+    let summary = PdfOcrNormalizationSummary {
+        canonical_text_derived_from_ocr: report.map(|value| value.decision.do_ocr).unwrap_or(false),
+        page_sentence_provenance_available: report
+            .map(|value| value.input.page_count > 0)
+            .unwrap_or(false),
+        token_trail_available: report.map(|value| value.decision.do_ocr).unwrap_or(false),
+        broken_line_join_count: state.broken_line_join_count,
+        hyphen_recovery_count: state.hyphen_recovery_count,
+        ligature_replacement_count: state.ligature_replacement_count,
+        unicode_normalization_count: state.unicode_normalization_count,
+        repeated_header_suppression_count: state.repeated_header_suppression_count,
+        repeated_footer_suppression_count: state.repeated_footer_suppression_count,
+        margin_sidenote_suppression_count: state.margin_sidenote_suppression_count,
+        table_cell_normalization_count: state.table_cell_normalization_count,
+        footnote_marker_adjustment_count: state.footnote_marker_adjustment_count,
+        punctuation_repair_count: state.punctuation_repair_count,
+        dropped_noise_line_count: state.dropped_noise_line_count,
+        merged_line_count: state.merged_line_count,
+        trace_notes: state.trace_notes,
+    };
+    (out.trim().to_string(), summary)
+}
+
+pub(super) fn normalize_pdf_text_for_reader(input: &str) -> String {
+    normalize_pdf_text_for_reader_with_summary(input, None).0
 }
 
 fn flush_pdf_paragraph(out: &mut String, paragraph: &mut String) {
@@ -754,16 +966,170 @@ fn derive_pdf_ocr_fallback_decisions(
     decisions
 }
 
+fn classify_page_reading_order(
+    page: &crate::quack_check::probe::ProbePageStats,
+) -> PdfOcrPageReadingOrderDecision {
+    let mut reasons = Vec::new();
+    let mut confidence = 0.55f32;
+    let layout_class = if page.char_count == 0 && page.full_page_raster_suspected {
+        reasons.push("fallback_no_text_available".to_string());
+        PdfOcrPageLayoutClass::Fallback
+    } else if page.coordinate_sanity < 0.28
+        && page.reading_order_stability < 0.35
+        && page.char_count > 80
+        && !page.full_page_raster_suspected
+    {
+        reasons.push("page_coordinates_and_order_break_down".to_string());
+        confidence = 0.72;
+        PdfOcrPageLayoutClass::RotatedPage
+    } else if page.coordinate_sanity < 0.5
+        && page.block_coherence >= 0.58
+        && page.reading_order_stability < page.block_coherence - 0.18
+    {
+        reasons.push("localized_order_instability_inside_otherwise_coherent_page".to_string());
+        confidence = 0.68;
+        PdfOcrPageLayoutClass::RotatedBlocks
+    } else if page.digit_ratio >= 0.15
+        && page.short_line_ratio >= 0.5
+        && page.repeated_line_ratio >= 0.12
+    {
+        reasons.push("grid_like_short_numeric_lines".to_string());
+        confidence = 0.79;
+        PdfOcrPageLayoutClass::TableLike
+    } else if page.mixed_text_image_suspected
+        && page.image_coverage_ratio >= 0.2
+        && page.line_count <= 18
+        && page.char_count > 120
+    {
+        reasons.push("image_bands_interrupt_body_order".to_string());
+        confidence = 0.72;
+        PdfOcrPageLayoutClass::MixedColumnCaptionBand
+    } else if page.mixed_text_image_suspected
+        && page.image_coverage_ratio >= 0.28
+        && page.line_count <= 10
+    {
+        reasons.push("figure_caption_band_separated_from_body_order".to_string());
+        confidence = 0.71;
+        PdfOcrPageLayoutClass::FigureCaptionSeparated
+    } else if page.short_line_ratio >= 0.72
+        && page.reading_order_stability >= 0.58
+        && page.block_coherence >= 0.52
+        && page.char_count > 250
+    {
+        reasons.push("dense_short_lines_support_columnar_layout".to_string());
+        confidence = 0.82;
+        PdfOcrPageLayoutClass::StrongTwoColumn
+    } else if page.short_line_ratio >= 0.42
+        && page.repeated_line_ratio <= 0.12
+        && page.block_coherence >= 0.6
+        && page.coordinate_sanity >= 0.56
+    {
+        reasons.push("short_edge_lines_suggest_margin_sidenotes".to_string());
+        confidence = 0.67;
+        PdfOcrPageLayoutClass::OuterMarginSidenotes
+    } else if page.digit_ratio >= 0.06
+        && page.short_line_ratio >= 0.3
+        && (page.last_line.chars().any(|ch| ch.is_ascii_digit()) || page.last_line.contains('['))
+    {
+        reasons.push("bottom_band_looks_like_footnotes_or_citations".to_string());
+        confidence = 0.69;
+        PdfOcrPageLayoutClass::BottomFootnoteBand
+    } else if page.block_coherence >= 0.72
+        && page.coordinate_sanity >= 0.68
+        && page.reading_order_stability >= 0.68
+    {
+        reasons.push("coherent_page_uses_simple_body_order".to_string());
+        confidence = 0.88;
+        PdfOcrPageLayoutClass::SingleColumn
+    } else {
+        reasons.push("fallback_order_used_for_borderline_layout".to_string());
+        PdfOcrPageLayoutClass::Fallback
+    };
+
+    PdfOcrPageReadingOrderDecision {
+        page_index: page.page_index,
+        layout_class,
+        confidence,
+        reasons,
+    }
+}
+
+fn derive_pdf_page_reading_order(
+    report: Option<&crate::quack_check::report::JobReport>,
+) -> Vec<PdfOcrPageReadingOrderDecision> {
+    let mut decisions: Vec<PdfOcrPageReadingOrderDecision> = report
+        .map(|value| {
+            value
+                .sample
+                .pages
+                .iter()
+                .map(classify_page_reading_order)
+                .collect()
+        })
+        .unwrap_or_default();
+    decisions.sort_by_key(|value| value.page_index);
+    if !decisions.is_empty() {
+        let mut counts: HashMap<PdfOcrPageLayoutClass, usize> = HashMap::new();
+        for decision in &decisions {
+            *counts.entry(decision.layout_class).or_insert(0) += 1;
+        }
+        info!(
+            ?counts,
+            page_count = decisions.len(),
+            "Derived OCR page reading-order decisions"
+        );
+    }
+    decisions
+}
+
+fn derive_pdf_reading_order_mode_from_pages(
+    pdf_geometry_mode: PdfGeometryMode,
+    ocr_enabled: bool,
+    page_decisions: &[PdfOcrPageReadingOrderDecision],
+) -> String {
+    if page_decisions.is_empty() {
+        return derive_pdf_reading_order_mode(pdf_geometry_mode, ocr_enabled);
+    }
+    let mut counts: HashMap<PdfOcrPageLayoutClass, usize> = HashMap::new();
+    for decision in page_decisions {
+        *counts.entry(decision.layout_class).or_insert(0) += 1;
+    }
+    let dominant = counts
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(layout, _)| layout)
+        .unwrap_or(PdfOcrPageLayoutClass::Fallback);
+    let dominant_label = match dominant {
+        PdfOcrPageLayoutClass::SingleColumn => "single_column",
+        PdfOcrPageLayoutClass::StrongTwoColumn => "strong_two_column",
+        PdfOcrPageLayoutClass::MixedColumnCaptionBand => "mixed_column_caption_band",
+        PdfOcrPageLayoutClass::BottomFootnoteBand => "bottom_footnote_band",
+        PdfOcrPageLayoutClass::OuterMarginSidenotes => "outer_margin_sidenotes",
+        PdfOcrPageLayoutClass::TableLike => "table_like",
+        PdfOcrPageLayoutClass::RotatedPage => "rotated_page",
+        PdfOcrPageLayoutClass::RotatedBlocks => "rotated_blocks",
+        PdfOcrPageLayoutClass::FigureCaptionSeparated => "figure_caption_separated",
+        PdfOcrPageLayoutClass::Fallback => "fallback",
+    };
+    format!(
+        "{}_{}",
+        derive_pdf_reading_order_mode(pdf_geometry_mode, ocr_enabled),
+        dominant_label
+    )
+}
+
 fn derive_pdf_ocr_pipeline_summary(
     report: Option<&crate::quack_check::report::JobReport>,
     pdf_geometry_mode: PdfGeometryMode,
     pdf_sync_strategy: PdfSyncStrategy,
     classification: Option<&PdfClassificationSummary>,
+    normalization_summary: PdfOcrNormalizationSummary,
 ) -> PdfOcrPipelineSummary {
     let fallback_strategy_labels =
         derive_pdf_fallback_strategies(report, pdf_geometry_mode, pdf_sync_strategy);
     let fallback_decisions =
         derive_pdf_ocr_fallback_decisions(report, pdf_geometry_mode, pdf_sync_strategy);
+    let page_reading_order = derive_pdf_page_reading_order(report);
     PdfOcrPipelineSummary {
         engine_policy: derive_pdf_ocr_engine_policy(classification, report),
         fallback_decisions,
@@ -773,10 +1139,13 @@ fn derive_pdf_ocr_pipeline_summary(
         chunk_count: report
             .map(|value| value.chunk_reports.len() as u32)
             .unwrap_or(0),
-        reading_order_mode: derive_pdf_reading_order_mode(
+        reading_order_mode: derive_pdf_reading_order_mode_from_pages(
             pdf_geometry_mode,
             report.map(|value| value.decision.do_ocr).unwrap_or(false),
+            &page_reading_order,
         ),
+        normalization_summary,
+        page_reading_order,
         fallback_strategy_labels,
     }
 }
@@ -1838,7 +2207,9 @@ fn write_pdf_cache(
     signature.ocr_enabled = ocr_enabled;
     signature.page_count = report.map(|value| value.input.page_count).unwrap_or(0);
     signature.sampled_pages = report.map(|value| value.sample.sampled_pages).unwrap_or(0);
-    signature.reading_order_mode = derive_pdf_reading_order_mode(pdf_geometry_mode, ocr_enabled);
+    signature.reading_order_mode = pdf_ocr_pipeline
+        .map(|value| value.reading_order_mode.clone())
+        .unwrap_or_else(|| derive_pdf_reading_order_mode(pdf_geometry_mode, ocr_enabled));
     signature.fallback_strategies =
         derive_pdf_fallback_strategies(report, pdf_geometry_mode, pdf_sync_strategy);
     signature.chunk_ranges = report
@@ -2327,6 +2698,7 @@ mod tests {
             PdfGeometryMode::MixedTextTrust,
             PdfSyncStrategy::ParagraphFallback,
             classification.as_ref(),
+            "Header\n\nAlpha-\nbeta line\n[12]\nFooter",
         );
 
         assert_eq!(
@@ -2335,6 +2707,14 @@ mod tests {
         );
         assert!(pipeline.ocr_enabled);
         assert_eq!(pipeline.chunk_count, 2);
+        assert!(pipeline.normalization_summary.hyphen_recovery_count >= 1);
+        assert!(
+            pipeline
+                .normalization_summary
+                .footnote_marker_adjustment_count
+                >= 1
+        );
+        assert!(!pipeline.page_reading_order.is_empty());
         assert!(
             pipeline
                 .fallback_decisions
@@ -2345,6 +2725,7 @@ mod tests {
             PdfGeometryMode::OcrRequired,
             PdfSyncStrategy::RenderOnly,
             classification.as_ref(),
+            "Header\nAlpha\nFooter",
         );
         assert!(
             text_only_pipeline
@@ -2381,6 +2762,7 @@ mod tests {
                 PdfGeometryMode::MixedTextTrust,
                 PdfSyncStrategy::ParagraphFallback,
                 classify_pdf_runtime(Some(&report), "Alpha. Beta.", "## pretty").as_ref(),
+                "Alpha. Beta.",
             )),
         )
         .expect("write pdf cache");
@@ -2411,9 +2793,368 @@ mod tests {
                 .map(|value| value.engine_policy),
             Some(PdfOcrEnginePolicy::HybridEmbeddedOcrMerge)
         );
+        assert!(
+            cached
+                .pdf_ocr_pipeline
+                .as_ref()
+                .map(|value| !value.page_reading_order.is_empty())
+                .unwrap_or(false)
+        );
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_dir_all(hash_dir(&path));
+    }
+
+    #[test]
+    fn normalize_pdf_text_for_reader_tracks_ocr_normalization_edits() {
+        let report = sample_report();
+        let raw = "chapter #\nAlpha-\nbeta line\n[12]\n3\npublisher footer";
+
+        let (normalized, summary) = normalize_pdf_text_for_reader_with_summary(raw, Some(&report));
+
+        assert!(normalized.contains("Alphabeta line"));
+        assert!(summary.hyphen_recovery_count >= 1);
+        assert!(summary.repeated_header_suppression_count >= 1);
+        assert!(summary.repeated_footer_suppression_count >= 1);
+        assert!(summary.footnote_marker_adjustment_count >= 1);
+        assert!(summary.dropped_noise_line_count >= 2);
+        assert!(
+            summary
+                .trace_notes
+                .iter()
+                .any(|value| value == "repeated_boundary_boilerplate_suppressed")
+        );
+    }
+
+    #[test]
+    fn page_reading_order_resolver_covers_ocr_layout_families() {
+        let cases = vec![
+            (
+                crate::quack_check::probe::ProbePageStats {
+                    page_index: 1,
+                    char_count: 1200,
+                    token_count: 200,
+                    line_count: 28,
+                    whitespace_ratio: 0.2,
+                    garbage_ratio: 0.0,
+                    punctuation_ratio: 0.04,
+                    digit_ratio: 0.01,
+                    non_latin_ratio: 0.0,
+                    alpha_char_ratio: 0.76,
+                    uppercase_char_ratio: 0.04,
+                    alpha_token_ratio: 0.9,
+                    avg_token_length: 5.1,
+                    short_line_ratio: 0.18,
+                    repeated_line_ratio: 0.02,
+                    hyphenated_line_ratio: 0.03,
+                    image_object_count: 0,
+                    image_coverage_ratio: 0.0,
+                    duplicate_text_ratio: 0.01,
+                    block_coherence: 0.86,
+                    coordinate_sanity: 0.82,
+                    reading_order_stability: 0.83,
+                    hidden_text_layer_suspected: false,
+                    invisible_text_suspected: false,
+                    duplicate_text_suspected: false,
+                    stacked_duplicate_text_suspected: false,
+                    mixed_text_image_suspected: false,
+                    full_page_raster_suspected: false,
+                    first_line: "chapter".to_string(),
+                    last_line: "body".to_string(),
+                },
+                PdfOcrPageLayoutClass::SingleColumn,
+            ),
+            (
+                crate::quack_check::probe::ProbePageStats {
+                    page_index: 2,
+                    short_line_ratio: 0.82,
+                    reading_order_stability: 0.7,
+                    block_coherence: 0.68,
+                    char_count: 640,
+                    token_count: 120,
+                    line_count: 36,
+                    whitespace_ratio: 0.18,
+                    garbage_ratio: 0.0,
+                    punctuation_ratio: 0.02,
+                    digit_ratio: 0.01,
+                    non_latin_ratio: 0.0,
+                    alpha_char_ratio: 0.72,
+                    uppercase_char_ratio: 0.04,
+                    alpha_token_ratio: 0.88,
+                    avg_token_length: 4.6,
+                    repeated_line_ratio: 0.04,
+                    hyphenated_line_ratio: 0.06,
+                    image_object_count: 0,
+                    image_coverage_ratio: 0.0,
+                    duplicate_text_ratio: 0.03,
+                    coordinate_sanity: 0.71,
+                    hidden_text_layer_suspected: false,
+                    invisible_text_suspected: false,
+                    duplicate_text_suspected: false,
+                    stacked_duplicate_text_suspected: false,
+                    mixed_text_image_suspected: false,
+                    full_page_raster_suspected: false,
+                    first_line: "left".to_string(),
+                    last_line: "right".to_string(),
+                },
+                PdfOcrPageLayoutClass::StrongTwoColumn,
+            ),
+            (
+                crate::quack_check::probe::ProbePageStats {
+                    page_index: 3,
+                    char_count: 420,
+                    token_count: 75,
+                    line_count: 16,
+                    whitespace_ratio: 0.2,
+                    garbage_ratio: 0.0,
+                    punctuation_ratio: 0.04,
+                    digit_ratio: 0.02,
+                    non_latin_ratio: 0.0,
+                    alpha_char_ratio: 0.74,
+                    uppercase_char_ratio: 0.04,
+                    alpha_token_ratio: 0.88,
+                    avg_token_length: 4.9,
+                    short_line_ratio: 0.33,
+                    repeated_line_ratio: 0.04,
+                    hyphenated_line_ratio: 0.0,
+                    image_object_count: 1,
+                    image_coverage_ratio: 0.34,
+                    duplicate_text_ratio: 0.0,
+                    block_coherence: 0.66,
+                    coordinate_sanity: 0.67,
+                    reading_order_stability: 0.61,
+                    hidden_text_layer_suspected: false,
+                    invisible_text_suspected: false,
+                    duplicate_text_suspected: false,
+                    stacked_duplicate_text_suspected: false,
+                    mixed_text_image_suspected: true,
+                    full_page_raster_suspected: false,
+                    first_line: "caption".to_string(),
+                    last_line: "body".to_string(),
+                },
+                PdfOcrPageLayoutClass::MixedColumnCaptionBand,
+            ),
+            (
+                crate::quack_check::probe::ProbePageStats {
+                    page_index: 4,
+                    char_count: 510,
+                    token_count: 92,
+                    line_count: 24,
+                    whitespace_ratio: 0.19,
+                    garbage_ratio: 0.0,
+                    punctuation_ratio: 0.05,
+                    digit_ratio: 0.12,
+                    non_latin_ratio: 0.0,
+                    alpha_char_ratio: 0.71,
+                    uppercase_char_ratio: 0.03,
+                    alpha_token_ratio: 0.86,
+                    avg_token_length: 4.7,
+                    short_line_ratio: 0.42,
+                    repeated_line_ratio: 0.06,
+                    hyphenated_line_ratio: 0.02,
+                    image_object_count: 0,
+                    image_coverage_ratio: 0.0,
+                    duplicate_text_ratio: 0.0,
+                    block_coherence: 0.63,
+                    coordinate_sanity: 0.64,
+                    reading_order_stability: 0.59,
+                    hidden_text_layer_suspected: false,
+                    invisible_text_suspected: false,
+                    duplicate_text_suspected: false,
+                    stacked_duplicate_text_suspected: false,
+                    mixed_text_image_suspected: false,
+                    full_page_raster_suspected: false,
+                    first_line: "body".to_string(),
+                    last_line: "[12] 344".to_string(),
+                },
+                PdfOcrPageLayoutClass::BottomFootnoteBand,
+            ),
+            (
+                crate::quack_check::probe::ProbePageStats {
+                    page_index: 5,
+                    char_count: 700,
+                    token_count: 120,
+                    line_count: 30,
+                    whitespace_ratio: 0.21,
+                    garbage_ratio: 0.0,
+                    punctuation_ratio: 0.03,
+                    digit_ratio: 0.02,
+                    non_latin_ratio: 0.0,
+                    alpha_char_ratio: 0.73,
+                    uppercase_char_ratio: 0.03,
+                    alpha_token_ratio: 0.87,
+                    avg_token_length: 4.9,
+                    short_line_ratio: 0.48,
+                    repeated_line_ratio: 0.08,
+                    hyphenated_line_ratio: 0.02,
+                    image_object_count: 0,
+                    image_coverage_ratio: 0.0,
+                    duplicate_text_ratio: 0.03,
+                    block_coherence: 0.65,
+                    coordinate_sanity: 0.62,
+                    reading_order_stability: 0.61,
+                    hidden_text_layer_suspected: false,
+                    invisible_text_suspected: false,
+                    duplicate_text_suspected: false,
+                    stacked_duplicate_text_suspected: false,
+                    mixed_text_image_suspected: false,
+                    full_page_raster_suspected: false,
+                    first_line: "note".to_string(),
+                    last_line: "body".to_string(),
+                },
+                PdfOcrPageLayoutClass::OuterMarginSidenotes,
+            ),
+            (
+                crate::quack_check::probe::ProbePageStats {
+                    page_index: 6,
+                    char_count: 480,
+                    token_count: 90,
+                    line_count: 28,
+                    whitespace_ratio: 0.2,
+                    garbage_ratio: 0.0,
+                    punctuation_ratio: 0.09,
+                    digit_ratio: 0.18,
+                    non_latin_ratio: 0.0,
+                    alpha_char_ratio: 0.66,
+                    uppercase_char_ratio: 0.03,
+                    alpha_token_ratio: 0.8,
+                    avg_token_length: 4.1,
+                    short_line_ratio: 0.55,
+                    repeated_line_ratio: 0.18,
+                    hyphenated_line_ratio: 0.0,
+                    image_object_count: 0,
+                    image_coverage_ratio: 0.0,
+                    duplicate_text_ratio: 0.08,
+                    block_coherence: 0.52,
+                    coordinate_sanity: 0.58,
+                    reading_order_stability: 0.54,
+                    hidden_text_layer_suspected: false,
+                    invisible_text_suspected: false,
+                    duplicate_text_suspected: false,
+                    stacked_duplicate_text_suspected: false,
+                    mixed_text_image_suspected: false,
+                    full_page_raster_suspected: false,
+                    first_line: "row".to_string(),
+                    last_line: "row".to_string(),
+                },
+                PdfOcrPageLayoutClass::TableLike,
+            ),
+            (
+                crate::quack_check::probe::ProbePageStats {
+                    page_index: 7,
+                    char_count: 520,
+                    token_count: 98,
+                    line_count: 25,
+                    whitespace_ratio: 0.18,
+                    garbage_ratio: 0.0,
+                    punctuation_ratio: 0.03,
+                    digit_ratio: 0.01,
+                    non_latin_ratio: 0.0,
+                    alpha_char_ratio: 0.71,
+                    uppercase_char_ratio: 0.03,
+                    alpha_token_ratio: 0.87,
+                    avg_token_length: 4.8,
+                    short_line_ratio: 0.26,
+                    repeated_line_ratio: 0.04,
+                    hyphenated_line_ratio: 0.0,
+                    image_object_count: 0,
+                    image_coverage_ratio: 0.0,
+                    duplicate_text_ratio: 0.0,
+                    block_coherence: 0.4,
+                    coordinate_sanity: 0.2,
+                    reading_order_stability: 0.24,
+                    hidden_text_layer_suspected: false,
+                    invisible_text_suspected: false,
+                    duplicate_text_suspected: false,
+                    stacked_duplicate_text_suspected: false,
+                    mixed_text_image_suspected: false,
+                    full_page_raster_suspected: false,
+                    first_line: "body".to_string(),
+                    last_line: "body".to_string(),
+                },
+                PdfOcrPageLayoutClass::RotatedPage,
+            ),
+            (
+                crate::quack_check::probe::ProbePageStats {
+                    page_index: 8,
+                    char_count: 530,
+                    token_count: 101,
+                    line_count: 26,
+                    whitespace_ratio: 0.18,
+                    garbage_ratio: 0.0,
+                    punctuation_ratio: 0.03,
+                    digit_ratio: 0.01,
+                    non_latin_ratio: 0.0,
+                    alpha_char_ratio: 0.72,
+                    uppercase_char_ratio: 0.03,
+                    alpha_token_ratio: 0.88,
+                    avg_token_length: 4.9,
+                    short_line_ratio: 0.24,
+                    repeated_line_ratio: 0.04,
+                    hyphenated_line_ratio: 0.0,
+                    image_object_count: 0,
+                    image_coverage_ratio: 0.0,
+                    duplicate_text_ratio: 0.0,
+                    block_coherence: 0.66,
+                    coordinate_sanity: 0.46,
+                    reading_order_stability: 0.26,
+                    hidden_text_layer_suspected: false,
+                    invisible_text_suspected: false,
+                    duplicate_text_suspected: false,
+                    stacked_duplicate_text_suspected: false,
+                    mixed_text_image_suspected: false,
+                    full_page_raster_suspected: false,
+                    first_line: "body".to_string(),
+                    last_line: "body".to_string(),
+                },
+                PdfOcrPageLayoutClass::RotatedBlocks,
+            ),
+            (
+                crate::quack_check::probe::ProbePageStats {
+                    page_index: 9,
+                    char_count: 180,
+                    token_count: 34,
+                    line_count: 8,
+                    whitespace_ratio: 0.19,
+                    garbage_ratio: 0.0,
+                    punctuation_ratio: 0.03,
+                    digit_ratio: 0.01,
+                    non_latin_ratio: 0.0,
+                    alpha_char_ratio: 0.73,
+                    uppercase_char_ratio: 0.03,
+                    alpha_token_ratio: 0.87,
+                    avg_token_length: 5.0,
+                    short_line_ratio: 0.22,
+                    repeated_line_ratio: 0.02,
+                    hyphenated_line_ratio: 0.0,
+                    image_object_count: 1,
+                    image_coverage_ratio: 0.34,
+                    duplicate_text_ratio: 0.0,
+                    block_coherence: 0.61,
+                    coordinate_sanity: 0.59,
+                    reading_order_stability: 0.55,
+                    hidden_text_layer_suspected: false,
+                    invisible_text_suspected: false,
+                    duplicate_text_suspected: false,
+                    stacked_duplicate_text_suspected: false,
+                    mixed_text_image_suspected: true,
+                    full_page_raster_suspected: false,
+                    first_line: "figure".to_string(),
+                    last_line: "caption".to_string(),
+                },
+                PdfOcrPageLayoutClass::FigureCaptionSeparated,
+            ),
+        ];
+
+        for (page, expected) in cases {
+            let actual = classify_page_reading_order(&page);
+            assert_eq!(actual.layout_class, expected, "page {}", page.page_index);
+            assert!(
+                !actual.reasons.is_empty(),
+                "expected explainable decision for page {}",
+                page.page_index
+            );
+        }
     }
 
     #[test]

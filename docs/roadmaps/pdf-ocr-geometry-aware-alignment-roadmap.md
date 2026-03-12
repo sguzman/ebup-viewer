@@ -37,32 +37,32 @@
 - [x] Add tracing for OCR engine, OCR mode, per-page confidence summary, and total recognized token counts.
 
 ## Phase 2: OCR Text Ownership and Normalization
-- [ ] Derive canonical `tts_text` from OCR output without losing page-local sentence provenance.
+- [x] Derive canonical `tts_text` from OCR output without losing page-local sentence provenance.
 - [ ] Define OCR normalization parity rules:
-- [ ] broken line joins
-- [ ] hyphenated word recovery
-- [ ] ligatures and OCR unicode noise
-- [ ] repeated headers and footers
-- [ ] margin note and sidenote suppression or segregation
-- [ ] table cell reading-order normalization
-- [ ] footnote marker and citation handling
+- [x] broken line joins
+- [x] hyphenated word recovery
+- [x] ligatures and OCR unicode noise
+- [x] repeated headers and footers
+- [x] margin note and sidenote suppression or segregation
+- [x] table cell reading-order normalization
+- [x] footnote marker and citation handling
 - [ ] punctuation repair only when confidence permits
-- [ ] Keep a sentence-to-source-token trail so each `tts_text` sentence can be traced back to OCR blocks/lines/words.
-- [ ] Add tracing for normalization edits, dropped noise, merged lines, and repeated boilerplate suppression.
+- [x] Keep a sentence-to-source-token trail so each `tts_text` sentence can be traced back to OCR blocks/lines/words.
+- [x] Add tracing for normalization edits, dropped noise, merged lines, and repeated boilerplate suppression.
 
 ## Phase 3: OCR Reading Order Recovery
-- [ ] Build a page reading-order resolver for OCR-heavy pages:
-- [ ] single-column pages
-- [ ] strong two-column pages
-- [ ] mixed column + full-width caption bands
-- [ ] bottom footnote bands
-- [ ] outer-margin sidenotes
-- [ ] tables and grid-like content
-- [ ] rotated pages
-- [ ] rotated blocks within otherwise upright pages
-- [ ] figures and captions separated from body order
-- [ ] Keep reading-order decisions explicit and persisted per page.
-- [ ] Add diagnostics for why a page was classified as single-column, multi-column, table-like, caption-banded, or fallback.
+- [x] Build a page reading-order resolver for OCR-heavy pages:
+- [x] single-column pages
+- [x] strong two-column pages
+- [x] mixed column + full-width caption bands
+- [x] bottom footnote bands
+- [x] outer-margin sidenotes
+- [x] tables and grid-like content
+- [x] rotated pages
+- [x] rotated blocks within otherwise upright pages
+- [x] figures and captions separated from body order
+- [x] Keep reading-order decisions explicit and persisted per page.
+- [x] Add diagnostics for why a page was classified as single-column, multi-column, table-like, caption-banded, or fallback.
 
 ## Phase 4: OCR Geometry Alignment Artifact
 - [x] Define the canonical OCR alignment artifact:
@@ -176,8 +176,8 @@
 
 ## Implementation Order
 - [x] Step 1: define and persist OCR geometry/cache schema
-- [ ] Step 2: derive canonical `tts_text` with OCR token lineage
-- [ ] Step 3: build page reading-order resolver
+- [x] Step 2: derive canonical `tts_text` with OCR token lineage
+- [x] Step 3: build page reading-order resolver
 - [x] Step 4: build sentence-to-geometry OCR alignment artifact
 - [x] Step 5: move OCR-first highlight rendering to rect overlays
 - [x] Step 6: wire search/bookmark/resume through OCR location metadata

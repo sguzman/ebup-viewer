@@ -57,7 +57,7 @@ pub struct LoadedBook {
     pub images: Vec<BookImage>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum PdfGeometryMode {
@@ -364,7 +364,59 @@ pub struct PdfOcrPipelineSummary {
     pub chunk_count: u32,
     pub reading_order_mode: String,
     #[serde(default)]
+    pub normalization_summary: PdfOcrNormalizationSummary,
+    #[serde(default)]
+    pub page_reading_order: Vec<PdfOcrPageReadingOrderDecision>,
+    #[serde(default)]
     pub fallback_strategy_labels: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct PdfOcrNormalizationSummary {
+    pub canonical_text_derived_from_ocr: bool,
+    pub page_sentence_provenance_available: bool,
+    pub token_trail_available: bool,
+    pub broken_line_join_count: u32,
+    pub hyphen_recovery_count: u32,
+    pub ligature_replacement_count: u32,
+    pub unicode_normalization_count: u32,
+    pub repeated_header_suppression_count: u32,
+    pub repeated_footer_suppression_count: u32,
+    pub margin_sidenote_suppression_count: u32,
+    pub table_cell_normalization_count: u32,
+    pub footnote_marker_adjustment_count: u32,
+    pub punctuation_repair_count: u32,
+    pub dropped_noise_line_count: u32,
+    pub merged_line_count: u32,
+    #[serde(default)]
+    pub trace_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum PdfOcrPageLayoutClass {
+    SingleColumn,
+    StrongTwoColumn,
+    MixedColumnCaptionBand,
+    BottomFootnoteBand,
+    OuterMarginSidenotes,
+    TableLike,
+    RotatedPage,
+    RotatedBlocks,
+    FigureCaptionSeparated,
+    Fallback,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct PdfOcrPageReadingOrderDecision {
+    pub page_index: u32,
+    pub layout_class: PdfOcrPageLayoutClass,
+    pub confidence: f32,
+    #[serde(default)]
+    pub reasons: Vec<String>,
 }
 
 /// Load a supported source file and return plain text plus extracted image paths.

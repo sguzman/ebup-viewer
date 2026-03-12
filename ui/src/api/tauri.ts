@@ -544,6 +544,32 @@ function applyMockPage(reader: ReaderSnapshot, page: number): void {
         sampled_pages: 3,
         chunk_count: 1,
         reading_order_mode: "embedded_text_order",
+        normalization_summary: {
+          canonical_text_derived_from_ocr: false,
+          page_sentence_provenance_available: true,
+          token_trail_available: false,
+          broken_line_join_count: 0,
+          hyphen_recovery_count: 0,
+          ligature_replacement_count: 0,
+          unicode_normalization_count: 0,
+          repeated_header_suppression_count: 0,
+          repeated_footer_suppression_count: 0,
+          margin_sidenote_suppression_count: 0,
+          table_cell_normalization_count: 0,
+          footnote_marker_adjustment_count: 0,
+          punctuation_repair_count: 0,
+          dropped_noise_line_count: 0,
+          merged_line_count: 0,
+          trace_notes: []
+        },
+        page_reading_order: [
+          {
+            page_index: 1,
+            layout_class: "single_column",
+            confidence: 0.9,
+            reasons: ["mock_simple_body_order"]
+          }
+        ],
         fallback_strategy_labels: []
       }
     : null;

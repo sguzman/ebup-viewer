@@ -1571,6 +1571,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             OCR engine: {reader.pdf_ocr_pipeline.engine_policy.replaceAll("_", " ")} | OCR enabled:{" "}
             {reader.pdf_ocr_pipeline.ocr_enabled ? "yes" : "no"} | Chunks: {reader.pdf_ocr_pipeline.chunk_count} | Order:{" "}
             {reader.pdf_ocr_pipeline.reading_order_mode.replaceAll("_", " ")}
+            {" | "}Joins: {reader.pdf_ocr_pipeline.normalization_summary.broken_line_join_count}
+            {" | "}Hyphen: {reader.pdf_ocr_pipeline.normalization_summary.hyphen_recovery_count}
+            {" | "}Headers: {reader.pdf_ocr_pipeline.normalization_summary.repeated_header_suppression_count}
+            {" | "}Footers: {reader.pdf_ocr_pipeline.normalization_summary.repeated_footer_suppression_count}
             {reader.pdf_ocr_pipeline.fallback_decisions.length > 0
               ? ` | Fallbacks: ${reader.pdf_ocr_pipeline.fallback_decisions.join("; ").replaceAll("_", " ")}`
               : ""}

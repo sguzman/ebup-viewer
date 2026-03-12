@@ -383,14 +383,18 @@ fn detect_cross_column_alignment(
     if geometry.len() < 2 {
         return (false, false);
     }
-    let min_left = geometry.iter().map(|rect| rect.left).fold(f32::INFINITY, f32::min);
+    let min_left = geometry
+        .iter()
+        .map(|rect| rect.left)
+        .fold(f32::INFINITY, f32::min);
     let max_left = geometry
         .iter()
         .map(|rect| rect.left)
         .fold(f32::NEG_INFINITY, f32::max);
     let avg_width = geometry.iter().map(|rect| rect.width).sum::<f32>() / geometry.len() as f32;
     let crosses = (max_left - min_left) >= 0.32 && avg_width <= 0.48;
-    let confident = crosses && alignment.score >= 0.82 && alignment.fallback_reason != "page_location_only";
+    let confident =
+        crosses && alignment.score >= 0.82 && alignment.fallback_reason != "page_location_only";
     (crosses, confident)
 }
 
@@ -423,10 +427,14 @@ fn build_pdf_ocr_geometry_contract(
         };
         let page_started = Instant::now();
         if alignment.token_lineage.is_empty() {
-            alignment.token_lineage =
-                build_pdf_ocr_token_lineage(alignment.sentence_idx, &sentences[alignment.sentence_idx], Some(page_idx));
+            alignment.token_lineage = build_pdf_ocr_token_lineage(
+                alignment.sentence_idx,
+                &sentences[alignment.sentence_idx],
+                Some(page_idx),
+            );
         }
-        let (crosses_column_boundaries, cross_column_confident) = detect_cross_column_alignment(alignment);
+        let (crosses_column_boundaries, cross_column_confident) =
+            detect_cross_column_alignment(alignment);
         alignment.crosses_column_boundaries = crosses_column_boundaries;
         alignment.cross_column_confident = cross_column_confident;
         if crosses_column_boundaries {
@@ -510,10 +518,11 @@ fn build_pdf_ocr_geometry_contract(
                     confidence: alignment.score,
                     token_ids: Vec::new(),
                 });
-                if let Some(block) = block_ids
-                    .get(block_idx)
-                    .and_then(|block_id| blocks.iter_mut().find(|candidate| candidate.block_id == *block_id))
-                {
+                if let Some(block) = block_ids.get(block_idx).and_then(|block_id| {
+                    blocks
+                        .iter_mut()
+                        .find(|candidate| candidate.block_id == *block_id)
+                }) {
                     block.line_ids.push(line_id.clone());
                 }
                 line_id
@@ -528,7 +537,10 @@ fn build_pdf_ocr_geometry_contract(
                 let rect_idx = token_offset.min(token_rects.len().saturating_sub(1));
                 let line_idx = token_offset.min(line_ids.len().saturating_sub(1));
                 let block_idx = token_offset.min(block_ids.len().saturating_sub(1));
-                let token_text = sentence_tokens.get(token_offset).cloned().unwrap_or_default();
+                let token_text = sentence_tokens
+                    .get(token_offset)
+                    .cloned()
+                    .unwrap_or_default();
                 tokens.push(crate::cache::PdfOcrTokenGeometry {
                     token_id: token_id.clone(),
                     page_idx,
@@ -549,10 +561,11 @@ fn build_pdf_ocr_geometry_contract(
                     confidence: alignment.score,
                     source_kind,
                 });
-                if let Some(line) = line_ids
-                    .get(line_idx)
-                    .and_then(|line_id| lines.iter_mut().find(|candidate| candidate.line_id == *line_id))
-                {
+                if let Some(line) = line_ids.get(line_idx).and_then(|line_id| {
+                    lines
+                        .iter_mut()
+                        .find(|candidate| candidate.line_id == *line_id)
+                }) {
                     line.token_ids.push(token_id.clone());
                 }
                 token_id.clone()
@@ -561,23 +574,24 @@ fn build_pdf_ocr_geometry_contract(
 
         let elapsed_ms = page_started.elapsed().as_millis().min(u128::from(u32::MAX)) as u32;
         page_build_ms.push(elapsed_ms);
-        let page_entry = page_geometry_map
-            .entry(page_idx)
-            .or_insert_with(|| crate::cache::PdfOcrPageGeometry {
-                page_idx,
-                confidence: alignment.score,
-                build_ms: 0,
-                reading_order_mode: if cross_column_confident {
-                    "cross_column_confident".to_string()
-                } else if crosses_column_boundaries {
-                    "cross_column_low_confidence".to_string()
-                } else {
-                    "single_stream".to_string()
-                },
-                block_ids: Vec::new(),
-                line_ids: Vec::new(),
-                token_ids: Vec::new(),
-            });
+        let page_entry =
+            page_geometry_map
+                .entry(page_idx)
+                .or_insert_with(|| crate::cache::PdfOcrPageGeometry {
+                    page_idx,
+                    confidence: alignment.score,
+                    build_ms: 0,
+                    reading_order_mode: if cross_column_confident {
+                        "cross_column_confident".to_string()
+                    } else if crosses_column_boundaries {
+                        "cross_column_low_confidence".to_string()
+                    } else {
+                        "single_stream".to_string()
+                    },
+                    block_ids: Vec::new(),
+                    line_ids: Vec::new(),
+                    token_ids: Vec::new(),
+                });
         page_entry.confidence = page_entry.confidence.max(alignment.score);
         page_entry.build_ms = page_entry.build_ms.saturating_add(elapsed_ms);
         page_entry.block_ids.extend(block_ids);
@@ -585,7 +599,8 @@ fn build_pdf_ocr_geometry_contract(
         page_entry.token_ids.extend(token_ids);
     }
 
-    let mut page_geometry: Vec<crate::cache::PdfOcrPageGeometry> = page_geometry_map.into_values().collect();
+    let mut page_geometry: Vec<crate::cache::PdfOcrPageGeometry> =
+        page_geometry_map.into_values().collect();
     page_geometry.sort_by_key(|page| page.page_idx);
     let chunk_build_ms = page_build_ms
         .chunks(8)
@@ -923,9 +938,12 @@ fn pdf_ocr_alignment_summary_from_artifact(
         max_page_build_ms: artifact.page_build_ms.iter().copied().max().unwrap_or(0),
         max_chunk_build_ms: artifact.chunk_build_ms.iter().copied().max().unwrap_or(0),
         cross_column_alignment_count: artifact.cross_column_alignment_count as u32,
-        cross_column_confident_alignment_count: artifact.cross_column_confident_alignment_count as u32,
+        cross_column_confident_alignment_count: artifact.cross_column_confident_alignment_count
+            as u32,
         exact_sentence_rate: artifact.rect_mapped_sentence_count as f32 / sentence_count,
-        degraded_fallback_rate: (artifact.line_mapped_sentence_count + artifact.block_mapped_sentence_count) as f32 / sentence_count,
+        degraded_fallback_rate: (artifact.line_mapped_sentence_count
+            + artifact.block_mapped_sentence_count) as f32
+            / sentence_count,
         page_only_rate: artifact.page_only_sentence_count as f32 / sentence_count,
         unmappable_rate: artifact.unmappable_sentence_count as f32 / sentence_count,
         degraded_reasons: artifact.degraded_reasons.clone(),
@@ -2466,7 +2484,10 @@ mod tests {
         assert_eq!(artifact.blocks.len(), 2);
         assert_eq!(artifact.lines.len(), 2);
         assert_eq!(artifact.page_geometry.len(), 1);
-        assert_eq!(artifact.page_geometry[0].reading_order_mode, "cross_column_confident");
+        assert_eq!(
+            artifact.page_geometry[0].reading_order_mode,
+            "cross_column_confident"
+        );
         assert_eq!(artifact.page_build_ms.len(), 1);
         assert_eq!(artifact.chunk_build_ms.len(), 1);
 
@@ -2484,7 +2505,8 @@ mod tests {
             &mut session,
             crate::epub_loader::PdfRuntimePolicySummary {
                 text_only_policy: crate::epub_loader::PdfTextOnlyPolicy::FullText,
-                sentence_highlight_policy: crate::epub_loader::PdfSentenceHighlightPolicy::ParagraphFallback,
+                sentence_highlight_policy:
+                    crate::epub_loader::PdfSentenceHighlightPolicy::ParagraphFallback,
                 search_policy: crate::epub_loader::PdfSearchPolicy::FullText,
                 bookmark_policy: crate::epub_loader::PdfBookmarkPolicy::CanonicalText,
                 tts_allowed: true,
@@ -2540,16 +2562,37 @@ mod tests {
         assert_eq!(text_only_highlight, Some(0));
         assert_eq!(text_only_audio_highlight, baseline_highlight);
         assert_eq!(pretty_highlight, baseline_highlight);
-        assert_eq!(text_only_summary.quality_class, baseline_summary.quality_class);
+        assert_eq!(
+            text_only_summary.quality_class,
+            baseline_summary.quality_class
+        );
         assert_eq!(text_only_summary.source_kind, baseline_summary.source_kind);
-        assert_eq!(text_only_summary.coverage_ratio, baseline_summary.coverage_ratio);
-        assert_eq!(text_only_summary.degraded_fallback_rate, baseline_summary.degraded_fallback_rate);
-        assert_eq!(text_only_summary.page_only_rate, baseline_summary.page_only_rate);
+        assert_eq!(
+            text_only_summary.coverage_ratio,
+            baseline_summary.coverage_ratio
+        );
+        assert_eq!(
+            text_only_summary.degraded_fallback_rate,
+            baseline_summary.degraded_fallback_rate
+        );
+        assert_eq!(
+            text_only_summary.page_only_rate,
+            baseline_summary.page_only_rate
+        );
         assert_eq!(pretty_summary.quality_class, baseline_summary.quality_class);
         assert_eq!(pretty_summary.source_kind, baseline_summary.source_kind);
-        assert_eq!(pretty_summary.coverage_ratio, baseline_summary.coverage_ratio);
-        assert_eq!(pretty_summary.degraded_fallback_rate, baseline_summary.degraded_fallback_rate);
-        assert_eq!(pretty_summary.page_only_rate, baseline_summary.page_only_rate);
+        assert_eq!(
+            pretty_summary.coverage_ratio,
+            baseline_summary.coverage_ratio
+        );
+        assert_eq!(
+            pretty_summary.degraded_fallback_rate,
+            baseline_summary.degraded_fallback_rate
+        );
+        assert_eq!(
+            pretty_summary.page_only_rate,
+            baseline_summary.page_only_rate
+        );
 
         let _ = crate::cache::delete_recent_source_and_cache(&source_path);
     }

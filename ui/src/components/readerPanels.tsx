@@ -978,6 +978,37 @@ export function ReaderStatsPanel({ reader, stats }: ReaderStatsPanelProps) {
                     OCR chunks: {reader.pdf_ocr_pipeline.chunk_count} | sampled pages{" "}
                     {reader.pdf_ocr_pipeline.sampled_pages} | total pages {reader.pdf_ocr_pipeline.page_count}
                   </Typography>
+                  <Typography variant="body2">
+                    OCR normalization: joins {reader.pdf_ocr_pipeline.normalization_summary.broken_line_join_count}
+                    {" | "}hyphen recoveries {reader.pdf_ocr_pipeline.normalization_summary.hyphen_recovery_count}
+                    {" | "}ligatures {reader.pdf_ocr_pipeline.normalization_summary.ligature_replacement_count}
+                    {" | "}headers {reader.pdf_ocr_pipeline.normalization_summary.repeated_header_suppression_count}
+                    {" | "}footers {reader.pdf_ocr_pipeline.normalization_summary.repeated_footer_suppression_count}
+                    {" | "}noise dropped {reader.pdf_ocr_pipeline.normalization_summary.dropped_noise_line_count}
+                  </Typography>
+                  <Typography variant="body2">
+                    OCR provenance: page-local{" "}
+                    {reader.pdf_ocr_pipeline.normalization_summary.page_sentence_provenance_available ? "yes" : "no"}
+                    {" | "}token trail {reader.pdf_ocr_pipeline.normalization_summary.token_trail_available ? "yes" : "no"}
+                  </Typography>
+                  {reader.pdf_ocr_pipeline.normalization_summary.trace_notes.length > 0 ? (
+                    <Typography variant="body2">
+                      OCR normalization trace:{" "}
+                      {reader.pdf_ocr_pipeline.normalization_summary.trace_notes
+                        .slice(0, 5)
+                        .map(formatPdfTokenLabel)
+                        .join("; ")}
+                    </Typography>
+                  ) : null}
+                  {reader.pdf_ocr_pipeline.page_reading_order.length > 0 ? (
+                    <Typography variant="body2">
+                      OCR page order:{" "}
+                      {reader.pdf_ocr_pipeline.page_reading_order
+                        .slice(0, 4)
+                        .map((page) => `p${page.page_index} ${formatPdfTokenLabel(page.layout_class)} (${page.confidence.toFixed(2)})`)
+                        .join("; ")}
+                    </Typography>
+                  ) : null}
                   {reader.pdf_ocr_pipeline.fallback_decisions.length > 0 ? (
                     <Typography variant="body2">
                       OCR fallback decisions:{" "}

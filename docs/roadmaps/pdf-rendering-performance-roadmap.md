@@ -30,41 +30,41 @@
 
 ## Performance Contract
 
-- [ ] Treat PDF viewing as a dedicated subsystem with explicit scheduling, caching, and lifecycle ownership.
+- [x] Treat PDF viewing as a dedicated subsystem with explicit scheduling, caching, and lifecycle ownership.
 - [ ] Keep React responsible for shell composition and high-level state, not the hot render loop for PDF pages.
-- [ ] Never eagerly render the entire PDF document at interactive fidelity.
-- [ ] Treat text-layer work separately from canvas paint work.
+- [x] Never eagerly render the entire PDF document at interactive fidelity.
+- [x] Treat text-layer work separately from canvas paint work.
 - [ ] Ensure TTS sync/highlight consumes cached mapping artifacts where possible instead of rebuilding mappings on hot paths.
 
 ## Baseline Metrics To Capture First
 
-- [ ] Time from open request to first visible page canvas paint.
+- [x] Time from open request to first visible page canvas paint.
 - [ ] Time from open request to first visible text layer ready.
-- [ ] Total pages mounted.
-- [ ] Total text spans mounted.
+- [x] Total pages mounted.
+- [x] Total text spans mounted.
 - [ ] Visible page render latency during scroll.
-- [ ] Zoom feedback latency.
-- [ ] Zoom settle reraster latency.
-- [ ] Number of canceled renders during active zoom/scroll.
+- [x] Zoom feedback latency.
+- [x] Zoom settle reraster latency.
+- [x] Number of canceled renders during active zoom/scroll.
 - [ ] Time spent in PDF text-layer postprocessing.
 - [ ] Time spent resolving active TTS highlight target.
 
 ## Phase 1: Instrumentation and Profiling
 
-- [ ] Add `tracing` and frontend perf marks around PDF document load.
-- [ ] Add `tracing` and frontend perf marks around page shell mount.
-- [ ] Add `tracing` and frontend perf marks around page canvas render start/end.
-- [ ] Add `tracing` and frontend perf marks around text-layer extraction start/end.
-- [ ] Add `tracing` and frontend perf marks around text-layer DOM mount.
-- [ ] Add `tracing` and frontend perf marks around visible-page scheduling.
-- [ ] Add `tracing` and frontend perf marks around zoom start/settle.
+- [x] Add `tracing` and frontend perf marks around PDF document load.
+- [x] Add `tracing` and frontend perf marks around page shell mount.
+- [x] Add `tracing` and frontend perf marks around page canvas render start/end.
+- [x] Add `tracing` and frontend perf marks around text-layer extraction start/end.
+- [x] Add `tracing` and frontend perf marks around text-layer DOM mount.
+- [x] Add `tracing` and frontend perf marks around visible-page scheduling.
+- [x] Add `tracing` and frontend perf marks around zoom start/settle.
 - [ ] Add `tracing` and frontend perf marks around highlight target resolution.
 - [ ] Add `tracing` and frontend perf marks around autoscroll/jump requests.
-- [ ] Add development-only counters for live rendered pages.
-- [ ] Add development-only counters for live text layers.
-- [ ] Add development-only counters for live highlight overlays.
-- [ ] Add development-only counters for canceled page renders.
-- [ ] Add development-only counters for page cache hits/misses.
+- [x] Add development-only counters for live rendered pages.
+- [x] Add development-only counters for live text layers.
+- [x] Add development-only counters for live highlight overlays.
+- [x] Add development-only counters for canceled page renders.
+- [x] Add development-only counters for page cache hits/misses.
 - [ ] Capture a baseline on a small text PDF.
 - [ ] Capture a baseline on a large academic PDF.
 - [ ] Capture a baseline on an image-heavy PDF.
@@ -75,55 +75,55 @@
 
 - [ ] Split the current PDF pane into an explicit document model.
 - [ ] Split the current PDF pane into an explicit render scheduler.
-- [ ] Split the current PDF pane into an explicit page registry.
-- [ ] Split the current PDF pane into an explicit text-layer cache.
+- [x] Split the current PDF pane into an explicit page registry.
+- [x] Split the current PDF pane into an explicit text-layer cache.
 - [ ] Split the current PDF pane into an explicit highlight/sync overlay controller.
 - [ ] Make the render scheduler imperative and ref-driven rather than React-state-driven for hot paths.
 - [ ] Keep React responsible for shell composition, settings, and user intent only.
-- [ ] Define strict page lifecycle states.
-- [ ] Add a `placeholder` lifecycle state.
-- [ ] Add a `scheduled` lifecycle state.
-- [ ] Add a `rendering_canvas` lifecycle state.
-- [ ] Add a `canvas_ready` lifecycle state.
-- [ ] Add a `text_ready` lifecycle state.
-- [ ] Add an `evicted` lifecycle state.
+- [x] Define strict page lifecycle states.
+- [x] Add a `placeholder` lifecycle state.
+- [x] Add a `scheduled` lifecycle state.
+- [x] Add a `rendering_canvas` lifecycle state.
+- [x] Add a `canvas_ready` lifecycle state.
+- [x] Add a `text_ready` lifecycle state.
+- [x] Add an `evicted` lifecycle state.
 
 ## Phase 3: True Page Virtualization
 
-- [ ] Keep lightweight page shells for the full document.
-- [ ] Render only visible pages.
-- [ ] Render only a small overscan band.
-- [ ] Render the active TTS target page even when offscreen.
-- [ ] Render explicit jump target pages at high priority.
-- [ ] Aggressively evict offscreen canvases.
-- [ ] Aggressively evict offscreen text layers.
+- [x] Keep lightweight page shells for the full document.
+- [x] Render only visible pages.
+- [x] Render only a small overscan band.
+- [x] Render the active TTS target page even when offscreen.
+- [x] Render explicit jump target pages at high priority.
+- [x] Aggressively evict offscreen canvases.
+- [x] Aggressively evict offscreen text layers.
 - [ ] Keep overscan configurable and measurable.
-- [ ] Eliminate any remaining “render every page” behavior during open, scroll, or zoom.
+- [x] Eliminate any remaining “render every page” behavior during open, scroll, or zoom.
 
 ## Phase 4: Two-Phase Zoom
 
-- [ ] Implement immediate zoom feedback using CSS transforms on visible pages.
-- [ ] Debounce rerasterization after zoom settles.
-- [ ] Reraster only visible and near-visible pages at final zoom.
-- [ ] Avoid rebuilding document/page registries on every zoom step.
-- [ ] Keep text-layer refresh separate from immediate canvas feedback.
-- [ ] Prioritize visual smoothness first and exact reraster second.
+- [x] Implement immediate zoom feedback using CSS transforms on visible pages.
+- [x] Debounce rerasterization after zoom settles.
+- [x] Reraster only visible and near-visible pages at final zoom.
+- [x] Avoid rebuilding document/page registries on every zoom step.
+- [x] Keep text-layer refresh separate from immediate canvas feedback.
+- [x] Prioritize visual smoothness first and exact reraster second.
 
 ## Phase 5: Separate Canvas and Text-Layer Strategies
 
-- [ ] Render canvas first for visible pages.
-- [ ] Delay text-layer creation for non-active pages.
-- [ ] Keep text layers mounted only for visible pages.
-- [ ] Keep text layers mounted only for the active TTS page.
-- [ ] Keep text layers mounted only for the jump target page.
+- [x] Render canvas first for visible pages.
+- [x] Delay text-layer creation for non-active pages.
+- [x] Keep text layers mounted only for visible pages.
+- [x] Keep text layers mounted only for the active TTS page.
+- [x] Keep text layers mounted only for the jump target page.
 - [ ] Keep nearby page text layers mounted only when selection/search requires it.
-- [ ] Avoid building text layers for far-off pages simply because their shells exist.
-- [ ] Treat text-layer DOM size as a first-class performance budget.
+- [x] Avoid building text layers for far-off pages simply because their shells exist.
+- [x] Treat text-layer DOM size as a first-class performance budget.
 
 ## Phase 6: Page Artifact Caching
 
-- [ ] Cache native page size per page.
-- [ ] Cache extracted page text per page.
+- [x] Cache native page size per page.
+- [x] Cache extracted page text per page.
 - [ ] Cache ordered normalized text spans per page.
 - [ ] Cache sentence-to-page mapping metadata per page.
 - [ ] Cache bounded raster results by zoom bucket when memory budget allows.
@@ -134,16 +134,16 @@
 
 ## Phase 7: Render Prioritization and Cancellation
 
-- [ ] Prioritize the page in viewport center above all others.
-- [ ] Prioritize pages being jumped to.
-- [ ] Prioritize the active TTS highlight page.
+- [x] Prioritize the page in viewport center above all others.
+- [x] Prioritize pages being jumped to.
+- [x] Prioritize the active TTS highlight page.
 - [ ] Schedule adjacent visible pages at medium priority.
 - [ ] Schedule overscan neighbors at medium priority.
 - [ ] Keep speculative prefetch at low priority.
-- [ ] Cancel stale render jobs immediately when zoom changes.
+- [x] Cancel stale render jobs immediately when zoom changes.
 - [ ] Cancel stale render jobs immediately when a page leaves viewport.
-- [ ] Cancel stale render jobs immediately when jump target changes.
-- [ ] Cancel stale render jobs immediately when the document closes.
+- [x] Cancel stale render jobs immediately when jump target changes.
+- [x] Cancel stale render jobs immediately when the document closes.
 
 ## Phase 8: Text-Layer Cost Reduction
 
@@ -226,11 +226,11 @@
 
 ## Recommended Implementation Order
 
-- [ ] Step 1: Add instrumentation and define hard baseline metrics.
+- [x] Step 1: Add instrumentation and define hard baseline metrics.
 - [ ] Step 2: Refactor PDF pane ownership into scheduler/cache/page-registry layers.
-- [ ] Step 3: Enforce strict page virtualization and eviction.
-- [ ] Step 4: Implement immediate CSS zoom plus debounced reraster.
-- [ ] Step 5: Restrict text layers to visible/active pages only.
+- [x] Step 3: Enforce strict page virtualization and eviction.
+- [x] Step 4: Implement immediate CSS zoom plus debounced reraster.
+- [x] Step 5: Restrict text layers to visible/active pages only.
 - [ ] Step 6: Add render cancellation and page-priority scheduling.
 - [ ] Step 7: Cache page text/span artifacts and isolate TTS highlight from hot render work.
 - [ ] Step 8: Tune open/jump flow and memory budgets.

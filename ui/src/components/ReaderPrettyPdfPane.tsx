@@ -4,7 +4,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 
 import { backendApi, type PdfSentenceLocation } from "../api/tauri";
 import type { ReaderSnapshot } from "../types";
-import { recordPerfMeasure } from "../perf/debug";
+import { recordPerfCounter, recordPerfGauge, recordPerfMeasure } from "../perf/debug";
 import { clamp, normalizeNumber } from "./readerShared";
 import {
   buildPdfSentenceSpanMap,
@@ -28,9 +28,18 @@ import {
   resolveSentenceFromPdfOverlayTarget,
   resolveSentenceFromPdfSpanTarget
 } from "./pdfOverlayNavigation";
+import {
+  buildPdfViewportRenderPlan,
+  choosePdfViewportEvictions,
+  computePdfPreviewScale,
+  type PdfPageLifecycleState,
+  type PdfPageRegistryEntry
+} from "./pdfViewportScheduler";
 let pdfJsImportPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null = null;
 let pdfJsWorkerImportPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.worker.mjs")> | null = null;
 type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
+type PdfPageTextContent =
+  Awaited<ReturnType<Awaited<ReturnType<PDFDocumentProxy["getPage"]>>["getTextContent"]>>;
 
 function ensurePromiseWithResolvers(): void {
   const promiseCtor = Promise as PromiseConstructor & {
@@ -168,6 +177,9 @@ interface RenderedPdfPage {
   container: HTMLDivElement;
   pageIndex: number;
   spans: PdfTextSpan[];
+  renderedZoom: number;
+  textLayerZoom: number | null;
+  textLayerDiv: HTMLDivElement | null;
 }
 
 interface DirectSentenceMatchResult {
@@ -234,6 +246,11 @@ interface PdfShellMetric {
   height: number;
 }
 
+const PDF_VISIBLE_OVERSCAN = 1;
+const PDF_MAX_LIVE_CANVASES = 8;
+const PDF_MAX_LIVE_TEXT_LAYERS = 4;
+const PDF_ZOOM_SETTLE_MS = 140;
+
 function flattenRenderedPdfSpans(pages: RenderedPdfPage[]): PdfTextSpan[] {
   return pages.flatMap((page) => page.spans);
 }
@@ -246,6 +263,24 @@ function setRenderedPdfSpanIndexes(pages: RenderedPdfPage[]): void {
       spanIndex += 1;
     }
   }
+}
+
+function markPdfPageLifecycle(
+  registry: Map<number, PdfPageRegistryEntry>,
+  pageIndex: number,
+  state: PdfPageLifecycleState,
+  patch?: Partial<PdfPageRegistryEntry>
+): void {
+  const existing = registry.get(pageIndex);
+  registry.set(pageIndex, {
+    pageIndex,
+    ...existing,
+    renderedZoom: existing?.renderedZoom ?? null,
+    textLayerZoom: existing?.textLayerZoom ?? null,
+    ...patch,
+    state,
+    lastTouchedAt: Date.now()
+  });
 }
 
 function globalSentenceStartForReader(reader: ReaderSnapshot): number {
@@ -513,10 +548,16 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
   function ReaderPrettyPdfPane({ onSentenceClick, reader, sourcePath }, ref) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const renderedPagesRef = useRef<RenderedPdfPage[]>([]);
+    const pageRegistryRef = useRef<Map<number, PdfPageRegistryEntry>>(new Map());
     const pageShellsRef = useRef<Map<number, HTMLDivElement>>(new Map());
     const pageMetricsRef = useRef<Map<string, PdfShellMetric>>(new Map());
     const pdfPageTextsRef = useRef<Map<number, string>>(new Map());
+    const pdfTextContentCacheRef = useRef<Map<number, PdfPageTextContent>>(new Map());
     const renderedPageZoomRef = useRef<Map<number, number>>(new Map());
+    const visiblePageIndexesRef = useRef<Set<number>>(new Set());
+    const zoomSettleTimerRef = useRef<number | null>(null);
+    const pendingJumpTargetPageRef = useRef<number | null>(null);
+    const defaultShellMetricRef = useRef<PdfShellMetric>({ width: 720, height: 980 });
     const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
     const pdfDocSourcePathRef = useRef<string | null>(null);
     const pdfJsModuleRef = useRef<PdfJsModule | null>(null);
@@ -531,6 +572,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     const overlaySentenceMapRef = useRef<Map<number, number>>(new Map());
     const activeHighlightStateRef = useRef<ActivePdfHighlightState | null>(null);
     const [zoom, setZoom] = useState(1.2);
+    const [renderZoom, setRenderZoom] = useState(1.2);
     const [viewportVersion, setViewportVersion] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -582,9 +624,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       highlightedPagesRef.current = cleared.highlightedPages;
       overlaySentenceMapRef.current.clear();
       renderedPagesRef.current = [];
+      pageRegistryRef.current.clear();
       pageShellsRef.current.clear();
       pageMetricsRef.current.clear();
+      pdfTextContentCacheRef.current.clear();
       renderedPageZoomRef.current.clear();
+      visiblePageIndexesRef.current.clear();
       lastScrollTargetRef.current = null;
       const root = containerRef.current;
       if (root) {
@@ -593,6 +638,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     }, []);
 
     const ensurePdfDocumentLoaded = useCallback(async (): Promise<{ pdfjs: PdfJsModule; pdf: PDFDocumentProxy }> => {
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
       ensurePromiseWithResolvers();
       ensureReadableStreamAsyncIterator();
       await ensurePdfJsFakeWorkerGlobal();
@@ -616,10 +662,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       const pdf = await loadingTask.promise;
       pdfDocRef.current = pdf;
       pdfDocSourcePathRef.current = sourcePath;
+      recordPerfMeasure("ReaderPrettyPdfPane.loadDocument", startedAt);
       return { pdfjs, pdf };
     }, [sourcePath]);
 
     const ensurePageShells = useCallback(async (pdf: PDFDocumentProxy, activeZoom: number) => {
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
       const root = containerRef.current;
       if (!root) {
         return;
@@ -628,6 +676,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       const firstViewport = firstPage.getViewport({ scale: clamp(activeZoom, 0.7, 2.5) });
       const baseWidth = firstViewport.width;
       const baseHeight = firstViewport.height;
+      defaultShellMetricRef.current = { width: baseWidth, height: baseHeight };
       if (pageShellsRef.current.size === pdf.numPages && root.childElementCount === pdf.numPages) {
         for (const shell of pageShellsRef.current.values()) {
           shell.style.width = `${baseWidth}px`;
@@ -643,6 +692,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         const shell = document.createElement("div");
         shell.className = "reader-pdf-page-shell";
         shell.dataset.pageIndex = String(pageIndex);
+        shell.dataset.pageLifecycle = "placeholder";
         shell.style.width = `${baseWidth}px`;
         shell.style.minHeight = `${baseHeight}px`;
         shell.style.display = "flex";
@@ -651,6 +701,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         shell.style.contain = "layout paint style";
         root.appendChild(shell);
         pageShellsRef.current.set(pageIndex, shell);
+        markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "placeholder");
       }
       setPdfPageCount(pdf.numPages);
       logPdfDebug("pageShellsReady", {
@@ -659,10 +710,27 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         baseWidth: Math.round(baseWidth),
         baseHeight: Math.round(baseHeight)
       });
+      recordPerfMeasure("ReaderPrettyPdfPane.mountPageShells", startedAt);
     }, [sourcePath]);
 
-    const ensurePageRendered = useCallback(async (
-      pdfjs: PdfJsModule,
+    const syncPdfPreviewZoom = useCallback((displayZoom: number) => {
+      const fallbackMetric = defaultShellMetricRef.current;
+      for (const [pageIndex, shell] of pageShellsRef.current.entries()) {
+        const renderedZoomForPage = renderedPageZoomRef.current.get(pageIndex) ?? renderZoom;
+        const metric = pageMetricsRef.current.get(`${pageIndex}:${renderedZoomForPage}`) ?? fallbackMetric;
+        const previewScale = computePdfPreviewScale(displayZoom, renderedZoomForPage);
+        shell.style.width = `${metric.width * previewScale}px`;
+        shell.style.minHeight = `${metric.height * previewScale}px`;
+        const pageContainer = shell.firstElementChild as HTMLDivElement | null;
+        if (pageContainer) {
+          pageContainer.style.transformOrigin = "top center";
+          pageContainer.style.transform = previewScale === 1 ? "" : `scale(${previewScale})`;
+        }
+      }
+      recordPerfGauge("ReaderPrettyPdfPane.liveRenderedPages", renderedPagesRef.current.length);
+    }, [renderZoom]);
+
+    const ensurePageCanvasRendered = useCallback(async (
       pdf: PDFDocumentProxy,
       pageIndex: number,
       activeZoom: number,
@@ -673,21 +741,33 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         return;
       }
       if (renderGenerationRef.current !== generation) {
+        recordPerfCounter("ReaderPrettyPdfPane.canceledPageRenders");
         return;
       }
-      if (renderedPageZoomRef.current.get(pageIndex) === activeZoom) {
+      const existingEntry = renderedPagesRef.current.find((entry) => entry.pageIndex === pageIndex);
+      if (existingEntry && existingEntry.renderedZoom === activeZoom) {
+        markPdfPageLifecycle(pageRegistryRef.current, pageIndex, existingEntry.textLayerZoom === activeZoom ? "text_ready" : "canvas_ready");
+        recordPerfCounter("ReaderPrettyPdfPane.pageCanvasCacheHit");
         return;
       }
+      recordPerfCounter("ReaderPrettyPdfPane.pageCanvasCacheMiss");
+      markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "scheduled");
+      shell.dataset.pageLifecycle = "scheduled";
       const page = await pdf.getPage(pageIndex + 1);
       if (renderGenerationRef.current !== generation) {
+        recordPerfCounter("ReaderPrettyPdfPane.canceledPageRenders");
         return;
       }
-      const metricKey = `${pageIndex}:${activeZoom}`;
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "rendering_canvas");
+      shell.dataset.pageLifecycle = "rendering_canvas";
       const viewport = page.getViewport({ scale: clamp(activeZoom, 0.7, 2.5) });
+      const metricKey = `${pageIndex}:${activeZoom}`;
       pageMetricsRef.current.set(metricKey, { width: viewport.width, height: viewport.height });
       shell.style.width = `${viewport.width}px`;
       shell.style.minHeight = `${viewport.height}px`;
       shell.innerHTML = "";
+
       const pageContainer = document.createElement("div");
       pageContainer.className = "reader-pdf-page";
       pageContainer.dataset.pageIndex = String(pageIndex);
@@ -708,34 +788,113 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       canvas.style.height = `${viewport.height}px`;
       context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
       pageContainer.appendChild(canvas);
-
-      const textLayerDiv = document.createElement("div");
-      textLayerDiv.className = "reader-pdf-text-layer";
-      pageContainer.appendChild(textLayerDiv);
       shell.appendChild(pageContainer);
 
       await page.render({ canvas, canvasContext: context, viewport }).promise;
-      const textContent = await page.getTextContent();
+      if (renderGenerationRef.current !== generation) {
+        recordPerfCounter("ReaderPrettyPdfPane.canceledPageRenders");
+        return;
+      }
+
+      renderedPageZoomRef.current.set(pageIndex, activeZoom);
+      renderedPagesRef.current = [
+        ...renderedPagesRef.current.filter((entry) => entry.pageIndex !== pageIndex),
+        { container: pageContainer, pageIndex, spans: [], renderedZoom: activeZoom, textLayerZoom: null, textLayerDiv: null }
+      ].sort((left, right) => left.pageIndex - right.pageIndex);
+      markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "canvas_ready", { renderedZoom: activeZoom, textLayerZoom: null });
+      shell.dataset.pageLifecycle = "canvas_ready";
+      recordPerfMeasure("ReaderPrettyPdfPane.renderCanvas", startedAt);
+      recordPerfGauge("ReaderPrettyPdfPane.liveRenderedPages", renderedPagesRef.current.length);
+      setRenderVersion((value) => value + 1);
+      syncPdfPreviewZoom(zoom);
+    }, [syncPdfPreviewZoom, zoom]);
+
+    const ensurePageTextLayerRendered = useCallback(async (
+      pdfjs: PdfJsModule,
+      pdf: PDFDocumentProxy,
+      pageIndex: number,
+      activeZoom: number,
+      generation: number
+    ) => {
+      const renderedPage = renderedPagesRef.current.find((entry) => entry.pageIndex === pageIndex);
+      if (!renderedPage || renderedPage.renderedZoom !== activeZoom) {
+        return;
+      }
+      if (renderGenerationRef.current !== generation) {
+        recordPerfCounter("ReaderPrettyPdfPane.canceledPageRenders");
+        return;
+      }
+      if (renderedPage.textLayerZoom === activeZoom && renderedPage.textLayerDiv) {
+        markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "text_ready");
+        recordPerfCounter("ReaderPrettyPdfPane.textLayerCacheHit");
+        return;
+      }
+      recordPerfCounter("ReaderPrettyPdfPane.textLayerCacheMiss");
+      const page = await pdf.getPage(pageIndex + 1);
+      const viewport = page.getViewport({ scale: clamp(activeZoom, 0.7, 2.5) });
+      const pageContainer = renderedPage.container;
+      let textLayerDiv = renderedPage.textLayerDiv;
+      if (!textLayerDiv) {
+        textLayerDiv = document.createElement("div");
+        textLayerDiv.className = "reader-pdf-text-layer";
+        pageContainer.appendChild(textLayerDiv);
+      }
+      textLayerDiv.innerHTML = "";
+      const extractStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      const textContent = pdfTextContentCacheRef.current.get(pageIndex) ?? await page.getTextContent();
+      pdfTextContentCacheRef.current.set(pageIndex, textContent);
+      recordPerfMeasure("ReaderPrettyPdfPane.extractTextLayer", extractStartedAt);
+      const textLayerStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
       const textLayer = new pdfjs.TextLayer({
         textContentSource: textContent,
         container: textLayerDiv,
         viewport
       });
       await textLayer.render();
-
       const spanElements = Array.from(textLayerDiv.querySelectorAll("span")) as HTMLElement[];
       const spans: PdfTextSpan[] = orderPdfTextLayerSpans(
         spanElements.filter((element) => isVisiblePdfTextSpan(element)),
         pageIndex,
         viewport.rotation
       );
-      renderedPageZoomRef.current.set(pageIndex, activeZoom);
-      renderedPagesRef.current = [
-        ...renderedPagesRef.current.filter((entry) => entry.pageIndex !== pageIndex),
-        { container: pageContainer, pageIndex, spans }
-      ].sort((left, right) => left.pageIndex - right.pageIndex);
+      const nextEntry = renderedPagesRef.current.find((entry) => entry.pageIndex === pageIndex);
+      if (!nextEntry) {
+        return;
+      }
+      nextEntry.spans = spans;
+      nextEntry.textLayerZoom = activeZoom;
+      nextEntry.textLayerDiv = textLayerDiv;
+      markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "text_ready", { renderedZoom: activeZoom, textLayerZoom: activeZoom });
+      const shell = pageShellsRef.current.get(pageIndex);
+      if (shell) {
+        shell.dataset.pageLifecycle = "text_ready";
+      }
       setRenderedPdfSpanIndexes(renderedPagesRef.current);
+      recordPerfMeasure("ReaderPrettyPdfPane.mountTextLayer", textLayerStartedAt);
+      recordPerfGauge("ReaderPrettyPdfPane.liveTextLayers", renderedPagesRef.current.filter((entry) => entry.textLayerDiv !== null).length);
       setRenderVersion((value) => value + 1);
+    }, []);
+
+    const evictPageArtifacts = useCallback((pageIndex: number, mode: "canvas" | "text") => {
+      const shell = pageShellsRef.current.get(pageIndex);
+      const entry = renderedPagesRef.current.find((candidate) => candidate.pageIndex === pageIndex);
+      if (!shell || !entry) {
+        return;
+      }
+      if (mode === "text") {
+        entry.spans = [];
+        entry.textLayerZoom = null;
+        entry.textLayerDiv?.remove();
+        entry.textLayerDiv = null;
+        markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "canvas_ready", { textLayerZoom: null });
+        shell.dataset.pageLifecycle = "canvas_ready";
+        return;
+      }
+      shell.innerHTML = "";
+      renderedPagesRef.current = renderedPagesRef.current.filter((candidate) => candidate.pageIndex !== pageIndex);
+      renderedPageZoomRef.current.delete(pageIndex);
+      markPdfPageLifecycle(pageRegistryRef.current, pageIndex, "evicted", { renderedZoom: null, textLayerZoom: null });
+      shell.dataset.pageLifecycle = "evicted";
     }, []);
 
     const ensureTargetPagesRendered = useCallback(async () => {
@@ -751,10 +910,12 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         pdfPageCount,
         pdfPageTextsRef.current
       );
+      pendingJumpTargetPageRef.current = targetPage;
       for (const pageIndex of pageIndexesAround(targetPage, pdfPageCount, 1)) {
-        await ensurePageRendered(pdfjs, pdf, pageIndex, zoom, generation);
+        await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
+        await ensurePageTextLayerRendered(pdfjs, pdf, pageIndex, renderZoom, generation);
       }
-    }, [ensurePageRendered, pdfPageCount, reader, zoom]);
+    }, [ensurePageCanvasRendered, ensurePageTextLayerRendered, pdfPageCount, reader, renderZoom]);
 
     const ensureRenderedPageWindow = useCallback(async (targetPage: number, radius: number) => {
       const pdf = pdfDocRef.current;
@@ -764,9 +925,10 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       }
       const generation = renderGenerationRef.current;
       for (const pageIndex of pageIndexesAround(targetPage, pdfPageCount, radius)) {
-        await ensurePageRendered(pdfjs, pdf, pageIndex, zoom, generation);
+        await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
+        await ensurePageTextLayerRendered(pdfjs, pdf, pageIndex, renderZoom, generation);
       }
-    }, [ensurePageRendered, pdfPageCount, zoom]);
+    }, [ensurePageCanvasRendered, ensurePageTextLayerRendered, pdfPageCount, renderZoom]);
 
     const rebindActiveHighlightForRenderedPages = useCallback(() => {
       const activeHighlight = activeHighlightStateRef.current;
@@ -832,15 +994,73 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         if (pdfPageTextsRef.current.has(pageIndex)) {
           continue;
         }
+        const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
         const page = await pdf.getPage(pageIndex + 1);
-        const textContent = await page.getTextContent();
+        const textContent = pdfTextContentCacheRef.current.get(pageIndex) ?? await page.getTextContent();
+        pdfTextContentCacheRef.current.set(pageIndex, textContent);
         pdfPageTextsRef.current.set(pageIndex, extractNormalizedPdfPageText(textContent));
+        recordPerfMeasure("ReaderPrettyPdfPane.extractPageText", startedAt);
         if ((pageIndex + 1) % 12 === 0 || pageIndex + 1 === pdf.numPages) {
           setPdfPageTextVersion((value) => value + 1);
           await new Promise((resolve) => window.setTimeout(resolve, 0));
         }
       }
     }, []);
+
+    const scheduleVisiblePdfWork = useCallback(async () => {
+      const pdf = pdfDocRef.current;
+      const pdfjs = pdfJsModuleRef.current;
+      if (!pdf || !pdfjs || pdfPageCount <= 0) {
+        return;
+      }
+      const targetPage = estimatePdfTargetPage(
+        cachedPdfLocationsRef.current,
+        reader,
+        pdfPageCount,
+        pdfPageTextsRef.current
+      );
+      const renderPlan = buildPdfViewportRenderPlan({
+        totalPages: pdfPageCount,
+        visiblePageIndexes: Array.from(visiblePageIndexesRef.current),
+        overscan: PDF_VISIBLE_OVERSCAN,
+        activeTtsPageIndex: targetPage,
+        jumpTargetPageIndex: pendingJumpTargetPageRef.current
+      });
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      logPdfDebug("scheduleVisiblePages", {
+        visiblePages: Array.from(visiblePageIndexesRef.current).sort((left, right) => left - right),
+        canvasPages: renderPlan.canvasPageIndexes,
+        textLayerPages: renderPlan.textLayerPageIndexes,
+        priorityPages: renderPlan.priorityPageIndexes
+      });
+      recordPerfGauge("ReaderPrettyPdfPane.visiblePages", visiblePageIndexesRef.current.size);
+      const generation = renderGenerationRef.current;
+      for (const pageIndex of renderPlan.canvasPageIndexes) {
+        await ensurePageCanvasRendered(pdf, pageIndex, renderZoom, generation);
+      }
+      for (const pageIndex of renderPlan.textLayerPageIndexes) {
+        await ensurePageTextLayerRendered(pdfjs, pdf, pageIndex, renderZoom, generation);
+      }
+      const eviction = choosePdfViewportEvictions({
+        entries: Array.from(pageRegistryRef.current.values()),
+        keepCanvasPageIndexes: renderPlan.canvasPageIndexes,
+        keepTextLayerPageIndexes: renderPlan.textLayerPageIndexes,
+        maxCanvasPages: PDF_MAX_LIVE_CANVASES,
+        maxTextLayerPages: PDF_MAX_LIVE_TEXT_LAYERS
+      });
+      for (const pageIndex of eviction.evictTextLayerPageIndexes) {
+        evictPageArtifacts(pageIndex, "text");
+      }
+      for (const pageIndex of eviction.evictCanvasPageIndexes) {
+        evictPageArtifacts(pageIndex, "canvas");
+      }
+      recordPerfMeasure("ReaderPrettyPdfPane.scheduleVisiblePages", startedAt);
+      recordPerfGauge("ReaderPrettyPdfPane.liveRenderedPages", renderedPagesRef.current.length);
+      recordPerfGauge(
+        "ReaderPrettyPdfPane.liveTextLayers",
+        renderedPagesRef.current.filter((entry) => entry.textLayerDiv !== null).length
+      );
+    }, [ensurePageCanvasRendered, ensurePageTextLayerRendered, evictPageArtifacts, pdfPageCount, reader, renderZoom]);
 
     const resolveCurrentSentenceHighlight = useCallback(async (sentenceIdx: number) => {
       const sentence = reader.sentences[sentenceIdx] ?? "";
@@ -1123,11 +1343,13 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
             const shouldScrollTarget =
               force || (shouldAutoScroll && lastScrollTargetRef.current !== resolvedScrollTarget);
             if (shouldScrollTarget) {
+              const scrollStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
               page.scrollIntoView({
                 behavior,
                 block: reader.settings.center_spoken_sentence ? "center" : "nearest",
                 inline: "nearest"
               });
+              recordPerfMeasure("ReaderPrettyPdfPane.autoScroll", scrollStartedAt);
               logPdfDebug("scrollTarget", {
                 reason: force ? "manual_jump" : "page_location_change",
                 target: resolvedScrollTarget
@@ -1164,11 +1386,13 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
           recordPerfMeasure("ReaderPrettyPdfPane.resolveHighlight", startedAt);
           return;
         }
+        const scrollStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
         anchor.scrollIntoView({
           behavior,
           block: reader.settings.center_spoken_sentence ? "center" : "nearest",
           inline: "nearest"
         });
+        recordPerfMeasure("ReaderPrettyPdfPane.autoScroll", scrollStartedAt);
         lastScrollTargetRef.current = resolvedScrollTarget;
         logPdfDebug("scrollTarget", {
           reason: force ? "manual_jump" : "sentence_location_change",
@@ -1286,6 +1510,41 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     }, [sourcePath]);
 
     useEffect(() => {
+      syncPdfPreviewZoom(zoom);
+    }, [renderVersion, syncPdfPreviewZoom, zoom]);
+
+    useEffect(() => {
+      if (zoomSettleTimerRef.current !== null) {
+        window.clearTimeout(zoomSettleTimerRef.current);
+      }
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      logPdfDebug("zoomStart", {
+        displayZoom: zoom,
+        renderZoom
+      });
+      zoomSettleTimerRef.current = window.setTimeout(() => {
+        zoomSettleTimerRef.current = null;
+        setRenderZoom((current) => {
+          if (current === zoom) {
+            return current;
+          }
+          logPdfDebug("zoomSettle", {
+            from: current,
+            to: zoom
+          });
+          recordPerfMeasure("ReaderPrettyPdfPane.zoomSettle", startedAt);
+          return zoom;
+        });
+      }, PDF_ZOOM_SETTLE_MS);
+      return () => {
+        if (zoomSettleTimerRef.current !== null) {
+          window.clearTimeout(zoomSettleTimerRef.current);
+          zoomSettleTimerRef.current = null;
+        }
+      };
+    }, [renderZoom, zoom]);
+
+    useEffect(() => {
       let cancelled = false;
       const generation = renderGenerationRef.current + 1;
       renderGenerationRef.current = generation;
@@ -1301,35 +1560,26 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
         logPdfDebug("renderInit", {
           sourcePath,
-          zoom,
+          zoom: renderZoom,
           viewportVersion
         });
         try {
-          const { pdfjs, pdf } = await ensurePdfDocumentLoaded();
+          const { pdf } = await ensurePdfDocumentLoaded();
           if (cancelled || renderGenerationRef.current !== generation) {
             return;
           }
           renderedPagesRef.current = [];
           renderedPageZoomRef.current.clear();
-          await ensurePageShells(pdf, zoom);
+          await ensurePageShells(pdf, renderZoom);
           for (const shell of pageShellsRef.current.values()) {
             shell.innerHTML = "";
           }
           void ensurePdfPageTexts(pdf, generation);
-          const targetPage = estimatePdfTargetPage(
-            cachedPdfLocationsRef.current,
-            reader,
-            pdf.numPages,
-            pdfPageTextsRef.current
-          );
-          for (const pageIndex of pageIndexesAround(targetPage, pdf.numPages, 1)) {
-            await ensurePageRendered(pdfjs, pdf, pageIndex, zoom, generation);
-          }
+          await scheduleVisiblePdfWork();
           recordPerfMeasure("ReaderPrettyPdfPane.renderDocument", startedAt);
           logPdfDebug("renderInitComplete", {
             sourcePath,
-            zoom,
-            targetPage,
+            zoom: renderZoom,
             pageCount: pdf.numPages
           });
         } catch (cause) {
@@ -1347,32 +1597,32 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         cancelled = true;
       };
-    }, [ensurePageRendered, ensurePageShells, ensurePdfDocumentLoaded, ensurePdfPageTexts, resetRenderedPdfDocument, sourcePath, viewportVersion, zoom]);
+    }, [ensurePageShells, ensurePdfDocumentLoaded, ensurePdfPageTexts, renderZoom, resetRenderedPdfDocument, scheduleVisiblePdfWork, sourcePath, viewportVersion]);
 
     useEffect(() => {
       const root = containerRef.current;
       const pdf = pdfDocRef.current;
-      const pdfjs = pdfJsModuleRef.current;
-      if (!root || !pdf || !pdfjs || pageShellsRef.current.size === 0) {
+      if (!root || !pdf || pageShellsRef.current.size === 0) {
         return;
       }
-      const generation = renderGenerationRef.current;
       const observer = new IntersectionObserver((entries) => {
         for (const entry of entries) {
-          if (!entry.isIntersecting) {
-            continue;
-          }
           const target = entry.target as HTMLElement;
           const rawPageIndex = target.dataset.pageIndex;
           const pageIndex = rawPageIndex ? Number.parseInt(rawPageIndex, 10) : Number.NaN;
           if (!Number.isFinite(pageIndex)) {
             continue;
           }
-          void ensurePageRendered(pdfjs, pdf, pageIndex, zoom, generation);
+          if (entry.isIntersecting) {
+            visiblePageIndexesRef.current.add(pageIndex);
+          } else {
+            visiblePageIndexesRef.current.delete(pageIndex);
+          }
         }
+        void scheduleVisiblePdfWork();
       }, {
         root: null,
-        rootMargin: "150% 0px 150% 0px",
+        rootMargin: "100% 0px 100% 0px",
         threshold: 0.01
       });
       for (const shell of pageShellsRef.current.values()) {
@@ -1381,7 +1631,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         observer.disconnect();
       };
-    }, [ensurePageRendered, renderVersion, zoom]);
+    }, [pdfPageCount, renderVersion, scheduleVisiblePdfWork]);
 
     useEffect(() => {
       if (loading) {
@@ -1397,7 +1647,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       return () => {
         cancelled = true;
       };
-    }, [applyHighlight, cachedSyncVersion, ensureTargetPagesRendered, globalSentenceStart, highlightedSentenceIdx, loading, pdfPageTextVersion, zoom]);
+    }, [applyHighlight, cachedSyncVersion, ensureTargetPagesRendered, globalSentenceStart, highlightedSentenceIdx, loading, pdfPageTextVersion, renderZoom]);
 
     useEffect(() => {
       if (loading) {
@@ -1412,6 +1662,15 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       }
       rebindActiveHighlightForRenderedPages();
     }, [loading, reader.highlighted_sentence_idx, renderVersion, rebindActiveHighlightForRenderedPages]);
+
+    useEffect(() => {
+      recordPerfGauge("ReaderPrettyPdfPane.liveRenderedPages", renderedPagesRef.current.length);
+      recordPerfGauge(
+        "ReaderPrettyPdfPane.liveTextLayers",
+        renderedPagesRef.current.filter((entry) => entry.textLayerDiv !== null).length
+      );
+      recordPerfGauge("ReaderPrettyPdfPane.liveHighlightOverlays", highlightedOverlayNodesRef.current.length);
+    }, [renderVersion, highlightedSentenceIdx, loading]);
 
     const handlePdfClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
       if (!canSyncHighlights) {
@@ -1671,7 +1930,10 @@ async function renderPdfPage(
   renderedPagesRef.current.push({
     container: pageContainer,
     pageIndex,
-    spans
+    spans,
+    renderedZoom: zoom,
+    textLayerZoom: zoom,
+    textLayerDiv
   });
   recordPerfMeasure("ReaderPrettyPdfPane.renderPage", startedAt);
   logPdfDebug("renderPage", {

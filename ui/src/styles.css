@@ -103,6 +103,13 @@ body {
   padding-bottom: 16px;
 }
 
+.reader-pdf-page-shell {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  contain: layout paint style;
+}
+
 .reader-pdf-page {
   position: relative;
   overflow: hidden;
@@ -112,6 +119,7 @@ body {
   outline: 2px solid transparent;
   outline-offset: 4px;
   transition: outline-color 120ms ease;
+  will-change: transform;
 }
 
 .reader-pdf-page-canvas {
@@ -124,6 +132,7 @@ body {
   overflow: hidden;
   line-height: 1;
   opacity: 1;
+  contain: strict;
 }
 
 .reader-pdf-text-layer span {

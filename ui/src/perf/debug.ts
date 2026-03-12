@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 const counters = new Map<string, number>();
 const measures = new Map<string, number[]>();
+const gauges = new Map<string, number>();
 const selectorCounters = new Map<string, number>();
 const eventCounters = new Map<string, { count: number; bytes: number }>();
 let flushHandle: number | null = null;
@@ -12,10 +13,11 @@ function scheduleFlush(): void {
   }
   flushHandle = window.setTimeout(() => {
     flushHandle = null;
-    if (counters.size === 0 && measures.size === 0) {
+    if (counters.size === 0 && measures.size === 0 && gauges.size === 0) {
       return;
     }
     const renderSummary = Object.fromEntries(counters.entries());
+    const gaugeSummary = Object.fromEntries(gauges.entries());
     const selectorSummary = Object.fromEntries(selectorCounters.entries());
     const measureSummary = Object.fromEntries(
       Array.from(measures.entries()).map(([name, values]) => [
@@ -40,11 +42,13 @@ function scheduleFlush(): void {
     );
     console.debug("ui perf summary", {
       renders: renderSummary,
+      gauges: gaugeSummary,
       selectors: selectorSummary,
       events: eventSummary,
       measures: measureSummary
     });
     counters.clear();
+    gauges.clear();
     selectorCounters.clear();
     eventCounters.clear();
     measures.clear();
@@ -69,6 +73,22 @@ export function recordPerfMeasure(name: string, startedAt: number): void {
   const values = measures.get(name) ?? [];
   values.push(duration);
   measures.set(name, values);
+  scheduleFlush();
+}
+
+export function recordPerfCounter(name: string, delta = 1): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  counters.set(name, (counters.get(name) ?? 0) + delta);
+  scheduleFlush();
+}
+
+export function recordPerfGauge(name: string, value: number): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  gauges.set(name, value);
   scheduleFlush();
 }
 

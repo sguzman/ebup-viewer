@@ -1533,7 +1533,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
     }, [ensureRenderedPageWindow, globalSentenceStart, pdfPageCount, reader.sentences]);
 
     const jumpToResolvedSentenceTarget = useCallback(async () => {
-      const idx = reader.highlighted_sentence_idx;
+      const idx = highlightedSentenceIdx;
       if (idx === null || idx === undefined) {
         return false;
       }
@@ -1585,7 +1585,8 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       ensurePageCanvasRendered,
       ensurePageTextLayerRendered,
       globalSentenceStart,
-      reader,
+      highlightedSentenceIdx,
+      reader.settings.center_spoken_sentence,
       rebindActiveHighlightForRenderedPages,
       renderZoom
     ]);
@@ -1595,7 +1596,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       force = false,
       reason: string
     ) => {
-      const idx = reader.highlighted_sentence_idx;
+      const idx = highlightedSentenceIdx;
       if (idx === null || idx === undefined) {
         return false;
       }
@@ -1636,11 +1637,17 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
         force
       });
       return true;
-    }, [globalSentenceStart, playback.tts.state, reader.settings.auto_scroll_tts, reader.settings.center_spoken_sentence]);
+    }, [
+      globalSentenceStart,
+      highlightedSentenceIdx,
+      playback.tts.state,
+      reader.settings.auto_scroll_tts,
+      reader.settings.center_spoken_sentence
+    ]);
 
     const applyHighlight = useCallback(
       async (behavior: ScrollBehavior, force = false) => {
-        const idx = reader.highlighted_sentence_idx;
+        const idx = highlightedSentenceIdx;
         const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
 
         if (idx === null || idx === undefined) {
@@ -1914,6 +1921,7 @@ export const ReaderPrettyPdfPane = forwardRef<ReaderPrettyPdfPaneHandle, ReaderP
       },
       [
         canSyncHighlights,
+        highlightedSentenceIdx,
         maybeAutoScrollToRenderedHighlight,
         playback.tts.state,
         preferOverlayHighlights,

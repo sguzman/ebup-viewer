@@ -1,0 +1,151 @@
+# Egui Reader Rendering Roadmap
+
+## Objective
+- [ ] Rebuild EPUB/TXT/Markdown/HTML reading in egui while preserving current text ownership, sentence highlighting, click-to-play, and reading controls.
+- [ ] Replace DOM/CSS/browser rendering assumptions with a Rust-native render model suitable for immediate-mode UI.
+- [ ] Keep canonical sentence/TTS ownership entirely in Rust domain state.
+
+## Current-State Grounding In This Repo
+- Current non-PDF reader rendering is spread across:
+- `ui/src/components/contentRender.ts`
+- `prettyHtml.ts`
+- `markdownRender.ts`
+- `readerContentPanes.tsx`
+- `readerDom.ts`
+- `readerHtmlSync.ts`
+- `useReaderHighlightSync.ts`
+- `useHtmlSentenceAnchorMap.ts`
+- The existing architecture already defines:
+- `tts_text` as canonical
+- `pretty_kind` as presentation selector
+- `sentence_anchor_map` as a mapping hint surface
+- Current pretty rendering relies on browser primitives:
+- HTML sanitization and DOM output
+- CSS layout and scrolling
+- clickable spans/anchors
+- iframe/native HTML assumptions for rich content
+
+## Target End State Under Egui
+- Reader rendering is Rust-native for:
+- text-only sentence list view
+- pretty text for EPUB/HTML/Markdown
+- inline images/assets
+- sentence highlight and click targeting
+- scrolling/jump-to-highlight
+- typography and spacing settings
+- The render model uses a Rust-native intermediate representation instead of DOM ownership.
+- Canonical document/session/playback state remains Rust-owned and renderer-agnostic.
+
+## Key Architectural Decisions Already Chosen
+- Text-only mode remains the canonical playback/search/cursor surface.
+- Pretty rendering is a projection of canonical text and source artifacts, not a second ownership layer.
+- HTML must be converted into a Rust-native intermediate content model rather than requiring an embedded WebView.
+- Markdown and HTML should converge onto a shared rich-text/content-block model wherever possible.
+- Image rendering, anchor mapping, and scroll targeting must be implemented in Rust-native UI logic.
+
+## Target Reader Render Model
+- [ ] Define a shared intermediate representation for pretty content:
+- [ ] block nodes
+- [ ] inline text runs
+- [ ] headings
+- [ ] paragraphs
+- [ ] lists
+- [ ] images/figures/captions
+- [ ] tables or simplified table blocks
+- [ ] anchor metadata for sync
+- [ ] source metadata for links and assets
+- [ ] Define a text-only representation optimized for sentence interaction and playback cursor ownership.
+- [ ] Define how canonical sentence indices map into pretty content anchors/blocks.
+
+## Phase 1: Data And View Contracts
+- [ ] Preserve current reader payload concepts in Rust:
+- [ ] `page_text`
+- [ ] `sentences`
+- [ ] `sentence_anchor_map`
+- [ ] `images`
+- [ ] `pretty_kind`
+- [ ] Replace browser-facing HTML/markdown output assumptions with Rust-native view model outputs.
+- [ ] Decide per-source representation:
+- [ ] plain text source -> sentence/block model directly
+- [ ] markdown source -> markdown-to-content-block conversion
+- [ ] HTML/EPUB source -> sanitized HTML-to-content-block conversion
+- Phase exit:
+- [ ] there is a decision-complete Rust render-model contract for all non-PDF reader sources.
+
+## Phase 2: Text-Only Reader In Egui
+- [ ] Rebuild sentence list rendering with:
+- [ ] clickable sentence rows/spans
+- [ ] highlight styling
+- [ ] search hit styling
+- [ ] jump-to-highlight behavior
+- [ ] text selection policy
+- [ ] Preserve canonical sentence ownership and click-to-play semantics.
+- [ ] Implement typography controls using egui text styling rather than CSS.
+- Phase exit:
+- [ ] text-only reader parity is reachable without any WebView dependency.
+
+## Phase 3: Pretty Rendering For Markdown / HTML / EPUB
+- [ ] Build rendering widgets for the content-block model.
+- [ ] Support:
+- [ ] paragraphs/headings
+- [ ] inline emphasis
+- [ ] links
+- [ ] images
+- [ ] block spacing and margin controls
+- [ ] footnote/caption-like secondary content where present
+- [ ] Define explicit degraded behavior for HTML features that are not preserved exactly.
+- Phase exit:
+- [ ] pretty reader behavior is specified without relying on browser DOM/CSS execution.
+
+## Phase 4: Anchor Mapping And Highlight Sync
+- [ ] Port HTML/markdown sync semantics into Rust-native anchor lookup and scroll targeting.
+- [ ] Preserve `sentence_anchor_map` as a hint surface refined by runtime mapping logic if needed.
+- [ ] Define deterministic fallback order when exact anchors are unavailable:
+- [ ] exact anchor
+- [ ] nearest same-block anchor
+- [ ] nearest same-section anchor
+- [ ] visible-region fallback
+- [ ] no-op with explicit diagnostics
+- Phase exit:
+- [ ] sentence highlight and auto-scroll semantics are explicit for egui implementation.
+
+## Phase 5: Scroll, Jump, And Interaction Semantics
+- [ ] Replace browser scroll APIs with egui/native scroll region ownership.
+- [ ] Define jump-to-highlight, auto-scroll, and center-tracking behavior.
+- [ ] Preserve “do not jitter on same sentence” and “only scroll on meaningful location changes” rules.
+- [ ] Define link behavior:
+- [ ] internal anchor navigation
+- [ ] external links open through native shell/browser launch
+- Phase exit:
+- [ ] all reader interactions have native-egui semantics and parity rules.
+
+## Phase 6: Typography And Reader Settings
+- [ ] Port reader settings to egui-native typography and layout controls:
+- [ ] font family/weight selection
+- [ ] font size
+- [ ] line spacing
+- [ ] word/letter spacing where feasible
+- [ ] horizontal/vertical margins
+- [ ] highlight color modes
+- [ ] Define acceptable degradation where egui cannot replicate CSS-level text shaping exactly.
+- Phase exit:
+- [ ] reader settings behavior is explicit enough for implementation and QA.
+
+## Risks / Failure Modes
+- HTML fidelity can regress sharply if the intermediate content model is under-specified.
+- Overcommitting to exact browser parity may stall implementation; the roadmap must preserve behavior, not browser internals.
+- Scroll/highlight behavior may jitter if anchor and viewport ownership are not explicit.
+- Table-rich or footnote-heavy content can become unreadable if the content-block model is too simplistic.
+
+## Test / Parity Requirements
+- [ ] Rust tests for markdown/HTML-to-content-block conversion.
+- [ ] Rust tests for sentence-to-anchor mapping and fallback logic.
+- [ ] Manual QA on EPUB/HTML-heavy books with images, headings, footnotes, and internal links.
+- [ ] Parity checks for click-to-play, search navigation, highlight sync, and settings behavior.
+- [ ] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
+
+## Acceptance Criteria
+- [ ] Text-only and pretty-text reader modes are fully specified for a Rust-native egui implementation.
+- [ ] Canonical sentence/TTS ownership is preserved and explicit.
+- [ ] HTML/markdown rendering no longer depends on DOM/WebView ownership in the target plan.
+- [ ] Scroll, jump, and highlight semantics are concrete enough for implementation without reopening design questions.

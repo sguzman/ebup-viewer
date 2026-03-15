@@ -3,8 +3,7 @@ use crate::quack_check::engine::python::PythonEngine;
 use tracing::{debug, warn};
 
 fn quack_check_config_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../conf/quack-check.toml")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../conf/quack-check.toml")
 }
 
 fn build_pdf_sentence_page_hints(source_path: &Path) -> Vec<Option<usize>> {

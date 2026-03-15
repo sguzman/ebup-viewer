@@ -5,7 +5,13 @@ mod source_open_commands;
 mod tts_runtime;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use serde::{Deserialize, Serialize};
+use lanternleaf_app::bridge::{BRIDGE_COMMAND_NAMES, BRIDGE_EVENT_NAMES};
+use lanternleaf_app::contracts::{
+    BootstrapConfig, BootstrapState, BridgeError, CalibreBookDto, CalibreLoadEvent, LogLevelEvent,
+    OpenSourceResult, PdfTranscriptionEvent, ReaderPlaybackState, ReaderPlaybackStateEvent,
+    ReaderStateEvent, RecentBook, SessionState, SessionStateEvent, SourceOpenEvent, TtsStateEvent,
+    UiMode,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -67,185 +73,6 @@ struct EventEmissionTelemetry {
     last_tts_emit: Option<Instant>,
     last_reader_document_source_path: Option<String>,
     last_reader_document_page: Option<usize>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-#[ts(export)]
-enum UiMode {
-    Starter,
-    Reader,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-struct BootstrapConfig {
-    theme: config::ThemeMode,
-    font_family: config::FontFamily,
-    font_weight: config::FontWeight,
-    day_highlight: config::HighlightColor,
-    night_highlight: config::HighlightColor,
-    log_level: String,
-    default_font_size: u32,
-    default_lines_per_page: usize,
-    default_tts_speed: f32,
-    default_pause_after_sentence: f32,
-    key_toggle_play_pause: String,
-    key_next_sentence: String,
-    key_prev_sentence: String,
-    key_repeat_sentence: String,
-    key_toggle_search: String,
-    key_safe_quit: String,
-    key_toggle_settings: String,
-    key_toggle_stats: String,
-    key_toggle_tts: String,
-    browser_tabs_enabled: bool,
-    close_browser_tab_on_recent_delete: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-struct BootstrapState {
-    app_name: String,
-    mode: String,
-    config: BootstrapConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-struct SessionState {
-    mode: UiMode,
-    active_source_path: Option<String>,
-    open_in_flight: bool,
-    panels: session::PanelState,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-struct OpenSourceResult {
-    session: SessionState,
-    reader: session::ReaderSnapshot,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-struct RecentBook {
-    source_path: String,
-    display_title: String,
-    snippet: String,
-    thumbnail_path: Option<String>,
-    #[ts(type = "number")]
-    last_opened_unix_secs: u64,
-    #[ts(type = "number | null")]
-    browser_tab_id: Option<u64>,
-    #[ts(type = "number | null")]
-    browser_window_id: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-struct CalibreBookDto {
-    #[ts(type = "number")]
-    id: u64,
-    title: String,
-    extension: String,
-    authors: String,
-    year: Option<i32>,
-    #[ts(type = "number | null")]
-    file_size_bytes: Option<u64>,
-    source_path: Option<String>,
-    cover_thumbnail: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-struct SourceOpenEvent {
-    #[ts(type = "number")]
-    request_id: u64,
-    phase: String,
-    source_path: Option<String>,
-    message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-struct CalibreLoadEvent {
-    #[ts(type = "number")]
-    request_id: u64,
-    phase: String,
-    count: Option<usize>,
-    message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-struct TtsStateEvent {
-    #[ts(type = "number")]
-    request_id: u64,
-    action: String,
-    tts: session::ReaderTtsView,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-struct PdfTranscriptionEvent {
-    #[ts(type = "number")]
-    request_id: u64,
-    phase: String,
-    source_path: String,
-    message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-struct LogLevelEvent {
-    #[ts(type = "number")]
-    request_id: u64,
-    level: String,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-struct SessionStateEvent {
-    #[ts(type = "number")]
-    request_id: u64,
-    action: String,
-    session: SessionState,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-struct ReaderStateEvent {
-    #[ts(type = "number")]
-    request_id: u64,
-    action: String,
-    reader: session::ReaderSnapshot,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-struct ReaderPlaybackState {
-    source_path: String,
-    current_page: usize,
-    highlighted_sentence_idx: Option<usize>,
-    tts: session::ReaderTtsView,
-    stats: session::ReaderStats,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-struct ReaderPlaybackStateEvent {
-    #[ts(type = "number")]
-    request_id: u64,
-    action: String,
-    playback: ReaderPlaybackState,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-struct BridgeError {
-    code: String,
-    message: String,
 }
 
 #[derive(Debug)]
@@ -763,23 +590,23 @@ pub fn export_ts_bindings(out_dir: &Path) -> Result<(), String> {
         }
     }
 
-    export_single_type::<UiMode>(out_dir)?;
-    export_single_type::<BootstrapConfig>(out_dir)?;
-    export_single_type::<BootstrapState>(out_dir)?;
-    export_single_type::<SessionState>(out_dir)?;
-    export_single_type::<OpenSourceResult>(out_dir)?;
-    export_single_type::<RecentBook>(out_dir)?;
-    export_single_type::<CalibreBookDto>(out_dir)?;
-    export_single_type::<SourceOpenEvent>(out_dir)?;
-    export_single_type::<CalibreLoadEvent>(out_dir)?;
-    export_single_type::<TtsStateEvent>(out_dir)?;
-    export_single_type::<PdfTranscriptionEvent>(out_dir)?;
-    export_single_type::<LogLevelEvent>(out_dir)?;
-    export_single_type::<SessionStateEvent>(out_dir)?;
-    export_single_type::<ReaderStateEvent>(out_dir)?;
-    export_single_type::<ReaderPlaybackState>(out_dir)?;
-    export_single_type::<ReaderPlaybackStateEvent>(out_dir)?;
-    export_single_type::<BridgeError>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::UiMode>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::BootstrapConfig>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::BootstrapState>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::SessionState>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::OpenSourceResult>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::RecentBook>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::CalibreBookDto>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::SourceOpenEvent>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::CalibreLoadEvent>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::TtsStateEvent>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::PdfTranscriptionEvent>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::LogLevelEvent>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::SessionStateEvent>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::ReaderStateEvent>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::ReaderPlaybackState>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::ReaderPlaybackStateEvent>(out_dir)?;
+    export_single_type::<lanternleaf_app::contracts::BridgeError>(out_dir)?;
     export_single_type::<session::PanelState>(out_dir)?;
     export_single_type::<session::ReaderSettingsView>(out_dir)?;
     export_single_type::<session::ReaderTtsView>(out_dir)?;
@@ -1921,24 +1748,6 @@ macro_rules! as_generate_handler {
         tauri::generate_handler![$($command),*]
     };
 }
-
-macro_rules! as_command_name_slice {
-    ($($command:ident),* $(,)?) => {
-        &[$(stringify!($command)),*]
-    };
-}
-
-const BRIDGE_COMMAND_NAMES: &[&str] = bridge_command_idents!(as_command_name_slice);
-const BRIDGE_EVENT_NAMES: &[&str] = &[
-    "source-open",
-    "calibre-load",
-    "session-state",
-    "reader-state",
-    "reader-playback-state",
-    "tts-state",
-    "pdf-transcription",
-    "log-level",
-];
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

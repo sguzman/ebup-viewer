@@ -66,8 +66,7 @@ pub use browser_tab_cache::{
 pub use content_artifacts::{
     PdfOcrAlignmentArtifact, PdfOcrBlockGeometry, PdfOcrLineGeometry, PdfOcrPageAlignmentBucket,
     PdfOcrPageGeometry, PdfOcrSentenceAlignment, PdfOcrTokenGeometry, PdfRenderPrecomputedState,
-    PdfSentenceLocation,
-    stable_sentence_text_hash,
+    PdfSentenceLocation, stable_sentence_text_hash,
 };
 
 #[derive(Debug, Clone)]

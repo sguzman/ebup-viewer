@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = [".", "src-tauri", "crates/lanternleaf-core"]
+members = [".", "src-tauri", "crates/lanternleaf-core", "crates/lanternleaf-app"]
 resolver = "2"
 
 [dependencies]

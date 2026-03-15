@@ -12,6 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 anyhow = "1"
 base64 = "0.22"
 ctrlc = "3.5.2"
+lanternleaf-app = { path = "../crates/lanternleaf-app" }
 lanternleaf-core = { path = "../crates/lanternleaf-core" }
 hound = "3.5"
 piper-rs = "0.1.9"

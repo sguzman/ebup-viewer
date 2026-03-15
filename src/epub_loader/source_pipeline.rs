@@ -667,7 +667,10 @@ fn can_repair_pdf_paragraph_punctuation(
         Some(value) => value,
         None => return false,
     };
-    if matches!(last, '.' | '!' | '?' | ':' | ';' | '"' | '\'' | ')' | ']' | '}') {
+    if matches!(
+        last,
+        '.' | '!' | '?' | ':' | ';' | '"' | '\'' | ')' | ']' | '}'
+    ) {
         return false;
     }
     if !last.is_alphanumeric() {

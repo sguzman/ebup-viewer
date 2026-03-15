@@ -7,4 +7,5 @@ edition = "2024"
 async-trait = "0.1.89"
 lanternleaf-core = { path = "../lanternleaf-core" }
 serde = { version = "1", features = ["derive"] }
+tracing = "0.1"
 ts-rs = { version = "10.0.0", features = ["serde-compat"] }

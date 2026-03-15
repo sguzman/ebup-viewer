@@ -2339,6 +2339,7 @@ dependencies = [
  "async-trait",
  "lanternleaf-core",
  "serde",
+ "tracing",
  "ts-rs",
 ]
 

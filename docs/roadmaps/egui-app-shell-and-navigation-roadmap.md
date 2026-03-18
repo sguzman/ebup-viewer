@@ -63,21 +63,27 @@
 - [ ] layout policy utilities map to Rust shell layout helpers rather than CSS/media queries.
 
 ## Phase 1: Shell Contract And Frame Layout
+- [x] Capture the current starter-vs-reader split, modal surfaces, and panel stack before any UI coding begins.
 - [ ] Define top-level shell state:
-- [ ] active mode (`starter`, `reader`, `loading`, `error`)
-- [ ] panel visibility/exclusivity
-- [ ] modal/dialog state
-- [ ] global notifications
-- [ ] session transition state
-- [ ] Define frame regions:
-- [ ] top toolbar
-- [ ] optional navigation/status row
-- [ ] left/right side panels
-- [ ] central content pane
-- [ ] overlay modal layer
-- [ ] Document size-class behavior and minimum supported desktop widths.
-- Phase exit:
-- [ ] shell composition and panel ownership are explicit enough for implementation without revisiting layout strategy.
+- [ ] `ActiveMode` (`Starter`, `Reader`, `SourceLoading`, `SourceError`, `Calibre`, `BrowserTabImport`)
+- [ ] panel visibility/exclusivity state machine (settings, search, stats, TTS controls)
+- [ ] modal/dialog state machine including blocking confirmation flows
+- [ ] global notifications queue (info/warn/error) and session transition indicators
+- [ ] runaway screen lock or safe-quit gating flags
+- [ ] Define frame regions with memoized layout policies:
+- [ ] top toolbar/command bar with grouped actions and status indicators
+- [ ] optional navigation/status row for compact mode feedback
+- [ ] left/right side panels for library controls and reader-specific widgets
+- [ ] central content pane for starter or reader content
+- [ ] overlay modal layer that can host blocking or lightweight dialogs
+- [ ] Document desktop size-class strategy, minimum supported width (e.g., 900px), and density assumptions (panel collapse thresholds).
+- [ ] Define API surfaces for layout helpers that currently live in CSS/media queries (e.g., `isNarrow`, `shouldShowPanels`). These Rust helpers will be called from the runtime to decide redraw scopes.
+### Architectural Artifacts To Deliver
+- Shell state enums/structs representing the existing App.tsx runtime decisions.
+- Layout helpers describing how panel state affects reader width/padding, derived from current CSS breakpoints, to prevent guesswork when implementing UI.
+- A modal overlay contract describing focus and escape semantics so future egui widgets can reuse a single modal manager.
+### Phase Exit
+- [ ] Shell composition and panel ownership are explicit enough for implementation without revisiting layout strategy.
 
 ## Phase 2: Navigation And Mode Switching
 - [ ] Recreate starter-to-reader transitions, session close, return-to-starter, and open-source flows.

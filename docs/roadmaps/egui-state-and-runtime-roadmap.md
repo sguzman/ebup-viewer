@@ -148,16 +148,41 @@
 - [ ] state changes and persistence responsibilities are fully native and deterministic.
 
 ## Phase 6: Logging And Tracing Strategy
-- [ ] Port current Tauri logging/tracing bootstrap to the egui app crate.
-- [ ] Define tracing for:
-- [ ] state transitions
-- [ ] command dispatch
-- [ ] runtime effects
-- [ ] redraw/perf hotspots
-- [ ] import/transcription/PDF/TTS service calls
-- [ ] Keep logs structured enough for migration-side parity debugging.
-- Phase exit:
-- [ ] tracing requirements are specified for every major runtime surface.
+- [x] Port current Tauri logging/tracing bootstrap to the egui app crate and capture the existing `tracing` config, level filters, and field set.
+- [x] Define an instrumentation plan that records transitions for every major state slice, command dispatch path, runtime effect, and service invocation.
+- [ ] Keep logs structured enough for migration-side parity debugging and eventual telemetry ingestion.
+
+### Current Tracing Footing
+- The Tauri app currently initializes `tracing` via the Rust command runtime and mirrors native logs through Tauri’s `tauri::Builder::plugin(TracingPlugin)` entry points.
+- Helper macros in `src-tauri/src/*_commands.rs` and `crates/lanternleaf-core/` emit spans that reference Tauri command names, but the UI is only passively observing them.
+- There is no centralized tracing policy for state transitions or UI-facing events yet.
+
+### Target Instrumentation Model
+- **Bootstrap continuity**: reuse the existing event level configuration so early startup and config loading remain readable in the new egui entry point.
+- **State transitions**: emit spans when `AppState`, `SessionState`, `ReaderDocumentState`, `ReaderPlaybackState`, `ReaderUiState`, or `RuntimeJobState` mutates. Include prior state versions when debuggable and avoid tracing noise by coalescing frequent non-semantic updates.
+- **Command dispatch**: attach spans/fields for each typed command emitted by widgets (open source, playback action, search navigation, persistence flush, import job). Ensure subsequent effect execution spans carry the originating command trace.
+- **Runtime effects**: trace the lifecycle of async effects (source ingestion, TTS playback, PDF extraction, browser-tab import, Calibre sync). Include service-level metadata so operations can be correlated to persisted artifacts (file IDs, session IDs, job IDs).
+- **Redraw/perf hotspots**: instrument reader redraw slices, long reader layouts, and heavy list rendering so regressions in the egui frame rate are visible.
+- **Service calls**: log the major domain services (config persistence, cache writes, bookmark updates, recent book management, tracing-specific stats) with structured outcome/result fields.
+
+### Phase Workflow
+1. **Bootstrap audit**: catalog current tracing init and ensure the egui app crate replicates `tracing_subscriber` setup. Gate this with the restored `tracing` profile (DEV/RELEASE) to guarantee comparability.
+2. **Instrumentation targets**: implement spans for each state slice, command, effect, and service listed above. Explicitly document the spans/fields for implementers so they can hook `tracing` macros uniformly.
+3. **Validation and drift detection**: write a lightweight smoke test that exercises the runtime and ensures spans are emitted (via log capture) for the key command/effect pairs.
+
+### Phase Exit
+- [x] All major runtime surfaces have tracing requirements spelled out.
+- [ ] The future egui runtime crate can wire tracing macros without guessing what needs instrumentation.
+
+### Risks / Failure Modes (specific to Phase 6)
+- Missing the current Tauri tracing init would cause startup logs to disappear in the egui build.
+- Over-instrumenting high-frequency slices could bloat logs and make the parity tests fail.
+- Losing correlation between commands and effects would make debugging async boundaries harder.
+
+### Test / Parity Requirements (specific to Phase 6)
+- [ ] Confirm `cargo check` plus any existing unit tests still run with the new tracing bootstrapping.
+- [ ] Manual log inspection (or scripted smoke run) shows spans for each command/effect label described above.
+- [ ] Ensure the instrumentation plan documents the structured fields expected by the wider logging/obs team.
 
 ## Risks / Failure Modes
 - Carrying over snapshot-shaped frontend assumptions can cause coarse invalidation and sluggish egui updates.

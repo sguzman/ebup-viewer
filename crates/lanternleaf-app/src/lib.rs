@@ -1,5 +1,6 @@
 pub mod bridge;
 pub mod contracts;
+pub mod logging;
 pub mod persistence;
 pub mod pipeline;
 pub mod runtime;

@@ -1,3 +1,4 @@
+use crate::logging::effect_span;
 use crate::pipeline::{PlannedEffect, RuntimeEffect};
 use std::{
     collections::HashMap,
@@ -148,7 +149,9 @@ impl TaskRuntime {
             progress,
         };
 
+        let span = effect_span(planned.request_id, &planned.effect);
         thread::spawn(move || {
+            let _span_guard = span.enter();
             context.report(TaskPhase::Started, None, Some("task_spawned".to_string()));
             if context.cancellation.is_cancelled() {
                 context.report(

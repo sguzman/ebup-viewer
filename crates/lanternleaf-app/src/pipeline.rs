@@ -3,6 +3,7 @@ use crate::contracts::{
     PdfTranscriptionEvent, ReaderPlaybackStateEvent, ReaderStateEvent, RecentBook, SessionState,
     SessionStateEvent, SourceOpenEvent, TtsStateEvent, UiMode,
 };
+use crate::logging::{command_span, event_span};
 use crate::state::{AppState, OperationState, RuntimeJobPatch, derive_reader_playback};
 use lanternleaf_core::{cache, session};
 use tracing::{debug, trace, warn};
@@ -372,7 +373,9 @@ pub enum AppEvent {
 
 pub fn plan_command(state: &AppState, request_id: u64, command: AppCommand) -> DispatchPlan {
     let action = command.action();
-    debug!(request_id, action, "Planning app command");
+    let span = command_span(request_id, &command);
+    let _guard = span.enter();
+    trace!(action = action, "Planning app command");
     let (local_events, effects) = match command {
         AppCommand::Bootstrap => (
             vec![
@@ -593,19 +596,23 @@ pub fn plan_command(state: &AppState, request_id: u64, command: AppCommand) -> D
         ),
     };
 
+    let planned_effects: Vec<PlannedEffect> = effects
+        .into_iter()
+        .map(|effect| PlannedEffect { request_id, effect })
+        .collect();
+    trace!(effect_count = planned_effects.len(), "Dispatch plan ready");
     DispatchPlan {
         request_id,
         action,
         local_events,
-        effects: effects
-            .into_iter()
-            .map(|effect| PlannedEffect { request_id, effect })
-            .collect(),
+        effects: planned_effects,
     }
 }
 
 pub fn apply_event(state: &mut AppState, event: AppEvent) {
-    trace!(event = event_name(&event), "Applying app event");
+    let span = event_span(&event);
+    let _guard = span.enter();
+    trace!("Applying app event");
     match event {
         AppEvent::OperationChanged { scope, active } => {
             let mut operations = state.app_shell.operations.clone();
@@ -881,28 +888,6 @@ fn tts_sync_policy(command: &session::SessionCommand) -> TtsSyncPolicy {
             }
         }
         _ => TtsSyncPolicy::SyncAfterCommand,
-    }
-}
-
-fn event_name(event: &AppEvent) -> &'static str {
-    match event {
-        AppEvent::OperationChanged { .. } => "operation_changed",
-        AppEvent::LoadingBootstrapChanged(_) => "loading_bootstrap_changed",
-        AppEvent::LoadingRecentsChanged(_) => "loading_recents_changed",
-        AppEvent::LoadingCalibreChanged(_) => "loading_calibre_changed",
-        AppEvent::BootstrapLoaded { .. } => "bootstrap_loaded",
-        AppEvent::SessionUpdated(_) => "session_updated",
-        AppEvent::ReaderUpdated(_) => "reader_updated",
-        AppEvent::ReaderPlaybackUpdated(_) => "reader_playback_updated",
-        AppEvent::SourceOpenProgress(_) => "source_open_progress",
-        AppEvent::SourceOpened { .. } => "source_opened",
-        AppEvent::RecentsLoaded { .. } => "recents_loaded",
-        AppEvent::CalibreBooksLoaded { .. } => "calibre_books_loaded",
-        AppEvent::CalibreLoadProgress(_) => "calibre_load_progress",
-        AppEvent::TtsStateUpdated(_) => "tts_state_updated",
-        AppEvent::PdfTranscriptionProgress(_) => "pdf_transcription_progress",
-        AppEvent::LogLevelUpdated(_) => "log_level_updated",
-        AppEvent::CommandFailed { .. } => "command_failed",
     }
 }
 

@@ -912,8 +912,8 @@ mod tests {
     use crate::contracts::BootstrapConfig;
     use lanternleaf_core::{config, session};
 
-    fn make_reader_snapshot() -> ReaderSnapshot {
-        ReaderSnapshot {
+    fn make_reader_snapshot() -> session::ReaderSnapshot {
+        session::ReaderSnapshot {
             source_path: "/tmp/book.epub".to_string(),
             source_name: "book.epub".to_string(),
             current_page: 3,

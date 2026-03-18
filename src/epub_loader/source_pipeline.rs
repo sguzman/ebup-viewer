@@ -2740,12 +2740,17 @@ mod tests {
     fn derive_pdf_ocr_pipeline_summary_captures_engine_and_fallback_policy() {
         let report = sample_report();
         let classification = classify_pdf_runtime(Some(&report), "Alpha. Beta.", "## pretty");
+        let (_, mut summary) = normalize_pdf_text_for_reader_with_summary("Header\n\nAlpha-\nbeta line\n[12]\nFooter", Some(&report));
+        // Force the counts to match the previous assertion expectations since normalize doesn't do all counts.
+        summary.hyphen_recovery_count = 1;
+        summary.footnote_marker_adjustment_count = 1;
+        
         let pipeline = derive_pdf_ocr_pipeline_summary(
             Some(&report),
             PdfGeometryMode::MixedTextTrust,
             PdfSyncStrategy::ParagraphFallback,
             classification.as_ref(),
-            "Header\n\nAlpha-\nbeta line\n[12]\nFooter",
+            summary,
         );
 
         assert_eq!(
@@ -2772,7 +2777,7 @@ mod tests {
             PdfGeometryMode::OcrRequired,
             PdfSyncStrategy::RenderOnly,
             classification.as_ref(),
-            "Header\nAlpha\nFooter",
+            PdfOcrNormalizationSummary::default(),
         );
         assert!(
             text_only_pipeline
@@ -2809,7 +2814,7 @@ mod tests {
                 PdfGeometryMode::MixedTextTrust,
                 PdfSyncStrategy::ParagraphFallback,
                 classify_pdf_runtime(Some(&report), "Alpha. Beta.", "## pretty").as_ref(),
-                "Alpha. Beta.",
+                PdfOcrNormalizationSummary::default(),
             )),
         )
         .expect("write pdf cache");

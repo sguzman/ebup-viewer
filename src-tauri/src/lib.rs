@@ -2013,6 +2013,8 @@ mod tests {
                 pdf_sync_strategy: None,
                 pdf_classification: None,
                 pdf_runtime_policy: None,
+                pdf_ocr_alignment: None,
+                pdf_ocr_pipeline: None,
                 images: Vec::new(),
                 tts_text_page: "hello".to_string(),
                 reading_markdown_page: None,

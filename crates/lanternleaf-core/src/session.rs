@@ -23,7 +23,7 @@ pub use document_loading::{
 
 const BASE_WPM: f64 = 170.0;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, TS)]
 #[ts(export)]
 pub struct PanelState {
     pub show_settings: bool,
@@ -76,7 +76,7 @@ pub struct ReaderTtsView {
     pub progress_pct: f64,
 }
 
-#[derive(Debug, Clone, Deserialize, TS)]
+#[derive(Debug, Clone, Deserialize, Default, TS)]
 #[ts(export)]
 pub struct ReaderSettingsPatch {
     #[ts(optional)]

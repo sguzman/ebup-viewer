@@ -1,0 +1,285 @@
+use crate::contracts::BridgeError;
+use crate::contracts::ReaderSnapshot;
+use crate::pipeline::PersistenceTrigger;
+use lanternleaf_core::{cache, config};
+use std::path::Path;
+use tracing::{debug, warn};
+
+pub trait PersistenceService: Send + Sync {
+    fn persist_reader_housekeeping(&self, snapshot: &ReaderSnapshot) -> Result<(), BridgeError>;
+
+    fn load_bookmark(&self, source_path: &Path) -> Option<cache::Bookmark>;
+
+    fn load_epub_config(&self, source_path: &Path) -> Option<config::AppConfig>;
+}
+
+pub struct FilesystemPersistenceService;
+
+impl PersistenceService for FilesystemPersistenceService {
+    fn persist_reader_housekeeping(&self, snapshot: &ReaderSnapshot) -> Result<(), BridgeError> {
+        let source_path = Path::new(&snapshot.source_path);
+        let sentence_text = snapshot
+            .highlighted_sentence_idx
+            .and_then(|idx| snapshot.sentences.get(idx).cloned());
+        let bookmark = cache::Bookmark {
+            page: snapshot.current_page,
+            sentence_idx: snapshot.highlighted_sentence_idx,
+            sentence_text,
+            scroll_y: 0.0,
+            pdf_page_idx: None,
+            pdf_rects: Vec::new(),
+            pdf_line_rects: Vec::new(),
+            pdf_block_rects: Vec::new(),
+            pdf_confidence: None,
+            pdf_reason: None,
+            pdf_quality_class: None,
+            pdf_sentence_text_hash: None,
+            pdf_token_lineage: Vec::new(),
+        };
+        cache::save_bookmark(source_path, &bookmark);
+        cache::save_epub_config(source_path, &config::AppConfig::default());
+        Ok(())
+    }
+
+    fn load_bookmark(&self, source_path: &Path) -> Option<cache::Bookmark> {
+        cache::load_bookmark(source_path)
+    }
+
+    fn load_epub_config(&self, source_path: &Path) -> Option<config::AppConfig> {
+        cache::load_epub_config(source_path)
+    }
+}
+
+pub struct PersistenceLifecycle<S> {
+    service: std::sync::Arc<S>,
+}
+
+impl<S: PersistenceService> PersistenceLifecycle<S> {
+    pub fn new(service: S) -> Self {
+        Self {
+            service: std::sync::Arc::new(service),
+        }
+    }
+
+    pub fn service(&self) -> std::sync::Arc<S> {
+        std::sync::Arc::clone(&self.service)
+    }
+
+    pub fn on_source_open(&self, snapshot: &ReaderSnapshot) {
+        if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
+            warn!(error = %error.message, "Source-open persistence failed");
+        } else {
+            debug!("Reader housekeeping persisted on source open");
+        }
+    }
+
+    pub fn on_session_close(&self, snapshot: &ReaderSnapshot) {
+        if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
+            warn!(error = %error.message, "Session close persistence failed");
+        } else {
+            debug!("Reader housekeeping persisted on session close");
+        }
+    }
+
+    pub fn on_safe_quit(&self, snapshot: &ReaderSnapshot) {
+        if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
+            warn!(error = %error.message, "Safe quit persistence failed");
+        } else {
+            debug!("Reader housekeeping persisted on safe quit");
+        }
+    }
+
+    pub fn load_bookmark_and_config(
+        &self,
+        source_path: &Path,
+    ) -> (Option<cache::Bookmark>, Option<config::AppConfig>) {
+        (
+            self.service.load_bookmark(source_path),
+            self.service.load_epub_config(source_path),
+        )
+    }
+
+    pub fn flush_trigger(&self, snapshot: Option<&ReaderSnapshot>, trigger: PersistenceTrigger) {
+        match (snapshot, trigger) {
+            (Some(snapshot), PersistenceTrigger::SourceOpen) => self.on_source_open(snapshot),
+            (Some(snapshot), PersistenceTrigger::SessionClose) => self.on_session_close(snapshot),
+            (Some(snapshot), PersistenceTrigger::SafeQuit) => self.on_safe_quit(snapshot),
+            _ => {
+                warn!(trigger = ?trigger, "No reader snapshot available for persistence trigger");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contracts::ReaderSnapshot;
+    use crate::pipeline::PersistenceTrigger;
+    use lanternleaf_core::{cache, config, session};
+    use std::path::Path;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    fn make_reader_snapshot() -> ReaderSnapshot {
+        session::ReaderSnapshot {
+            source_path: "/tmp/book.epub".to_string(),
+            source_name: "book.epub".to_string(),
+            current_page: 3,
+            total_pages: 12,
+            text_only_mode: false,
+            has_structured_markdown: true,
+            pretty_kind: session::PrettyKind::Html,
+            pdf_geometry_mode: None,
+            pdf_sync_strategy: None,
+            pdf_classification: None,
+            pdf_runtime_policy: None,
+            pdf_ocr_alignment: None,
+            pdf_ocr_pipeline: None,
+            images: Vec::new(),
+            tts_text_page: "tts".to_string(),
+            reading_markdown_page: None,
+            reading_html_page: Some("<p>hi</p>".to_string()),
+            page_text: "page".to_string(),
+            sentences: vec!["one".to_string()],
+            canonical_sentences: vec!["one".to_string()],
+            page_sentence_counts: vec![1],
+            sentence_anchor_map: vec![Some(0)],
+            highlighted_sentence_idx: Some(0),
+            search_query: "query".to_string(),
+            search_matches: vec![0],
+            selected_search_match: Some(0),
+            settings: session::ReaderSettingsView {
+                theme: config::ThemeMode::Day,
+                font_family: config::FontFamily::Lexend,
+                font_weight: config::FontWeight::Bold,
+                day_highlight: config::HighlightColor {
+                    r: 0.1,
+                    g: 0.2,
+                    b: 0.3,
+                    a: 0.4,
+                },
+                night_highlight: config::HighlightColor {
+                    r: 0.5,
+                    g: 0.6,
+                    b: 0.7,
+                    a: 0.8,
+                },
+                font_size: 18,
+                line_spacing: 1.2,
+                word_spacing: 0,
+                letter_spacing: 0,
+                margin_horizontal: 24,
+                margin_vertical: 12,
+                lines_per_page: 400,
+                pause_after_sentence: 0.0,
+                auto_scroll_tts: true,
+                center_spoken_sentence: true,
+                text_only_show_original_text: false,
+                time_remaining_display: config::TimeRemainingDisplay::Adaptive,
+                tts_speed: 1.0,
+                tts_volume: 1.0,
+            },
+            tts: session::ReaderTtsView {
+                state: session::TtsPlaybackState::Playing,
+                current_sentence_idx: Some(0),
+                sentence_count: 1,
+                can_seek_prev: false,
+                can_seek_next: false,
+                progress_pct: 0.5,
+            },
+            stats: session::ReaderStats {
+                page_index: 3,
+                total_pages: 12,
+                tts_progress_pct: 0.5,
+                global_progress_pct: 0.25,
+                page_time_remaining_secs: 10.0,
+                book_time_remaining_secs: 100.0,
+                page_word_count: 100,
+                page_sentence_count: 1,
+                page_start_percent: 0.2,
+                page_end_percent: 0.3,
+                words_read_up_to_page_start: 50,
+                sentences_read_up_to_page_start: 2,
+                words_read_up_to_page_end: 150,
+                sentences_read_up_to_page_end: 3,
+                words_read_up_to_current_position: 55,
+                sentences_read_up_to_current_position: 2,
+            },
+            panels: session::PanelState {
+                show_settings: true,
+                show_stats: false,
+                show_tts: true,
+            },
+        }
+    }
+
+    struct StubService {
+        persisted: Arc<AtomicBool>,
+        bookmark_value: Option<cache::Bookmark>,
+    }
+
+    impl StubService {
+        fn new(bookmark_value: Option<cache::Bookmark>) -> Self {
+            Self {
+                persisted: Arc::new(AtomicBool::new(false)),
+                bookmark_value,
+            }
+        }
+    }
+
+    impl PersistenceService for StubService {
+        fn persist_reader_housekeeping(&self, _: &ReaderSnapshot) -> Result<(), BridgeError> {
+            self.persisted.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn load_bookmark(&self, _: &Path) -> Option<cache::Bookmark> {
+            self.bookmark_value.clone()
+        }
+
+        fn load_epub_config(&self, _: &Path) -> Option<config::AppConfig> {
+            None
+        }
+    }
+
+    fn sample_bookmark() -> cache::Bookmark {
+        cache::Bookmark {
+            page: 1,
+            sentence_idx: None,
+            sentence_text: None,
+            scroll_y: 0.0,
+            pdf_page_idx: None,
+            pdf_rects: Vec::new(),
+            pdf_line_rects: Vec::new(),
+            pdf_block_rects: Vec::new(),
+            pdf_confidence: None,
+            pdf_reason: None,
+            pdf_quality_class: None,
+            pdf_sentence_text_hash: None,
+            pdf_token_lineage: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn lifecycle_flush_calls_service() {
+        let service = StubService::new(None);
+        let lifecycle = PersistenceLifecycle::new(service);
+        let snapshot = make_reader_snapshot();
+        lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SourceOpen);
+        assert!(lifecycle.service().persisted.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn lifecycle_load_returns_bookmark() {
+        let bookmark = sample_bookmark();
+        let service = StubService::new(Some(bookmark.clone()));
+        let lifecycle = PersistenceLifecycle::new(service);
+        let (loaded_bookmark, loaded_config) =
+            lifecycle.load_bookmark_and_config(Path::new("/tmp/book.epub"));
+        assert_eq!(loaded_bookmark, Some(bookmark));
+        assert!(loaded_config.is_none());
+    }
+}

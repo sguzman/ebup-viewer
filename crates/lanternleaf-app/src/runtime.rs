@@ -1,11 +1,11 @@
 use crate::pipeline::{PlannedEffect, RuntimeEffect};
 use std::{
     collections::HashMap,
-    fmt,
-    panic,
+    fmt, panic,
     sync::{
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc,
     },
     thread,
 };
@@ -234,8 +234,8 @@ impl fmt::Debug for TaskRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use crate::pipeline::{DispatchPlan, RuntimeEffect};
+    use std::time::Duration;
 
     #[test]
     fn cancellation_token_detects_cancel() {

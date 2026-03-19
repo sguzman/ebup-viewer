@@ -11,14 +11,18 @@
 - Work remains: port shell/routing, runtime state/effects, egui rendering surfaces, PDF renderer, and QA/testing infrastructure.
 
 ## Tranche Prioritization
-| Tranche | Focus | Key Deliverables | Dependencies | Completion Signals |
-|---------|-------|------------------|--------------|--------------------|
-| 1 | Runtime & Instrumentation Foundation | Implement the Rust-native app state/effect engine (State roadmap Phases 1-6) + centralized tracing bootstrap + command/effect pipeline skeleton + shortcut registry | None (foundation) | Typed command models, tracing spans defined, `AppState` accessible |
-| 2 | Shell Frame & Navigation | Build egui app shell frame, mode management, modal/shortcut contracts (Shell roadmap Phases 1-4) tying into runtime commands | Runtime tranches, tracing instrumentation | `eframe` shell renders starter/reader skeleton + navigation commands wired |
-| 3 | Reader Rendering Core | Implement text-only reader, content-block models, anchor mapping (Reader roadmap Phases 2–5) leveraging shell redraw budgets | Runtime + Shell tranches | canonical sentence renderer, highlight/jump service, shell instrumentation logs |
-| 4 | PDF Subsystem | Build Rust-owned PDF renderer, overlays, viewport scheduler, OCR fallback (PDF roadmap Phases 1–6) | Runtime + Shell + Reader (for highlight sync) | Native PDF pipeline outputs textures, overlays, commands logged |
-| 5 | Audio & TTS Integration | Wire Piper/rodio playback, sentence timing, caching, and command integration in egui (covered indirectly via existing roadmaps) | Runtime + Reader + Shell for highlight sync | Playback controls drive highlights with tracing |
-| 6 | Settings/Cache Persistence & QA | Migrate persistence, cache, bookmarks, plus testing harness replacements (Config + Testing roadmaps) | Runtime + Shell + Reader + PDF | Native persistence API, egui settings surfaces, Rust test suites pass |
+| Status | Tranche | Focus | Key Deliverables | Dependencies | Completion Signals |
+|--------|---------|-------|------------------|--------------|--------------------|
+| [ ] | 1 | Runtime & Instrumentation Foundation | Implement the Rust-native app state/effect engine (State roadmap Phases 1-6) + centralized tracing bootstrap + command/effect pipeline skeleton + shortcut registry | None (foundation) | Typed command models, tracing spans defined, `AppState` accessible |
+| [ ] | 2 | Shell Frame & Navigation | Build egui app shell frame, mode management, modal/shortcut contracts (Shell roadmap Phases 1-4) tying into runtime commands | Runtime tranches, tracing instrumentation | `eframe` shell renders starter/reader skeleton + navigation commands wired |
+| [ ] | 3 | Reader Rendering Core | Implement text-only reader, content-block models, anchor mapping (Reader roadmap Phases 2–5) leveraging shell redraw budgets | Runtime + Shell tranches | canonical sentence renderer, highlight/jump service, shell instrumentation logs |
+| [ ] | 4 | PDF Subsystem | Build Rust-owned PDF renderer, overlays, viewport scheduler, OCR fallback (PDF roadmap Phases 1–6) | Runtime + Shell + Reader (for highlight sync) | Native PDF pipeline outputs textures, overlays, commands logged |
+| [ ] | 5 | Audio & TTS Integration | Wire Piper/rodio playback, sentence timing, caching, and command integration in egui (covered indirectly via existing roadmaps) | Runtime + Reader + Shell for highlight sync | Playback controls drive highlights with tracing |
+| [ ] | 6 | Settings/Cache Persistence & QA | Migrate persistence, cache, bookmarks, plus testing harness replacements (Config + Testing roadmaps) | Runtime + Shell + Reader + PDF | Native persistence API, egui settings surfaces, Rust test suites pass |
+
+## Scope Coverage Note
+- [x] The roadmap prioritizes the highest-risk, largest subsystems (runtime, shell, reader, PDF, audio, persistence) with instrumentation and tracing baked in.
+- [ ] It does not enumerate every small refactor, localization tweak, or UX polish; treat those as follow-on tasks once the tranches close.
 
 ## Recommended Work Per Interaction
 - Each chat turn should cover one tranche or a discrete chunk within a tranche that can finish within the turn (State foundation, Shell navigation, Reader rendering, etc.).

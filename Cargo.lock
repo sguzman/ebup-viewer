@@ -2340,6 +2340,8 @@ dependencies = [
  "lanternleaf-core",
  "serde",
  "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
  "ts-rs",
 ]
 

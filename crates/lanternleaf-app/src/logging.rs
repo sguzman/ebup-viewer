@@ -11,7 +11,7 @@ pub fn command_span(request_id: u64, command: &AppCommand) -> Span {
 }
 
 pub fn effect_span(request_id: u64, effect: &RuntimeEffect) -> Span {
-        info_span!(
+    info_span!(
         "runtime_effect",
         request_id,
         effect = %effect_name(effect),

@@ -1,11 +1,16 @@
+use crate::contracts::BootstrapConfig;
 use crate::logging::effect_span;
-use crate::pipeline::{PlannedEffect, RuntimeEffect};
+use crate::pipeline::{
+    AppCommand, AppEvent, DispatchPlan, PlannedEffect, RuntimeEffect, apply_event, plan_command,
+};
+use crate::shortcuts::ShortcutRegistry;
+use crate::state::AppState;
 use std::{
     collections::HashMap,
     fmt, panic,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     thread,
@@ -234,11 +239,88 @@ impl fmt::Debug for TaskRuntime {
     }
 }
 
+/// Orchestrates the Rust-native app runtime foundation, exposing the shared state, tracing-aware
+/// command planning, and configured shortcut registry that the future egui shell will consume.
+#[derive(Clone)]
+pub struct AppRuntime {
+    state: Arc<Mutex<AppState>>,
+    task_runtime: TaskRuntime,
+    progress_batcher: Mutex<ProgressBatcher>,
+    next_request_id: AtomicU64,
+    shortcuts: ShortcutRegistry,
+}
+
+impl Default for AppRuntime {
+    fn default() -> Self {
+        Self::new(ShortcutRegistry::default())
+    }
+}
+
+impl AppRuntime {
+    /// Build the runtime using the provided shortcut registry.
+    pub fn new(shortcuts: ShortcutRegistry) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(AppState::default())),
+            task_runtime: TaskRuntime::new(),
+            progress_batcher: Mutex::new(ProgressBatcher::new()),
+            next_request_id: AtomicU64::new(1),
+            shortcuts,
+        }
+    }
+
+    /// Builds a runtime preconfigured with the bootstrap shortcut map.
+    pub fn with_bootstrap_config(config: &BootstrapConfig) -> Self {
+        Self::new(ShortcutRegistry::with_bootstrap_config(config))
+    }
+
+    /// Access the shared shortcut registry.
+    pub fn shortcut_registry(&self) -> ShortcutRegistry {
+        self.shortcuts.clone()
+    }
+
+    /// Retrieves a fresh plan request id.
+    pub fn next_request_id(&self) -> u64 {
+        self.next_request_id.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// Plans a command using `pipeline::plan_command` and the current snapshot of state.
+    pub fn plan_command(&self, command: AppCommand) -> DispatchPlan {
+        let request_id = self.next_request_id();
+        let guard = self.state.lock().unwrap();
+        plan_command(&guard, request_id, command)
+    }
+
+    /// Applies an event to the shared `AppState`.
+    pub fn apply_event(&self, event: AppEvent) {
+        let mut guard = self.state.lock().unwrap();
+        apply_event(&mut guard, event);
+    }
+
+    /// Returns a cloned snapshot of the current `AppState`.
+    pub fn state_snapshot(&self) -> AppState {
+        let guard = self.state.lock().unwrap();
+        guard.clone()
+    }
+
+    /// Collects task progress updates via the internal batcher.
+    pub fn collect_progress(&self) -> Vec<TaskProgress> {
+        let mut batcher = self.progress_batcher.lock().unwrap();
+        batcher.collect(&self.task_runtime);
+        batcher.drain()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pipeline::{DispatchPlan, RuntimeEffect};
+    use crate::pipeline::{AppCommand, DispatchPlan, ReaderCommand, RuntimeEffect};
     use std::time::Duration;
+
+    use crate::contracts::BootstrapConfig;
+    use crate::pipeline::ReaderCommand;
+    use crate::shortcuts::{ShortcutAction, ShortcutScope};
+    use config::{FontFamily, FontWeight, HighlightColor, ThemeMode};
+    use lanternleaf_core::session::{self, SessionCommand};
 
     #[test]
     fn cancellation_token_detects_cancel() {
@@ -302,5 +384,64 @@ mod tests {
         thread::sleep(Duration::from_millis(20));
         let results = runtime.collect_progress();
         assert!(!results.is_empty());
+    }
+
+    fn sample_bootstrap_config() -> BootstrapConfig {
+        BootstrapConfig {
+            theme: ThemeMode::Day,
+            font_family: FontFamily::Lexend,
+            font_weight: FontWeight::Normal,
+            day_highlight: HighlightColor {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+                a: 0.4,
+            },
+            night_highlight: HighlightColor {
+                r: 0.5,
+                g: 0.6,
+                b: 0.7,
+                a: 0.8,
+            },
+            log_level: "info".to_string(),
+            default_font_size: 18,
+            default_lines_per_page: 30,
+            default_tts_speed: 1.0,
+            default_pause_after_sentence: 0.0,
+            key_toggle_play_pause: "Space".to_string(),
+            key_next_sentence: "J".to_string(),
+            key_prev_sentence: "K".to_string(),
+            key_repeat_sentence: "L".to_string(),
+            key_toggle_search: "/".to_string(),
+            key_safe_quit: "Q".to_string(),
+            key_toggle_settings: "S".to_string(),
+            key_toggle_stats: "D".to_string(),
+            key_toggle_tts: "T".to_string(),
+            browser_tabs_enabled: true,
+            close_browser_tab_on_recent_delete: false,
+        }
+    }
+
+    #[test]
+    fn runtime_request_ids_increment() {
+        let runtime = AppRuntime::default();
+        let plan_one = runtime.plan_command(AppCommand::Bootstrap);
+        let plan_two = runtime.plan_command(AppCommand::RefreshRecents { limit: None });
+        assert_eq!(plan_two.request_id, plan_one.request_id + 1);
+    }
+
+    #[test]
+    fn runtime_shortcuts_expose_configured_actions() {
+        let runtime = AppRuntime::with_bootstrap_config(&sample_bootstrap_config());
+        let shortcuts = runtime.shortcut_registry();
+        let matches = shortcuts.matches("space", ShortcutScope::Reader);
+        assert!(matches.iter().any(|binding| {
+            matches!(
+                binding.action,
+                ShortcutAction::Command(AppCommand::Reader(ReaderCommand::Session(
+                    SessionCommand::TtsTogglePlayPause
+                )))
+            )
+        }));
     }
 }

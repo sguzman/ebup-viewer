@@ -155,16 +155,26 @@
 - [ ] shortcut routing is deterministic, focus-aware, and no longer relies on browser focus semantics so the egui input layer can plug into the Rust runtime command model.
 
 ## Phase 5: Modal, Notification, And Error Strategy
-- [ ] Replace browser-style modal/dialog flows with egui-native confirmation, alert, and progress surfaces.
-- [ ] Define toast/notification strategy for:
-- [ ] import failures
-- [ ] persistence errors
-- [ ] browser-tab health
-- [ ] Calibre load failures
-- [ ] PDF degraded mode
-- [ ] Ensure all blocking flows have a clear cancel/retry path.
-- Phase exit:
-- [ ] implementers have a single modal/notification contract for the egui shell.
+- [ ] Replace browser-style modal/dialog flows with egui-native confirmation, alert, toast, and progress surfaces.
+- [ ] Define the modal stack semantics:
+- [ ] blocking confirmations (e.g., close source without save, Calibre import overwrite) that prevent other shell interactions until resolved
+- [ ] information dialogs (filters, help) that sit above the shell but permit non-blocking background activity
+- [ ] progress overlays tied to long-running jobs (import, transcription, PDF OCR) that also expose cancel actions and show progress metrics
+- [ ] Define notification/toast surface rules:
+- [ ] Import failures and Calibre/browser-tab errors display persistent toast with retry/copy log actions.
+- [ ] Persistence errors and safe-quit issues surface warnings with deep links to settings or diagnostics.
+- [ ] Reader health issues (PDF degraded mode, sync drift) highlight in status chips but also post toasts when severity increases.
+- [ ] Each modal/notification must emit typed commands/events when acknowledged, canceled, or closed so the runtime can record the outcome and resume the underlying task.
+- [ ] Document how modal focus trapping works with the `FocusOwner` defined in Phase 4, ensuring escape/confirm semantics remain consistent across dialogs.
+- [ ] Ensure all blocking flows (import/transcription, persistence flush, browser-tab sync) have defined cancel/retry paths and inform the command model accordingly.
+
+### Implementation Artifacts
+- A modal contract describing layers (blocking vs passive), required metadata (title, body, actions, default focus), and the lifecycle commands emitted on open/close.
+- A notification/toast registry describing severity levels, required action buttons, and how to link to diagnostics or logs.
+- A set of sentinel cases (e.g., persistence failure, Calibre sync failure, PDF degraded sync) with explicit UI behavior, data sources, and the resulting command/effect transitions tracing back to Phase 2.
+
+### Phase Exit
+- [ ] implementers have a single modal/notification contract for the egui shell that keeps the command layer consistent while replacing Web-style dialogs.
 
 ## Phase 6: Performance And Responsiveness Constraints
 - [ ] Define redraw policy for shell-level state:

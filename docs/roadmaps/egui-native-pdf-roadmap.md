@@ -80,19 +80,16 @@
 - [ ] implementers have an explicit subsystem map, service API definitions, and tracing requirements for each PDF component before implementation begins.
 
 ## Phase 2: Rendering And Viewport Model
-- [ ] Define page raster/render strategy:
-- [ ] page bitmap generation
-- [ ] zoom scaling policy
-- [ ] texture upload/cache policy for egui
-- [ ] visible-page and overscan scheduling
-- [ ] eviction and reuse rules
-- [ ] Preserve current priorities:
-- [ ] visible pages first
-- [ ] active TTS page
-- [ ] jump target page
-- [ ] nearby overscan pages
+- [ ] Define page raster/render strategy with instrumentation that ties into the shell’s redraw and coalescing plan:
+- [ ] `PageRenderService` exposes `request_render(page_id, zoom_level, priority)` and emits spans `pdf.render.request`/`pdf.render.complete` containing zoom, priority, and cache_hit metadata so shell telemetry can gate frame requests.
+- [ ] Zoom scaling policy includes discrete zoom levels, smooth transitions, and inertial zoom damping; zoom change events must throttle repaint requests per the shell coalescing rules to prevent repeated reflows.
+- [ ] Texture upload/cache policy handles GPU/egui texture creation with async `UploadHandle` futures; cache hits/misses emit spans and inform the virtualization scheduler whether to reuse existing textures or re-render.
+- [ ] Visible-page and overscan scheduling rely on a virtualization scheduler service that tracks viewport extent and emits spans `pdf.viewport.update` with visible_range, overscan_range, and activation triggers (scroll, jump, navigation). Scheduler decisions must respect the shell redraw budget, only requesting renders if viewport changes exceed configurable deltas.
+- [ ] Eviction and reuse rules define when textures/textures are released or reused; eviction operations emit structured logs with reason (`viewport`, `memory_pressure`, `oob`) and coordinate with the tracing plan to prevent audit gaps.
+- [ ] Preserve current priority ordering (visible, active TTS sentence page, jump target, overscan) but also allow urgent commands (e.g., highlight jumps) to preempt the scheduler with documented guard rails.
+- [ ] Document how virtualization decisions feed back into the command/effect pipeline so page renders triggered by auto-scroll or reader navigation are traceable to the originating `ShellCommand`.
 - Phase exit:
-- [ ] the egui PDF viewer has a specified virtualization and render lifecycle contract.
+- [ ] the egui PDF viewer has a virtualization lifecycle contract, with rendering and viewport scheduling tightly instrumented and obeying the shell redraw/coalescing constraints.
 
 ## Phase 3: Text Extraction And Sync Artifact Strategy
 - [ ] Define Rust-native page text extraction ownership and cache persistence.

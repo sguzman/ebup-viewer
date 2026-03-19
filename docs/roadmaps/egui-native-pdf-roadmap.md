@@ -105,15 +105,17 @@
 - [ ] text extraction, normalization, caches, and sync maps are explicit, traced, and ready for native implementation.
 
 ## Phase 4: Highlight, Overlay, And Jump Semantics
-- [ ] Define page-relative overlay geometry for highlights as the stable rendering primitive.
-- [ ] Preserve explicit downgrade rules from sentence -> block -> page fallback.
-- [ ] Define cleanup rules so stale overlays and previous-sentence highlights are always removed.
-- [ ] Define click/jump behavior:
-- [ ] jump to current spoken sentence
-- [ ] reverse navigation from clicked page/text region to canonical sentence
-- [ ] no random full-page fallback reuse unless the current sentence genuinely lacks better geometry
-- Phase exit:
-- [ ] highlight and jump behavior are precise enough to prevent current PDF instability classes.
+- [ ] Define page-relative overlay geometry for highlights as the stable rendering primitive tied to canonical sentence anchors and the tracing schema:
+- [ ] Each highlight span carries the originating sentence ID, page_id, and sync_map_quality so the overlay manager can emit `pdf.highlight.apply` spans with `highlight.anchor` metadata aligned to reader tracing.
+- [ ] Preserve downgrade rules (sentence → block → page → render-only) and log the downgrade reason per overlay so QA can correlate with past instability classes.
+- [ ] Overlay cleanup rules must ensure stale highlights and previous sentence rectangles are removed before new spans render; these transitions emit `pdf.highlight.cleanup` events with cleanup reason (new sentence, page change, closing source).
+- [ ] Jump and click behavior:
+- [ ] highlight updates triggered by TTS playback or sentence focus emit commands `JumpToSentence` with canonical index and tracer-friendly fields; highlight spans follow the same instrumentation.
+- [ ] Mouse clicks on overlays reverse-map geometry to the canonical sentence; emit `pdf.highlight.click` spans containing both geometry and sentence metadata before forwarding the command to the runtime pipeline.
+- [ ] Avoid reusing random full-page fallbacks unless no better geometry is present; document how the overlay manager detects “render-only” state and reports it via tracing/diagnostics so the shell reduces expectation.
+- [ ] Define overlay layering rules so the reader and shell stay in sync (e.g., highlight overlays render above page textures but below modal overlays), and the tracer records which layer produced the highest priority spans.
+- [ ] Phase exit:
+- [ ] highlight geometry, cleanup, and jump semantics are documented, instrumented, and aligned with the canonical sentence anchors so the native overlay manager can be implemented without re-opening behavior debates.
 
 ## Phase 5: Zoom, Scroll, And Interaction Model
 - [ ] Define egui-native zoom/pan/scroll behavior for PDFs.

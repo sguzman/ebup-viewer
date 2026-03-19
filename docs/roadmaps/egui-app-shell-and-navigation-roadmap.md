@@ -112,14 +112,27 @@
 - [ ] all high-level navigation transitions have a Rust-native owner, typed transition model, and guard conditions documented so implementers can code deterministic mode switches.
 
 ## Phase 3: Toolbar, Panels, And Command Surface
-- [ ] Rebuild the current top toolbar with deterministic width planning.
-- [ ] Preserve panel exclusivity rules:
-- [ ] settings vs stats remain mutually exclusive
-- [ ] search and quick actions maintain current visibility expectations
-- [ ] Implement a native command dispatch path from buttons, hotkeys, and context menus into Rust effects.
-- [ ] Add status/diagnostic surfaces for import/transcription/runtime conditions.
-- Phase exit:
-- [ ] shell command surfaces match current UX behavior without WebView dependencies.
+- [ ] Define the toolbar layout contract derived from `ReaderShell.tsx` and `readerPanels.tsx`, documenting how button groups, status chips, and TTS controls align across narrow/wide widths.
+- [ ] Specify panel exclusivity rules in detail:
+- [ ] `Settings` and `Stats` remain mutually exclusive; define the transition rules when either is invoked while the other is open.
+- [ ] `Search` and `Quick Actions` panels can co-exist but share layout space; capture the expected width impact on the reader content pane.
+- [ ] `TTS` controls live in a dock that must remain accessible while other panels open; describe how it responds to active playback state.
+- [ ] Document button-to-command mapping for toolbar actions (open source, import, calibre toggle, search, stats, settings, reader quick actions) so each produces a typed command/event into the runtime.
+- [ ] Define the command dispatch path:
+- [ ] Canvas-level input (buttons, toggles) emits `ShellCommand` variants into the runtime.
+- [ ] Keyboard shortcuts and right-click items share the same command inputs.
+- [ ] Command handlers produce effects (e.g., `OpenSource` -> `SourceIngestionService`, `TogglePanel` -> state mutation) with tracing spans.
+- [ ] Provide overflow handling for disabled/hidden buttons when modes disallow actions (e.g., `OpenSource` disabled during source load).
+- [ ] Add status/diagnostic surfaces that display import/transcription/runtime conditions, capturing the current TTS status, sync health, and browser-tab health.
+
+### Implementation Artifacts
+- A toolbar layout descriptor that defines action groups, icon priorities, and responsive breakpoint behavior.
+- A panel exclusivity matrix that guides panel toggling effects and ensures reader content width adjustments are predictable.
+- A `ShellCommand` enum that wraps toolbar/panel actions, associated metadata (e.g., target panel, playback data), and the routing rules that feed the command/effect pipeline defined in the runtime roadmap.
+- Status/diagnostic surface requirements that enumerate the data each panel or chip must display so implementers can hook into the traced runtime state.
+
+### Phase Exit
+- [ ] shell command surfaces match current UX behavior without WebView dependencies and feed explicitly into the runtime command/effect model.
 
 ## Phase 4: Keyboard Shortcut And Focus Model
 - [ ] Define a Rust-native shortcut registry replacing frontend shortcut parsing/matching behavior.

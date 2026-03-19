@@ -135,12 +135,24 @@
 - [ ] shell command surfaces match current UX behavior without WebView dependencies and feed explicitly into the runtime command/effect model.
 
 ## Phase 4: Keyboard Shortcut And Focus Model
-- [ ] Define a Rust-native shortcut registry replacing frontend shortcut parsing/matching behavior.
-- [ ] Preserve focus-sensitive behavior so text entry and reader hotkeys do not conflict.
-- [ ] Document global vs reader-only vs starter-only shortcut scopes.
-- [ ] Define modal focus trapping and escape/confirm semantics.
-- Phase exit:
-- [ ] shortcut routing is deterministic and does not rely on browser focus semantics.
+- [ ] Define a Rust-native shortcut registry that mirrors the current shortcut map in `ui/src/lib/shortcuts.ts` and derives from keyboard definitions used in `ReaderShell` and `StarterShell`.
+- [ ] Catalog the scopes for every shortcut:
+- [ ] Global (window-wide, always active unless blocked by modal)
+- [ ] Starter-only (allowed before a source opens)
+- [ ] Reader-only (playback, navigation, highlight)
+- [ ] Panel-only (search, stats, settings focus)
+- [ ] Define focus ownership rules:
+- [ ] Text entry fields (search, settings, modal inputs) capture keys and suppress reader shortcuts while focused.
+- [ ] Reader viewport captures navigation/playback shortcuts when it has focus, but yields to modals and panel inputs.
+- [ ] Modal dialogs and toast notifications trap escape/confirm behavior and block global shortcuts when active.
+- [ ] Define modal focus trapping and escape/confirm semantics explicitly so future egui modals can reuse a single focus manager.
+- [ ] Document fallback behavior for shortcut collisions (e.g., search entry pressing `Ctrl+F` vs reader playback keys) with priority rules.
+- [ ] Define shortcut registration semantics:
+- [ ] a `ShortcutRegistry` service that accepts `(ShortcutId, Scope, KeyCombo, Handler)` tuples.
+- [ ] a `FocusOwner` state that tracks currently active scope, informs command routing, and resets when panels/modal close.
+- [ ] Document how `eframe` key events flow into the registry without the DOM event bubble.
+### Phase Exit
+- [ ] shortcut routing is deterministic, focus-aware, and no longer relies on browser focus semantics so the egui input layer can plug into the Rust runtime command model.
 
 ## Phase 5: Modal, Notification, And Error Strategy
 - [ ] Replace browser-style modal/dialog flows with egui-native confirmation, alert, and progress surfaces.

@@ -92,15 +92,17 @@
 - [ ] the egui PDF viewer has a virtualization lifecycle contract, with rendering and viewport scheduling tightly instrumented and obeying the shell redraw/coalescing constraints.
 
 ## Phase 3: Text Extraction And Sync Artifact Strategy
-- [ ] Define Rust-native page text extraction ownership and cache persistence.
-- [ ] Preserve or rebuild:
-- [ ] sentence-page hints
-- [ ] OCR alignment artifacts
-- [ ] sentence sync map
-- [ ] confidence tiers and fallback reasons
-- [ ] Keep normalization parity rules for ligatures, hyphenation, duplicate glyphs, and repeated headers/footers.
+- [ ] Define Rust-native page text extraction ownership, normalization, cache persistence, and tracing invariants:
+- [ ] `TextExtractionService` emits spans `pdf.text.extract` with page_id, extraction_mode (exact/mixed/block), and extraction duration so QA can trace quality tiers.
+- [ ] Text caches (per page and per highlight) log hits/misses and emit structured logs so the shell can correlate cache usage with redraw/coalescing events.
+- [ ] Sentence-page hints are captured with canonical sentence IDs; missing hints trigger fallback spans (`pdf.text.fallback`) with the fallback reason (`ocr`, `block`, `page`).
+- [ ] OCR alignment artifacts are treated as augmentation only when text extraction reports low confidence; their ingestion emits spans `pdf.ocr.load` with confidence metadata.
+- [ ] Sentence sync maps carry the confidence tier and geometry fallback path; transitions between tiers are logged so highlight jumps can explain themselves.
+- [ ] Normalization parity rules (ligatures, hyphenation, duplicate glyph suppression, repeated headers/footers) are documented, and each normalization step logs whether it changed the canonical sentence string.
+- [ ] Define fallback hierarchy explicitly (exact sentence geometry > fuzzy sentence geometry > block fallback > page-level location > render-only/no-sync) and document how each transition is recorded in tracing fields so the runtime can observe when geometry quality degrades.
+- [ ] Define how serialization/persistence of text caches/sync maps flushes during shell lifecycle events (open, close, quit) and what metrics/logs are emitted to verify persistence success.
 - Phase exit:
-- [ ] text extraction and sync-map generation are explicit for native PDF implementation.
+- [ ] text extraction, normalization, caches, and sync maps are explicit, traced, and ready for native implementation.
 
 ## Phase 4: Highlight, Overlay, And Jump Semantics
 - [ ] Define page-relative overlay geometry for highlights as the stable rendering primitive.

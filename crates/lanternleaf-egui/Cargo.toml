@@ -1,0 +1,10 @@
+[package]
+name = "lanternleaf-egui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.25"
+lanternleaf-app = { path = "../lanternleaf-app" }
+lanternleaf-core = { path = "../lanternleaf-core" }
+tracing = "0.1"

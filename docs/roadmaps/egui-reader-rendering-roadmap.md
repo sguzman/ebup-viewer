@@ -111,16 +111,22 @@
 - [ ] pretty reader behavior is specified without relying on browser DOM/CSS execution, and the content-block widgets understand the performance/coalescing expectations from the shell roadmap.
 
 ## Phase 4: Anchor Mapping And Highlight Sync
-- [ ] Port HTML/markdown sync semantics into Rust-native anchor lookup and scroll targeting.
-- [ ] Preserve `sentence_anchor_map` as a hint surface refined by runtime mapping logic if needed.
-- [ ] Define deterministic fallback order when exact anchors are unavailable:
-- [ ] exact anchor
-- [ ] nearest same-block anchor
-- [ ] nearest same-section anchor
-- [ ] visible-region fallback
-- [ ] no-op with explicit diagnostics
-- Phase exit:
-- [ ] sentence highlight and auto-scroll semantics are explicit for egui implementation.
+- [ ] Define the canonical sentence anchor ownership model, ensuring the runtime tracing plan can attribute highlight jumps to source artifacts and user commands.
+- [ ] Port HTML/Markdown sync semantics into Rust-native anchor lookup that populates `SentenceHighlight` data used by the reader renderer.
+- [ ] Preserve `sentence_anchor_map` as a hint surface; document how runtime mapping logic refines it using layout metadata before broadcasting highlight spans so shell invalidation budgets stay intact.
+- [ ] Define deterministic fallback order when exact anchors are unavailable and connect each fallback to shell diagnostics/tracing:
+- [ ] exact anchor (emit span `highlight.anchor=exact`)
+- [ ] nearest same-block anchor (span `highlight.anchor=same_block`)
+- [ ] nearest same-section anchor (span `highlight.anchor=same_section`)
+- [ ] visible-region fallback (span `highlight.anchor=visible`)
+- [ ] no-op with explicit diagnostics for out-of-sync states (span `highlight.anchor=missing`)
+- [ ] Define auto-scroll rules that honor the shell’s redraw budget and coalescing matrix:
+- [ ] only trigger scroll when highlight moves outside the current viewport threshold.
+- [ ] throttle repeated scroll commands from rapid highlight change events per Phase 2.5’s coalescing plan.
+- [ ] center or edge align navigation based on user preference (e.g., centered highlight vs. top-aligned on jump) with instrumentation hooks for later perf tuning.
+- [ ] Document how copy/paste or search-driven anchor jumps integrate with shell navigation commands so the command/effect pipeline can reconcile UI flows with runtime state updates.
+- [ ] Phase exit:
+- [ ] sentence highlight, anchor fallback, and auto-scroll rules are explicit, traced, and tied to the shell’s performance budget before UI coding begins.
 
 ## Phase 5: Scroll, Jump, And Interaction Semantics
 - [ ] Replace browser scroll APIs with egui/native scroll region ownership.

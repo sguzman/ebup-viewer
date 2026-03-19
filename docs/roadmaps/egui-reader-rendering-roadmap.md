@@ -83,6 +83,9 @@
 - [ ] Implement typography controls using egui text styling rather than CSS.
 - Phase exit:
 - [ ] text-only reader parity is reachable without any WebView dependency.
+- Runtime integration:
+- [ ] Consume `AppRuntime::state_snapshot` for canonical sentences and highlight data instead of duplicating the data into UI-local stores.
+- [ ] Emit `AppRuntime::plan_command(AppCommand::Reader(session::SessionCommand::SentenceClick { ... }))` or `SessionCommand::NextSentence` when the user clicks a sentence or uses reader navigation so the runtime command/effect pipeline stays in sync with shortcut bindings.
 
 ## Phase 2.5: Shell Performance Integration
 - [ ] Capture the shell redraw/coalescing constraints specified in `egui-app-shell-and-navigation-roadmap` Phase 6 and tie them to the reader rendering pipeline.

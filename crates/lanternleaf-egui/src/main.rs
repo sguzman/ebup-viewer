@@ -3,7 +3,8 @@ mod helpers;
 use eframe::{
     NativeOptions,
     egui::{
-        self, CentralPanel, Context, Key, Layout, Modifiers, SidePanel, TopBottomPanel, Ui, Visuals,
+        self, Button, CentralPanel, CollapsingHeader, Color32, Context, Layout, Modifiers,
+        RichText, ScrollArea, SidePanel, TopBottomPanel, Ui, Visuals,
     },
     winit,
 };
@@ -11,13 +12,14 @@ use helpers::{app_config_path, bootstrap_config_from_app_config, format_combo};
 
 use lanternleaf_app::{
     AppRuntime,
-    contracts::{BootstrapConfig, UiMode},
+    contracts::{BootstrapConfig, ReaderSnapshot, UiMode},
     pipeline::{AppCommand, DispatchPlan, ReaderCommand},
     shortcuts::{ShortcutAction, ShortcutScope, UiShortcutAction},
+    state::AppState,
     tracing::init_tracing,
 };
-use lanternleaf_core::config;
-use tracing::info;
+use lanternleaf_core::{config, session::SessionCommand};
+use tracing::{info, trace};
 
 fn main() {
     let config_path = app_config_path();
@@ -89,7 +91,7 @@ impl LanternLeafApp {
         }
     }
 
-    fn handle_shortcuts(&mut self, ctx: &Context, state: &lanternleaf_app::state::AppState) {
+    fn handle_shortcuts(&mut self, ctx: &Context, state: &AppState) {
         let mode_scope = match state.session.session.as_ref().map(|session| session.mode) {
             Some(UiMode::Reader) => ShortcutScope::Reader,
             _ => ShortcutScope::Global,
@@ -122,7 +124,7 @@ impl LanternLeafApp {
         }
     }
 
-    fn render_top_bar(&mut self, ctx: &Context, state: &lanternleaf_app::state::AppState) {
+    fn render_top_bar(&mut self, ctx: &Context, state: &AppState) {
         TopBottomPanel::top("top_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("LanternLeaf (egui)");
@@ -146,7 +148,7 @@ impl LanternLeafApp {
         });
     }
 
-    fn render_panels(&mut self, ctx: &Context, state: &lanternleaf_app::state::AppState) {
+    fn render_panels(&mut self, ctx: &Context, state: &AppState) {
         SidePanel::left("panel_toggle").show(ctx, |ui| {
             ui.heading("Panels");
             if ui
@@ -181,7 +183,7 @@ impl LanternLeafApp {
         });
     }
 
-    fn render_center(&mut self, ctx: &Context, state: &lanternleaf_app::state::AppState) {
+    fn render_center(&mut self, ctx: &Context, state: &AppState) {
         CentralPanel::default().show(ctx, |ui| {
             match state.session.session.as_ref().map(|session| session.mode) {
                 Some(UiMode::Reader) => self.render_reader_content(ui, state),
@@ -212,45 +214,210 @@ impl LanternLeafApp {
         }
     }
 
-    fn render_reader_content(&mut self, ui: &mut Ui, state: &lanternleaf_app::state::AppState) {
-        ui.heading("Reader shell");
-        ui.label(format!(
-            "Current page: {:?} / {:?}",
-            state.reader_ui.current_page, state.reader_ui.total_pages
-        ));
-        ui.horizontal(|ui| {
+    fn render_reader_content(&mut self, ui: &mut Ui, state: &AppState) {
+        if let Some(snapshot) = state.reader_document.snapshot.as_ref() {
+            trace!(
+                page = snapshot.current_page,
+                highlight = ?snapshot.highlighted_sentence_idx,
+                sentences = snapshot.sentences.len(),
+                "rendering reader shell content"
+            );
+            ui.heading("Reader shell");
+            ui.horizontal(|ui| {
+                if ui
+                    .button(
+                        "Play/Pause (ReaderCommand::Session(SessionCommand::TtsTogglePlayPause))",
+                    )
+                    .clicked()
+                {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsTogglePlayPause,
+                    ));
+                }
+                if ui
+                    .button("Next sentence (ReaderCommand::Session(SessionCommand::TtsSeekNext))")
+                    .clicked()
+                {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsSeekNext,
+                    ));
+                }
+                if ui
+                    .button("Prev sentence (ReaderCommand::Session(SessionCommand::TtsSeekPrev))")
+                    .clicked()
+                {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsSeekPrev,
+                    ));
+                }
+            });
+            ui.separator();
+            self.render_reader_summary(ui, snapshot);
+            ui.add_space(6.0);
+            self.render_sentence_list(ui, snapshot);
+            ui.add_space(6.0);
+            self.render_canonical_preview(ui, snapshot);
+            ui.add_space(6.0);
             if ui
-                .button("Play/Pause (ReaderCommand::Session(SessionCommand::TtsTogglePlayPause))")
+                .button("Close reader session (AppCommand::CloseReaderSession)")
                 .clicked()
             {
-                self.execute_reader_command(ReaderCommand::Session(
-                    lanternleaf_core::session::SessionCommand::TtsTogglePlayPause,
-                ));
+                self.execute_command(AppCommand::CloseReaderSession);
+                self.show_reader_confirm_modal = true;
             }
-            if ui
-                .button("Next sentence (ReaderCommand::Session(SessionCommand::TtsSeekNext))")
-                .clicked()
-            {
-                self.execute_reader_command(ReaderCommand::Session(
-                    lanternleaf_core::session::SessionCommand::TtsSeekNext,
-                ));
-            }
-            if ui
-                .button("Prev sentence (ReaderCommand::Session(SessionCommand::TtsSeekPrev))")
-                .clicked()
-            {
-                self.execute_reader_command(ReaderCommand::Session(
-                    lanternleaf_core::session::SessionCommand::TtsSeekPrev,
-                ));
-            }
-        });
-        if ui
-            .button("Close reader session (AppCommand::CloseReaderSession)")
-            .clicked()
-        {
-            self.execute_command(AppCommand::CloseReaderSession);
-            self.show_reader_confirm_modal = true;
+        } else {
+            ui.heading("Reader shell");
+            ui.label("No reader session currently active.");
         }
+    }
+
+    fn render_reader_summary(&self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+        let anchor_hits = snapshot
+            .sentence_anchor_map
+            .iter()
+            .filter(|value| value.is_some())
+            .count();
+        let progress_pct = (snapshot.tts.progress_pct * 100.0).max(0.0);
+        ui.horizontal(|ui| {
+            ui.label(format!(
+                "Page {}/{}",
+                snapshot.current_page + 1,
+                snapshot.total_pages
+            ));
+            ui.separator();
+            ui.label(format!(
+                "Mode: {}",
+                if snapshot.text_only_mode {
+                    "text-only".to_string()
+                } else {
+                    format!("pretty ({:?})", snapshot.pretty_kind)
+                }
+            ));
+            ui.separator();
+            ui.label(format!(
+                "TTS: {:?} ({:.0}% progress)",
+                snapshot.tts.state, progress_pct
+            ));
+        });
+        ui.horizontal(|ui| {
+            let highlighted = snapshot
+                .highlighted_sentence_idx
+                .map(|idx| format!("{}", idx + 1))
+                .unwrap_or_else(|| "none".to_string());
+            ui.label(format!("Highlighted sentence: {}", highlighted));
+            ui.separator();
+            ui.label(format!("Search matches: {}", snapshot.search_matches.len()));
+            ui.separator();
+            ui.label(format!(
+                "Anchors mapped: {}/{}",
+                anchor_hits,
+                snapshot.sentence_anchor_map.len()
+            ));
+        });
+    }
+
+    fn render_sentence_list(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+        if snapshot.sentences.is_empty() {
+            ui.label("No sentences available for this page.");
+            return;
+        }
+        let highlight_color = Self::sentence_highlight_color(snapshot);
+        let anchor_hits = snapshot
+            .sentence_anchor_map
+            .iter()
+            .filter(|value| value.is_some())
+            .count();
+        trace!(anchor_hits = anchor_hits, "rendering sentence list");
+        ScrollArea::vertical()
+            .auto_shrink([false, true])
+            .id_source("reader-sentence-scroll")
+            .show(ui, |ui| {
+                for (idx, sentence) in snapshot.sentences.iter().enumerate() {
+                    let is_highlighted = snapshot.highlighted_sentence_idx == Some(idx);
+                    let is_search_match = snapshot.search_matches.contains(&idx);
+                    let anchor_idx = snapshot
+                        .sentence_anchor_map
+                        .get(idx)
+                        .and_then(|value| *value);
+                    let canonical_preview = anchor_idx.and_then(|anchor| {
+                        snapshot
+                            .canonical_sentences
+                            .get(anchor)
+                            .map(|text| (anchor, text))
+                    });
+                    let mut label_text = format!("{}: {}", idx + 1, sentence);
+                    if is_search_match {
+                        label_text.push_str(" (search match)");
+                    }
+                    let mut button = Button::new(RichText::new(label_text).size(14.0))
+                        .fill(if is_highlighted {
+                            highlight_color
+                        } else {
+                            ui.visuals().widgets.inactive.bg_fill
+                        })
+                        .wrap(true);
+                    if is_highlighted {
+                        button = button.text_style(egui::TextStyle::Body);
+                    }
+                    let response = ui.add(button);
+                    if response.clicked() {
+                        trace!(sentence_idx = idx, anchor = ?anchor_idx, "reader sentence clicked");
+                        self.execute_reader_command(ReaderCommand::Session(
+                            SessionCommand::SentenceClick { sentence_idx: idx },
+                        ));
+                    }
+                    if let Some((anchor, canonical)) = canonical_preview {
+                        ui.label(
+                            RichText::new(format!("anchor {} → {}", anchor, canonical))
+                                .small()
+                                .italics()
+                                .weak(),
+                        );
+                    } else if anchor_idx.is_none() {
+                        ui.label(RichText::new("anchor missing").small().italics().weak());
+                    }
+                    ui.separator();
+                }
+            });
+    }
+
+    fn render_canonical_preview(&self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+        CollapsingHeader::new("Canonical sentences preview")
+            .id_source("canonical-preview")
+            .default_open(false)
+            .show(ui, |ui| {
+                let total = snapshot.canonical_sentences.len();
+                ui.label(format!("{} canonical sentences (showing first 5)", total));
+                for (idx, canonical) in snapshot.canonical_sentences.iter().enumerate() {
+                    if idx >= 5 {
+                        ui.label("…");
+                        break;
+                    }
+                    ui.label(RichText::new(format!("{}: {}", idx + 1, canonical)).small());
+                }
+            });
+    }
+
+    fn sentence_highlight_color(snapshot: &ReaderSnapshot) -> Color32 {
+        let highlight = if snapshot.settings.theme == config::ThemeMode::Day {
+            snapshot.settings.day_highlight
+        } else {
+            snapshot.settings.night_highlight
+        };
+        Self::color32_from_highlight(highlight)
+    }
+
+    fn color32_from_highlight(color: config::HighlightColor) -> Color32 {
+        fn to_byte(value: f32) -> u8 {
+            let clamped = value.clamp(0.0, 1.0);
+            (clamped * 255.0).round() as u8
+        }
+        Color32::from_rgba_unmultiplied(
+            to_byte(color.r),
+            to_byte(color.g),
+            to_byte(color.b),
+            to_byte(color.a),
+        )
     }
 
     fn render_modals(&mut self, ctx: &Context) {

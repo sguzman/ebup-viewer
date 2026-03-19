@@ -86,16 +86,30 @@
 - [ ] Shell composition and panel ownership are explicit enough for implementation without revisiting layout strategy.
 
 ## Phase 2: Navigation And Mode Switching
-- [ ] Recreate starter-to-reader transitions, session close, return-to-starter, and open-source flows.
-- [ ] Preserve transient loading/error surfaces during source open, PDF transcription, and Calibre/browser-tab import.
-- [ ] Define command routing for:
-- [ ] open source
-- [ ] close source
-- [ ] toggle panels
-- [ ] jump/search/playback actions
-- [ ] quit and safe shutdown
-- Phase exit:
-- [ ] all high-level navigation transitions have a Rust-native owner and typed transition model.
+- [ ] Map every transition that currently lives in React routing or conditional rendering into explicit Rust commands/fsm transitions.
+- [ ] Document how the starter shell pivots to reader mode and back, covering:
+- [ ] source open success, failure, and cancellation
+- [ ] session close/restart
+- [ ] return-to-starter from reader mode shortcuts or menu actions
+- [ ] Calibre browser conclusions and browser-tab import completion
+- [ ] Preserve transient loading/error surfaces during source open, PDF transcription, and Calibre/browser-tab import by defining modal/notification expectations triggered by these states.
+- [ ] Define command routing and transition events for:
+- [ ] `OpenSource` (local file, EPUB, Markdown, Calibre, browser tab)
+- [ ] `CloseSource`
+- [ ] `TogglePanel` (settings, stats, search, console) with exclusivity rules
+- [ ] `ActivatePlaybackShortcut`/`JumpToHighlight`
+- [ ] `PersistState`/`FlushPersistence`
+- [ ] `QuitRequest` and safe shutdown gating
+- [ ] Explicitly define transition guards that rely on runtime readiness flags (e.g., disallow reader navigation until source metadata loads).
+- [ ] Document fallback navigation for PDF/text vs viewer mismatch so the reader shell can recover from partial loads without UI deadlock.
+
+### Implementation Artifacts
+- A Rust enum (`ShellTransition`) enumerating the navigation intents above and the data they carry.
+- A command-to-state transition table describing how each intent mutates `AppState`, `SessionState`, and `ReaderUiState`.
+- A “navigation policy” section showing which commands are available in each mode and how they anchor to keyboard shortcuts or UI controls.
+
+### Phase Exit
+- [ ] all high-level navigation transitions have a Rust-native owner, typed transition model, and guard conditions documented so implementers can code deterministic mode switches.
 
 ## Phase 3: Toolbar, Panels, And Command Surface
 - [ ] Rebuild the current top toolbar with deterministic width planning.

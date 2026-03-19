@@ -73,7 +73,7 @@
 - [ ] there is a decision-complete Rust render-model contract for all non-PDF reader sources.
 
 ## Phase 2: Text-Only Reader In Egui
-- [ ] Rebuild sentence list rendering with:
+- [x] Rebuild sentence list rendering with:
 - [ ] clickable sentence rows/spans
 - [ ] highlight styling
 - [ ] search hit styling

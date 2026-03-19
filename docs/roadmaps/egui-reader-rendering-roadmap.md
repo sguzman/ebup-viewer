@@ -145,16 +145,16 @@
 - [ ] all reader interactions have native-egui semantics, obey the shell performance instrumentation, and expose parity rules for QA.
 
 ## Phase 6: Typography And Reader Settings
-- [ ] Port reader settings to egui-native typography and layout controls:
-- [ ] font family/weight selection
-- [ ] font size
-- [ ] line spacing
-- [ ] word/letter spacing where feasible
-- [ ] horizontal/vertical margins
-- [ ] highlight color modes
-- [ ] Define acceptable degradation where egui cannot replicate CSS-level text shaping exactly.
-- Phase exit:
-- [ ] reader settings behavior is explicit enough for implementation and QA.
+- [ ] Port reader settings into `egui` with controls that obey the redraw budgets and coalescing rules from the shell performance roadmap (Phase 6 of the app shell).
+- [ ] Typography controls must include:
+- [ ] font family/weight selection with preview spans so changes avoid full reflow by resting only on affected text blocks.
+- [ ] font size slider that triggers throttled requests to the renderer, emitting spans that record the prior/next size without forcing extra repaints.
+- [ ] line spacing, letter spacing, and word spacing knobs that update only relevant layout metadata and signal the shell when a rebuild of cached layout is safe.
+- [ ] Horizontal/vertical margin controls impacting the reader padding must call into Phase 1 layout helpers to recompute widths without hitting panel redraw scopes.
+- [ ] Highlight color modes (light, dark, custom) must update rendering state incrementally and produce tracing fields linking to the runtime command/effect model—any highlight change should be tracked by the tracing plan from the runtime roadmap.
+- [ ] Document acceptable degradation when egui cannot mimic CSS-level shaping (e.g., advanced ligatures) and specify how telemetry/QA should note these differences.
+- [ ] Phase exit:
+- [ ] reader settings behavior is explicit, instrumented, and implementable without reopening layout/performance questions, keeping the ui responsive and traceable.
 
 ## Risks / Failure Modes
 - HTML fidelity can regress sharply if the intermediate content model is under-specified.

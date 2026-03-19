@@ -66,16 +66,18 @@
 - [ ] Text sync/resync cycles should log the fallback path taken (exact/mixed/block/page) in the shared tracing schema so QA can correlate highlight jumps with PDF metrics.
 
 ## Phase 1: PDF Subsystem Boundaries
-- [ ] Define Rust-native subsystem boundaries for:
-- [ ] page raster/render service
-- [ ] text extraction and page text cache
-- [ ] sentence-to-geometry sync map builder
-- [ ] OCR/artifact loading
-- [ ] viewport/page lifecycle manager
-- [ ] overlay/highlight manager
-- [ ] Define how existing PDF artifacts from the current Rust side are reused or rebuilt in the egui app.
-- Phase exit:
-- [ ] implementers have an explicit subsystem map and ownership model for PDF work.
+- [ ] Define the Rust-native services and instrumentation contracts for:
+- [ ] `PageRenderService`: page raster generation, zoom scaling, caching, and texture uploading; emits spans for render requests, cache hits/misses, and upload latency aligned with the shell performance tracing plan.
+- [ ] `TextExtractionService`: canonical page text extraction, normalization, and persistence/ cache updates; logs fallback decisions (exact vs fuzzy vs block) and surfaces text quality tiers to the instrumentation schema.
+- [ ] `SyncMapBuilder`: sentence-to-geometry and overlay metadata creation; keeps traceable references to the originating sentence ID for highlight sync in the overlay manager.
+- [ ] `OCRArtifactLoader`: optional OCR supplementation, artifact ingestion, and fallback labeling; reports confidence events to the shared tracing schema (match `highlight.anchor` tags).
+- [ ] `ViewportLifecycleManager`: page lifecycle, virtualization, eviction, and overscan scheduling; enforces the shell’s redraw budget by exposing APIs for requesting frames only when visibility warrants it.
+- [ ] `OverlayAndHighlightManager`: overlay geometry application, cleanup, and click/jump handling; emits spans tied to the shell command/effect model for diagnostics.
+- [ ] Define caching/persistence responsibilities (render images, text caches, sync maps) and how they flush during shell events (source open, close, safe quit) while emitting structured logs for QM.
+- [ ] Define how existing PDF artifacts from the current Rust side are reused or rebuilt in the egui app, including migration paths for cached sync maps and highlight geometry.
+- [ ] Document instrumentation expectations: each subsystem must raise telemetry for request start/completion, cache behavior, fallback reason, and error path so the tracing plan can correlate PDF behavior with shell performance.
+### Phase Exit
+- [ ] implementers have an explicit subsystem map, service API definitions, and tracing requirements for each PDF component before implementation begins.
 
 ## Phase 2: Rendering And Viewport Model
 - [ ] Define page raster/render strategy:

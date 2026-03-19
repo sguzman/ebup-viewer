@@ -13,7 +13,7 @@
 ## Tranche Prioritization
 | Status | Tranche | Focus | Key Deliverables | Dependencies | Completion Signals |
 |--------|---------|-------|------------------|--------------|--------------------|
-| [ ] | 1 | Runtime & Instrumentation Foundation | Implement the Rust-native app state/effect engine (State roadmap Phases 1-6) + centralized tracing bootstrap + command/effect pipeline skeleton + shortcut registry | None (foundation) | Typed command models, tracing spans defined, `AppState` accessible |
+| [x] | 1 | Runtime & Instrumentation Foundation | Implement the Rust-native app state/effect engine (State roadmap Phases 1-6) + centralized tracing bootstrap + command/effect pipeline skeleton + shortcut registry | None (foundation) | Typed command models, tracing spans defined, `AppState` accessible |
 | [ ] | 2 | Shell Frame & Navigation | Build egui app shell frame, mode management, modal/shortcut contracts (Shell roadmap Phases 1-4) tying into runtime commands | Runtime tranches, tracing instrumentation | `eframe` shell renders starter/reader skeleton + navigation commands wired |
 | [ ] | 3 | Reader Rendering Core | Implement text-only reader, content-block models, anchor mapping (Reader roadmap Phases 2–5) leveraging shell redraw budgets | Runtime + Shell tranches | canonical sentence renderer, highlight/jump service, shell instrumentation logs |
 | [ ] | 4 | PDF Subsystem | Build Rust-owned PDF renderer, overlays, viewport scheduler, OCR fallback (PDF roadmap Phases 1–6) | Runtime + Shell + Reader (for highlight sync) | Native PDF pipeline outputs textures, overlays, commands logged |

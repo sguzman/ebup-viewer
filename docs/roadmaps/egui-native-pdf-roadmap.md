@@ -60,6 +60,10 @@
 - [ ] split rendering and text extraction into separate Rust-owned components
 - [ ] keep all integration native and in-process
 - [ ] do not reintroduce browser/WebView ownership as a fallback
+- [ ] Align PDF rendering instrumentation with the egui shell performance and tracing contracts (shell roadmap Phase 6):
+- [ ] page render requests must respect the same coalescing/back-pressure rules as panel state updates to avoid frame drops.
+- [ ] highlight overlay updates must emit tracing spans (command, sentence, anchor) so the shell instrumentation sees the same state transitions as it does for text and reader interactions.
+- [ ] Text sync/resync cycles should log the fallback path taken (exact/mixed/block/page) in the shared tracing schema so QA can correlate highlight jumps with PDF metrics.
 
 ## Phase 1: PDF Subsystem Boundaries
 - [ ] Define Rust-native subsystem boundaries for:

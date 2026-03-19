@@ -84,6 +84,17 @@
 - Phase exit:
 - [ ] text-only reader parity is reachable without any WebView dependency.
 
+## Phase 2.5: Shell Performance Integration
+- [ ] Capture the shell redraw/coalescing constraints specified in `egui-app-shell-and-navigation-roadmap` Phase 6 and tie them to the reader rendering pipeline.
+- [ ] Define how reader render invalidation scopes align with shell-dictated redraw budgets:
+- [ ] sentence-level highlights/reactive blocks request repaint only when their canonical state changes.
+- [ ] panel-induced layout changes recompute reader width via Phase 1 layout helpers without forcing a full scroll reflow.
+- [ ] In-progress runtime events (TTS heartbeat, ingestion progress) are throttled before reaching the reader render widgets to honor the shell’s coalescing matrix.
+- [ ] Document hooks for tracing/metrics instrumentation so the reader can emit frame-level spans that feed into the shell’s tracing plan (Chapter 6) for latency and redraw accounting.
+- [ ] Define the interplay between the reader’s scroll/jump logic and the shell’s performance throttles so auto-scrolls never trigger runaway repaints.
+- [ ] Phase exit:
+- [ ] the reader rendering plan articulates how it obeys the shell’s performance expectations before interactive widgets are implemented.
+
 ## Phase 3: Pretty Rendering For Markdown / HTML / EPUB
 - [ ] Build rendering widgets for the content-block model.
 - [ ] Support:

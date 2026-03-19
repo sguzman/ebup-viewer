@@ -129,16 +129,17 @@
 - [ ] viewport behaviors, anti-jitter guards, and interaction commands are concrete, tied to the scheduler, and documented for tracing before building the egui viewer.
 
 ## Phase 6: OCR And Quality Modes
-- [ ] Preserve current PDF classification/runtime policy model.
-- [ ] Define where OCR runs in the Rust-native app lifecycle.
-- [ ] Keep explicit degraded behavior for:
-- [ ] trustworthy embedded text
-- [ ] mixed/fuzzy text trust
-- [ ] OCR-required text
-- [ ] render-only/no-sync state
-- [ ] Ensure logs and UI communicate confidence rather than faking exactness.
-- Phase exit:
-- [ ] PDF quality and degraded-mode semantics match current roadmap contracts.
+- [ ] Preserve the current PDF classification/runtime policy model and align it with tracing/command expectations:
+- [ ] Define when OCR runs (pre-render, post-render, on-demand) and how `OCRArtifactLoader` emits spans `pdf.ocr.run/start/complete` with source, confidence, and duration so the shell can correlate heavy jobs with viewport events.
+- [ ] Map confidence tiers (`trustworthy_text`, `mixed_fuzzy`, `ocr_required`, `render_only`) to explicit telemetry fields used by both the reader renderer and shell instrumentation to annotate highlight and search results.
+- [ ] Ensure degraded behaviors are traceable and actionable:
+- [ ] Trustworthy text uses canonical sentence geometry; spans should annotate `highlight.anchor=exact`.
+- [ ] Mixed/fuzzy text escalates fallback spans and logs the chosen geometry fallback path when voiceover tries to highlight sentences.
+- [ ] OCR-required mode emits UI-visible warnings and tracing breadcrumbs warning about missing high-confidence text, linking to the OCR job that produced the fallback geometry.
+- [ ] Render-only/no-sync states emit spans indicating that highlight sync is disabled, but the scroll/page rendering still obeys the virtualization scheduler.
+- [ ] Document how logs/UI present confidence rather than pretending the geometry is exact, tying badge states or toasts back to the same tracing fields.
+- [ ] Phase exit:
+- [ ] OCR integration, confidence tiers, and degraded behaviors are explicitly mapped to tracing/command diagnostics matching the rest of the egui roadmap before implementation.
 
 ## Risks / Failure Modes
 - Rust-native PDF rendering may lag behind browser-quality fidelity if rendering evaluation is rushed.

@@ -129,14 +129,20 @@
 - [ ] sentence highlight, anchor fallback, and auto-scroll rules are explicit, traced, and tied to the shell’s performance budget before UI coding begins.
 
 ## Phase 5: Scroll, Jump, And Interaction Semantics
-- [ ] Replace browser scroll APIs with egui/native scroll region ownership.
-- [ ] Define jump-to-highlight, auto-scroll, and center-tracking behavior.
-- [ ] Preserve “do not jitter on same sentence” and “only scroll on meaningful location changes” rules.
+- [ ] Replace browser scroll APIs with `egui::ScrollArea`/native scroll region ownership that respects the shell’s redraw and coalescing budgets (Phase 6 of the app shell roadmap).
+- [ ] Define jump-to-highlight behavior that ties back to the command/effect pipeline:
+- [ ] navigation commands (keyboard shortcuts, search/click hits) emit `JumpToSentence` with canonical indices so the reader renderer can scroll without triggering redundant layout passes.
+- [ ] Auto-scroll engages only when the highlight leaves the visible threshold, and it is throttled per the shell coalescing matrix to avoid repaint storms.
+- [ ] Center-tracking and top-alignment modes are defined as switchable behaviors documented in the settings instrumentation so telemetry can capture which preference is active when performance metrics spike.
+- [ ] Preserve “do not jitter on the same sentence” and “only scroll on meaningful ISO changes” rules by comparing canonical highlight indices before requesting new scroll frames.
+- [ ] Document how scroll requests emit tracing spans that feed into the shell’s performance plan (Phase 6), including fields for the initiating command, target sentence, and whether the scroll was auto or manual.
 - [ ] Define link behavior:
-- [ ] internal anchor navigation
-- [ ] external links open through native shell/browser launch
+- [ ] internal anchor navigation reuses the canonical anchor map and descriptor metadata, yielding deterministic scroll targets and tracing.
+- [ ] external links raise shell commands (via the runtime command model) that launch the native system browser and emit telemetry/logs for QA.
+- [ ] Provide diagnostics/telemetry for cases when scroll targets cannot be satisfied (e.g., missing anchor) and fall back gracefully with a no-op plus logged warning event.
+- [ ] Document how selection, search navigation, and reader interactions produce the same `JumpToSentence` commands so the instrumentation pipeline sees unified flow.
 - Phase exit:
-- [ ] all reader interactions have native-egui semantics and parity rules.
+- [ ] all reader interactions have native-egui semantics, obey the shell performance instrumentation, and expose parity rules for QA.
 
 ## Phase 6: Typography And Reader Settings
 - [ ] Port reader settings to egui-native typography and layout controls:

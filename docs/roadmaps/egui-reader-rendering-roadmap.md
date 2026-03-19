@@ -77,7 +77,7 @@
 - [ ] clickable sentence rows/spans
 - [ ] highlight styling
 - [ ] search hit styling
-- [ ] jump-to-highlight behavior
+- [x] jump-to-highlight behavior
 - [ ] text selection policy
 - [ ] Preserve canonical sentence ownership and click-to-play semantics.
 - [ ] Implement typography controls using egui text styling rather than CSS.

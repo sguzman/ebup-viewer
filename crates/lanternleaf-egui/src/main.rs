@@ -3,7 +3,7 @@ mod helpers;
 use eframe::{
     NativeOptions,
     egui::{
-        self, Button, CentralPanel, CollapsingHeader, Color32, Context, Layout, Modifiers,
+        self, Align, Button, CentralPanel, CollapsingHeader, Color32, Context, Layout, Modifiers,
         RichText, ScrollArea, SidePanel, TopBottomPanel, Ui, Visuals,
     },
     winit,
@@ -18,7 +18,10 @@ use lanternleaf_app::{
     state::AppState,
     tracing::init_tracing,
 };
-use lanternleaf_core::{config, session::SessionCommand};
+use lanternleaf_core::{
+    config,
+    session::{SessionCommand, TtsPlaybackState},
+};
 use tracing::{info, trace};
 
 fn main() {
@@ -54,6 +57,7 @@ struct LanternLeafApp {
     show_reader_confirm_modal: bool,
     pending_search_focus: bool,
     last_plan: Option<DispatchPlan>,
+    auto_scroll_state: AutoScrollState,
 }
 
 impl LanternLeafApp {
@@ -70,6 +74,7 @@ impl LanternLeafApp {
             show_reader_confirm_modal: false,
             pending_search_focus: false,
             last_plan: None,
+            auto_scroll_state: AutoScrollState::default(),
         }
     }
 
@@ -328,6 +333,15 @@ impl LanternLeafApp {
             .filter(|value| value.is_some())
             .count();
         trace!(anchor_hits = anchor_hits, "rendering sentence list");
+        let auto_scroll_enabled = self.should_auto_scroll(snapshot);
+        if !auto_scroll_enabled {
+            self.auto_scroll_state.reset();
+        }
+        let auto_scroll_align = if snapshot.settings.center_spoken_sentence {
+            Align::Center
+        } else {
+            Align::Min
+        };
         ScrollArea::vertical()
             .auto_shrink([false, true])
             .id_source("reader-sentence-scroll")
@@ -360,6 +374,20 @@ impl LanternLeafApp {
                         button = button.text_style(egui::TextStyle::Body);
                     }
                     let response = ui.add(button);
+                    if is_highlighted && auto_scroll_enabled {
+                        let (resolved_anchor, fallback) =
+                            Self::resolve_sentence_anchor(snapshot, idx);
+                        if self.auto_scroll_state.should_scroll(idx, fallback) {
+                            trace!(
+                                jump_to_sentence = idx,
+                                highlight_anchor = fallback.label(),
+                                canonical_anchor = resolved_anchor,
+                                "JumpToSentence: auto-scrolling highlighted sentence"
+                            );
+                            response.scroll_to_me(Some(auto_scroll_align));
+                            self.auto_scroll_state.record(idx, fallback);
+                        }
+                    }
                     if response.clicked() {
                         trace!(sentence_idx = idx, anchor = ?anchor_idx, "reader sentence clicked");
                         self.execute_reader_command(ReaderCommand::Session(
@@ -379,6 +407,38 @@ impl LanternLeafApp {
                     ui.separator();
                 }
             });
+    }
+
+    fn should_auto_scroll(&self, snapshot: &ReaderSnapshot) -> bool {
+        snapshot.settings.auto_scroll_tts && snapshot.tts.state == TtsPlaybackState::Playing
+    }
+
+    fn resolve_sentence_anchor(
+        snapshot: &ReaderSnapshot,
+        sentence_idx: usize,
+    ) -> (Option<usize>, AnchorFallback) {
+        if sentence_idx >= snapshot.sentence_anchor_map.len() {
+            return (None, AnchorFallback::Missing);
+        }
+        if let Some(anchor_idx) = snapshot.sentence_anchor_map[sentence_idx] {
+            return (Some(anchor_idx), AnchorFallback::Exact);
+        }
+        let mut best_distance = usize::MAX;
+        let mut candidate = None;
+        for (candidate_idx, entry) in snapshot.sentence_anchor_map.iter().enumerate() {
+            if let Some(anchor_idx) = entry {
+                let distance = sentence_idx.abs_diff(candidate_idx);
+                if distance < best_distance {
+                    best_distance = distance;
+                    candidate = Some(*anchor_idx);
+                }
+            }
+        }
+        if let Some(anchor_idx) = candidate {
+            (Some(anchor_idx), AnchorFallback::Nearest)
+        } else {
+            (None, AnchorFallback::Missing)
+        }
     }
 
     fn render_canonical_preview(&self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
@@ -475,5 +535,41 @@ impl eframe::App for LanternLeafApp {
         self.render_center(ctx, &snapshot);
         self.render_modals(ctx);
         self.render_status(ctx);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnchorFallback {
+    Exact,
+    Nearest,
+    Missing,
+}
+
+impl AnchorFallback {
+    fn label(self) -> &'static str {
+        match self {
+            AnchorFallback::Exact => "exact",
+            AnchorFallback::Nearest => "nearest",
+            AnchorFallback::Missing => "missing",
+        }
+    }
+}
+
+#[derive(Default)]
+struct AutoScrollState {
+    last_highlighted: Option<(usize, AnchorFallback)>,
+}
+
+impl AutoScrollState {
+    fn should_scroll(&self, idx: usize, fallback: AnchorFallback) -> bool {
+        self.last_highlighted != Some((idx, fallback))
+    }
+
+    fn record(&mut self, idx: usize, fallback: AnchorFallback) {
+        self.last_highlighted = Some((idx, fallback));
+    }
+
+    fn reset(&mut self) {
+        self.last_highlighted = None;
     }
 }

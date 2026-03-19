@@ -41,7 +41,17 @@
 - The shell should preserve current UX contracts before any visual redesign work.
 - Shortcut handling is centralized in Rust and routed through typed commands/effects.
 - The egui shell must be structured for narrow redraw scopes and avoid whole-app invalidation for local panel changes.
+- The shell is built atop `lanternleaf-app::AppRuntime`, so every navigation action should call `AppRuntime::plan_command`/`apply_event` instead of driving UI-local state.
+- The shortcut layer consumes `ShortcutRegistry` so bindings remain consistent with the runtime command graph and can be modified via bootstrap config without changing UI code.
 
+## Runtime & Shortcut Integration
+- The future egui shell will own a single `AppRuntime` instance that:
+- [ ] plans commands via `plan_command` when toolbar buttons or panels dispatch actions.
+- [ ] applies events through `apply_event` when long-running effects complete or when modals close.
+- [ ] exposes `state_snapshot` so widgets can read `AppState` (AppShell, Reader, Playback, etc.) without serialization.
+- [ ] surfaces a `ShortcutRegistry` so the keyboard/shortcut layer can remain data-driven.
+- The shell should document which `AppCommand`/`ReaderCommand` each UI action targets (open source, toggle panel, send shortcut) and track the effect owners so tracing spans correlate with `AppRuntime` commands.
+- Modal confirmations, navigation transitions, and panel switches should never mutate `AppState` directly; they should emit `AppCommand`s so the runtime enforces operation scopes and instrumentation.
 ## Module And Widget Mapping
 - [ ] `App.tsx` maps to a Rust app entry module that owns top-level frame composition and startup.
 - [ ] `StarterShell.tsx` maps to starter-mode widgets:
@@ -61,6 +71,8 @@
 - [ ] TTS controls
 - [ ] status diagnostics
 - [ ] layout policy utilities map to Rust shell layout helpers rather than CSS/media queries.
+- Each toolbar button, quick action, or panel toggle must declare which `AppCommand`/`ReaderCommand` it plans (e.g., `ToggleSettingsPanel`, `Reader(TtsSeekNext)`), enabling the AppRuntime command planner to emit telemetry and effect ownership.
+- Shortcut bindings should derive from `ShortcutRegistry` so any new binding automatically flows through the same command pipeline described above, keeping telemetry, cancellation, and logging consistent across mouse/keyboard triggers.
 
 ## Phase 1: Shell Contract And Frame Layout
 - [x] Capture the current starter-vs-reader split, modal surfaces, and panel stack before any UI coding begins.

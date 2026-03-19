@@ -118,14 +118,15 @@
 - [ ] highlight geometry, cleanup, and jump semantics are documented, instrumented, and aligned with the canonical sentence anchors so the native overlay manager can be implemented without re-opening behavior debates.
 
 ## Phase 5: Zoom, Scroll, And Interaction Model
-- [ ] Define egui-native zoom/pan/scroll behavior for PDFs.
-- [ ] Preserve current anti-jitter rules:
-- [ ] no repeated recenters on same location
-- [ ] scroll only on location changes or explicit jump
-- [ ] highlight survives rerender/zoom cycles without changing target unexpectedly
-- [ ] Define selection policy and optional copy support if retained.
-- Phase exit:
-- [ ] viewport and interaction semantics are decision-complete.
+- [ ] Define egui-native zoom/pan/scroll behavior tied to the virtualization scheduler and shell redraw/coalescing/tracing contracts:
+- [ ] Zoom behavior must integrate with `PageRenderService` zoom policies; zoom commands emit spans `pdf.zoom.request` and trigger scheduler updates without racing repeated repaints (throttle per shell coalescing settings).
+- [ ] Pan/scroll is handled via native `egui::ScrollArea` but only updates the virtualization scheduler when thresholds are exceeded to honor redraw budgets. Scheduler emits `pdf.viewport.update` spans describing visible range changes that include reason (`scroll`, `jump`, `auto-scroll`).
+- [ ] Preserve anti-jitter rules by comparing requested view positions against the last committed viewport; identical targets are ignored unless forced by user commands, and any ignored repeats are logged for diagnostics.
+- [ ] Scroll requests spawned by reader jumps or highlight movement only proceed when the canonical sentence index moves outside the viewport threshold defined in the virtualization scheduler; this logic emits tracing spans `pdf.highlight.scroll` with sentence metadata to align with the instrumentation plan.
+- [ ] Zoom/pan interactions must avoid resetting highlights; document how overlays re-apply after render passes and mention that overlay updates emit spans tracked by the shell instrumentation.
+- [ ] Selection policy and optional copy support should be optional nodes on the scroll stack; describe them in terms of commands (e.g., `SelectTextRange`, `CopySelection`) and link to tracing commands for telemetry.
+- [ ] Phase exit:
+- [ ] viewport behaviors, anti-jitter guards, and interaction commands are concrete, tied to the scheduler, and documented for tracing before building the egui viewer.
 
 ## Phase 6: OCR And Quality Modes
 - [ ] Preserve current PDF classification/runtime policy model.

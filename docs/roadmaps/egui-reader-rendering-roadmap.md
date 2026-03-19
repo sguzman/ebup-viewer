@@ -96,17 +96,19 @@
 - [ ] the reader rendering plan articulates how it obeys the shell’s performance expectations before interactive widgets are implemented.
 
 ## Phase 3: Pretty Rendering For Markdown / HTML / EPUB
-- [ ] Build rendering widgets for the content-block model.
+- [ ] Build rendering widgets for the content-block model that emit the smallest necessary redraw scopes described in Phase 2.5.
 - [ ] Support:
-- [ ] paragraphs/headings
-- [ ] inline emphasis
-- [ ] links
-- [ ] images
-- [ ] block spacing and margin controls
-- [ ] footnote/caption-like secondary content where present
-- [ ] Define explicit degraded behavior for HTML features that are not preserved exactly.
-- Phase exit:
-- [ ] pretty reader behavior is specified without relying on browser DOM/CSS execution.
+- [ ] paragraphs/headings with lazy layout so long documents do not force full recomposition.
+- [ ] inline emphasis with inline spans that only repaint their affected runs.
+- [ ] links and anchors that map to the canonical anchor map without immobilizing the main thread.
+- [ ] images/assets with placeholder sizing information and lazy load hooks tied to scroll visibility.
+- [ ] block spacing and margin controls derived from the layout helper policy so panel resizes have deterministic width adjustments.
+- [ ] footnote/caption-like secondary content rendered as detachable overlays or collapsible summaries to avoid repaint storms.
+- [ ] Define explicit degraded behavior for HTML/Markdown features that exceed the Rust content-block model (e.g., complex grids), documenting fallback spacing and diagnostics for QA.
+- [ ] Connect each content block to the shell tracing plan (Phase 6) so layout recalculation is traced, and highlight updates emit spans tied to the command/effect pipeline.
+- [ ] Document how the content-block conversion pipeline runs off the UI thread (Phase 4 runtime async plan) before handing data to egui so the render passes remain responsive.
+- [ ] Phase exit:
+- [ ] pretty reader behavior is specified without relying on browser DOM/CSS execution, and the content-block widgets understand the performance/coalescing expectations from the shell roadmap.
 
 ## Phase 4: Anchor Mapping And Highlight Sync
 - [ ] Port HTML/markdown sync semantics into Rust-native anchor lookup and scroll targeting.

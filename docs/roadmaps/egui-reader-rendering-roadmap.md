@@ -95,6 +95,7 @@
 - [ ] In-progress runtime events (TTS heartbeat, ingestion progress) are throttled before reaching the reader render widgets to honor the shell’s coalescing matrix.
 - [ ] Document hooks for tracing/metrics instrumentation so the reader can emit frame-level spans that feed into the shell’s tracing plan (Chapter 6) for latency and redraw accounting.
 - [ ] Define the interplay between the reader’s scroll/jump logic and the shell’s performance throttles so auto-scrolls never trigger runaway repaints.
+- [x] Surface an anchor diagnostics panel that reports fallback reason counts, JumpToSentence throttle telemetry, and shell-budget tracing markers for the reader viewport.
 - [ ] Phase exit:
 - [ ] the reader rendering plan articulates how it obeys the shell’s performance expectations before interactive widgets are implemented.
 
@@ -125,7 +126,7 @@
 - [ ] no-op with explicit diagnostics for out-of-sync states (span `highlight.anchor=missing`)
 - [ ] Define auto-scroll rules that honor the shell’s redraw budget and coalescing matrix:
 - [ ] only trigger scroll when highlight moves outside the current viewport threshold.
-- [ ] throttle repeated scroll commands from rapid highlight change events per Phase 2.5’s coalescing plan.
+- [x] throttle repeated scroll commands from rapid highlight change events per Phase 2.5’s coalescing plan.
 - [ ] center or edge align navigation based on user preference (e.g., centered highlight vs. top-aligned on jump) with instrumentation hooks for later perf tuning.
 - [ ] Document how copy/paste or search-driven anchor jumps integrate with shell navigation commands so the command/effect pipeline can reconcile UI flows with runtime state updates.
 - [ ] Phase exit:
@@ -138,7 +139,8 @@
 - [ ] Auto-scroll engages only when the highlight leaves the visible threshold, and it is throttled per the shell coalescing matrix to avoid repaint storms.
 - [ ] Center-tracking and top-alignment modes are defined as switchable behaviors documented in the settings instrumentation so telemetry can capture which preference is active when performance metrics spike.
 - [ ] Preserve “do not jitter on the same sentence” and “only scroll on meaningful ISO changes” rules by comparing canonical highlight indices before requesting new scroll frames.
-- [ ] Document how scroll requests emit tracing spans that feed into the shell’s performance plan (Phase 6), including fields for the initiating command, target sentence, and whether the scroll was auto or manual.
+- [x] Document how scroll requests emit tracing spans that feed into the shell’s performance plan (Phase 6), including fields for the initiating command, target sentence, and whether the scroll was auto or manual.
+  - JumpToSentence auto-scroll spans now carry `budget_plan=shell.performance_budget`, `target_sentence`, `command=reader.highlight`, `auto_scroll=true`, and `anchor_path` metadata so the shell diagnostics plan can reconcile highlight jumps with redraw budgets.
 - [ ] Define link behavior:
 - [ ] internal anchor navigation reuses the canonical anchor map and descriptor metadata, yielding deterministic scroll targets and tracing.
 - [ ] external links raise shell commands (via the runtime command model) that launch the native system browser and emit telemetry/logs for QA.

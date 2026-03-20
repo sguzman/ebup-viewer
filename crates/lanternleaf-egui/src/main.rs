@@ -1,5 +1,7 @@
 mod helpers;
 
+use std::time::{Duration, Instant};
+
 use eframe::{
     NativeOptions,
     egui::{
@@ -22,7 +24,7 @@ use lanternleaf_core::{
     config,
     session::{SessionCommand, TtsPlaybackState},
 };
-use tracing::{info, trace};
+use tracing::{Level, info, trace};
 
 fn main() {
     let config_path = app_config_path();
@@ -58,6 +60,7 @@ struct LanternLeafApp {
     pending_search_focus: bool,
     last_plan: Option<DispatchPlan>,
     auto_scroll_state: AutoScrollState,
+    anchor_diagnostics: AnchorDiagnostics,
 }
 
 impl LanternLeafApp {
@@ -75,6 +78,7 @@ impl LanternLeafApp {
             pending_search_focus: false,
             last_plan: None,
             auto_scroll_state: AutoScrollState::default(),
+            anchor_diagnostics: AnchorDiagnostics::default(),
         }
     }
 
@@ -153,7 +157,7 @@ impl LanternLeafApp {
         });
     }
 
-    fn render_panels(&mut self, ctx: &Context, state: &AppState) {
+    fn render_panels(&mut self, ctx: &Context, state: &AppState, reader_active: bool) {
         SidePanel::left("panel_toggle").show(ctx, |ui| {
             ui.heading("Panels");
             if ui
@@ -179,6 +183,7 @@ impl LanternLeafApp {
                 ui.label(format!("Stats: {}", panels.show_stats));
                 ui.label(format!("TTS: {}", panels.show_tts));
             }
+            self.render_anchor_diagnostics(ui, reader_active);
         });
         SidePanel::right("shortcuts").show(ctx, |ui| {
             ui.heading("Shortcut registry");
@@ -186,6 +191,62 @@ impl LanternLeafApp {
                 ui.label(format!("{} → {:?}", binding.combo, binding.action));
             }
         });
+    }
+
+    fn refresh_anchor_diagnostics(&mut self, snapshot: Option<&ReaderSnapshot>) {
+        if let Some(snapshot) = snapshot {
+            self.anchor_diagnostics.refresh(snapshot);
+        } else {
+            self.anchor_diagnostics.clear();
+        }
+    }
+
+    fn render_anchor_diagnostics(&self, ui: &mut Ui, reader_active: bool) {
+        CollapsingHeader::new("Anchor diagnostics")
+            .id_source("anchor-diagnostics")
+            .default_open(false)
+            .show(ui, |ui| {
+                if !reader_active {
+                    ui.label("Activate a reader session to collect anchor diagnostics.");
+                    return;
+                }
+                if self.anchor_diagnostics.is_empty() {
+                    ui.label("Gathering anchor fallback data...");
+                    return;
+                }
+                let total = self.anchor_diagnostics.total();
+                ui.label(format!("Sentences scanned: {}", total));
+                for (fallback, count) in self.anchor_diagnostics.fallback_counts() {
+                    let pct = if total > 0 {
+                        (count as f32 / total as f32) * 100.0
+                    } else {
+                        0.0
+                    };
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{}:", fallback.label()));
+                        ui.label(format!("{} ({:.1}%)", count, pct));
+                    });
+                }
+                if let Some(age) = self.anchor_diagnostics.last_refresh_age() {
+                    ui.label(format!(
+                        "Diagnostics refreshed {:.2}s ago.",
+                        age.as_secs_f32()
+                    ));
+                }
+                if let Some(elapsed) = self.auto_scroll_state.last_jump_elapsed() {
+                    ui.label(format!(
+                        "Last JumpToSentence {:.2}s ago (throttle window {}ms).",
+                        elapsed.as_secs_f32(),
+                        AutoScrollState::JUMP_THROTTLE.as_millis()
+                    ));
+                } else {
+                    ui.label("JumpToSentence has not run yet.");
+                }
+                ui.label(format!(
+                    "Throttled JumpToSentence attempts: {}",
+                    self.auto_scroll_state.throttle_blocked()
+                ));
+            });
     }
 
     fn render_center(&mut self, ctx: &Context, state: &AppState) {
@@ -333,6 +394,7 @@ impl LanternLeafApp {
             .filter(|value| value.is_some())
             .count();
         trace!(anchor_hits = anchor_hits, "rendering sentence list");
+        let anchor_info = self.anchor_diagnostics.entries();
         let auto_scroll_enabled = self.should_auto_scroll(snapshot);
         if !auto_scroll_enabled {
             self.auto_scroll_state.reset();
@@ -375,17 +437,49 @@ impl LanternLeafApp {
                     }
                     let response = ui.add(button);
                     if is_highlighted && auto_scroll_enabled {
-                        let (resolved_anchor, fallback) =
-                            Self::resolve_sentence_anchor(snapshot, idx);
-                        if self.auto_scroll_state.should_scroll(idx, fallback) {
-                            trace!(
-                                jump_to_sentence = idx,
-                                highlight_anchor = fallback.label(),
-                                canonical_anchor = resolved_anchor,
-                                "JumpToSentence: auto-scrolling highlighted sentence"
-                            );
-                            response.scroll_to_me(Some(auto_scroll_align));
-                            self.auto_scroll_state.record(idx, fallback);
+                        let anchor_meta = anchor_info
+                            .get(idx)
+                            .copied()
+                            .unwrap_or_else(AnchorInfo::missing);
+                        match self
+                            .auto_scroll_state
+                            .decide_scroll(idx, anchor_meta.fallback)
+                        {
+                            ScrollDecision::Scroll => {
+                                let scroll_alignment_label =
+                                    if snapshot.settings.center_spoken_sentence {
+                                        "center"
+                                    } else {
+                                        "top"
+                                    };
+                                let jump_span = tracing::span!(
+                                    Level::TRACE,
+                                    "JumpToSentence",
+                                    budget_plan = "shell.performance_budget",
+                                    anchor_path = anchor_meta.fallback.label(),
+                                    target_sentence = idx,
+                                    command = "reader.highlight",
+                                    auto_scroll = true,
+                                    scroll_alignment = scroll_alignment_label,
+                                    canonical_anchor = ?anchor_meta.anchor,
+                                );
+                                let _enter = jump_span.enter();
+                                trace!(
+                                    jump_to_sentence = idx,
+                                    highlight_anchor = anchor_meta.fallback.label(),
+                                    canonical_anchor = ?anchor_meta.anchor,
+                                    "JumpToSentence: auto-scrolling highlighted sentence"
+                                );
+                                response.scroll_to_me(Some(auto_scroll_align));
+                                self.auto_scroll_state.record(idx, anchor_meta.fallback);
+                            }
+                            ScrollDecision::Blocked(reason) => {
+                                trace!(
+                                    jump_to_sentence = idx,
+                                    reason = ?reason,
+                                    "JumpToSentence suppressed"
+                                );
+                            }
                         }
                     }
                     if response.clicked() {
@@ -528,10 +622,12 @@ impl LanternLeafApp {
 impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         let snapshot = self.runtime.state_snapshot();
+        let reader_active = snapshot.reader_document.snapshot.is_some();
+        self.refresh_anchor_diagnostics(snapshot.reader_document.snapshot.as_ref());
         ctx.set_visuals(Visuals::dark());
         self.handle_shortcuts(ctx, &snapshot);
         self.render_top_bar(ctx, &snapshot);
-        self.render_panels(ctx, &snapshot);
+        self.render_panels(ctx, &snapshot, reader_active);
         self.render_center(ctx, &snapshot);
         self.render_modals(ctx);
         self.render_status(ctx);
@@ -546,6 +642,13 @@ enum AnchorFallback {
 }
 
 impl AnchorFallback {
+    const VARIANT_COUNT: usize = 3;
+    const VARIANTS: [AnchorFallback; AnchorFallback::VARIANT_COUNT] = [
+        AnchorFallback::Exact,
+        AnchorFallback::Nearest,
+        AnchorFallback::Missing,
+    ];
+
     fn label(self) -> &'static str {
         match self {
             AnchorFallback::Exact => "exact",
@@ -553,23 +656,133 @@ impl AnchorFallback {
             AnchorFallback::Missing => "missing",
         }
     }
+
+    fn index(self) -> usize {
+        match self {
+            AnchorFallback::Exact => 0,
+            AnchorFallback::Nearest => 1,
+            AnchorFallback::Missing => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct AnchorInfo {
+    anchor: Option<usize>,
+    fallback: AnchorFallback,
+}
+
+impl AnchorInfo {
+    fn missing() -> Self {
+        Self {
+            anchor: None,
+            fallback: AnchorFallback::Missing,
+        }
+    }
+}
+
+#[derive(Default)]
+struct AnchorDiagnostics {
+    counts: [usize; AnchorFallback::VARIANT_COUNT],
+    entries: Vec<AnchorInfo>,
+    last_refresh: Option<Instant>,
+}
+
+impl AnchorDiagnostics {
+    fn refresh(&mut self, snapshot: &ReaderSnapshot) {
+        self.entries.clear();
+        self.entries.reserve(snapshot.sentences.len());
+        self.counts = [0; AnchorFallback::VARIANT_COUNT];
+        for idx in 0..snapshot.sentences.len() {
+            let (anchor, fallback) = LanternLeafApp::resolve_sentence_anchor(snapshot, idx);
+            self.entries.push(AnchorInfo { anchor, fallback });
+            self.counts[fallback.index()] += 1;
+        }
+        self.last_refresh = Some(Instant::now());
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.counts = [0; AnchorFallback::VARIANT_COUNT];
+        self.last_refresh = None;
+    }
+
+    fn entries(&self) -> &[AnchorInfo] {
+        &self.entries
+    }
+
+    fn fallback_counts(&self) -> impl Iterator<Item = (AnchorFallback, usize)> + '_ {
+        AnchorFallback::VARIANTS
+            .iter()
+            .enumerate()
+            .map(|(idx, &fallback)| (fallback, self.counts[idx]))
+    }
+
+    fn total(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    fn last_refresh_age(&self) -> Option<Duration> {
+        self.last_refresh.map(|instant| instant.elapsed())
+    }
+}
+
+#[derive(Debug)]
+enum ScrollBlockReason {
+    Duplicate,
+    Throttled(Duration),
+}
+
+enum ScrollDecision {
+    Scroll,
+    Blocked(ScrollBlockReason),
 }
 
 #[derive(Default)]
 struct AutoScrollState {
     last_highlighted: Option<(usize, AnchorFallback)>,
+    last_jump_at: Option<Instant>,
+    throttle_blocked: usize,
 }
 
 impl AutoScrollState {
-    fn should_scroll(&self, idx: usize, fallback: AnchorFallback) -> bool {
-        self.last_highlighted != Some((idx, fallback))
+    const JUMP_THROTTLE: Duration = Duration::from_millis(150);
+
+    fn decide_scroll(&mut self, idx: usize, fallback: AnchorFallback) -> ScrollDecision {
+        if self.last_highlighted == Some((idx, fallback)) {
+            return ScrollDecision::Blocked(ScrollBlockReason::Duplicate);
+        }
+        if let Some(last) = self.last_jump_at {
+            let elapsed = last.elapsed();
+            if elapsed < Self::JUMP_THROTTLE {
+                self.throttle_blocked = self.throttle_blocked.saturating_add(1);
+                let remaining = Self::JUMP_THROTTLE - elapsed;
+                return ScrollDecision::Blocked(ScrollBlockReason::Throttled(remaining));
+            }
+        }
+        ScrollDecision::Scroll
     }
 
     fn record(&mut self, idx: usize, fallback: AnchorFallback) {
         self.last_highlighted = Some((idx, fallback));
+        self.last_jump_at = Some(Instant::now());
     }
 
     fn reset(&mut self) {
         self.last_highlighted = None;
+        self.last_jump_at = None;
+        self.throttle_blocked = 0;
+    }
+
+    fn throttle_blocked(&self) -> usize {
+        self.throttle_blocked
+    }
+
+    fn last_jump_elapsed(&self) -> Option<Duration> {
+        self.last_jump_at.map(|instant| instant.elapsed())
     }
 }

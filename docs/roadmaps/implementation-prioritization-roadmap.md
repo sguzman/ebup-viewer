@@ -34,6 +34,10 @@
 - For UI-related tranches, add targeted Rust unit/integration tests that exercise the command/effect model or instrumentation spans described in the roadmaps.
 - Maintain a record of which tranche tests were run for release verification.
 
+## Recent Tranche Progress
+- **Reader Rendering Core (Tranche 3)**: `[x]` Documented instrumentation + overlay diagnostics that feed `shell.performance_budget` spans, now tying the preview renderer and JumpToSentence path into the budgeted overlay story and QA-friendly logs.
+- **PDF Subsystem (Tranche 4)**: `[x]` Wired the viewport scheduler’s render plan into the preview canvas, emitted budget-aware render/overlay spans, and exposed render activity + budget rejection diagnostics for QA so the shell plan sees the same events.
+
 ## Traceability Notes
 - Keep referencing the shared tracing schema (`highlight.anchor`, `pdf.*`, `shell.*`) when describing work in every tranche so instrumentation remains consistent.
 - Track fallback hierarchies (exact → fuzzy → block → render-only) and log transitions explicitly as part of the runtime telemetry story.

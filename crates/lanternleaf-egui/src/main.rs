@@ -1136,6 +1136,24 @@ impl LanternLeafApp {
                         );
                     }
                 }
+                ui.separator();
+                ui.label("Render events:");
+                let render_events = self.pdf_render_state.recent_render_events();
+                if render_events.is_empty() {
+                    ui.label("(No render activity yet)");
+                } else {
+                    for event in render_events.iter().rev() {
+                        ui.label(
+                            RichText::new(format!(
+                                "{} ({:.1}s ago)",
+                                event.describe(),
+                                event.age_secs()
+                            ))
+                            .small()
+                            .weak(),
+                        );
+                    }
+                }
                 let budget_rejections = self
                     .scheduler_events
                     .iter()
@@ -1167,7 +1185,7 @@ impl LanternLeafApp {
             ui.label("PDF preview will appear once the document is ready.");
             return;
         }
-        let plan = match &self.pdf_render_state.plan {
+        let plan = match self.pdf_render_state.plan.as_ref().cloned() {
             Some(plan) => plan,
             None => {
                 ui.label("Viewport preview waiting for scheduler updates...");
@@ -1236,10 +1254,28 @@ impl LanternLeafApp {
                 Pos2::new(current_x + page_width, content_rect.bottom()),
             );
             current_x += page_width + gap;
-            canvas_drawn += 1;
+            let is_highlight_page = Some(page) == highlight_page;
             let is_priority = plan.priority_page_indexes.contains(&page);
             let has_canvas = plan.canvas_page_indexes.contains(&page);
             let has_text_layer = plan.text_layer_page_indexes.contains(&page);
+            let canvas_span = tracing::span!(
+                Level::TRACE,
+                "PdfRenderCanvas",
+                budget_plan = "shell.performance_budget",
+                page = (page + 1),
+                highlight_page = is_highlight_page,
+                priority_page = is_priority,
+                text_layer_available = has_text_layer,
+                overlay_budget_pages = overlay_budget,
+            );
+            let _canvas_enter = canvas_span.enter();
+            self.pdf_render_state
+                .record_render_event(PdfRenderEvent::canvas(
+                    page,
+                    is_highlight_page,
+                    overlay_budget,
+                ));
+            canvas_drawn += 1;
             let fill_color = if Some(page) == highlight_page {
                 Color32::from_rgb(38, 105, 170)
             } else if has_canvas {
@@ -1263,6 +1299,26 @@ impl LanternLeafApp {
             let inner = page_rect.shrink(4.0);
             if has_text_layer {
                 text_drawn += 1;
+                let text_span = tracing::span!(
+                    Level::TRACE,
+                    "PdfRenderTextLayer",
+                    budget_plan = "shell.performance_budget",
+                    page = (page + 1),
+                    highlight_page = is_highlight_page,
+                    overlay_budget_pages = overlay_budget,
+                );
+                let _text_enter = text_span.enter();
+                trace!(
+                    page = (page + 1),
+                    highlight_page = is_highlight_page,
+                    "Drawing text layer"
+                );
+                self.pdf_render_state
+                    .record_render_event(PdfRenderEvent::text_layer(
+                        page,
+                        is_highlight_page,
+                        overlay_budget,
+                    ));
                 let text_layer_rect = inner.shrink(2.0);
                 painter.rect_filled(
                     text_layer_rect,
@@ -1282,12 +1338,14 @@ impl LanternLeafApp {
                 font.clone(),
                 Color32::WHITE,
             );
+            let mut page_overlay_drawn = 0;
             if Some(page) == highlight_page && overlays_allowed {
                 for (idx, rect) in self.pdf_render_state.overlay_rects.iter().enumerate() {
                     if idx >= overlay_budget {
                         break;
                     }
                     overlays_drawn += 1;
+                    page_overlay_drawn += 1;
                     let overlay = Rect::from_min_max(
                         Pos2::new(
                             inner.left() + rect[0] * inner.width(),
@@ -1304,6 +1362,31 @@ impl LanternLeafApp {
                         Color32::from_rgba_unmultiplied(255, 190, 80, 160),
                     );
                 }
+            }
+            if page_overlay_drawn > 0 {
+                let overlay_span = tracing::span!(
+                    Level::TRACE,
+                    "PdfRenderOverlay",
+                    budget_plan = "shell.performance_budget",
+                    page = (page + 1),
+                    highlight_page = true,
+                    overlays_drawn = page_overlay_drawn,
+                    overlay_budget_pages = overlay_budget,
+                    overlay_alignment_reason = ?self.pdf_render_state.overlay_alignment_reason.as_deref(),
+                );
+                let _overlay_enter = overlay_span.enter();
+                trace!(
+                    page = (page + 1),
+                    overlays = page_overlay_drawn,
+                    "Rendered highlight overlays"
+                );
+                self.pdf_render_state
+                    .record_render_event(PdfRenderEvent::overlay(
+                        page,
+                        page_overlay_drawn,
+                        overlay_budget,
+                        self.pdf_render_state.overlay_alignment_reason.clone(),
+                    ));
             }
         }
 
@@ -1820,6 +1903,7 @@ struct PdfRenderState {
     overlay_alignment_reason: Option<String>,
     overlay_alignment_source: Option<String>,
     overlay_alignment_rects: HashMap<usize, OverlayGeometryEntry>,
+    render_events: Vec<PdfRenderEvent>,
 }
 
 impl PdfRenderState {
@@ -1839,6 +1923,7 @@ impl PdfRenderState {
         self.overlay_alignment_reason = None;
         self.overlay_alignment_source = None;
         self.overlay_alignment_rects.clear();
+        self.render_events.clear();
     }
 
     fn updated_age(&self) -> Option<Duration> {
@@ -1856,6 +1941,18 @@ impl PdfRenderState {
         self.rendered_canvas_pages = canvas_pages;
         self.rendered_text_layers = text_layers;
         self.rendered_overlays = overlays;
+    }
+
+    fn record_render_event(&mut self, event: PdfRenderEvent) {
+        const MAX_RENDER_EVENTS: usize = 16;
+        self.render_events.push(event);
+        if self.render_events.len() > MAX_RENDER_EVENTS {
+            self.render_events.remove(0);
+        }
+    }
+
+    fn recent_render_events(&self) -> &[PdfRenderEvent] {
+        &self.render_events
     }
 
     fn set_highlighted_page(
@@ -1972,5 +2069,102 @@ impl OverlayGeometryEntry {
             Some(reason_text.to_string())
         };
         Some(Self::new(rects, reason))
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum PdfRenderEventKind {
+    Canvas,
+    TextLayer,
+    Overlay,
+}
+
+#[derive(Clone, Debug)]
+struct PdfRenderEvent {
+    timestamp: Instant,
+    kind: PdfRenderEventKind,
+    page_index: usize,
+    highlight_page: bool,
+    overlay_budget_pages: usize,
+    overlays_drawn: usize,
+    overlay_reason: Option<String>,
+}
+
+impl PdfRenderEvent {
+    fn canvas(page_index: usize, highlight_page: bool, overlay_budget_pages: usize) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            kind: PdfRenderEventKind::Canvas,
+            page_index,
+            highlight_page,
+            overlay_budget_pages,
+            overlays_drawn: 0,
+            overlay_reason: None,
+        }
+    }
+
+    fn text_layer(page_index: usize, highlight_page: bool, overlay_budget_pages: usize) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            kind: PdfRenderEventKind::TextLayer,
+            page_index,
+            highlight_page,
+            overlay_budget_pages,
+            overlays_drawn: 0,
+            overlay_reason: None,
+        }
+    }
+
+    fn overlay(
+        page_index: usize,
+        overlays_drawn: usize,
+        overlay_budget_pages: usize,
+        overlay_reason: Option<String>,
+    ) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            kind: PdfRenderEventKind::Overlay,
+            page_index,
+            highlight_page: true,
+            overlay_budget_pages,
+            overlays_drawn,
+            overlay_reason,
+        }
+    }
+
+    fn describe(&self) -> String {
+        match self.kind {
+            PdfRenderEventKind::Canvas => format!(
+                "Canvas render: page {}{} (budget {} pages)",
+                self.page_index + 1,
+                if self.highlight_page {
+                    " (highlight)"
+                } else {
+                    ""
+                },
+                self.overlay_budget_pages
+            ),
+            PdfRenderEventKind::TextLayer => format!(
+                "Text layer render: page {}{} (budget {} pages)",
+                self.page_index + 1,
+                if self.highlight_page {
+                    " (highlight)"
+                } else {
+                    ""
+                },
+                self.overlay_budget_pages
+            ),
+            PdfRenderEventKind::Overlay => format!(
+                "Overlay render: page {} (rects {}, reason {}, budget {} pages)",
+                self.page_index + 1,
+                self.overlays_drawn,
+                self.overlay_reason.as_deref().unwrap_or("unknown"),
+                self.overlay_budget_pages
+            ),
+        }
+    }
+
+    fn age_secs(&self) -> f32 {
+        self.timestamp.elapsed().as_secs_f32()
     }
 }

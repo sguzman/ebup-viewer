@@ -1136,6 +1136,29 @@ impl LanternLeafApp {
                         );
                     }
                 }
+                let budget_rejections = self
+                    .scheduler_events
+                    .iter()
+                    .filter(|event| matches!(event.kind, SchedulerEventKind::RetryOverlay { .. }))
+                    .count();
+                if budget_rejections > 0 {
+                    ui.separator();
+                    ui.label("Overlay budget rejections:");
+                    for event in self.scheduler_events.iter().rev() {
+                        if let SchedulerEventKind::RetryOverlay { .. } = &event.kind {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} ({:.1}s ago)",
+                                    event.kind.describe(),
+                                    event.age_secs()
+                                ))
+                                .small()
+                                .strong()
+                                .color(Color32::from_rgb(220, 180, 120)),
+                            );
+                        }
+                    }
+                }
             });
     }
 
@@ -1295,8 +1318,13 @@ impl LanternLeafApp {
         let preview_span = tracing::span!(
             Level::TRACE,
             "PdfPreviewRender",
+            budget_plan = "shell.performance_budget",
             highlight_page = ?highlight_page,
             highlight_page_text_layer = overlay_snapshot.highlight_page_has_text_layer,
+            overlay_budget_pages = overlay_snapshot.budget_pages,
+            overlay_budget_allowed = overlay_snapshot.allowed,
+            overlay_rect_count = overlay_snapshot.overlay_rects_available,
+            overlay_alignment_reason = ?overlay_snapshot.overlay_reason.as_deref(),
         );
         let _enter = preview_span.enter();
         trace!(

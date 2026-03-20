@@ -442,6 +442,22 @@ impl LanternLeafApp {
                 snapshot.sentence_anchor_map.len()
             ));
         });
+        if let Some(decision) = self.overlay_diagnostics.preview_decision() {
+            let reason = if decision.allowed {
+                "overlays rendering"
+            } else if !decision.highlight_page_has_text_layer {
+                "no text layer to honor overlay budget"
+            } else {
+                "budget exhausted"
+            };
+            let badge = if decision.allowed { "✅" } else { "⚠️" };
+            ui.horizontal(|ui| {
+                ui.label(format!(
+                    "{} Overlay budget: {} pages, {} overlays drawn ({})",
+                    badge, decision.budget_pages, decision.overlays_drawn, reason
+                ));
+            });
+        }
     }
 
     fn render_sentence_list(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
@@ -544,6 +560,9 @@ impl LanternLeafApp {
                                         "top"
                                     };
                                 let overlay_snapshot = self.capture_overlay_decision();
+                                let overlay_span =
+                                    self.overlay_budget_span("auto-scroll", &overlay_snapshot);
+                                let _overlay_enter = overlay_span.enter();
                                 let jump_span = tracing::span!(
                                     Level::TRACE,
                                     "JumpToSentence",
@@ -558,9 +577,6 @@ impl LanternLeafApp {
                                     overlay_highlightable_sentences = overlay_highlightable_sentences,
                                     overlay_budget_pages = overlay_budget_pages,
                                     overlay_eviction_count = overlay_eviction_count,
-                                    overlay_budget_allowed = overlay_snapshot.allowed,
-                                    overlay_budget_drawn = overlay_snapshot.overlays_drawn,
-                                    highlight_page_text_layer = overlay_snapshot.highlight_page_has_text_layer,
                                 );
                                 let _enter = jump_span.enter();
                                 trace!(
@@ -572,8 +588,7 @@ impl LanternLeafApp {
                                 self.auto_scroll_state.note_auto_scroll();
                                 response.scroll_to_me(Some(auto_scroll_align));
                                 self.auto_scroll_state.record(idx, anchor_meta.fallback);
-                                self.overlay_diagnostics
-                                    .record_jump("auto-scroll", overlay_snapshot);
+                                self.overlay_diagnostics.record_jump("auto-scroll", overlay_snapshot);
                             }
                             ScrollDecision::Blocked(reason) => {
                                 trace!(
@@ -587,6 +602,9 @@ impl LanternLeafApp {
                     if response.clicked() {
                         trace!(sentence_idx = idx, anchor = ?anchor_idx, "reader sentence clicked");
                         let overlay_snapshot = self.capture_overlay_decision();
+                        let overlay_span =
+                            self.overlay_budget_span("sentence-click", &overlay_snapshot);
+                        let _overlay_enter = overlay_span.enter();
                         let manual_span = tracing::span!(
                             Level::TRACE,
                             "JumpToSentence",
@@ -601,9 +619,6 @@ impl LanternLeafApp {
                             overlay_highlightable_sentences = overlay_highlightable_sentences,
                             overlay_budget_pages = overlay_budget_pages,
                             overlay_eviction_count = overlay_eviction_count,
-                            overlay_budget_allowed = overlay_snapshot.allowed,
-                            overlay_budget_drawn = overlay_snapshot.overlays_drawn,
-                            highlight_page_text_layer = overlay_snapshot.highlight_page_has_text_layer,
                         );
                         let _enter = manual_span.enter();
                         trace!(
@@ -681,6 +696,8 @@ impl LanternLeafApp {
                 .and_then(|idx| anchor_info.get(idx).copied())
                 .unwrap_or_else(AnchorInfo::missing);
             let overlay_snapshot = self.capture_overlay_decision();
+            let overlay_span = self.overlay_budget_span("manual-scroll", &overlay_snapshot);
+            let _overlay_enter = overlay_span.enter();
             let manual_span = tracing::span!(
                 Level::TRACE,
                 "JumpToSentence",
@@ -696,9 +713,6 @@ impl LanternLeafApp {
                 overlay_highlightable_sentences = overlay_highlightable_sentences,
                 overlay_budget_pages = overlay_budget_pages,
                 overlay_eviction_count = overlay_eviction_count,
-                overlay_budget_allowed = overlay_snapshot.allowed,
-                overlay_budget_drawn = overlay_snapshot.overlays_drawn,
-                highlight_page_text_layer = overlay_snapshot.highlight_page_has_text_layer,
             );
             let _enter = manual_span.enter();
             trace!(
@@ -737,7 +751,32 @@ impl LanternLeafApp {
             budget_pages,
             overlays_drawn: self.pdf_render_state.rendered_overlays,
             highlight_page_has_text_layer: highlight_has_text_layer,
+            highlight_page: self.pdf_render_state.highlighted_page,
         }
+    }
+
+    fn overlay_budget_span(
+        &self,
+        event: &'static str,
+        decision: &OverlayDecisionSnapshot,
+    ) -> tracing::span::Span {
+        tracing::span!(
+            Level::TRACE,
+            "OverlayBudgetDecision",
+            budget_plan = "shell.performance_budget",
+            overlay_budget_pages = decision.budget_pages,
+            overlay_budget_allowed = decision.allowed,
+            overlay_budget_drawn = decision.overlays_drawn,
+            highlight_page = ?decision.highlight_page,
+            highlight_page_text_layer = decision.highlight_page_has_text_layer,
+            event = event,
+        )
+    }
+
+    fn replay_overlay_span(&self, event: &'static str, decision: OverlayDecisionSnapshot) {
+        let span = self.overlay_budget_span(event, &decision);
+        let _enter = span.enter();
+        trace!(decision = ?decision, "Replayed overlay budget decision for QA");
     }
 
     fn resolve_sentence_anchor(
@@ -927,6 +966,9 @@ impl LanternLeafApp {
                             decision.overlays_drawn,
                             decision.budget_pages.max(1)
                         ));
+                        if ui.button("Replay preview overlay span").clicked() {
+                            self.replay_overlay_span("preview", decision);
+                        }
                     }
                     if let Some((event, decision)) = self.overlay_diagnostics.last_jump_decision() {
                         ui.label(format!(
@@ -944,6 +986,9 @@ impl LanternLeafApp {
                                 "no"
                             }
                         ));
+                        if ui.button("Replay last overlay span").clicked() {
+                            self.replay_overlay_span(event, decision);
+                        }
                     }
                 } else {
                     ui.label("PDF viewport scheduler idle.");
@@ -1139,13 +1184,11 @@ impl LanternLeafApp {
             .record_render_metrics(canvas_drawn, text_drawn, overlays_drawn);
         let overlay_snapshot = self.capture_overlay_decision();
         self.overlay_diagnostics.record_preview(overlay_snapshot);
+        let overlay_span = self.overlay_budget_span("preview", &overlay_snapshot);
+        let _overlay_enter = overlay_span.enter();
         let preview_span = tracing::span!(
             Level::TRACE,
             "PdfPreviewRender",
-            budget_plan = "shell.performance_budget",
-            overlay_budget_pages = overlay_snapshot.budget_pages,
-            overlay_budget_allowed = overlay_snapshot.allowed,
-            overlay_budget_drawn = overlay_snapshot.overlays_drawn,
             highlight_page = ?highlight_page,
             highlight_page_text_layer = overlay_snapshot.highlight_page_has_text_layer,
         );
@@ -1463,6 +1506,7 @@ struct OverlayDecisionSnapshot {
     budget_pages: usize,
     overlays_drawn: usize,
     highlight_page_has_text_layer: bool,
+    highlight_page: Option<usize>,
 }
 
 #[derive(Default)]

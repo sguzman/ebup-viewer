@@ -541,14 +541,24 @@ impl LanternLeafApp {
                             Some(idx),
                         )
                         .unwrap_or(snapshot.current_page);
-                        let overlay_rects = Self::global_sentence_index(snapshot, idx)
-                            .map(|global_idx| {
+                        let overlay_geometry = Self::global_sentence_index(snapshot, idx)
+                            .and_then(|global_idx| {
                                 self.pdf_render_state
-                                    .overlay_rects_for_sentence(&snapshot.source_path, global_idx)
-                            })
+                                    .overlay_geometry_for_sentence(&snapshot.source_path, global_idx)
+                            });
+                        let overlay_rects = overlay_geometry
+                            .as_ref()
+                            .map(|entry| entry.rects.clone())
                             .unwrap_or_default();
-                        self.pdf_render_state
-                            .set_highlighted_page(highlight_page, Some(idx), overlay_rects);
+                        let overlay_reason = overlay_geometry
+                            .as_ref()
+                            .and_then(|entry| entry.reason.clone());
+                        self.pdf_render_state.set_highlighted_page(
+                            highlight_page,
+                            Some(idx),
+                            overlay_rects,
+                            overlay_reason.clone(),
+                        );
                     }
                     let mut label_text = format!("{}: {}", idx + 1, sentence);
                     if is_search_match {
@@ -765,12 +775,16 @@ impl LanternLeafApp {
     fn capture_overlay_decision(&self) -> OverlayDecisionSnapshot {
         let highlight_has_text_layer = self.highlight_page_has_text_layer();
         let budget_pages = self.pdf_render_state.overlay_budget_pages();
+        let overlay_rects_available = self.pdf_render_state.overlay_rects.len();
+        let overlay_reason = self.pdf_render_state.overlay_alignment_reason.clone();
         OverlayDecisionSnapshot {
             allowed: highlight_has_text_layer && budget_pages > 0,
             budget_pages,
             overlays_drawn: self.pdf_render_state.rendered_overlays,
             highlight_page_has_text_layer: highlight_has_text_layer,
             highlight_page: self.pdf_render_state.highlighted_page,
+            overlay_rects_available,
+            overlay_reason,
         }
     }
 
@@ -789,6 +803,7 @@ impl LanternLeafApp {
             reason,
             highlight_page: decision.highlight_page,
             budget_pages: decision.budget_pages,
+            overlay_reason: decision.overlay_reason.clone(),
         });
     }
 
@@ -825,6 +840,8 @@ impl LanternLeafApp {
             overlay_budget_drawn = decision.overlays_drawn,
             highlight_page = ?decision.highlight_page,
             highlight_page_text_layer = decision.highlight_page_has_text_layer,
+            overlay_rect_count = decision.overlay_rects_available,
+            overlay_alignment_reason = ?decision.overlay_reason.as_deref(),
             event = event,
         )
     }
@@ -1022,6 +1039,13 @@ impl LanternLeafApp {
                             decision.overlays_drawn,
                             decision.budget_pages.max(1)
                         ));
+                        if let Some(reason) = &decision.overlay_reason {
+                            ui.label(format!("Overlay geometry reason: {}", reason));
+                        }
+                        ui.label(format!(
+                            "Cached overlay rects: {}",
+                            decision.overlay_rects_available
+                        ));
                         if ui.button("Replay preview overlay span").clicked() {
                             self.replay_overlay_span("preview", decision);
                         }
@@ -1041,6 +1065,13 @@ impl LanternLeafApp {
                             } else {
                                 "no"
                             }
+                        ));
+                        if let Some(reason) = &decision.overlay_reason {
+                            ui.label(format!("Overlay geometry reason: {}", reason));
+                        }
+                        ui.label(format!(
+                            "Cached overlay rects: {}",
+                            decision.overlay_rects_available
                         ));
                         if ui.button("Replay last overlay span").clicked() {
                             self.replay_overlay_span(event, decision);
@@ -1257,7 +1288,8 @@ impl LanternLeafApp {
             .record_render_metrics(canvas_drawn, text_drawn, overlays_drawn);
         let overlay_snapshot = self.capture_overlay_decision();
         self.maybe_record_overlay_retry(&overlay_snapshot);
-        self.overlay_diagnostics.record_preview(overlay_snapshot);
+        self.overlay_diagnostics
+            .record_preview(overlay_snapshot.clone());
         let overlay_span = self.overlay_budget_span("preview", &overlay_snapshot);
         let _overlay_enter = overlay_span.enter();
         let preview_span = tracing::span!(
@@ -1272,6 +1304,8 @@ impl LanternLeafApp {
             canvas = canvas_drawn,
             text_layers = text_drawn,
             overlays = overlays_drawn,
+            overlay_rects = self.pdf_render_state.overlay_rects.len(),
+            overlay_reason = ?self.pdf_render_state.overlay_alignment_reason.as_deref(),
             "Rendered simplified PDF preview"
         );
     }
@@ -1582,13 +1616,15 @@ impl AnchorDiagnostics {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Debug)]
 struct OverlayDecisionSnapshot {
     allowed: bool,
     budget_pages: usize,
     overlays_drawn: usize,
     highlight_page_has_text_layer: bool,
     highlight_page: Option<usize>,
+    overlay_rects_available: usize,
+    overlay_reason: Option<String>,
 }
 
 #[derive(Default)]
@@ -1607,11 +1643,11 @@ impl OverlayDiagnostics {
     }
 
     fn preview_decision(&self) -> Option<OverlayDecisionSnapshot> {
-        self.preview_decision
+        self.preview_decision.clone()
     }
 
     fn last_jump_decision(&self) -> Option<(&'static str, OverlayDecisionSnapshot)> {
-        self.last_jump_decision
+        self.last_jump_decision.clone()
     }
 }
 
@@ -1625,6 +1661,7 @@ enum SchedulerEventKind {
         reason: &'static str,
         highlight_page: Option<usize>,
         budget_pages: usize,
+        overlay_reason: Option<String>,
     },
 }
 
@@ -1655,13 +1692,15 @@ impl SchedulerEventKind {
                 reason,
                 highlight_page,
                 budget_pages,
+                overlay_reason,
             } => format!(
-                "Overlay retry ({}): page {}, budget {}",
+                "Overlay retry ({}): page {}, budget {}, geometry {}",
                 reason,
                 highlight_page
                     .map(|idx| idx + 1)
                     .map_or("unknown".to_string(), |page| page.to_string()),
-                budget_pages
+                budget_pages,
+                overlay_reason.as_deref().unwrap_or("unknown")
             ),
         }
     }
@@ -1750,8 +1789,9 @@ struct PdfRenderState {
     highlighted_page: Option<usize>,
     highlighted_sentence_idx: Option<usize>,
     overlay_rects: Vec<[f32; 4]>,
+    overlay_alignment_reason: Option<String>,
     overlay_alignment_source: Option<String>,
-    overlay_alignment_rects: HashMap<usize, Vec<[f32; 4]>>,
+    overlay_alignment_rects: HashMap<usize, OverlayGeometryEntry>,
 }
 
 impl PdfRenderState {
@@ -1768,6 +1808,7 @@ impl PdfRenderState {
         self.highlighted_page = None;
         self.highlighted_sentence_idx = None;
         self.overlay_rects.clear();
+        self.overlay_alignment_reason = None;
         self.overlay_alignment_source = None;
         self.overlay_alignment_rects.clear();
     }
@@ -1794,6 +1835,7 @@ impl PdfRenderState {
         page_index: usize,
         sentence_idx: Option<usize>,
         overlay_rects: Vec<[f32; 4]>,
+        overlay_reason: Option<String>,
     ) {
         if self.highlighted_page == Some(page_index)
             && self.highlighted_sentence_idx == sentence_idx
@@ -1806,6 +1848,11 @@ impl PdfRenderState {
             Self::generate_overlay_rects(sentence_idx)
         } else {
             overlay_rects
+        };
+        self.overlay_alignment_reason = if self.overlay_rects.is_empty() {
+            None
+        } else {
+            overlay_reason
         };
     }
 
@@ -1824,16 +1871,13 @@ impl PdfRenderState {
             .collect()
     }
 
-    fn overlay_rects_for_sentence(
+    fn overlay_geometry_for_sentence(
         &mut self,
         source_path: &str,
         sentence_idx: usize,
-    ) -> Vec<[f32; 4]> {
+    ) -> Option<OverlayGeometryEntry> {
         self.ensure_alignment_cache(source_path);
-        self.overlay_alignment_rects
-            .get(&sentence_idx)
-            .cloned()
-            .unwrap_or_default()
+        self.overlay_alignment_rects.get(&sentence_idx).cloned()
     }
 
     fn ensure_alignment_cache(&mut self, source_path: &str) {
@@ -1848,10 +1892,9 @@ impl PdfRenderState {
                 if alignment.page_idx.is_none() {
                     continue;
                 }
-                let rects = Self::alignment_rects(alignment);
-                if !rects.is_empty() {
+                if let Some(entry) = OverlayGeometryEntry::from_alignment(alignment) {
                     self.overlay_alignment_rects
-                        .insert(alignment.sentence_idx, rects);
+                        .insert(alignment.sentence_idx, entry);
                 }
             }
         }
@@ -1875,5 +1918,31 @@ impl PdfRenderState {
                 [left, top, right, bottom]
             })
             .collect()
+    }
+}
+
+#[derive(Clone)]
+struct OverlayGeometryEntry {
+    rects: Vec<[f32; 4]>,
+    reason: Option<String>,
+}
+
+impl OverlayGeometryEntry {
+    fn new(rects: Vec<[f32; 4]>, reason: Option<String>) -> Self {
+        Self { rects, reason }
+    }
+
+    fn from_alignment(alignment: &crate::cache::PdfOcrSentenceAlignment) -> Option<Self> {
+        let rects = PdfRenderState::alignment_rects(alignment);
+        if rects.is_empty() {
+            return None;
+        }
+        let reason_text = alignment.fallback_reason.trim();
+        let reason = if reason_text.is_empty() {
+            None
+        } else {
+            Some(reason_text.to_string())
+        };
+        Some(Self::new(rects, reason))
     }
 }

@@ -1137,6 +1137,30 @@ impl LanternLeafApp {
                     }
                 }
                 ui.separator();
+                ui.label("Render throttles:");
+                let throttle_events = self.pdf_render_state.recent_throttle_events();
+                if throttle_events.is_empty() {
+                    ui.label("(No throttle events yet)");
+                } else {
+                    for event in throttle_events.iter().rev() {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} ({:.1}s ago)",
+                                    event.describe(),
+                                    event.age_secs()
+                                ))
+                                .small()
+                                .strong()
+                                .color(Color32::from_rgb(220, 120, 80)),
+                            );
+                            if ui.button("Replay throttle span").clicked() {
+                                self.replay_throttle_span(event);
+                            }
+                        });
+                    }
+                }
+                ui.separator();
                 ui.label("Render events:");
                 let render_events = self.pdf_render_state.recent_render_events();
                 if render_events.is_empty() {
@@ -1601,7 +1625,8 @@ impl LanternLeafApp {
                     highlighted_page,
                     "PDF scheduler updated"
                 );
-                self.pdf_render_state.plan = Some(plan);
+                self.pdf_render_state.plan = Some(plan.clone());
+                self.pdf_render_state.update_surfaces(&plan);
                 self.pdf_render_state.decision = Some(decision);
                 self.pdf_render_state.visible_page_indexes = visible_page_indexes;
                 self.pdf_render_state.active_tts_page_index = plan_input.active_tts_page_index;
@@ -1904,6 +1929,8 @@ struct PdfRenderState {
     overlay_alignment_source: Option<String>,
     overlay_alignment_rects: HashMap<usize, OverlayGeometryEntry>,
     render_events: Vec<PdfRenderEvent>,
+    viewport_surfaces: Vec<PdfViewportSurface>,
+    throttle_events: Vec<PdfRenderThrottleEvent>,
 }
 
 impl PdfRenderState {
@@ -1924,6 +1951,8 @@ impl PdfRenderState {
         self.overlay_alignment_source = None;
         self.overlay_alignment_rects.clear();
         self.render_events.clear();
+        self.viewport_surfaces.clear();
+        self.throttle_events.clear();
     }
 
     fn updated_age(&self) -> Option<Duration> {
@@ -1953,6 +1982,44 @@ impl PdfRenderState {
 
     fn recent_render_events(&self) -> &[PdfRenderEvent] {
         &self.render_events
+    }
+
+    fn record_throttle_event(&mut self, event: PdfRenderThrottleEvent) {
+        const MAX_THROTTLE_EVENTS: usize = 12;
+        self.throttle_events.push(event);
+        if self.throttle_events.len() > MAX_THROTTLE_EVENTS {
+            self.throttle_events.remove(0);
+        }
+    }
+
+    fn recent_throttle_events(&self) -> &[PdfRenderThrottleEvent] {
+        &self.throttle_events
+    }
+
+    fn update_surfaces(&mut self, plan: &PdfViewportRenderPlan) {
+        let mut surfaces_map: HashMap<usize, PdfViewportSurface> = HashMap::new();
+        for &page in plan.canvas_page_indexes.iter() {
+            surfaces_map
+                .entry(page)
+                .or_insert_with(|| PdfViewportSurface::new(page))
+                .canvas_ready = true;
+        }
+        for &page in plan.text_layer_page_indexes.iter() {
+            surfaces_map
+                .entry(page)
+                .or_insert_with(|| PdfViewportSurface::new(page))
+                .text_layer_ready = true;
+        }
+        for &page in plan.priority_page_indexes.iter() {
+            surfaces_map.entry(page).or_insert_with(|| PdfViewportSurface::new(page));
+        }
+        let mut surfaces = surfaces_map.into_values().collect::<Vec<_>>();
+        surfaces.sort_by_key(|surface| surface.page_index);
+        self.viewport_surfaces = surfaces;
+    }
+
+    fn surface_for_page(&self, page: usize) -> Option<&PdfViewportSurface> {
+        self.viewport_surfaces.iter().find(|surface| surface.page_index == page)
     }
 
     fn set_highlighted_page(
@@ -2072,6 +2139,23 @@ impl OverlayGeometryEntry {
     }
 }
 
+#[derive(Clone)]
+struct PdfViewportSurface {
+    page_index: usize,
+    canvas_ready: bool,
+    text_layer_ready: bool,
+}
+
+impl PdfViewportSurface {
+    fn new(page_index: usize) -> Self {
+        Self {
+            page_index,
+            canvas_ready: false,
+            text_layer_ready: false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 enum PdfRenderEventKind {
     Canvas,
@@ -2162,6 +2246,49 @@ impl PdfRenderEvent {
                 self.overlay_budget_pages
             ),
         }
+    }
+
+    fn age_secs(&self) -> f32 {
+        self.timestamp.elapsed().as_secs_f32()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum PdfRenderThrottleKind {
+    Canvas,
+    TextLayer,
+    Overlay,
+}
+
+#[derive(Clone, Debug)]
+struct PdfRenderThrottleEvent {
+    timestamp: Instant,
+    kind: PdfRenderThrottleKind,
+    page_index: usize,
+    reason: String,
+}
+
+impl PdfRenderThrottleEvent {
+    fn new(kind: PdfRenderThrottleKind, page_index: usize, reason: String) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            kind,
+            page_index,
+            reason,
+        }
+    }
+
+    fn describe(&self) -> String {
+        format!(
+            "{} throttle: page {}, {}",
+            match self.kind {
+                PdfRenderThrottleKind::Canvas => "Canvas",
+                PdfRenderThrottleKind::TextLayer => "Text layer",
+                PdfRenderThrottleKind::Overlay => "Overlay",
+            },
+            self.page_index + 1,
+            self.reason
+        )
     }
 
     fn age_secs(&self) -> f32 {

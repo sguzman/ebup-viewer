@@ -1,4 +1,5 @@
 mod helpers;
+mod pdf;
 
 use std::time::{Duration, Instant};
 
@@ -6,14 +7,18 @@ use eframe::{
     NativeOptions,
     egui::{
         self, Align, Button, CentralPanel, CollapsingHeader, Color32, Context, RichText,
-        ScrollArea, SidePanel, TopBottomPanel, Ui, Visuals,
+        ScrollArea, SidePanel, TopBottomPanel, Ui, Vec2, Visuals,
     },
 };
 use helpers::{app_config_path, bootstrap_config_from_app_config, format_combo};
 
+use crate::pdf::{
+    PdfPageRegistryEntry, PdfViewportBudgetInput, PdfViewportPlanInput,
+    build_pdf_viewport_render_plan, choose_pdf_viewport_evictions,
+};
 use lanternleaf_app::{
     AppRuntime,
-    contracts::{ReaderSnapshot, UiMode},
+    contracts::{PrettyKind, ReaderSnapshot, UiMode},
     pipeline::{AppCommand, DispatchPlan, ReaderCommand},
     shortcuts::{ShortcutAction, ShortcutScope, UiShortcutAction},
     state::AppState,
@@ -60,6 +65,7 @@ struct LanternLeafApp {
     last_plan: Option<DispatchPlan>,
     auto_scroll_state: AutoScrollState,
     anchor_diagnostics: AnchorDiagnostics,
+    sentence_scroll_offset: Option<Vec2>,
 }
 
 impl LanternLeafApp {
@@ -78,6 +84,7 @@ impl LanternLeafApp {
             last_plan: None,
             auto_scroll_state: AutoScrollState::default(),
             anchor_diagnostics: AnchorDiagnostics::default(),
+            sentence_scroll_offset: None,
         }
     }
 
@@ -164,7 +171,12 @@ impl LanternLeafApp {
         });
     }
 
-    fn render_panels(&mut self, ctx: &Context, state: &AppState, reader_active: bool) {
+    fn render_panels(
+        &mut self,
+        ctx: &Context,
+        state: &AppState,
+        reader_snapshot: Option<&ReaderSnapshot>,
+    ) {
         SidePanel::left("panel_toggle").show(ctx, |ui| {
             ui.heading("Panels");
             if ui
@@ -190,7 +202,7 @@ impl LanternLeafApp {
                 ui.label(format!("Stats: {}", panels.show_stats));
                 ui.label(format!("TTS: {}", panels.show_tts));
             }
-            self.render_anchor_diagnostics(ui, reader_active);
+            self.render_anchor_diagnostics(ui, reader_snapshot);
         });
         SidePanel::right("shortcuts").show(ctx, |ui| {
             ui.heading("Shortcut registry");
@@ -208,15 +220,18 @@ impl LanternLeafApp {
         }
     }
 
-    fn render_anchor_diagnostics(&self, ui: &mut Ui, reader_active: bool) {
+    fn render_anchor_diagnostics(&self, ui: &mut Ui, snapshot: Option<&ReaderSnapshot>) {
         CollapsingHeader::new("Anchor diagnostics")
             .id_source("anchor-diagnostics")
             .default_open(false)
             .show(ui, |ui| {
-                if !reader_active {
-                    ui.label("Activate a reader session to collect anchor diagnostics.");
-                    return;
-                }
+                let snapshot = match snapshot {
+                    Some(snapshot) => snapshot,
+                    None => {
+                        ui.label("Activate a reader session to collect anchor diagnostics.");
+                        return;
+                    }
+                };
                 if self.anchor_diagnostics.is_empty() {
                     ui.label("Gathering anchor fallback data...");
                     return;
@@ -253,6 +268,35 @@ impl LanternLeafApp {
                     "Throttled JumpToSentence attempts: {}",
                     self.auto_scroll_state.throttle_blocked()
                 ));
+                if snapshot.pretty_kind == PrettyKind::Pdf {
+                    ui.separator();
+                    ui.label("PDF anchor / OCR diagnostics:");
+                    if let Some(alignment) = snapshot.pdf_ocr_alignment.as_ref() {
+                        ui.label(format!("OCR quality: {:?}", alignment.quality_class));
+                        ui.label(format!(
+                            "Exact sentence rate: {:.1}%",
+                            alignment.exact_sentence_rate * 100.0
+                        ));
+                        if !alignment.degraded_reasons.is_empty() {
+                            ui.label(format!(
+                                "OCR degraded reasons: {}",
+                                alignment.degraded_reasons.join(", ")
+                            ));
+                        }
+                    }
+                    if let Some(policy) = snapshot.pdf_runtime_policy.as_ref() {
+                        ui.label(format!(
+                            "Highlight policy: {:?}",
+                            policy.sentence_highlight_policy
+                        ));
+                        if !policy.degraded_reasons.is_empty() {
+                            ui.label(format!(
+                                "Policy degraded reasons: {}",
+                                policy.degraded_reasons.join(", ")
+                            ));
+                        }
+                    }
+                }
             });
     }
 
@@ -330,6 +374,8 @@ impl LanternLeafApp {
             self.render_sentence_list(ui, snapshot);
             ui.add_space(6.0);
             self.render_canonical_preview(ui, snapshot);
+            ui.add_space(6.0);
+            self.render_pdf_diagnostics(ui, snapshot);
             ui.add_space(6.0);
             if ui
                 .button("Close reader session (AppCommand::CloseReaderSession)")
@@ -411,7 +457,7 @@ impl LanternLeafApp {
         } else {
             Align::Min
         };
-        ScrollArea::vertical()
+        let scroll_response = ScrollArea::vertical()
             .auto_shrink([false, true])
             .id_source("reader-sentence-scroll")
             .show(ui, |ui| {
@@ -478,6 +524,7 @@ impl LanternLeafApp {
                                     canonical_anchor = ?anchor_meta.anchor,
                                     "JumpToSentence: auto-scrolling highlighted sentence"
                                 );
+                                self.auto_scroll_state.note_auto_scroll();
                                 response.scroll_to_me(Some(auto_scroll_align));
                                 self.auto_scroll_state.record(idx, anchor_meta.fallback);
                             }
@@ -514,19 +561,75 @@ impl LanternLeafApp {
                             SessionCommand::SentenceClick { sentence_idx: idx },
                         ));
                     }
+                    let fallback_label = anchor_meta.fallback.label();
                     if let Some((anchor, canonical)) = canonical_preview {
                         ui.label(
-                            RichText::new(format!("anchor {} → {}", anchor, canonical))
+                            RichText::new(format!(
+                                "anchor {} → {} ({})",
+                                anchor, canonical, fallback_label
+                            ))
+                            .small()
+                            .italics()
+                            .weak(),
+                        );
+                    } else if let Some(anchor) = anchor_idx {
+                        ui.label(
+                            RichText::new(format!("anchor {} ({})", anchor, fallback_label))
                                 .small()
                                 .italics()
                                 .weak(),
                         );
-                    } else if anchor_idx.is_none() {
-                        ui.label(RichText::new("anchor missing").small().italics().weak());
+                    } else {
+                        ui.label(
+                            RichText::new(format!("anchor missing ({})", fallback_label))
+                                .small()
+                                .italics()
+                                .weak(),
+                        );
                     }
                     ui.separator();
                 }
             });
+        let offset = scroll_response.state.offset;
+        let manual_scroll_delta = self
+            .sentence_scroll_offset
+            .map(|last| offset - last)
+            .unwrap_or(Vec2::ZERO);
+        let offset_changed = self
+            .sentence_scroll_offset
+            .map(|last| offset != last)
+            .unwrap_or(false);
+        self.sentence_scroll_offset = Some(offset);
+        let auto_scroll_this_frame = self.auto_scroll_state.consume_auto_scroll();
+        if offset_changed
+            && !auto_scroll_this_frame
+            && manual_scroll_delta != Vec2::ZERO
+            && snapshot.highlighted_sentence_idx.is_some()
+        {
+            let highlighted_idx = snapshot.highlighted_sentence_idx;
+            let anchor_meta = highlighted_idx
+                .and_then(|idx| anchor_info.get(idx).copied())
+                .unwrap_or_else(AnchorInfo::missing);
+            let manual_span = tracing::span!(
+                Level::TRACE,
+                "JumpToSentence",
+                budget_plan = "shell.performance_budget",
+                anchor_path = anchor_meta.fallback.label(),
+                target_sentence = ?highlighted_idx,
+                command = "reader.scroll",
+                auto_scroll = false,
+                scroll_alignment = "manual",
+                scroll_delta_y = manual_scroll_delta.y,
+                canonical_anchor = ?anchor_meta.anchor,
+            );
+            let _enter = manual_span.enter();
+            trace!(
+                scroll_delta = ?manual_scroll_delta,
+                highlight_anchor = anchor_meta.fallback.label(),
+                highlight_idx = ?highlighted_idx,
+                "JumpToSentence: manual scroll request"
+            );
+        }
     }
 
     fn should_auto_scroll(&self, snapshot: &ReaderSnapshot) -> bool {
@@ -576,6 +679,183 @@ impl LanternLeafApp {
                     ui.label(RichText::new(format!("{}: {}", idx + 1, canonical)).small());
                 }
             });
+    }
+
+    fn render_pdf_diagnostics(&self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+        if snapshot.pretty_kind != PrettyKind::Pdf {
+            return;
+        }
+        CollapsingHeader::new("PDF diagnostics")
+            .id_source("pdf-diagnostics")
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.label(format!(
+                    "Page {}/{}",
+                    snapshot.current_page + 1,
+                    snapshot.total_pages
+                ));
+                if let Some(classification) = snapshot.pdf_classification.as_ref() {
+                    ui.label(format!(
+                        "Document class: {:?} ({:.2})",
+                        classification.document_class, classification.confidence
+                    ));
+                    ui.label(format!(
+                        "OCR recommendation: {:?}",
+                        classification.ocr_recommendation
+                    ));
+                }
+                if let Some(policy) = snapshot.pdf_runtime_policy.as_ref() {
+                    ui.label(format!("Text policy: {:?}", policy.text_only_policy));
+                    ui.label(format!(
+                        "Highlight policy: {:?}",
+                        policy.sentence_highlight_policy
+                    ));
+                    ui.label(format!("Search policy: {:?}", policy.search_policy));
+                    ui.label(format!("Policy explanation: {}", policy.explanation));
+                }
+                if let Some(alignment) = snapshot.pdf_ocr_alignment.as_ref() {
+                    ui.label(format!("OCR source: {:?}", alignment.source_kind));
+                    ui.label(format!(
+                        "Mapped sentences: {}/{}",
+                        alignment.mapped_sentence_count, alignment.sentence_count
+                    ));
+                    ui.label(format!(
+                        "Exact sentence rate: {:.1}%",
+                        alignment.exact_sentence_rate * 100.0
+                    ));
+                    if !alignment.degraded_reasons.is_empty() {
+                        ui.label(format!(
+                            "OCR degraded reasons: {}",
+                            alignment.degraded_reasons.join(", ")
+                        ));
+                    }
+                }
+                if let Some(pipeline) = snapshot.pdf_ocr_pipeline.as_ref() {
+                    ui.label(format!("OCR engine: {:?}", pipeline.engine_policy));
+                    if !pipeline.fallback_decisions.is_empty() {
+                        ui.label(format!(
+                            "Fallbacks: {}",
+                            pipeline
+                                .fallback_decisions
+                                .iter()
+                                .map(|decision| format!("{decision:?}"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                    if !pipeline.fallback_strategy_labels.is_empty() {
+                        ui.label(format!(
+                            "Fallback labels: {}",
+                            pipeline.fallback_strategy_labels.join(", ")
+                        ));
+                    }
+                }
+                if snapshot.total_pages == 0 {
+                    ui.label("PDF viewport plan unavailable (no pages).");
+                    return;
+                }
+                let visible_page_indexes = vec![snapshot.current_page];
+                let active_tts_page_index = Self::page_index_for_global_sentence(
+                    &snapshot.page_sentence_counts,
+                    snapshot.tts.current_sentence_idx,
+                )
+                .or(Some(snapshot.current_page));
+                let jump_target_page_index = snapshot
+                    .highlighted_sentence_idx
+                    .map(|_| snapshot.current_page);
+                let plan_input = PdfViewportPlanInput {
+                    total_pages: snapshot.total_pages,
+                    visible_page_indexes,
+                    overscan: 1,
+                    active_tts_page_index,
+                    jump_target_page_index,
+                };
+                let plan = build_pdf_viewport_render_plan(&plan_input);
+                ui.label(format!(
+                    "Priority pages: {}",
+                    Self::format_pdf_page_list(&plan.priority_page_indexes)
+                ));
+                ui.label(format!(
+                    "Medium-priority pages: {}",
+                    Self::format_pdf_page_list(&plan.medium_priority_page_indexes)
+                ));
+                ui.label(format!(
+                    "Low-priority pages: {}",
+                    Self::format_pdf_page_list(&plan.low_priority_page_indexes)
+                ));
+                let entries = (0..snapshot.total_pages)
+                    .map(|page_index| PdfPageRegistryEntry {
+                        page_index,
+                        last_touched_at: snapshot.current_page as u64 + page_index as u64 + 1,
+                        rendered_zoom: Some(1.0),
+                        text_layer_zoom: Some(1.0),
+                    })
+                    .collect::<Vec<_>>();
+                let decision = choose_pdf_viewport_evictions(&PdfViewportBudgetInput {
+                    entries,
+                    keep_canvas_page_indexes: plan.canvas_page_indexes.clone(),
+                    keep_text_layer_page_indexes: plan.text_layer_page_indexes.clone(),
+                    max_canvas_pages: plan.canvas_page_indexes.len().max(1),
+                    max_text_layer_pages: plan.text_layer_page_indexes.len().max(1),
+                });
+                if !decision.evict_canvas_page_indexes.is_empty() {
+                    ui.label(format!(
+                        "Canvas evictions: {}",
+                        Self::format_pdf_page_list(&decision.evict_canvas_page_indexes)
+                    ));
+                }
+                if !decision.evict_text_layer_page_indexes.is_empty() {
+                    ui.label(format!(
+                        "Text layer evictions: {}",
+                        Self::format_pdf_page_list(&decision.evict_text_layer_page_indexes)
+                    ));
+                }
+                let plan_span = tracing::span!(
+                    Level::TRACE,
+                    "PdfViewportScheduling",
+                    budget_plan = "shell.performance_budget",
+                    total_pages = snapshot.total_pages,
+                    visible_pages = ?plan_input.visible_page_indexes,
+                    active_tts_page = ?plan_input.active_tts_page_index,
+                    jump_target_page = ?plan_input.jump_target_page_index,
+                    ocr_quality = ?snapshot
+                        .pdf_ocr_alignment
+                        .as_ref()
+                        .map(|alignment| alignment.quality_class),
+                );
+                let _enter = plan_span.enter();
+                trace!(
+                    render_plan = ?plan,
+                    eviction = ?decision,
+                    "PDF viewport scheduling recorded"
+                );
+            });
+    }
+
+    fn page_index_for_global_sentence(
+        page_sentence_counts: &[usize],
+        sentence_idx: Option<usize>,
+    ) -> Option<usize> {
+        let mut remaining = sentence_idx?;
+        for (page_idx, &count) in page_sentence_counts.iter().enumerate() {
+            if remaining < count {
+                return Some(page_idx);
+            }
+            remaining = remaining.saturating_sub(count);
+        }
+        page_sentence_counts.len().checked_sub(1)
+    }
+
+    fn format_pdf_page_list(pages: &[usize]) -> String {
+        if pages.is_empty() {
+            "none".to_string()
+        } else {
+            pages
+                .iter()
+                .map(|idx| (idx + 1).to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
     }
 
     fn sentence_highlight_color(snapshot: &ReaderSnapshot) -> Color32 {
@@ -670,12 +950,12 @@ impl LanternLeafApp {
 impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         let snapshot = self.runtime.state_snapshot();
-        let reader_active = snapshot.reader_document.snapshot.is_some();
-        self.refresh_anchor_diagnostics(snapshot.reader_document.snapshot.as_ref());
+        let reader_snapshot = snapshot.reader_document.snapshot.as_ref();
+        self.refresh_anchor_diagnostics(reader_snapshot);
         ctx.set_visuals(Visuals::dark());
         self.handle_shortcuts(ctx, &snapshot);
         self.render_top_bar(ctx, &snapshot);
-        self.render_panels(ctx, &snapshot, reader_active);
+        self.render_panels(ctx, &snapshot, reader_snapshot);
         self.render_center(ctx, &snapshot);
         self.render_modals(ctx);
         self.render_status(ctx);
@@ -795,6 +1075,7 @@ struct AutoScrollState {
     last_highlighted: Option<(usize, AnchorFallback)>,
     last_jump_at: Option<Instant>,
     throttle_blocked: usize,
+    pending_auto_scroll: bool,
 }
 
 impl AutoScrollState {
@@ -815,6 +1096,16 @@ impl AutoScrollState {
         ScrollDecision::Scroll
     }
 
+    fn note_auto_scroll(&mut self) {
+        self.pending_auto_scroll = true;
+    }
+
+    fn consume_auto_scroll(&mut self) -> bool {
+        let triggered = self.pending_auto_scroll;
+        self.pending_auto_scroll = false;
+        triggered
+    }
+
     fn record(&mut self, idx: usize, fallback: AnchorFallback) {
         self.last_highlighted = Some((idx, fallback));
         self.last_jump_at = Some(Instant::now());
@@ -824,6 +1115,7 @@ impl AutoScrollState {
         self.last_highlighted = None;
         self.last_jump_at = None;
         self.throttle_blocked = 0;
+        self.pending_auto_scroll = false;
     }
 
     fn throttle_blocked(&self) -> usize {

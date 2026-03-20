@@ -71,6 +71,7 @@ struct LanternLeafApp {
     auto_scroll_state: AutoScrollState,
     anchor_diagnostics: AnchorDiagnostics,
     overlay_diagnostics: OverlayDiagnostics,
+    scheduler_events: Vec<SchedulerEvent>,
     pdf_render_state: PdfRenderState,
     sentence_scroll_offset: Option<Vec2>,
 }
@@ -92,6 +93,7 @@ impl LanternLeafApp {
             auto_scroll_state: AutoScrollState::default(),
             anchor_diagnostics: AnchorDiagnostics::default(),
             overlay_diagnostics: OverlayDiagnostics::default(),
+            scheduler_events: Vec::new(),
             pdf_render_state: PdfRenderState::default(),
             sentence_scroll_offset: None,
         }
@@ -176,6 +178,23 @@ impl LanternLeafApp {
                     session_mode.unwrap_or(UiMode::Starter)
                 ));
                 ui.label(format!("Busy: {}", state.app_shell.busy));
+                if let Some(decision) = self.overlay_diagnostics.preview_decision() {
+                    if !decision.allowed {
+                        let reason = if !decision.highlight_page_has_text_layer {
+                            "no text layer"
+                        } else {
+                            "overlay budget exhausted"
+                        };
+                        ui.label(
+                            RichText::new(format!(
+                                "Overlay warning: {} (budget {} pages)",
+                                reason, decision.budget_pages
+                            ))
+                            .color(Color32::from_rgb(255, 190, 110))
+                            .strong(),
+                        );
+                    }
+                }
             });
         });
     }
@@ -755,6 +774,43 @@ impl LanternLeafApp {
         }
     }
 
+    fn maybe_record_overlay_retry(&mut self, decision: &OverlayDecisionSnapshot) {
+        if decision.allowed {
+            return;
+        }
+        let reason = if !decision.highlight_page_has_text_layer {
+            "text_layer_missing"
+        } else if decision.budget_pages == 0 {
+            "budget_exhausted"
+        } else {
+            "overlay_blocked"
+        };
+        self.record_scheduler_event(SchedulerEventKind::RetryOverlay {
+            reason,
+            highlight_page: decision.highlight_page,
+            budget_pages: decision.budget_pages,
+        });
+    }
+
+    fn record_scheduler_event(&mut self, kind: SchedulerEventKind) {
+        let event = SchedulerEvent {
+            timestamp: Instant::now(),
+            kind,
+        };
+        if self
+            .scheduler_events
+            .last()
+            .map(|last| last.kind == event.kind)
+            .unwrap_or(false)
+        {
+            return;
+        }
+        self.scheduler_events.push(event);
+        if self.scheduler_events.len() > 8 {
+            self.scheduler_events.remove(0);
+        }
+    }
+
     fn overlay_budget_span(
         &self,
         event: &'static str,
@@ -1032,6 +1088,23 @@ impl LanternLeafApp {
                         .map(|alignment| alignment.highlightable_sentence_count)
                         .unwrap_or(0)
                 ));
+                ui.separator();
+                ui.label("Scheduler events:");
+                if self.scheduler_events.is_empty() {
+                    ui.label("(No scheduler events logged yet)");
+                } else {
+                    for event in self.scheduler_events.iter().rev() {
+                        ui.label(
+                            RichText::new(format!(
+                                "{} ({:.1}s ago)",
+                                event.kind.describe(),
+                                event.age_secs()
+                            ))
+                            .small()
+                            .weak(),
+                        );
+                    }
+                }
             });
     }
 
@@ -1183,6 +1256,7 @@ impl LanternLeafApp {
         self.pdf_render_state
             .record_render_metrics(canvas_drawn, text_drawn, overlays_drawn);
         let overlay_snapshot = self.capture_overlay_decision();
+        self.maybe_record_overlay_retry(&overlay_snapshot);
         self.overlay_diagnostics.record_preview(overlay_snapshot);
         let overlay_span = self.overlay_budget_span("preview", &overlay_snapshot);
         let _overlay_enter = overlay_span.enter();
@@ -1367,6 +1441,14 @@ impl LanternLeafApp {
                     max_canvas_pages: plan.canvas_page_indexes.len().max(1),
                     max_text_layer_pages: plan.text_layer_page_indexes.len().max(1),
                 });
+                if !decision.evict_canvas_page_indexes.is_empty()
+                    || !decision.evict_text_layer_page_indexes.is_empty()
+                {
+                    self.record_scheduler_event(SchedulerEventKind::Eviction {
+                        evicted_canvas_pages: decision.evict_canvas_page_indexes.clone(),
+                        evicted_text_layer_pages: decision.evict_text_layer_page_indexes.clone(),
+                    });
+                }
                 trace!(
                     pdf_plan = ?plan,
                     evicted_canvases = ?decision.evict_canvas_page_indexes,
@@ -1530,6 +1612,58 @@ impl OverlayDiagnostics {
 
     fn last_jump_decision(&self) -> Option<(&'static str, OverlayDecisionSnapshot)> {
         self.last_jump_decision
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum SchedulerEventKind {
+    Eviction {
+        evicted_canvas_pages: Vec<usize>,
+        evicted_text_layer_pages: Vec<usize>,
+    },
+    RetryOverlay {
+        reason: &'static str,
+        highlight_page: Option<usize>,
+        budget_pages: usize,
+    },
+}
+
+#[derive(Clone, Debug)]
+struct SchedulerEvent {
+    timestamp: Instant,
+    kind: SchedulerEventKind,
+}
+
+impl SchedulerEvent {
+    fn age_secs(&self) -> f32 {
+        self.timestamp.elapsed().as_secs_f32()
+    }
+}
+
+impl SchedulerEventKind {
+    fn describe(&self) -> String {
+        match self {
+            SchedulerEventKind::Eviction {
+                evicted_canvas_pages,
+                evicted_text_layer_pages,
+            } => format!(
+                "Evicted canvases: {}, text layers: {}",
+                LanternLeafApp::format_pdf_page_list(evicted_canvas_pages),
+                LanternLeafApp::format_pdf_page_list(evicted_text_layer_pages)
+            ),
+            SchedulerEventKind::RetryOverlay {
+                reason,
+                highlight_page,
+                budget_pages,
+            } => format!(
+                "Overlay retry ({}): page {}, budget {}",
+                reason,
+                highlight_page
+                    .map(|idx| idx + 1)
+                    .map_or("unknown".to_string(), |page| page.to_string()),
+                budget_pages
+            ),
+        }
     }
 }
 

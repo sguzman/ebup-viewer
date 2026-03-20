@@ -13,8 +13,8 @@ use eframe::{
 use helpers::{app_config_path, bootstrap_config_from_app_config, format_combo};
 
 use crate::pdf::{
-    PdfPageRegistryEntry, PdfViewportBudgetInput, PdfViewportPlanInput,
-    build_pdf_viewport_render_plan, choose_pdf_viewport_evictions,
+    PdfPageRegistryEntry, PdfViewportBudgetDecision, PdfViewportBudgetInput, PdfViewportPlanInput,
+    PdfViewportRenderPlan, build_pdf_viewport_render_plan, choose_pdf_viewport_evictions,
 };
 use lanternleaf_app::{
     AppRuntime,
@@ -45,7 +45,7 @@ fn main() {
 
     info!("Starting LanternLeaf egui shell");
 
-    eframe::run_native(
+    let _ = eframe::run_native(
         "LanternLeaf",
         options,
         Box::new(move |cc| {
@@ -65,6 +65,7 @@ struct LanternLeafApp {
     last_plan: Option<DispatchPlan>,
     auto_scroll_state: AutoScrollState,
     anchor_diagnostics: AnchorDiagnostics,
+    pdf_render_state: PdfRenderState,
     sentence_scroll_offset: Option<Vec2>,
 }
 
@@ -84,6 +85,7 @@ impl LanternLeafApp {
             last_plan: None,
             auto_scroll_state: AutoScrollState::default(),
             anchor_diagnostics: AnchorDiagnostics::default(),
+            pdf_render_state: PdfRenderState::default(),
             sentence_scroll_offset: None,
         }
     }
@@ -478,6 +480,19 @@ impl LanternLeafApp {
                         .get(idx)
                         .copied()
                         .unwrap_or_else(AnchorInfo::missing);
+                    let overlay_available = snapshot.pdf_ocr_alignment.is_some();
+                    let overlay_highlightable_sentences = snapshot
+                        .pdf_ocr_alignment
+                        .as_ref()
+                        .map(|alignment| alignment.highlightable_sentence_count)
+                        .unwrap_or(0);
+                    let overlay_budget_pages = self.pdf_render_state.overlay_budget_pages();
+                    let overlay_eviction_count = self
+                        .pdf_render_state
+                        .decision
+                        .as_ref()
+                        .map(|decision| decision.evict_text_layer_page_indexes.len())
+                        .unwrap_or(0);
                     let mut label_text = format!("{}: {}", idx + 1, sentence);
                     if is_search_match {
                         label_text.push_str(" (search match)");
@@ -516,6 +531,10 @@ impl LanternLeafApp {
                                     auto_scroll = true,
                                     scroll_alignment = scroll_alignment_label,
                                     canonical_anchor = ?anchor_meta.anchor,
+                                    overlay_available = overlay_available,
+                                    overlay_highlightable_sentences = overlay_highlightable_sentences,
+                                    overlay_budget_pages = overlay_budget_pages,
+                                    overlay_eviction_count = overlay_eviction_count,
                                 );
                                 let _enter = jump_span.enter();
                                 trace!(
@@ -549,6 +568,10 @@ impl LanternLeafApp {
                             auto_scroll = false,
                             scroll_alignment = "manual",
                             canonical_anchor = ?anchor_meta.anchor,
+                            overlay_available = overlay_available,
+                            overlay_highlightable_sentences = overlay_highlightable_sentences,
+                            overlay_budget_pages = overlay_budget_pages,
+                            overlay_eviction_count = overlay_eviction_count,
                         );
                         let _enter = manual_span.enter();
                         trace!(
@@ -601,6 +624,19 @@ impl LanternLeafApp {
             .unwrap_or(false);
         self.sentence_scroll_offset = Some(offset);
         let auto_scroll_this_frame = self.auto_scroll_state.consume_auto_scroll();
+        let overlay_available = snapshot.pdf_ocr_alignment.is_some();
+        let overlay_highlightable_sentences = snapshot
+            .pdf_ocr_alignment
+            .as_ref()
+            .map(|alignment| alignment.highlightable_sentence_count)
+            .unwrap_or(0);
+        let overlay_budget_pages = self.pdf_render_state.overlay_budget_pages();
+        let overlay_eviction_count = self
+            .pdf_render_state
+            .decision
+            .as_ref()
+            .map(|decision| decision.evict_text_layer_page_indexes.len())
+            .unwrap_or(0);
         if offset_changed
             && !auto_scroll_this_frame
             && manual_scroll_delta != Vec2::ZERO
@@ -621,12 +657,20 @@ impl LanternLeafApp {
                 scroll_alignment = "manual",
                 scroll_delta_y = manual_scroll_delta.y,
                 canonical_anchor = ?anchor_meta.anchor,
+                overlay_available = overlay_available,
+                overlay_highlightable_sentences = overlay_highlightable_sentences,
+                overlay_budget_pages = overlay_budget_pages,
+                overlay_eviction_count = overlay_eviction_count,
             );
             let _enter = manual_span.enter();
             trace!(
                 scroll_delta = ?manual_scroll_delta,
                 highlight_anchor = anchor_meta.fallback.label(),
                 highlight_idx = ?highlighted_idx,
+                overlay_available = overlay_available,
+                overlay_highlightable_sentences = overlay_highlightable_sentences,
+                overlay_budget_pages = overlay_budget_pages,
+                overlay_eviction_count = overlay_eviction_count,
                 "JumpToSentence: manual scroll request"
             );
         }
@@ -750,85 +794,89 @@ impl LanternLeafApp {
                         ));
                     }
                 }
-                if snapshot.total_pages == 0 {
-                    ui.label("PDF viewport plan unavailable (no pages).");
-                    return;
-                }
-                let visible_page_indexes = vec![snapshot.current_page];
-                let active_tts_page_index = Self::page_index_for_global_sentence(
-                    &snapshot.page_sentence_counts,
-                    snapshot.tts.current_sentence_idx,
-                )
-                .or(Some(snapshot.current_page));
-                let jump_target_page_index = snapshot
-                    .highlighted_sentence_idx
-                    .map(|_| snapshot.current_page);
-                let plan_input = PdfViewportPlanInput {
-                    total_pages: snapshot.total_pages,
-                    visible_page_indexes,
-                    overscan: 1,
-                    active_tts_page_index,
-                    jump_target_page_index,
-                };
-                let plan = build_pdf_viewport_render_plan(&plan_input);
-                ui.label(format!(
-                    "Priority pages: {}",
-                    Self::format_pdf_page_list(&plan.priority_page_indexes)
-                ));
-                ui.label(format!(
-                    "Medium-priority pages: {}",
-                    Self::format_pdf_page_list(&plan.medium_priority_page_indexes)
-                ));
-                ui.label(format!(
-                    "Low-priority pages: {}",
-                    Self::format_pdf_page_list(&plan.low_priority_page_indexes)
-                ));
-                let entries = (0..snapshot.total_pages)
-                    .map(|page_index| PdfPageRegistryEntry {
-                        page_index,
-                        last_touched_at: snapshot.current_page as u64 + page_index as u64 + 1,
-                        rendered_zoom: Some(1.0),
-                        text_layer_zoom: Some(1.0),
-                    })
-                    .collect::<Vec<_>>();
-                let decision = choose_pdf_viewport_evictions(&PdfViewportBudgetInput {
-                    entries,
-                    keep_canvas_page_indexes: plan.canvas_page_indexes.clone(),
-                    keep_text_layer_page_indexes: plan.text_layer_page_indexes.clone(),
-                    max_canvas_pages: plan.canvas_page_indexes.len().max(1),
-                    max_text_layer_pages: plan.text_layer_page_indexes.len().max(1),
-                });
-                if !decision.evict_canvas_page_indexes.is_empty() {
+                if let Some(plan) = &self.pdf_render_state.plan {
+                    ui.separator();
+                    ui.label("PDF viewport plan:");
                     ui.label(format!(
-                        "Canvas evictions: {}",
-                        Self::format_pdf_page_list(&decision.evict_canvas_page_indexes)
+                        "Visible pages: {}",
+                        Self::format_pdf_page_list(&self.pdf_render_state.visible_page_indexes)
+                    ));
+                    ui.label(format!(
+                        "Canvas pages: {}",
+                        Self::format_pdf_page_list(&plan.canvas_page_indexes)
+                    ));
+                    ui.label(format!(
+                        "Text layers: {}",
+                        Self::format_pdf_page_list(&plan.text_layer_page_indexes)
+                    ));
+                    ui.label(format!(
+                        "Priority pages: {}",
+                        Self::format_pdf_page_list(&plan.priority_page_indexes)
+                    ));
+                    ui.label(format!(
+                        "Medium priority: {}",
+                        Self::format_pdf_page_list(&plan.medium_priority_page_indexes)
+                    ));
+                    ui.label(format!(
+                        "Low priority: {}",
+                        Self::format_pdf_page_list(&plan.low_priority_page_indexes)
+                    ));
+                    ui.label(format!(
+                        "Active TTS page: {}",
+                        self.pdf_render_state
+                            .active_tts_page_index
+                            .map(|idx| idx + 1)
+                            .unwrap_or(0)
+                    ));
+                    ui.label(format!(
+                        "Jump target page: {}",
+                        self.pdf_render_state
+                            .jump_target_page_index
+                            .map(|idx| idx + 1)
+                            .unwrap_or(0)
+                    ));
+                } else {
+                    ui.label("PDF viewport scheduler idle.");
+                }
+                if let Some(decision) = &self.pdf_render_state.decision {
+                    ui.label(format!(
+                        "Text layer budget: {} pages ({} evicted)",
+                        self.pdf_render_state.overlay_budget_pages(),
+                        decision.evict_text_layer_page_indexes.len()
+                    ));
+                    if !decision.evict_canvas_page_indexes.is_empty() {
+                        ui.label(format!(
+                            "Canvas evictions: {}",
+                            Self::format_pdf_page_list(&decision.evict_canvas_page_indexes)
+                        ));
+                    }
+                    if !decision.evict_text_layer_page_indexes.is_empty() {
+                        ui.label(format!(
+                            "Text layer evictions: {}",
+                            Self::format_pdf_page_list(&decision.evict_text_layer_page_indexes)
+                        ));
+                    }
+                } else {
+                    ui.label("No viewport eviction activity yet.");
+                }
+                if let Some(age) = self.pdf_render_state.updated_age() {
+                    ui.label(format!(
+                        "Scheduler refreshed {:.2}s ago.",
+                        age.as_secs_f32()
                     ));
                 }
-                if !decision.evict_text_layer_page_indexes.is_empty() {
-                    ui.label(format!(
-                        "Text layer evictions: {}",
-                        Self::format_pdf_page_list(&decision.evict_text_layer_page_indexes)
-                    ));
-                }
-                let plan_span = tracing::span!(
-                    Level::TRACE,
-                    "PdfViewportScheduling",
-                    budget_plan = "shell.performance_budget",
-                    total_pages = snapshot.total_pages,
-                    visible_pages = ?plan_input.visible_page_indexes,
-                    active_tts_page = ?plan_input.active_tts_page_index,
-                    jump_target_page = ?plan_input.jump_target_page_index,
-                    ocr_quality = ?snapshot
+                ui.label(format!(
+                    "OCR overlay budget pages: {}",
+                    self.pdf_render_state.overlay_budget_pages()
+                ));
+                ui.label(format!(
+                    "Highlightable OCR sentences: {}",
+                    snapshot
                         .pdf_ocr_alignment
                         .as_ref()
-                        .map(|alignment| alignment.quality_class),
-                );
-                let _enter = plan_span.enter();
-                trace!(
-                    render_plan = ?plan,
-                    eviction = ?decision,
-                    "PDF viewport scheduling recorded"
-                );
+                        .map(|alignment| alignment.highlightable_sentence_count)
+                        .unwrap_or(0)
+                ));
             });
     }
 
@@ -945,6 +993,62 @@ impl LanternLeafApp {
             });
         });
     }
+
+    fn update_pdf_render_state(&mut self, snapshot: Option<&ReaderSnapshot>) {
+        if let Some(snapshot) = snapshot {
+            if snapshot.pretty_kind == PrettyKind::Pdf && snapshot.total_pages > 0 {
+                let visible_page_indexes = vec![snapshot.current_page];
+                let highlighted_page = snapshot
+                    .highlighted_sentence_idx
+                    .and_then(|sentence_idx| {
+                        Self::page_index_for_global_sentence(
+                            &snapshot.page_sentence_counts,
+                            Some(sentence_idx),
+                        )
+                    })
+                    .unwrap_or(snapshot.current_page);
+                let plan_input = PdfViewportPlanInput {
+                    total_pages: snapshot.total_pages,
+                    visible_page_indexes: visible_page_indexes.clone(),
+                    overscan: 1,
+                    active_tts_page_index: Some(snapshot.current_page),
+                    jump_target_page_index: Some(highlighted_page),
+                };
+                let plan = build_pdf_viewport_render_plan(&plan_input);
+                let entries = (0..snapshot.total_pages)
+                    .map(|page_index| PdfPageRegistryEntry {
+                        page_index,
+                        last_touched_at: (snapshot.current_page as u64)
+                            .saturating_add(page_index as u64),
+                        rendered_zoom: Some(1.0),
+                        text_layer_zoom: Some(1.0),
+                    })
+                    .collect::<Vec<_>>();
+                let decision = choose_pdf_viewport_evictions(&PdfViewportBudgetInput {
+                    entries,
+                    keep_canvas_page_indexes: plan.canvas_page_indexes.clone(),
+                    keep_text_layer_page_indexes: plan.text_layer_page_indexes.clone(),
+                    max_canvas_pages: plan.canvas_page_indexes.len().max(1),
+                    max_text_layer_pages: plan.text_layer_page_indexes.len().max(1),
+                });
+                trace!(
+                    pdf_plan = ?plan,
+                    evicted_canvases = ?decision.evict_canvas_page_indexes,
+                    evicted_text_layers = ?decision.evict_text_layer_page_indexes,
+                    highlighted_page,
+                    "PDF scheduler updated"
+                );
+                self.pdf_render_state.plan = Some(plan);
+                self.pdf_render_state.decision = Some(decision);
+                self.pdf_render_state.visible_page_indexes = visible_page_indexes;
+                self.pdf_render_state.active_tts_page_index = plan_input.active_tts_page_index;
+                self.pdf_render_state.jump_target_page_index = plan_input.jump_target_page_index;
+                self.pdf_render_state.last_updated = Some(Instant::now());
+                return;
+            }
+        }
+        self.pdf_render_state.reset();
+    }
 }
 
 impl eframe::App for LanternLeafApp {
@@ -952,6 +1056,7 @@ impl eframe::App for LanternLeafApp {
         let snapshot = self.runtime.state_snapshot();
         let reader_snapshot = snapshot.reader_document.snapshot.as_ref();
         self.refresh_anchor_diagnostics(reader_snapshot);
+        self.update_pdf_render_state(reader_snapshot);
         ctx.set_visuals(Visuals::dark());
         self.handle_shortcuts(ctx, &snapshot);
         self.render_top_bar(ctx, &snapshot);
@@ -1062,6 +1167,7 @@ impl AnchorDiagnostics {
 #[derive(Debug)]
 enum ScrollBlockReason {
     Duplicate,
+    #[allow(dead_code)]
     Throttled(Duration),
 }
 
@@ -1124,5 +1230,37 @@ impl AutoScrollState {
 
     fn last_jump_elapsed(&self) -> Option<Duration> {
         self.last_jump_at.map(|instant| instant.elapsed())
+    }
+}
+
+#[derive(Default)]
+struct PdfRenderState {
+    plan: Option<PdfViewportRenderPlan>,
+    decision: Option<PdfViewportBudgetDecision>,
+    visible_page_indexes: Vec<usize>,
+    active_tts_page_index: Option<usize>,
+    jump_target_page_index: Option<usize>,
+    last_updated: Option<Instant>,
+}
+
+impl PdfRenderState {
+    fn reset(&mut self) {
+        self.plan = None;
+        self.decision = None;
+        self.visible_page_indexes.clear();
+        self.active_tts_page_index = None;
+        self.jump_target_page_index = None;
+        self.last_updated = None;
+    }
+
+    fn updated_age(&self) -> Option<Duration> {
+        self.last_updated.map(|instant| instant.elapsed())
+    }
+
+    fn overlay_budget_pages(&self) -> usize {
+        self.plan
+            .as_ref()
+            .map(|plan| plan.text_layer_page_indexes.len())
+            .unwrap_or(0)
     }
 }

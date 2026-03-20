@@ -110,7 +110,7 @@
 - [ ] Preserve downgrade rules (sentence → block → page → render-only) and log the downgrade reason per overlay so QA can correlate with past instability classes.
 - [ ] Overlay cleanup rules must ensure stale highlights and previous sentence rectangles are removed before new spans render; these transitions emit `pdf.highlight.cleanup` events with cleanup reason (new sentence, page change, closing source).
 - [ ] Jump and click behavior:
-- [ ] highlight updates triggered by TTS playback or sentence focus emit commands `JumpToSentence` with canonical index and tracer-friendly fields; highlight spans follow the same instrumentation.
+- [x] highlight updates triggered by TTS playback or sentence focus emit commands `JumpToSentence` with canonical index and tracer-friendly fields; highlight spans follow the same instrumentation (see `crates/lanternleaf-egui/src/main.rs` for the JumpToSentence spans that now carry `anchor_path`, overlay diagnostics, and the simplified PDF preview).
 - [ ] Mouse clicks on overlays reverse-map geometry to the canonical sentence; emit `pdf.highlight.click` spans containing both geometry and sentence metadata before forwarding the command to the runtime pipeline.
 - [ ] Avoid reusing random full-page fallbacks unless no better geometry is present; document how the overlay manager detects “render-only” state and reports it via tracing/diagnostics so the shell reduces expectation.
 - [ ] Define overlay layering rules so the reader and shell stay in sync (e.g., highlight overlays render above page textures but below modal overlays), and the tracer records which layer produced the highest priority spans.

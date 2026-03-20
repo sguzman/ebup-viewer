@@ -6,8 +6,9 @@ use std::time::{Duration, Instant};
 use eframe::{
     NativeOptions,
     egui::{
-        self, Align, Button, CentralPanel, CollapsingHeader, Color32, Context, RichText,
-        ScrollArea, SidePanel, TopBottomPanel, Ui, Vec2, Visuals,
+        self, Align, Align2, Button, CentralPanel, CollapsingHeader, Color32, Context, FontFamily,
+        FontId, Pos2, Rect, RichText, ScrollArea, Sense, SidePanel, Stroke, TopBottomPanel, Ui,
+        Vec2, Visuals,
     },
 };
 use helpers::{app_config_path, bootstrap_config_from_app_config, format_combo};
@@ -493,6 +494,15 @@ impl LanternLeafApp {
                         .as_ref()
                         .map(|decision| decision.evict_text_layer_page_indexes.len())
                         .unwrap_or(0);
+                    if is_highlighted {
+                        let highlight_page = Self::page_index_for_global_sentence(
+                            &snapshot.page_sentence_counts,
+                            Some(idx),
+                        )
+                        .unwrap_or(snapshot.current_page);
+                        self.pdf_render_state
+                            .set_highlighted_page(highlight_page, Some(idx));
+                    }
                     let mut label_text = format!("{}: {}", idx + 1, sentence);
                     if is_search_match {
                         label_text.push_str(" (search match)");
@@ -725,7 +735,7 @@ impl LanternLeafApp {
             });
     }
 
-    fn render_pdf_diagnostics(&self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+    fn render_pdf_diagnostics(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
         if snapshot.pretty_kind != PrettyKind::Pdf {
             return;
         }
@@ -835,6 +845,22 @@ impl LanternLeafApp {
                             .map(|idx| idx + 1)
                             .unwrap_or(0)
                     ));
+                    let canvas_plan_len = plan.canvas_page_indexes.len();
+                    let text_plan_len = plan.text_layer_page_indexes.len();
+                    self.render_pdf_preview(ui, snapshot);
+                    ui.label(format!(
+                        "Rendered canvases: {}/{}",
+                        self.pdf_render_state.rendered_canvas_pages, canvas_plan_len
+                    ));
+                    ui.label(format!(
+                        "Rendered text layers: {}/{}",
+                        self.pdf_render_state.rendered_text_layers, text_plan_len
+                    ));
+                    ui.label(format!(
+                        "Rendered overlays: {}/{}",
+                        self.pdf_render_state.rendered_overlays,
+                        self.pdf_render_state.overlay_budget_pages()
+                    ));
                 } else {
                     ui.label("PDF viewport scheduler idle.");
                 }
@@ -878,6 +904,158 @@ impl LanternLeafApp {
                         .unwrap_or(0)
                 ));
             });
+    }
+
+    fn render_pdf_preview(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+        if snapshot.total_pages == 0 {
+            ui.label("PDF preview will appear once the document is ready.");
+            return;
+        }
+        let plan = match &self.pdf_render_state.plan {
+            Some(plan) => plan,
+            None => {
+                ui.label("Viewport preview waiting for scheduler updates...");
+                return;
+            }
+        };
+        const MAX_PREVIEW_PAGES: usize = 6;
+        let preview_size = Vec2::new(ui.available_width(), 180.0);
+        let (preview_rect, _) = ui.allocate_exact_size(preview_size, Sense::hover());
+        let painter = ui.painter();
+        painter.rect_filled(preview_rect, 8.0, Color32::from_gray(18));
+        let content_rect = preview_rect.shrink(6.0);
+        painter.rect_stroke(content_rect, 6.0, Stroke::new(1.0, Color32::from_gray(60)));
+
+        let mut preview_pages = Vec::new();
+        let mut push_page = |page: usize| {
+            if page < snapshot.total_pages && !preview_pages.contains(&page) {
+                preview_pages.push(page);
+            }
+        };
+        for page in &self.pdf_render_state.visible_page_indexes {
+            push_page(*page);
+        }
+        if let Some(page) = self.pdf_render_state.highlighted_page {
+            push_page(page);
+        }
+        for page in &plan.priority_page_indexes {
+            push_page(*page);
+        }
+        for page in &plan.canvas_page_indexes {
+            push_page(*page);
+        }
+        push_page(snapshot.current_page);
+        preview_pages.truncate(MAX_PREVIEW_PAGES);
+        if preview_pages.is_empty() {
+            preview_pages.push(
+                snapshot
+                    .current_page
+                    .min(snapshot.total_pages.saturating_sub(1)),
+            );
+        }
+
+        let columns = preview_pages.len();
+        let gap = 8.0;
+        let total_gap = gap * columns.saturating_sub(1) as f32;
+        let raw_width = (content_rect.width() - total_gap).max(0.0);
+        let page_width = (raw_width / columns as f32).max(28.0);
+        let used_width = page_width * columns as f32 + total_gap;
+        let mut current_x =
+            content_rect.left() + (content_rect.width() - used_width).max(0.0) / 2.0;
+        let font = FontId::new(11.0, FontFamily::Monospace);
+        let highlight_page = self.pdf_render_state.highlighted_page;
+        let overlay_budget = self.pdf_render_state.overlay_budget_pages();
+
+        let mut canvas_drawn = 0;
+        let mut text_drawn = 0;
+        let mut overlays_drawn = 0;
+
+        for &page in &preview_pages {
+            let page_rect = Rect::from_min_max(
+                Pos2::new(current_x, content_rect.top()),
+                Pos2::new(current_x + page_width, content_rect.bottom()),
+            );
+            current_x += page_width + gap;
+            canvas_drawn += 1;
+            let is_priority = plan.priority_page_indexes.contains(&page);
+            let has_canvas = plan.canvas_page_indexes.contains(&page);
+            let has_text_layer = plan.text_layer_page_indexes.contains(&page);
+            let fill_color = if Some(page) == highlight_page {
+                Color32::from_rgb(38, 105, 170)
+            } else if has_canvas {
+                Color32::from_rgb(25, 25, 25)
+            } else {
+                Color32::from_rgb(15, 15, 15)
+            };
+            let border_color = if is_priority {
+                Color32::from_rgb(220, 190, 120)
+            } else if has_canvas {
+                Color32::from_rgb(90, 150, 210)
+            } else {
+                Color32::from_gray(70)
+            };
+            painter.rect_filled(page_rect, 6.0, fill_color);
+            painter.rect_stroke(
+                page_rect,
+                6.0,
+                Stroke::new(if is_priority { 3.0 } else { 1.4 }, border_color),
+            );
+            let inner = page_rect.shrink(4.0);
+            if has_text_layer {
+                text_drawn += 1;
+                let text_layer_rect = inner.shrink(2.0);
+                painter.rect_filled(
+                    text_layer_rect,
+                    4.0,
+                    Color32::from_rgba_unmultiplied(50, 170, 120, 90),
+                );
+                painter.rect_stroke(
+                    text_layer_rect,
+                    4.0,
+                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(140, 220, 180, 200)),
+                );
+            }
+            painter.text(
+                Pos2::new(page_rect.center().x, page_rect.bottom() - 12.0),
+                Align2::CENTER_BOTTOM,
+                format!("Pg {}", page + 1),
+                font.clone(),
+                Color32::WHITE,
+            );
+            if Some(page) == highlight_page && overlay_budget > 0 {
+                for (idx, rect) in self.pdf_render_state.overlay_rects.iter().enumerate() {
+                    if idx >= overlay_budget {
+                        break;
+                    }
+                    overlays_drawn += 1;
+                    let overlay = Rect::from_min_max(
+                        Pos2::new(
+                            inner.left() + rect[0] * inner.width(),
+                            inner.top() + rect[1] * inner.height(),
+                        ),
+                        Pos2::new(
+                            inner.left() + rect[2] * inner.width(),
+                            inner.top() + rect[3] * inner.height(),
+                        ),
+                    );
+                    painter.rect_filled(
+                        overlay,
+                        2.0,
+                        Color32::from_rgba_unmultiplied(255, 190, 80, 160),
+                    );
+                }
+            }
+        }
+
+        self.pdf_render_state
+            .record_render_metrics(canvas_drawn, text_drawn, overlays_drawn);
+        trace!(
+            preview_pages = ?preview_pages,
+            canvas = canvas_drawn,
+            text_layers = text_drawn,
+            overlays = overlays_drawn,
+            "Rendered simplified PDF preview"
+        );
     }
 
     fn page_index_for_global_sentence(
@@ -1241,6 +1419,12 @@ struct PdfRenderState {
     active_tts_page_index: Option<usize>,
     jump_target_page_index: Option<usize>,
     last_updated: Option<Instant>,
+    rendered_canvas_pages: usize,
+    rendered_text_layers: usize,
+    rendered_overlays: usize,
+    highlighted_page: Option<usize>,
+    highlighted_sentence_idx: Option<usize>,
+    overlay_rects: Vec<[f32; 4]>,
 }
 
 impl PdfRenderState {
@@ -1251,6 +1435,12 @@ impl PdfRenderState {
         self.active_tts_page_index = None;
         self.jump_target_page_index = None;
         self.last_updated = None;
+        self.rendered_canvas_pages = 0;
+        self.rendered_text_layers = 0;
+        self.rendered_overlays = 0;
+        self.highlighted_page = None;
+        self.highlighted_sentence_idx = None;
+        self.overlay_rects.clear();
     }
 
     fn updated_age(&self) -> Option<Duration> {
@@ -1262,5 +1452,37 @@ impl PdfRenderState {
             .as_ref()
             .map(|plan| plan.text_layer_page_indexes.len())
             .unwrap_or(0)
+    }
+
+    fn record_render_metrics(&mut self, canvas_pages: usize, text_layers: usize, overlays: usize) {
+        self.rendered_canvas_pages = canvas_pages;
+        self.rendered_text_layers = text_layers;
+        self.rendered_overlays = overlays;
+    }
+
+    fn set_highlighted_page(&mut self, page_index: usize, sentence_idx: Option<usize>) {
+        if self.highlighted_page == Some(page_index)
+            && self.highlighted_sentence_idx == sentence_idx
+        {
+            return;
+        }
+        self.highlighted_page = Some(page_index);
+        self.highlighted_sentence_idx = sentence_idx;
+        self.overlay_rects = Self::generate_overlay_rects(sentence_idx);
+    }
+
+    fn generate_overlay_rects(sentence_idx: Option<usize>) -> Vec<[f32; 4]> {
+        let count = sentence_idx.map(|idx| (idx % 3) + 1).unwrap_or(0);
+        (0..count)
+            .map(|i| {
+                let width = 0.8 - (i as f32 * 0.15);
+                let height = 0.12;
+                let left = 0.1 + (i as f32 * 0.05);
+                let top = 0.15 + (i as f32 * 0.18);
+                let right = (left + width).min(0.95);
+                let bottom = (top + height).min(0.9);
+                [left, top, right, bottom]
+            })
+            .collect()
     }
 }

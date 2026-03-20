@@ -1,7 +1,11 @@
 mod helpers;
 mod pdf;
 
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use eframe::{
     NativeOptions,
@@ -26,7 +30,7 @@ use lanternleaf_app::{
     tracing::init_tracing,
 };
 use lanternleaf_core::{
-    config,
+    cache, config,
     session::{SessionCommand, TtsPlaybackState},
 };
 use tracing::{Level, info, trace};
@@ -500,8 +504,14 @@ impl LanternLeafApp {
                             Some(idx),
                         )
                         .unwrap_or(snapshot.current_page);
+                        let overlay_rects = Self::global_sentence_index(snapshot, idx)
+                            .map(|global_idx| {
+                                self.pdf_render_state
+                                    .overlay_rects_for_sentence(&snapshot.source_path, global_idx)
+                            })
+                            .unwrap_or_default();
                         self.pdf_render_state
-                            .set_highlighted_page(highlight_page, Some(idx));
+                            .set_highlighted_page(highlight_page, Some(idx), overlay_rects);
                     }
                     let mut label_text = format!("{}: {}", idx + 1, sentence);
                     if is_search_match {
@@ -965,6 +975,10 @@ impl LanternLeafApp {
         let font = FontId::new(11.0, FontFamily::Monospace);
         let highlight_page = self.pdf_render_state.highlighted_page;
         let overlay_budget = self.pdf_render_state.overlay_budget_pages();
+        let highlight_page_in_text_layers = highlight_page
+            .map(|page| plan.text_layer_page_indexes.contains(&page))
+            .unwrap_or(false);
+        let overlays_allowed = highlight_page_in_text_layers && overlay_budget > 0;
 
         let mut canvas_drawn = 0;
         let mut text_drawn = 0;
@@ -1022,7 +1036,7 @@ impl LanternLeafApp {
                 font.clone(),
                 Color32::WHITE,
             );
-            if Some(page) == highlight_page && overlay_budget > 0 {
+            if Some(page) == highlight_page && overlays_allowed {
                 for (idx, rect) in self.pdf_render_state.overlay_rects.iter().enumerate() {
                     if idx >= overlay_budget {
                         break;
@@ -1054,6 +1068,9 @@ impl LanternLeafApp {
             canvas = canvas_drawn,
             text_layers = text_drawn,
             overlays = overlays_drawn,
+            overlay_budget_pages = overlay_budget,
+            highlight_page_text_layer = highlight_page_in_text_layers,
+            highlight_page = ?highlight_page,
             "Rendered simplified PDF preview"
         );
     }
@@ -1070,6 +1087,20 @@ impl LanternLeafApp {
             remaining = remaining.saturating_sub(count);
         }
         page_sentence_counts.len().checked_sub(1)
+    }
+
+    fn global_sentence_index(snapshot: &ReaderSnapshot, sentence_idx: usize) -> Option<usize> {
+        let current_page = snapshot.current_page;
+        let current_page_size = *snapshot.page_sentence_counts.get(current_page)?;
+        if sentence_idx >= current_page_size {
+            return None;
+        }
+        let page_offset = snapshot
+            .page_sentence_counts
+            .iter()
+            .take(current_page)
+            .sum::<usize>();
+        page_offset.checked_add(sentence_idx)
     }
 
     fn format_pdf_page_list(pages: &[usize]) -> String {
@@ -1425,6 +1456,8 @@ struct PdfRenderState {
     highlighted_page: Option<usize>,
     highlighted_sentence_idx: Option<usize>,
     overlay_rects: Vec<[f32; 4]>,
+    overlay_alignment_source: Option<String>,
+    overlay_alignment_rects: HashMap<usize, Vec<[f32; 4]>>,
 }
 
 impl PdfRenderState {
@@ -1441,6 +1474,8 @@ impl PdfRenderState {
         self.highlighted_page = None;
         self.highlighted_sentence_idx = None;
         self.overlay_rects.clear();
+        self.overlay_alignment_source = None;
+        self.overlay_alignment_rects.clear();
     }
 
     fn updated_age(&self) -> Option<Duration> {
@@ -1460,7 +1495,12 @@ impl PdfRenderState {
         self.rendered_overlays = overlays;
     }
 
-    fn set_highlighted_page(&mut self, page_index: usize, sentence_idx: Option<usize>) {
+    fn set_highlighted_page(
+        &mut self,
+        page_index: usize,
+        sentence_idx: Option<usize>,
+        overlay_rects: Vec<[f32; 4]>,
+    ) {
         if self.highlighted_page == Some(page_index)
             && self.highlighted_sentence_idx == sentence_idx
         {
@@ -1468,7 +1508,11 @@ impl PdfRenderState {
         }
         self.highlighted_page = Some(page_index);
         self.highlighted_sentence_idx = sentence_idx;
-        self.overlay_rects = Self::generate_overlay_rects(sentence_idx);
+        self.overlay_rects = if overlay_rects.is_empty() {
+            Self::generate_overlay_rects(sentence_idx)
+        } else {
+            overlay_rects
+        };
     }
 
     fn generate_overlay_rects(sentence_idx: Option<usize>) -> Vec<[f32; 4]> {
@@ -1481,6 +1525,59 @@ impl PdfRenderState {
                 let top = 0.15 + (i as f32 * 0.18);
                 let right = (left + width).min(0.95);
                 let bottom = (top + height).min(0.9);
+                [left, top, right, bottom]
+            })
+            .collect()
+    }
+
+    fn overlay_rects_for_sentence(
+        &mut self,
+        source_path: &str,
+        sentence_idx: usize,
+    ) -> Vec<[f32; 4]> {
+        self.ensure_alignment_cache(source_path);
+        self.overlay_alignment_rects
+            .get(&sentence_idx)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn ensure_alignment_cache(&mut self, source_path: &str) {
+        if self.overlay_alignment_source.as_deref() == Some(source_path) {
+            return;
+        }
+        self.overlay_alignment_source = Some(source_path.to_string());
+        self.overlay_alignment_rects.clear();
+        let path = Path::new(source_path);
+        if let Some(artifact) = cache::load_pdf_ocr_alignment_artifact(path) {
+            for alignment in artifact.alignments.iter() {
+                if alignment.page_idx.is_none() {
+                    continue;
+                }
+                let rects = Self::alignment_rects(alignment);
+                if !rects.is_empty() {
+                    self.overlay_alignment_rects
+                        .insert(alignment.sentence_idx, rects);
+                }
+            }
+        }
+    }
+
+    fn alignment_rects(alignment: &crate::cache::PdfOcrSentenceAlignment) -> Vec<[f32; 4]> {
+        let geometry = if !alignment.rects.is_empty() {
+            &alignment.rects
+        } else if !alignment.line_rects.is_empty() {
+            &alignment.line_rects
+        } else {
+            &alignment.block_rects
+        };
+        geometry
+            .iter()
+            .map(|rect| {
+                let left = rect.left.clamp(0.0, 1.0);
+                let top = rect.top.clamp(0.0, 1.0);
+                let right = (rect.left + rect.width).clamp(0.0, 1.0);
+                let bottom = (rect.top + rect.height).clamp(0.0, 1.0);
                 [left, top, right, bottom]
             })
             .collect()

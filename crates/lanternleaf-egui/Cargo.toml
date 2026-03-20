@@ -8,3 +8,4 @@ eframe = "0.25"
 lanternleaf-app = { path = "../lanternleaf-app" }
 lanternleaf-core = { path = "../lanternleaf-core" }
 tracing = "0.1"
+tracing-appender = "0.2"

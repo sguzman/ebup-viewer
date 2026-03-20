@@ -104,7 +104,7 @@ fn key_label(key: Key) -> Option<&'static str> {
         Key::Y => Some("y"),
         Key::Z => Some("z"),
         Key::Space => Some("space"),
-        Key::Slash => Some("/"),
+        Key::Backslash => Some("/"),
         Key::Escape => Some("escape"),
         _ => None,
     }

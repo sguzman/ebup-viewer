@@ -1,6 +1,6 @@
 use crate::contracts::BootstrapConfig;
 use crate::pipeline::{AppCommand, ReaderCommand};
-use lanternleaf_core::session::{self, SessionCommand};
+use lanternleaf_core::session::SessionCommand;
 use std::sync::{Arc, Mutex};
 
 /// Identifier for a registered shortcut binding.
@@ -23,14 +23,14 @@ pub enum UiShortcutAction {
 }
 
 /// The action executed when a shortcut fires.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ShortcutAction {
     Command(AppCommand),
     Ui(UiShortcutAction),
 }
 
 /// A single registered shortcut binding.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ShortcutBinding {
     pub id: ShortcutId,
     pub scope: ShortcutScope,
@@ -71,7 +71,7 @@ impl ShortcutRegistry {
     /// Create a registry preloaded with user-configured shortcuts from the bootstrap config.
     pub fn with_bootstrap_config(config: &BootstrapConfig) -> Self {
         let registry = Self::default();
-        let register = |scope, combo, action, registry: &ShortcutRegistry| {
+        let register = |scope, combo: &str, action, registry: &ShortcutRegistry| {
             let combo = combo.trim();
             if combo.is_empty() {
                 return;

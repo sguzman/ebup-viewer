@@ -119,6 +119,7 @@ impl TaskContext {
     }
 }
 
+#[derive(Clone)]
 pub struct TaskRuntime {
     registrations: Arc<Mutex<HashMap<u64, CancellationToken>>>,
     progress_tx: TaskProgressSender,
@@ -245,8 +246,8 @@ impl fmt::Debug for TaskRuntime {
 pub struct AppRuntime {
     state: Arc<Mutex<AppState>>,
     task_runtime: TaskRuntime,
-    progress_batcher: Mutex<ProgressBatcher>,
-    next_request_id: AtomicU64,
+    progress_batcher: Arc<Mutex<ProgressBatcher>>,
+    next_request_id: Arc<AtomicU64>,
     shortcuts: ShortcutRegistry,
 }
 
@@ -262,8 +263,8 @@ impl AppRuntime {
         Self {
             state: Arc::new(Mutex::new(AppState::default())),
             task_runtime: TaskRuntime::new(),
-            progress_batcher: Mutex::new(ProgressBatcher::new()),
-            next_request_id: AtomicU64::new(1),
+            progress_batcher: Arc::new(Mutex::new(ProgressBatcher::new())),
+            next_request_id: Arc::new(AtomicU64::new(1)),
             shortcuts,
         }
     }

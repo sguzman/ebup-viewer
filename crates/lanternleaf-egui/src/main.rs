@@ -5,16 +5,15 @@ use std::time::{Duration, Instant};
 use eframe::{
     NativeOptions,
     egui::{
-        self, Align, Button, CentralPanel, CollapsingHeader, Color32, Context, Layout, Modifiers,
-        RichText, ScrollArea, SidePanel, TopBottomPanel, Ui, Visuals,
+        self, Align, Button, CentralPanel, CollapsingHeader, Color32, Context, RichText,
+        ScrollArea, SidePanel, TopBottomPanel, Ui, Visuals,
     },
-    winit,
 };
 use helpers::{app_config_path, bootstrap_config_from_app_config, format_combo};
 
 use lanternleaf_app::{
     AppRuntime,
-    contracts::{BootstrapConfig, ReaderSnapshot, UiMode},
+    contracts::{ReaderSnapshot, UiMode},
     pipeline::{AppCommand, DispatchPlan, ReaderCommand},
     shortcuts::{ShortcutAction, ShortcutScope, UiShortcutAction},
     state::AppState,
@@ -34,7 +33,7 @@ fn main() {
 
     let runtime = AppRuntime::with_bootstrap_config(&bootstrap_config);
     let mut options = NativeOptions::default();
-    options.initial_window_size = Some(egui::vec2(
+    options.viewport.inner_size = Some(egui::vec2(
         app_config.window_width as f32,
         app_config.window_height as f32,
     ));
@@ -44,7 +43,7 @@ fn main() {
     eframe::run_native(
         "LanternLeaf",
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             Box::new(LanternLeafApp::new(cc, runtime.clone(), tracing_guard))
                 as Box<dyn eframe::App>
         }),
@@ -105,19 +104,27 @@ impl LanternLeafApp {
             Some(UiMode::Reader) => ShortcutScope::Reader,
             _ => ShortcutScope::Global,
         };
-        for event in &ctx.input().events {
-            if let egui::Event::Key(key_event) = event {
-                if !key_event.pressed {
-                    continue;
-                }
-                if let Some(combo) = format_combo(key_event.key, key_event.modifiers) {
-                    let matches = self.runtime.shortcut_registry().matches(&combo, mode_scope);
-                    for binding in matches {
-                        self.execute_shortcut_action(&binding.action);
+        ctx.input(|input| {
+            for event in &input.events {
+                if let egui::Event::Key {
+                    key,
+                    pressed,
+                    modifiers,
+                    ..
+                } = event
+                {
+                    if !*pressed {
+                        continue;
+                    }
+                    if let Some(combo) = format_combo(*key, *modifiers) {
+                        let matches = self.runtime.shortcut_registry().matches(&combo, mode_scope);
+                        for binding in matches {
+                            self.execute_shortcut_action(&binding.action);
+                        }
                     }
                 }
             }
-        }
+        });
     }
 
     fn execute_shortcut_action(&mut self, action: &ShortcutAction) {
@@ -394,7 +401,7 @@ impl LanternLeafApp {
             .filter(|value| value.is_some())
             .count();
         trace!(anchor_hits = anchor_hits, "rendering sentence list");
-        let anchor_info = self.anchor_diagnostics.entries();
+        let anchor_info = self.anchor_diagnostics.entries().to_vec();
         let auto_scroll_enabled = self.should_auto_scroll(snapshot);
         if !auto_scroll_enabled {
             self.auto_scroll_state.reset();
@@ -421,26 +428,27 @@ impl LanternLeafApp {
                             .get(anchor)
                             .map(|text| (anchor, text))
                     });
+                    let anchor_meta = anchor_info
+                        .get(idx)
+                        .copied()
+                        .unwrap_or_else(AnchorInfo::missing);
                     let mut label_text = format!("{}: {}", idx + 1, sentence);
                     if is_search_match {
                         label_text.push_str(" (search match)");
                     }
-                    let mut button = Button::new(RichText::new(label_text).size(14.0))
+                    let mut text = RichText::new(label_text).size(14.0);
+                    if is_highlighted {
+                        text = text.text_style(egui::TextStyle::Body);
+                    }
+                    let button = Button::new(text)
                         .fill(if is_highlighted {
                             highlight_color
                         } else {
                             ui.visuals().widgets.inactive.bg_fill
                         })
                         .wrap(true);
-                    if is_highlighted {
-                        button = button.text_style(egui::TextStyle::Body);
-                    }
                     let response = ui.add(button);
                     if is_highlighted && auto_scroll_enabled {
-                        let anchor_meta = anchor_info
-                            .get(idx)
-                            .copied()
-                            .unwrap_or_else(AnchorInfo::missing);
                         match self
                             .auto_scroll_state
                             .decide_scroll(idx, anchor_meta.fallback)
@@ -484,6 +492,24 @@ impl LanternLeafApp {
                     }
                     if response.clicked() {
                         trace!(sentence_idx = idx, anchor = ?anchor_idx, "reader sentence clicked");
+                        let manual_span = tracing::span!(
+                            Level::TRACE,
+                            "JumpToSentence",
+                            budget_plan = "shell.performance_budget",
+                            anchor_path = anchor_meta.fallback.label(),
+                            target_sentence = idx,
+                            command = "reader.sentence_click",
+                            auto_scroll = false,
+                            scroll_alignment = "manual",
+                            canonical_anchor = ?anchor_meta.anchor,
+                        );
+                        let _enter = manual_span.enter();
+                        trace!(
+                            jump_to_sentence = idx,
+                            highlight_anchor = anchor_meta.fallback.label(),
+                            canonical_anchor = ?anchor_meta.anchor,
+                            "JumpToSentence: manual sentence click"
+                        );
                         self.execute_reader_command(ReaderCommand::Session(
                             SessionCommand::SentenceClick { sentence_idx: idx },
                         ));
@@ -575,36 +601,58 @@ impl LanternLeafApp {
     }
 
     fn render_modals(&mut self, ctx: &Context) {
+        let mut show_safe_quit_modal = self.show_safe_quit_modal;
+        let mut show_reader_confirm_modal = self.show_reader_confirm_modal;
+        let mut safe_quit_confirmed = false;
+        let mut return_confirmed = false;
+        let mut close_safe_quit_modal = false;
+        let mut close_reader_confirm_modal = false;
+
         egui::Window::new("Safe quit confirmation")
-            .open(&mut self.show_safe_quit_modal)
+            .open(&mut show_safe_quit_modal)
             .resizable(false)
             .show(ctx, |ui| {
                 ui.label("Are you sure you want to quit?");
                 ui.horizontal(|ui| {
                     if ui.button("Yes").clicked() {
-                        self.execute_command(AppCommand::SafeQuit);
-                        self.show_safe_quit_modal = false;
+                        safe_quit_confirmed = true;
+                        close_safe_quit_modal = true;
                     }
                     if ui.button("Cancel").clicked() {
-                        self.show_safe_quit_modal = false;
+                        close_safe_quit_modal = true;
                     }
                 });
             });
         egui::Window::new("Reader close confirmation")
-            .open(&mut self.show_reader_confirm_modal)
+            .open(&mut show_reader_confirm_modal)
             .resizable(false)
             .show(ctx, |ui| {
                 ui.label("Return to starter after closing reader?");
                 ui.horizontal(|ui| {
                     if ui.button("Confirm").clicked() {
-                        self.execute_command(AppCommand::ReturnToStarter);
-                        self.show_reader_confirm_modal = false;
+                        return_confirmed = true;
+                        close_reader_confirm_modal = true;
                     }
                     if ui.button("Dismiss").clicked() {
-                        self.show_reader_confirm_modal = false;
+                        close_reader_confirm_modal = true;
                     }
                 });
             });
+
+        if close_safe_quit_modal {
+            show_safe_quit_modal = false;
+        }
+        self.show_safe_quit_modal = show_safe_quit_modal;
+        if safe_quit_confirmed {
+            self.execute_command(AppCommand::SafeQuit);
+        }
+        if close_reader_confirm_modal {
+            show_reader_confirm_modal = false;
+        }
+        self.show_reader_confirm_modal = show_reader_confirm_modal;
+        if return_confirmed {
+            self.execute_command(AppCommand::ReturnToStarter);
+        }
     }
 
     fn render_status(&mut self, ctx: &Context) {

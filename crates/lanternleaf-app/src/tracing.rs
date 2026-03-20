@@ -1,4 +1,4 @@
-use tracing_appender::non_blocking::{self, WorkerGuard};
+use tracing_appender::{non_blocking, non_blocking::WorkerGuard};
 use tracing_subscriber::{EnvFilter, fmt};
 
 /// Initializes the global tracing subscriber with a rolling log file and the provided fallback
@@ -6,7 +6,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 /// background writer alive.
 pub fn init_tracing(default_level: impl AsRef<str>) -> WorkerGuard {
     let file_appender = tracing_appender::rolling::daily("logs", "lanternleaf.log");
-    let (non_blocking, guard) = non_blocking::non_blocking(file_appender);
+    let (non_blocking, guard) = non_blocking(file_appender);
 
     let default_directive = default_level.as_ref().to_string();
     let env_filter = EnvFilter::try_from_default_env()

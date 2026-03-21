@@ -1,9 +1,9 @@
 # Egui Config Cache And Persistence Roadmap
 
 ## Objective
-- [ ] Consolidate settings, config, bookmarks, recents, and content artifact persistence under pure Rust ownership for the egui app.
-- [ ] Preserve current user data semantics while removing the mixed Tauri/UI presentation layer from persistence flows.
-- [ ] Define deterministic migration, compatibility, and invalidation rules for existing data.
+- [x] Consolidate settings, config, bookmarks, recents, and content artifact persistence under pure Rust ownership for the egui app.
+- [x] Preserve current user data semantics while removing the mixed Tauri/UI presentation layer from persistence flows.
+- [x] Define deterministic migration, compatibility, and invalidation rules for existing data.
 
 ## Current-State Grounding In This Repo
 - Current persistence and config ownership is already heavily Rust-side:
@@ -37,57 +37,57 @@
 - Migration must include explicit compatibility and invalidation behavior rather than silent breakage.
 
 ## Phase 1: Persistence Surface Inventory
-- [ ] Inventory all persisted data and lifecycle triggers:
-- [ ] app config load/save
-- [ ] per-book config override load/save
-- [ ] bookmarks
-- [ ] recent books
-- [ ] content artifacts
-- [ ] thumbnails
-- [ ] PDF artifacts
-- [ ] browser-tab artifacts
-- [ ] Define which of these remain unchanged vs need schema/version updates for egui cutover.
+- [x] Inventory all persisted data and lifecycle triggers:
+- [x] app config load/save
+- [x] per-book config override load/save
+- [x] bookmarks
+- [x] recent books
+- [x] content artifacts
+- [x] thumbnails
+- [x] PDF artifacts
+- [x] browser-tab artifacts
+- [x] Define which of these remain unchanged vs need schema/version updates for egui cutover.
 - Phase exit:
-- [ ] there is a complete inventory of persisted data and owning services.
+- [x] there is a complete inventory of persisted data and owning services.
 
 ## Phase 2: App Lifecycle Ownership
-- [ ] Define persistence behavior for:
-- [ ] startup
-- [ ] source open
-- [ ] live session updates
-- [ ] close source
-- [ ] safe quit
-- [ ] crash/recovery expectations
-- [ ] Ensure no lifecycle step depends on Tauri shell semantics after migration.
+- [x] Define persistence behavior for:
+- [x] startup
+- [x] source open
+- [x] live session updates
+- [x] close source
+- [x] safe quit
+- [x] crash/recovery expectations
+- [x] Ensure no lifecycle step depends on Tauri shell semantics after migration.
 - Phase exit:
-- [ ] egui app lifecycle and persistence interactions are explicit.
+- [x] egui app lifecycle and persistence interactions are explicit.
 
 ## Phase 3: Schema And Compatibility Plan
-- [ ] Define compatibility rules for existing config and cache data:
-- [ ] read existing config/bookmark formats where possible
-- [ ] version cache artifacts that depend on renderer/runtime ownership
-- [ ] invalidate/rebuild artifacts whose assumptions change under egui
-- [ ] keep user-visible data loss minimal and explicit when unavoidable
+- [x] Define compatibility rules for existing config and cache data:
+- [x] read existing config/bookmark formats where possible
+- [x] version cache artifacts that depend on renderer/runtime ownership
+- [x] invalidate/rebuild artifacts whose assumptions change under egui
+- [x] keep user-visible data loss minimal and explicit when unavoidable
 - Phase exit:
-- [ ] there is a deterministic migration and invalidation strategy for existing users.
+- [x] there is a deterministic migration and invalidation strategy for existing users.
 
 ## Phase 4: Cache Layout And Artifact Strategy
-- [ ] Review cache layout for:
-- [ ] content artifacts
-- [ ] image assets
-- [ ] PDF sync/OCR/geometry artifacts
-- [ ] browser-tab snapshots
-- [ ] thumbnails
-- [ ] Decide whether the current layout remains authoritative or needs versioned substructure for the egui migration.
+- [x] Review cache layout for:
+- [x] content artifacts
+- [x] image assets
+- [x] PDF sync/OCR/geometry artifacts
+- [x] browser-tab snapshots
+- [x] thumbnails
+- [x] Decide whether the current layout remains authoritative or needs versioned substructure for the egui migration.
 - Phase exit:
-- [ ] cache ownership and migration rules are explicit enough for implementation.
+- [x] cache ownership and migration rules are explicit enough for implementation.
 
 ## Phase 5: Deletion, Recovery, And Rebuild Semantics
-- [ ] Preserve or refine delete/recent-remove behavior for all source types.
-- [ ] Preserve non-destructive rebuild behavior for corrupt/missing artifacts.
-- [ ] Define recovery logging and diagnostic surfaces in the egui app.
+- [x] Preserve or refine delete/recent-remove behavior for all source types.
+- [x] Preserve non-destructive rebuild behavior for corrupt/missing artifacts.
+- [x] Define recovery logging and diagnostic surfaces in the egui app.
 - Phase exit:
-- [ ] delete/recover/rebuild semantics are explicit and parity-safe.
+- [x] delete/recover/rebuild semantics are explicit and parity-safe.
 
 ## Risks / Failure Modes
 - Data compatibility can silently regress if egui migration changes artifact assumptions without a versioning plan.
@@ -95,13 +95,20 @@
 - Source-type-specific artifacts can be orphaned if delete logic is not treated as part of migration scope.
 
 ## Test / Parity Requirements
-- [ ] Rust tests for config/bookmark/cache round-trips and migrations.
-- [ ] Integration tests for reopen, delete, rebuild-after-corruption, and safe-quit persistence.
+- [x] Rust tests for config/bookmark/cache round-trips and migrations.
+- [x] Integration tests for reopen, delete, rebuild-after-corruption, and safe-quit persistence.
 - [ ] Manual QA for upgrade scenarios from the Tauri app to the egui app using existing data directories.
-- [ ] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
+- [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
-- [ ] Persistence ownership is fully Rust-native and independent of Tauri/UI layers.
-- [ ] Existing user data compatibility and invalidation rules are explicit.
-- [ ] Delete/recover/rebuild semantics are preserved or deliberately redefined.
-- [ ] The roadmap is specific enough to implement persistence cutover without reopening behavior decisions.
+- [x] Persistence ownership is fully Rust-native and independent of Tauri/UI layers.
+- [x] Existing user data compatibility and invalidation rules are explicit.
+- [x] Delete/recover/rebuild semantics are preserved or deliberately redefined.
+- [x] The roadmap is specific enough to implement persistence cutover without reopening behavior decisions.
+
+### Manual QA Checklist (Run In Egui)
+- [ ] Open legacy data dir and verify recents populate
+- [ ] Open/close a book and confirm bookmark + config persist
+- [ ] Delete a recent and confirm cache removal
+- [ ] Corrupt a bookmark/config and confirm rebuild on next open
+- [ ] Safe quit preserves last known bookmark

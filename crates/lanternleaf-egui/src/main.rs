@@ -35,6 +35,7 @@ use lanternleaf_app::{
         BridgeError, PrettyKind, ReaderPlaybackStateEvent, ReaderSnapshot, ReaderStateEvent,
         TtsStateEvent, UiMode,
     },
+    persistence::{FilesystemPersistenceService, PersistenceLifecycle},
     pipeline::{AppCommand, AppEvent, DispatchPlan, OperationScope, PersistenceTrigger, ReaderCommand},
     shortcuts::{ShortcutAction, ShortcutScope, UiShortcutAction},
     state::AppState,
@@ -119,6 +120,10 @@ struct LanternLeafApp {
     audio_diagnostics: AudioDiagnostics,
     tts_runtime: TtsRuntime,
     last_tts_runtime_event: Option<TtsRuntimeEvent>,
+    persistence: PersistenceLifecycle<FilesystemPersistenceService>,
+    persistence_logged: bool,
+    last_reader_source: Option<String>,
+    last_reader_snapshot: Option<ReaderSnapshot>,
     settings_trace_events: Vec<SettingsTraceEvent>,
     settings_trace_next_id: usize,
     persistence_trace_events: Vec<PersistenceTraceEvent>,
@@ -164,6 +169,10 @@ impl LanternLeafApp {
             audio_diagnostics: AudioDiagnostics::default(),
             tts_runtime: TtsRuntime::new(normalizer::TextNormalizer::load_default()),
             last_tts_runtime_event: None,
+            persistence: PersistenceLifecycle::new(FilesystemPersistenceService),
+            persistence_logged: false,
+            last_reader_source: None,
+            last_reader_snapshot: None,
             settings_trace_events: Vec::new(),
             settings_trace_next_id: 0,
             persistence_trace_events: Vec::new(),
@@ -188,6 +197,7 @@ impl LanternLeafApp {
         let state_snapshot = self.runtime.state_snapshot();
         let reader_snapshot = state_snapshot.reader_document.snapshot.as_ref();
         self.maybe_record_audio_command(&command, reader_snapshot);
+        self.apply_persistence_trigger(&command, reader_snapshot);
         let plan = self.runtime.plan_command(command.clone());
         self.log_plan(&plan);
         self.last_plan = Some(plan);
@@ -211,6 +221,65 @@ impl LanternLeafApp {
             "Dispatching TTS command to egui runtime"
         );
         let _ = self.tts_runtime.apply_command(tts_command);
+    }
+
+    fn apply_persistence_trigger(
+        &mut self,
+        command: &AppCommand,
+        snapshot: Option<&ReaderSnapshot>,
+    ) {
+        match command {
+            AppCommand::Reader(_) => {
+                self.persistence
+                    .flush_trigger(snapshot, PersistenceTrigger::ReaderCommand);
+            }
+            AppCommand::SetRuntimeLogLevel { .. } => {
+                self.persistence
+                    .flush_trigger(snapshot, PersistenceTrigger::RuntimeConfigChange);
+            }
+            AppCommand::SafeQuit => {
+                if let Some(snapshot) = snapshot {
+                    self.persistence.on_safe_quit(snapshot);
+                    self.record_persistence_status("safe_quit", &snapshot.source_path);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn update_persistence_lifecycle(&mut self, snapshot: Option<&ReaderSnapshot>) {
+        if !self.persistence_logged {
+            self.persistence.on_startup();
+            self.push_status("Persistence: startup".to_string());
+            self.persistence_logged = true;
+        }
+
+        match snapshot {
+            Some(snapshot) => {
+                if self
+                    .last_reader_source
+                    .as_deref()
+                    .map(|path| path != snapshot.source_path)
+                    .unwrap_or(true)
+                {
+                    self.persistence.on_source_open(snapshot);
+                    self.record_persistence_status("source_open", &snapshot.source_path);
+                    self.last_reader_source = Some(snapshot.source_path.clone());
+                }
+                self.last_reader_snapshot = Some(snapshot.clone());
+            }
+            None => {
+                if let Some(last_snapshot) = self.last_reader_snapshot.take() {
+                    self.persistence.on_session_close(&last_snapshot);
+                    self.record_persistence_status("session_close", &last_snapshot.source_path);
+                }
+                self.last_reader_source = None;
+            }
+        }
+    }
+
+    fn record_persistence_status(&mut self, label: &str, source_path: &str) {
+        self.push_status(format!("Persistence: {label} ({source_path})"));
     }
 
     fn handle_tts_runtime_events(&mut self) {
@@ -4336,6 +4405,8 @@ impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         self.handle_tts_runtime_events();
         let snapshot = self.runtime.state_snapshot();
+        let reader_snapshot = snapshot.reader_document.snapshot.as_ref();
+        self.update_persistence_lifecycle(reader_snapshot);
         let panels = snapshot
             .session
             .session
@@ -4343,7 +4414,6 @@ impl eframe::App for LanternLeafApp {
             .map(|session| session.panels)
             .unwrap_or_default();
         self.tts_runtime.set_panels(panels);
-        let reader_snapshot = snapshot.reader_document.snapshot.as_ref();
         self.refresh_anchor_diagnostics(reader_snapshot);
         self.update_pdf_render_state(reader_snapshot);
         ctx.set_visuals(Visuals::dark());

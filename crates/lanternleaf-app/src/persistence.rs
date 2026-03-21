@@ -3,7 +3,155 @@ use crate::contracts::ReaderSnapshot;
 use crate::pipeline::PersistenceTrigger;
 use lanternleaf_core::{cache, config};
 use std::path::Path;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
+
+#[derive(Debug, Clone)]
+pub struct PersistenceItem {
+    pub name: &'static str,
+    pub kind: &'static str,
+    pub owner: &'static str,
+    pub path_hint: &'static str,
+    pub version_hint: Option<&'static str>,
+    pub notes: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct PersistenceInventory {
+    pub items: Vec<PersistenceItem>,
+}
+
+impl PersistenceInventory {
+    pub fn default_inventory() -> Self {
+        Self {
+            items: vec![
+                PersistenceItem {
+                    name: "base config",
+                    kind: "config",
+                    owner: "config::io",
+                    path_hint: "conf/config.toml",
+                    version_hint: None,
+                    notes: "Loaded on startup; defaults applied on parse errors.",
+                },
+                PersistenceItem {
+                    name: "per-book config overrides",
+                    kind: "config",
+                    owner: "cache::bookmarks_config",
+                    path_hint: ".cache/lantern-leaf/<source_hash>/epub-config.toml",
+                    version_hint: None,
+                    notes: "Overrides applied when opening a source.",
+                },
+                PersistenceItem {
+                    name: "bookmarks",
+                    kind: "bookmark",
+                    owner: "cache::bookmarks_config",
+                    path_hint: ".cache/lantern-leaf/<source_hash>/bookmark.toml",
+                    version_hint: None,
+                    notes: "Saved on open/close/safe quit.",
+                },
+                PersistenceItem {
+                    name: "recent books",
+                    kind: "recent",
+                    owner: "cache::list_recent_books",
+                    path_hint: ".cache/lantern-leaf/<source_hash>/source.txt",
+                    version_hint: None,
+                    notes: "Derived from cache directories and source hints.",
+                },
+                PersistenceItem {
+                    name: "content artifacts",
+                    kind: "content",
+                    owner: "cache::content_artifacts",
+                    path_hint: ".cache/lantern-leaf/<source_hash>/content/*",
+                    version_hint: Some("content layout: dual-view-v3"),
+                    notes: "Includes tts-text, markdown, html, and PDF artifacts.",
+                },
+                PersistenceItem {
+                    name: "thumbnails",
+                    kind: "image",
+                    owner: "cache::infer_recent_thumbnail",
+                    path_hint: ".cache/lantern-leaf/<source_hash>/thumbnail*",
+                    version_hint: None,
+                    notes: "Stored alongside recents for fast preview.",
+                },
+                PersistenceItem {
+                    name: "PDF sync/OCR artifacts",
+                    kind: "pdf",
+                    owner: "cache::content_artifacts",
+                    path_hint: ".cache/lantern-leaf/<source_hash>/content/pdf-*",
+                    version_hint: Some("pdf sync meta v3, ocr alignment v2, render precompute v1"),
+                    notes: "Rebuilt when signatures or versions change.",
+                },
+                PersistenceItem {
+                    name: "browser-tab snapshots",
+                    kind: "browser_tab",
+                    owner: "cache::browser_tab_cache",
+                    path_hint: ".cache/lantern-leaf/browser-tabs/<digest>/",
+                    version_hint: None,
+                    notes: "Optional artifacts for browser-tab ingestion.",
+                },
+                PersistenceItem {
+                    name: "calibre cache + thumbnails",
+                    kind: "calibre",
+                    owner: "calibre::cache_store",
+                    path_hint: ".cache/lantern-leaf/calibre/*",
+                    version_hint: None,
+                    notes: "Catalog cache + downloaded thumbnails.",
+                },
+            ],
+        }
+    }
+
+    pub fn log(&self) {
+        for item in &self.items {
+            info!(
+                name = item.name,
+                kind = item.kind,
+                owner = item.owner,
+                path = item.path_hint,
+                version = item.version_hint.unwrap_or("none"),
+                notes = item.notes,
+                "Persistence inventory item"
+            );
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PersistencePolicy {
+    pub cache_layout_version: &'static str,
+    pub compatibility_rules: Vec<&'static str>,
+    pub invalidation_rules: Vec<&'static str>,
+}
+
+impl PersistencePolicy {
+    pub fn default_policy() -> Self {
+        Self {
+            cache_layout_version: "dual-view-v3",
+            compatibility_rules: vec![
+                "Load existing bookmark/config formats when parseable; fall back to defaults.",
+                "Respect PDF sync metadata when signature matches source contents.",
+                "Honor cache-root override from config or environment.",
+            ],
+            invalidation_rules: vec![
+                "Invalidate content artifacts when layout version changes.",
+                "Invalidate PDF sync/OCR artifacts when version/signature mismatches.",
+                "Rebuild normalized page caches when config hash changes.",
+            ],
+        }
+    }
+
+    pub fn log(&self) {
+        info!(
+            cache_layout_version = self.cache_layout_version,
+            "Persistence policy: cache layout"
+        );
+        for rule in &self.compatibility_rules {
+            info!(rule = *rule, "Persistence policy: compatibility");
+        }
+        for rule in &self.invalidation_rules {
+            info!(rule = *rule, "Persistence policy: invalidation");
+        }
+    }
+}
 
 pub trait PersistenceService: Send + Sync {
     fn persist_reader_housekeeping(&self, snapshot: &ReaderSnapshot) -> Result<(), BridgeError>;
@@ -52,12 +200,16 @@ impl PersistenceService for FilesystemPersistenceService {
 
 pub struct PersistenceLifecycle<S> {
     service: std::sync::Arc<S>,
+    inventory: PersistenceInventory,
+    policy: PersistencePolicy,
 }
 
 impl<S: PersistenceService> PersistenceLifecycle<S> {
     pub fn new(service: S) -> Self {
         Self {
             service: std::sync::Arc::new(service),
+            inventory: PersistenceInventory::default_inventory(),
+            policy: PersistencePolicy::default_policy(),
         }
     }
 
@@ -65,7 +217,34 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
         std::sync::Arc::clone(&self.service)
     }
 
+    pub fn inventory(&self) -> &PersistenceInventory {
+        &self.inventory
+    }
+
+    pub fn policy(&self) -> &PersistencePolicy {
+        &self.policy
+    }
+
+    pub fn on_startup(&self) {
+        info!("Persistence lifecycle: startup");
+        self.inventory.log();
+        self.policy.log();
+    }
+
+    pub fn on_live_update(&self, snapshot: &ReaderSnapshot, trigger: PersistenceTrigger) {
+        if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
+            warn!(
+                trigger = ?trigger,
+                error = %error.message,
+                "Live persistence failed"
+            );
+        } else {
+            debug!(trigger = ?trigger, "Reader housekeeping persisted");
+        }
+    }
+
     pub fn on_source_open(&self, snapshot: &ReaderSnapshot) {
+        info!(path = %snapshot.source_path, "Persistence lifecycle: source open");
         if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
             warn!(error = %error.message, "Source-open persistence failed");
         } else {
@@ -74,6 +253,7 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
     }
 
     pub fn on_session_close(&self, snapshot: &ReaderSnapshot) {
+        info!(path = %snapshot.source_path, "Persistence lifecycle: session close");
         if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
             warn!(error = %error.message, "Session close persistence failed");
         } else {
@@ -82,6 +262,7 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
     }
 
     pub fn on_safe_quit(&self, snapshot: &ReaderSnapshot) {
+        info!(path = %snapshot.source_path, "Persistence lifecycle: safe quit");
         if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
             warn!(error = %error.message, "Safe quit persistence failed");
         } else {
@@ -101,6 +282,10 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
 
     pub fn flush_trigger(&self, snapshot: Option<&ReaderSnapshot>, trigger: PersistenceTrigger) {
         match (snapshot, trigger) {
+            (Some(snapshot), PersistenceTrigger::ReaderCommand)
+            | (Some(snapshot), PersistenceTrigger::RuntimeConfigChange) => {
+                self.on_live_update(snapshot, trigger);
+            }
             (Some(snapshot), PersistenceTrigger::SourceOpen) => self.on_source_open(snapshot),
             (Some(snapshot), PersistenceTrigger::SessionClose) => self.on_session_close(snapshot),
             (Some(snapshot), PersistenceTrigger::SafeQuit) => self.on_safe_quit(snapshot),

@@ -50,9 +50,12 @@ impl From<&RuntimeEffect> for TaskKind {
             | LoadCalibreCachedBooks
             | OpenCalibreBook { .. }
             | EnsureCalibreThumbnail { .. } => TaskKind::Calibre,
-            DeleteRecent { .. } | ListRecents { .. } | CloseRecentBrowserTab { .. } => {
-                TaskKind::BrowserTabs
-            }
+            DeleteRecent { .. }
+            | ListRecents { .. }
+            | CloseRecentBrowserTab { .. }
+            | LoadBrowserTabsHealth
+            | ListBrowserTabWindows
+            | ListBrowserTabs { .. } => TaskKind::BrowserTabs,
             SetRuntimeLogLevel { .. } => TaskKind::Logging,
             FlushPersistence { .. } => TaskKind::Persistence,
             SafeQuit => TaskKind::Other,

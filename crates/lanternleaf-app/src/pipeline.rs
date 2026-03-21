@@ -1,7 +1,8 @@
 use crate::contracts::{
-    BootstrapState, BridgeError, CalibreBookDto, CalibreLoadEvent, LogLevelEvent, OpenSourceResult,
-    PdfTranscriptionEvent, ReaderPlaybackStateEvent, ReaderStateEvent, RecentBook, SessionState,
-    SessionStateEvent, SourceOpenEvent, TtsStateEvent, UiMode,
+    BootstrapState, BridgeError, BrowserTabsHealth, BrowserTabsTab, BrowserTabsWindow,
+    CalibreBookDto, CalibreLoadEvent, LogLevelEvent, OpenSourceResult, PdfTranscriptionEvent,
+    ReaderPlaybackStateEvent, ReaderStateEvent, RecentBook, SessionState, SessionStateEvent,
+    SourceOpenEvent, TtsStateEvent, UiMode,
 };
 use crate::logging::{command_span, event_span};
 use crate::state::{AppState, OperationState, RuntimeJobPatch, derive_reader_playback};
@@ -32,6 +33,13 @@ pub enum AppCommand {
     OpenClipboard,
     OpenClipboardText {
         text: String,
+    },
+    LoadBrowserTabsHealth,
+    ListBrowserTabWindows,
+    ListBrowserTabs {
+        window_id: Option<u64>,
+        query: Option<String>,
+        refresh: bool,
     },
     OpenBrowserTab {
         tab_id: u64,
@@ -85,6 +93,9 @@ impl AppCommand {
             Self::OpenSourcePath { .. } => "source_open_path",
             Self::OpenClipboard => "source_open_clipboard",
             Self::OpenClipboardText { .. } => "source_open_clipboard_text",
+            Self::LoadBrowserTabsHealth => "browser_tabs_health",
+            Self::ListBrowserTabWindows => "browser_tabs_list_windows",
+            Self::ListBrowserTabs { .. } => "browser_tabs_list_tabs",
             Self::OpenBrowserTab { .. } => "source_open_browser_tab",
             Self::OpenBrowserTabBundle { .. } => "source_open_browser_tab_bundle",
             Self::RefreshBrowserTab { .. } => "source_refresh_browser_tab",
@@ -215,6 +226,13 @@ pub enum RuntimeEffect {
     OpenClipboardText {
         text: String,
     },
+    LoadBrowserTabsHealth,
+    ListBrowserTabWindows,
+    ListBrowserTabs {
+        window_id: Option<u64>,
+        query: Option<String>,
+        refresh: bool,
+    },
     OpenBrowserTab {
         tab_id: u64,
         window_id: Option<u64>,
@@ -285,7 +303,10 @@ impl RuntimeEffect {
             Self::OpenBrowserTab { .. }
             | Self::OpenBrowserTabBundle { .. }
             | Self::RefreshBrowserTab { .. }
-            | Self::CloseRecentBrowserTab { .. } => EffectOwner::BrowserTabs,
+            | Self::CloseRecentBrowserTab { .. }
+            | Self::LoadBrowserTabsHealth
+            | Self::ListBrowserTabWindows
+            | Self::ListBrowserTabs { .. } => EffectOwner::BrowserTabs,
             Self::ApplyReaderCommand { .. }
             | Self::PrecomputeTtsPage
             | Self::CloseReaderSession => EffectOwner::ReaderSession,
@@ -339,6 +360,7 @@ pub enum AppEvent {
     LoadingBootstrapChanged(bool),
     LoadingRecentsChanged(bool),
     LoadingCalibreChanged(bool),
+    LoadingBrowserTabsChanged(bool),
     BootstrapLoaded {
         request_id: u64,
         bootstrap: BootstrapState,
@@ -359,6 +381,18 @@ pub enum AppEvent {
         request_id: u64,
         books: Vec<CalibreBookDto>,
         from_cache: bool,
+    },
+    BrowserTabsHealthLoaded {
+        request_id: u64,
+        health: BrowserTabsHealth,
+    },
+    BrowserTabWindowsLoaded {
+        request_id: u64,
+        windows: Vec<BrowserTabsWindow>,
+    },
+    BrowserTabsLoaded {
+        request_id: u64,
+        tabs: Vec<BrowserTabsTab>,
     },
     CalibreLoadProgress(CalibreLoadEvent),
     TtsStateUpdated(TtsStateEvent),
@@ -417,6 +451,44 @@ pub fn plan_command(state: &AppState, request_id: u64, command: AppCommand) -> D
                 active: true,
             }],
             vec![RuntimeEffect::OpenClipboardText { text }],
+        ),
+        AppCommand::LoadBrowserTabsHealth => (
+            vec![
+                AppEvent::LoadingBrowserTabsChanged(true),
+                AppEvent::OperationChanged {
+                    scope: OperationScope::BrowserTabRefresh,
+                    active: true,
+                },
+            ],
+            vec![RuntimeEffect::LoadBrowserTabsHealth],
+        ),
+        AppCommand::ListBrowserTabWindows => (
+            vec![
+                AppEvent::LoadingBrowserTabsChanged(true),
+                AppEvent::OperationChanged {
+                    scope: OperationScope::BrowserTabRefresh,
+                    active: true,
+                },
+            ],
+            vec![RuntimeEffect::ListBrowserTabWindows],
+        ),
+        AppCommand::ListBrowserTabs {
+            window_id,
+            query,
+            refresh,
+        } => (
+            vec![
+                AppEvent::LoadingBrowserTabsChanged(true),
+                AppEvent::OperationChanged {
+                    scope: OperationScope::BrowserTabRefresh,
+                    active: true,
+                },
+            ],
+            vec![RuntimeEffect::ListBrowserTabs {
+                window_id,
+                query,
+                refresh,
+            }],
         ),
         AppCommand::OpenBrowserTab { tab_id, window_id } => (
             vec![AppEvent::OperationChanged {
@@ -622,6 +694,7 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
         AppEvent::LoadingBootstrapChanged(loading) => state.set_loading_bootstrap(loading),
         AppEvent::LoadingRecentsChanged(loading) => state.set_loading_recents(loading),
         AppEvent::LoadingCalibreChanged(loading) => state.set_loading_calibre(loading),
+        AppEvent::LoadingBrowserTabsChanged(loading) => state.set_loading_browser_tabs(loading),
         AppEvent::BootstrapLoaded {
             request_id,
             bootstrap,
@@ -762,6 +835,29 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
                 clear_scope(state, OperationScope::CalibreLoad);
             }
         }
+        AppEvent::BrowserTabsHealthLoaded { request_id, health } => {
+            debug!(
+                request_id,
+                ok = health.ok,
+                extension_connected = health.extension_connected,
+                "Browser tabs health loaded"
+            );
+            state.set_starter_browser_tabs_health(Some(health));
+            state.set_loading_browser_tabs(false);
+            clear_scope(state, OperationScope::BrowserTabRefresh);
+        }
+        AppEvent::BrowserTabWindowsLoaded { request_id, windows } => {
+            debug!(request_id, count = windows.len(), "Browser tabs windows loaded");
+            state.set_starter_browser_tabs_windows(windows);
+            state.set_loading_browser_tabs(false);
+            clear_scope(state, OperationScope::BrowserTabRefresh);
+        }
+        AppEvent::BrowserTabsLoaded { request_id, tabs } => {
+            debug!(request_id, count = tabs.len(), "Browser tabs loaded");
+            state.set_starter_browser_tabs_tabs(tabs);
+            state.set_loading_browser_tabs(false);
+            clear_scope(state, OperationScope::BrowserTabRefresh);
+        }
         AppEvent::CalibreLoadProgress(event) => {
             if event.request_id < state.runtime_jobs.last_calibre_event_request_id {
                 warn!(
@@ -849,6 +945,7 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
             state.set_loading_bootstrap(false);
             state.set_loading_recents(false);
             state.set_loading_calibre(false);
+            state.set_loading_browser_tabs(false);
         }
     }
 }

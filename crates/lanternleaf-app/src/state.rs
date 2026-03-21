@@ -1,7 +1,8 @@
 use crate::contracts::{
-    BootstrapState, CalibreBookDto, CalibreLoadEvent, LogLevelEvent, PdfTranscriptionEvent,
-    ReaderPlaybackState, ReaderPlaybackStateEvent, ReaderSnapshot, RecentBook, SessionState,
-    SourceOpenEvent, TtsStateEvent,
+    BootstrapState, BrowserTabsHealth, BrowserTabsTab, BrowserTabsWindow, CalibreBookDto,
+    CalibreLoadEvent, LogLevelEvent, PdfTranscriptionEvent, ReaderPlaybackState,
+    ReaderPlaybackStateEvent, ReaderSnapshot, RecentBook, SessionState, SourceOpenEvent,
+    TtsStateEvent,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -80,8 +81,12 @@ pub struct ReaderUiState {
 pub struct StarterState {
     pub recents: Vec<RecentBook>,
     pub calibre_books: Vec<CalibreBookDto>,
+    pub browser_tabs_health: Option<BrowserTabsHealth>,
+    pub browser_tabs_windows: Vec<BrowserTabsWindow>,
+    pub browser_tabs_tabs: Vec<BrowserTabsTab>,
     pub loading_recents: bool,
     pub loading_calibre: bool,
+    pub loading_browser_tabs: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -211,12 +216,28 @@ impl AppState {
         self.starter.calibre_books = calibre_books;
     }
 
+    pub fn set_starter_browser_tabs_health(&mut self, health: Option<BrowserTabsHealth>) {
+        self.starter.browser_tabs_health = health;
+    }
+
+    pub fn set_starter_browser_tabs_windows(&mut self, windows: Vec<BrowserTabsWindow>) {
+        self.starter.browser_tabs_windows = windows;
+    }
+
+    pub fn set_starter_browser_tabs_tabs(&mut self, tabs: Vec<BrowserTabsTab>) {
+        self.starter.browser_tabs_tabs = tabs;
+    }
+
     pub fn set_loading_recents(&mut self, loading: bool) {
         self.starter.loading_recents = loading;
     }
 
     pub fn set_loading_calibre(&mut self, loading: bool) {
         self.starter.loading_calibre = loading;
+    }
+
+    pub fn set_loading_browser_tabs(&mut self, loading: bool) {
+        self.starter.loading_browser_tabs = loading;
     }
 
     pub fn apply_runtime_job_patch(&mut self, patch: RuntimeJobPatch) {

@@ -41,53 +41,53 @@
 - Recents and deletion behavior continue to be backed by Rust persistence/cache ownership.
 
 ## Phase 1: Starter Surface Contract
-- [ ] Define starter-mode widget structure:
-- [ ] open source controls
-- [ ] recents list
-- [ ] Calibre browser panel
-- [ ] browser-tab panel
-- [ ] connection/health/status surfaces
-- [ ] Define state and command boundaries for starter mode independently from reader mode.
+- [x] Define starter-mode widget structure:
+- [x] open source controls
+- [x] recents list
+- [x] Calibre browser panel
+- [x] browser-tab panel
+- [x] connection/health/status surfaces
+- [x] Define state and command boundaries for starter mode independently from reader mode.
 - Phase exit:
-- [ ] starter-mode layout and responsibilities are explicit for egui implementation.
+- [x] starter-mode layout and responsibilities are explicit for egui implementation.
 
 ## Phase 2: Local Open And Recents
-- [ ] Rebuild local file open flow with native desktop affordances.
-- [ ] Preserve recent entry metadata, delete behavior, and reopen behavior.
-- [ ] Preserve cache-aware recent deletion semantics.
+- [x] Rebuild local file open flow with native desktop affordances.
+- [x] Preserve recent entry metadata, delete behavior, and reopen behavior.
+- [x] Preserve cache-aware recent deletion semantics.
 - Phase exit:
-- [ ] local open and recents are fully specified in the native shell.
+- [x] local open and recents are fully specified in the native shell.
 
 ## Phase 3: Calibre Browser
-- [ ] Rebuild Calibre list browsing, sorting, search, and open actions in egui.
-- [ ] Preserve thumbnail behavior and background hydration rules.
-- [ ] Define status/error UI for large-catalog loads and cache refresh conditions.
+- [x] Rebuild Calibre list browsing, sorting, search, and open actions in egui.
+- [x] Preserve thumbnail behavior and background hydration rules.
+- [x] Define status/error UI for large-catalog loads and cache refresh conditions.
 - Phase exit:
-- [ ] Calibre parity requirements are explicit enough for implementation and QA.
+- [x] Calibre parity requirements are explicit enough for implementation and QA.
 
 ## Phase 4: Browser-Tab Import
-- [ ] Rebuild the browser-tab import flow in egui:
-- [ ] service health
-- [ ] window selection
-- [ ] tab selection
-- [ ] tab search/filter
-- [ ] import action
-- [ ] manual refresh/reimport if retained
-- [ ] Preserve current metadata, truncation diagnostics, and cache ownership semantics.
-- [ ] Keep browser-tab reopen/delete behavior explicit in the egui app.
+- [x] Rebuild the browser-tab import flow in egui:
+- [x] service health
+- [x] window selection
+- [x] tab selection
+- [x] tab search/filter
+- [x] import action
+- [x] manual refresh/reimport if retained
+- [x] Preserve current metadata, truncation diagnostics, and cache ownership semantics.
+- [x] Keep browser-tab reopen/delete behavior explicit in the egui app.
 - Phase exit:
-- [ ] browser-tab import remains first-class and implementation-ready in the migration plan.
+- [x] browser-tab import remains first-class and implementation-ready in the migration plan.
 
 ## Phase 5: Error States And Diagnostics
-- [ ] Define native error/empty states for:
-- [ ] no recent books
-- [ ] Calibre unavailable or empty
-- [ ] browser-tab service offline
-- [ ] extension disconnected
-- [ ] import blocked or snapshot unavailable
-- [ ] source open failures
+- [x] Define native error/empty states for:
+- [x] no recent books
+- [x] Calibre unavailable or empty
+- [x] browser-tab service offline
+- [x] extension disconnected
+- [x] import blocked or snapshot unavailable
+- [x] source open failures
 - Phase exit:
-- [ ] starter/import surfaces have consistent native diagnostics behavior.
+- [x] starter/import surfaces have consistent native diagnostics behavior.
 
 ## Risks / Failure Modes
 - Browser-tab import may be neglected because it spans service integration, cache, and starter UI.
@@ -98,7 +98,7 @@
 - [ ] Rust integration tests for source opening, recent deletion, and import-service behavior.
 - [ ] Manual QA for starter-mode transitions, Calibre browsing, and browser-tab import/refresh/delete flows.
 - [ ] Parity checks against the existing browser-tab and starter roadmaps/checklists.
-- [ ] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
+- [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
 - [ ] Starter/library/import features are fully in scope and explicitly owned in the egui migration.

@@ -518,6 +518,72 @@ impl LanternLeafApp {
         );
     }
 
+    fn replay_timeline_archive(&mut self, path: &Path, pin: bool) {
+        let data = match fs::read(path) {
+            Ok(data) => data,
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    path = %path.display(),
+                    "Failed to read QA timeline archive for replay"
+                );
+                self.push_status(format!(
+                    "Failed to read timeline archive {}: {}",
+                    path.display(),
+                    err
+                ));
+                return;
+            }
+        };
+        let records: Vec<SerializableTimelineHistoryEntry> = match serde_json::from_slice(&data) {
+            Ok(records) => records,
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    path = %path.display(),
+                    "Failed to deserialize QA timeline archive"
+                );
+                self.push_status(format!(
+                    "Invalid timeline archive {}: {}",
+                    path.display(),
+                    err
+                ));
+                return;
+            }
+        };
+        let mut replayed = 0;
+        for record in records.into_iter() {
+            if let Some(entry) = record.to_entry() {
+                self.replay_history_entry(entry, pin);
+                replayed += 1;
+            }
+        }
+        let action_label = if pin { "Replayed & pinned" } else { "Replayed" };
+        self.push_status(format!(
+            "{} {} entries from {}",
+            action_label,
+            replayed,
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("archive")
+        ));
+        info!(
+            path = ?path,
+            replayed,
+            pin,
+            "Replayed QA timeline archive entries"
+        );
+    }
+
+    fn replay_history_entry(&mut self, entry: TimelineHistoryEntry, pin: bool) {
+        let kind = entry.entry.kind.clone();
+        self.execute_timeline_kind(&kind);
+        self.record_timeline_history(&entry.entry);
+        if pin {
+            self.pin_timeline_entry(&entry);
+        }
+    }
+
     fn pinned_timeline_path(&self) -> PathBuf {
         self.timeline_archive_root().join(PINNED_TIMELINE_FILE)
     }
@@ -732,6 +798,12 @@ impl LanternLeafApp {
                 ui.label(RichText::new(file_name).small().weak());
                 if ui.button("Import JSON").clicked() {
                     self.import_timeline_archive(archive);
+                }
+                if ui.button("Replay").clicked() {
+                    self.replay_timeline_archive(archive, false);
+                }
+                if ui.button("Replay + pin").clicked() {
+                    self.replay_timeline_archive(archive, true);
                 }
             });
         }

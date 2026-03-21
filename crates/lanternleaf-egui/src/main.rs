@@ -1,9 +1,10 @@
 mod helpers;
 mod pdf;
+mod pdf_renderer;
 
 use std::{
     collections::HashMap,
-    path::Path,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -21,6 +22,7 @@ use crate::pdf::{
     PdfPageRegistryEntry, PdfViewportBudgetDecision, PdfViewportBudgetInput, PdfViewportPlanInput,
     PdfViewportRenderPlan, build_pdf_viewport_render_plan, choose_pdf_viewport_evictions,
 };
+use crate::pdf_renderer::{NativePdfRenderer, RenderTarget};
 use lanternleaf_app::{
     AppRuntime,
     contracts::{PrettyKind, ReaderSnapshot, UiMode},
@@ -33,12 +35,12 @@ use lanternleaf_core::{
     cache, config,
     session::{SessionCommand, TtsPlaybackState},
 };
-use tracing::{Level, info, trace};
+use tracing::{Level, info, trace, warn};
 
-const PDF_CANVAS_BUDGET_PAGES: usize = 2;
-const PDF_TEXT_LAYER_BUDGET_PAGES: usize = 1;
-const PDF_CANVAS_TEXTURE_SIZE: [usize; 2] = [320, 450];
-const PDF_TEXT_TEXTURE_SIZE: [usize; 2] = [300, 420];
+pub const PDF_CANVAS_BUDGET_PAGES: usize = 2;
+pub const PDF_TEXT_LAYER_BUDGET_PAGES: usize = 1;
+pub const PDF_CANVAS_TEXTURE_SIZE: [usize; 2] = [320, 450];
+pub const PDF_TEXT_TEXTURE_SIZE: [usize; 2] = [300, 420];
 
 fn main() {
     let config_path = app_config_path();
@@ -67,7 +69,7 @@ fn main() {
 
 struct LanternLeafApp {
     runtime: AppRuntime,
-    tracing_guard: tracing_appender::non_blocking::WorkerGuard,
+    _tracing_guard: tracing_appender::non_blocking::WorkerGuard,
     status_log: Vec<String>,
     show_safe_quit_modal: bool,
     show_reader_confirm_modal: bool,
@@ -78,6 +80,8 @@ struct LanternLeafApp {
     overlay_diagnostics: OverlayDiagnostics,
     scheduler_events: Vec<SchedulerEvent>,
     pdf_render_state: PdfRenderState,
+    pdf_renderer: Option<NativePdfRenderer>,
+    current_pdf_path: Option<PathBuf>,
     sentence_scroll_offset: Option<Vec2>,
 }
 
@@ -87,9 +91,16 @@ impl LanternLeafApp {
         runtime: AppRuntime,
         tracing_guard: tracing_appender::non_blocking::WorkerGuard,
     ) -> Self {
+        let pdf_renderer = match NativePdfRenderer::new() {
+            Ok(renderer) => Some(renderer),
+            Err(err) => {
+                warn!(error = ?err, "Failed to initialize native PDF renderer");
+                None
+            }
+        };
         Self {
             runtime,
-            tracing_guard,
+            _tracing_guard: tracing_guard,
             status_log: Vec::new(),
             show_safe_quit_modal: false,
             show_reader_confirm_modal: false,
@@ -100,6 +111,8 @@ impl LanternLeafApp {
             overlay_diagnostics: OverlayDiagnostics::default(),
             scheduler_events: Vec::new(),
             pdf_render_state: PdfRenderState::default(),
+            pdf_renderer,
+            current_pdf_path: None,
             sentence_scroll_offset: None,
         }
     }
@@ -1652,24 +1665,38 @@ impl LanternLeafApp {
         if self.pdf_render_state.plan.is_none() {
             return;
         }
-        for surface in self.pdf_render_state.viewport_surfaces.iter_mut() {
-            if surface.canvas_ready && surface.canvas_texture.is_none() {
-                let image = Self::build_canvas_color_image(surface.page_index);
+        for idx in 0..self.pdf_render_state.viewport_surfaces.len() {
+            let (page_index, canvas_ready, canvas_missing, text_ready, text_missing) = {
+                let surface = &self.pdf_render_state.viewport_surfaces[idx];
+                (
+                    surface.page_index,
+                    surface.canvas_ready,
+                    surface.canvas_texture.is_none(),
+                    surface.text_layer_ready,
+                    surface.text_layer_texture.is_none(),
+                )
+            };
+            if canvas_ready && canvas_missing {
+                let image = self
+                    .render_pdf_texture(page_index, RenderTarget::Canvas)
+                    .unwrap_or_else(|| Self::build_canvas_color_image(page_index));
                 let texture = ctx.load_texture(
-                    format!("pdf-canvas-{}", surface.page_index),
+                    format!("pdf-{}-{}", RenderTarget::Canvas.label(), page_index),
                     image,
                     TextureOptions::LINEAR,
                 );
-                surface.canvas_texture = Some(texture);
+                self.pdf_render_state.viewport_surfaces[idx].canvas_texture = Some(texture);
             }
-            if surface.text_layer_ready && surface.text_layer_texture.is_none() {
-                let image = Self::build_text_layer_color_image(surface.page_index);
+            if text_ready && text_missing {
+                let image = self
+                    .render_pdf_texture(page_index, RenderTarget::TextLayer)
+                    .unwrap_or_else(|| Self::build_text_layer_color_image(page_index));
                 let texture = ctx.load_texture(
-                    format!("pdf-text-layer-{}", surface.page_index),
+                    format!("pdf-{}-{}", RenderTarget::TextLayer.label(), page_index),
                     image,
                     TextureOptions::LINEAR,
                 );
-                surface.text_layer_texture = Some(texture);
+                self.pdf_render_state.viewport_surfaces[idx].text_layer_texture = Some(texture);
             }
         }
     }
@@ -1716,6 +1743,32 @@ impl LanternLeafApp {
             }
         }
         ColorImage::from_rgba_unmultiplied([width, height], &data)
+    }
+
+    fn render_pdf_texture(
+        &mut self,
+        page_index: usize,
+        target: RenderTarget,
+    ) -> Option<ColorImage> {
+        let source_path = self.current_pdf_path.as_deref()?;
+        let renderer = self.pdf_renderer.as_mut()?;
+        let result = match target {
+            RenderTarget::Canvas => renderer.render_canvas(source_path, page_index),
+            RenderTarget::TextLayer => renderer.render_text_layer(source_path, page_index),
+        };
+        match result {
+            Ok(image) => Some(image),
+            Err(err) => {
+                warn!(
+                    pdf_path = %source_path.display(),
+                    page = page_index + 1,
+                    target = ?target,
+                    error = ?err,
+                    "native PDF renderer failed"
+                );
+                None
+            }
+        }
     }
 
     fn page_index_for_global_sentence(
@@ -1849,6 +1902,7 @@ impl LanternLeafApp {
     fn update_pdf_render_state(&mut self, snapshot: Option<&ReaderSnapshot>) {
         if let Some(snapshot) = snapshot {
             if snapshot.pretty_kind == PrettyKind::Pdf && snapshot.total_pages > 0 {
+                self.current_pdf_path = Some(PathBuf::from(&snapshot.source_path));
                 let visible_page_indexes = vec![snapshot.current_page];
                 let highlighted_page = snapshot
                     .highlighted_sentence_idx
@@ -1932,6 +1986,7 @@ impl LanternLeafApp {
                 return;
             }
         }
+        self.current_pdf_path = None;
         self.pdf_render_state.reset();
     }
 }

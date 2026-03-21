@@ -9,3 +9,6 @@ lanternleaf-app = { path = "../lanternleaf-app" }
 lanternleaf-core = { path = "../lanternleaf-core" }
 tracing = "0.1"
 tracing-appender = "0.2"
+image = "0.24"
+pdfium-auto = { version = "0.3", features = ["bundled"] }
+pdfium-render = "0.8"

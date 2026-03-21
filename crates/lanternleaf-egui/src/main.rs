@@ -316,7 +316,9 @@ impl LanternLeafApp {
                     self.log_qa_span_copy(&alert, &summary);
                 }
                 if ui.small_button("Replay budget span").clicked() {
-                    self.execute_timeline_kind(&RegressionSnapshotTimelineKind::OverlayAlert(alert.clone()));
+                    self.execute_timeline_kind(&RegressionSnapshotTimelineKind::OverlayAlert(
+                        alert.clone(),
+                    ));
                 }
                 if ui.small_button("Pin span").clicked() {
                     let entry = RegressionSnapshotTimelineEntry {
@@ -1596,7 +1598,7 @@ impl LanternLeafApp {
         if decision.allowed {
             return;
         }
-        let reason = if !decision.highlight_page_has_text_layer {
+        let reason_label = if !decision.highlight_page_has_text_layer {
             "text_layer_missing"
         } else if decision.budget_pages == 0 {
             "budget_exhausted"
@@ -1604,12 +1606,14 @@ impl LanternLeafApp {
             "overlay_blocked"
         };
         self.record_regression_snapshot(
-            RegressionScenario::OverlayBacklog { reason },
+            RegressionScenario::OverlayBacklog {
+                reason: reason_label,
+            },
             Some(snapshot),
             Some(decision.clone()),
         );
         self.record_scheduler_event(SchedulerEventKind::RetryOverlay {
-            reason,
+            reason: reason_label.to_string(),
             highlight_page: decision.highlight_page,
             budget_pages: decision.budget_pages,
             overlay_reason: decision.overlay_reason.clone(),
@@ -2149,6 +2153,41 @@ impl LanternLeafApp {
         self.push_status(format!("QA span copy: {}", payload));
     }
 
+    fn scheduler_event_payload(&self, event: &SchedulerEvent, summary: &str) -> String {
+        let details = match &event.kind {
+            SchedulerEventKind::Eviction {
+                evicted_canvas_pages,
+                evicted_text_layer_pages,
+            } => json!({
+                "evicted_canvas_pages": evicted_canvas_pages,
+                "evicted_text_layer_pages": evicted_text_layer_pages,
+            }),
+            SchedulerEventKind::RetryOverlay {
+                reason,
+                highlight_page,
+                budget_pages,
+                overlay_reason,
+            } => json!({
+                "reason": reason,
+                "highlight_page": highlight_page.map(|page| page + 1),
+                "budget_pages": budget_pages,
+                "overlay_reason": overlay_reason,
+            }),
+        };
+        let payload = json!({
+            "kind": event.kind.describe(),
+            "age_secs": event.age_secs(),
+            "details": details,
+            "summary": summary,
+        });
+        serde_json::to_string(&payload).unwrap_or_else(|_| summary.to_string())
+    }
+
+    fn log_scheduler_event_copy(&mut self, event: &SchedulerEvent, summary: &str) {
+        let payload = self.scheduler_event_payload(event, summary);
+        self.push_status(format!("QA scheduler span copy: {}", payload));
+    }
+
     fn replay_pdf_render_event(&self, event: &PdfRenderEvent) {
         let highlight_page = self.pdf_render_state.highlighted_page == Some(event.page_index);
         let replay_span = tracing::span!(
@@ -2661,19 +2700,29 @@ impl LanternLeafApp {
                 ));
                 ui.separator();
                 ui.label("Scheduler events:");
-                if self.scheduler_events.is_empty() {
+                let non_retry_events: Vec<_> = self
+                    .scheduler_events
+                    .iter()
+                    .filter(|event| !matches!(event.kind, SchedulerEventKind::RetryOverlay { .. }))
+                    .cloned()
+                    .collect();
+                if non_retry_events.is_empty() {
                     ui.label("(No scheduler events logged yet)");
                 } else {
-                    for event in self.scheduler_events.iter().rev() {
-                        ui.label(
-                            RichText::new(format!(
-                                "{} ({:.1}s ago)",
-                                event.kind.describe(),
-                                event.age_secs()
-                            ))
-                            .small()
-                            .weak(),
-                        );
+                    for event in non_retry_events.iter().rev() {
+                        ui.horizontal(|ui| {
+                            ui.label(Self::scheduler_event_badge(&event.kind));
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} ({:.1}s ago)",
+                                    event.kind.describe(),
+                                    event.age_secs()
+                                ))
+                                .small()
+                                .weak(),
+                            );
+                            self.scheduler_event_controls(ui, event);
+                        });
                     }
                 }
                 ui.separator();
@@ -3100,32 +3149,64 @@ impl LanternLeafApp {
                             .strong(),
                     );
                 }
-                let budget_rejections = self
+                let rejection_events: Vec<_> = self
                     .scheduler_events
                     .iter()
                     .filter(|event| matches!(event.kind, SchedulerEventKind::RetryOverlay { .. }))
-                    .count();
-                if budget_rejections > 0 {
+                    .cloned()
+                    .collect();
+                if !rejection_events.is_empty() {
                     ui.separator();
                     ui.label("Overlay budget rejections:");
-                    for event in self.scheduler_events.iter().rev() {
-                        if let SchedulerEventKind::RetryOverlay { .. } = &event.kind {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new("BUDGET REJECTION")
-                                        .color(Color32::from_rgb(220, 180, 120))
-                                        .strong()
-                                        .small(),
-                                );
-                                ui.label(
-                                    RichText::new(format!(
-                                        "{} ({:.1}s ago)",
-                                        event.kind.describe(),
-                                        event.age_secs()
-                                    ))
-                                    .small()
-                                    .weak(),
-                                );
+                    for event in rejection_events.iter().rev() {
+                        if let SchedulerEventKind::RetryOverlay {
+                            reason,
+                            highlight_page,
+                            budget_pages,
+                            overlay_reason,
+                        } = &event.kind
+                        {
+                            let highlight_label =
+                                highlight_page.map(|page| page + 1).map_or("unknown".to_string(), |page| page.to_string());
+                            let overlay_reason = overlay_reason
+                                .as_deref()
+                                .unwrap_or("unspecified");
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        RichText::new("BUDGET REJECTION")
+                                            .color(Color32::from_rgb(220, 180, 120))
+                                            .strong()
+                                            .small(),
+                                    );
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "{} ({:.1}s ago)",
+                                            event.kind.describe(),
+                                            event.age_secs()
+                                        ))
+                                        .small()
+                                        .weak(),
+                                    );
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "page {} | budget {} | reason {} | overlay {}",
+                                            highlight_label, budget_pages, reason, overlay_reason
+                                        ))
+                                        .small()
+                                        .weak(),
+                                    );
+                                });
+                                ui.horizontal(|ui| {
+                                    self.scheduler_event_controls(ui, event);
+                                    if ui
+                                        .small_button("Focus diagnostics")
+                                        .on_hover_text("Scroll the diagnostics panel into view")
+                                        .clicked()
+                                    {
+                                        self.overlay_pressure_focus = true;
+                                    }
+                                });
                             });
                         }
                     }
@@ -3190,6 +3271,47 @@ impl LanternLeafApp {
                 .color(Color32::from_rgb(220, 170, 100))
                 .small()
                 .strong(),
+        }
+    }
+
+    fn scheduler_timeline_entry(event: &SchedulerEvent) -> RegressionSnapshotTimelineEntry {
+        RegressionSnapshotTimelineEntry {
+            kind: RegressionSnapshotTimelineKind::SchedulerEvent(event.clone()),
+            timestamp: event.timestamp,
+        }
+    }
+
+    fn scheduler_event_badge(kind: &SchedulerEventKind) -> RichText {
+        match kind {
+            SchedulerEventKind::Eviction { .. } => RichText::new("EVICT")
+                .color(Color32::from_rgb(170, 210, 170))
+                .small()
+                .strong(),
+            SchedulerEventKind::RetryOverlay { .. } => RichText::new("RETRY")
+                .color(Color32::from_rgb(230, 180, 110))
+                .small()
+                .strong(),
+        }
+    }
+
+    fn scheduler_event_controls(&mut self, ui: &mut Ui, event: &SchedulerEvent) {
+        let entry = Self::scheduler_timeline_entry(event);
+        if ui.small_button("Replay scheduler event").clicked() {
+            let kind = entry.kind.clone();
+            self.execute_timeline_kind(&kind);
+            self.record_timeline_history(&entry);
+        }
+        if ui.small_button("Copy QA JSON").clicked() {
+            let summary = event.kind.describe();
+            let payload = self.scheduler_event_payload(event, &summary);
+            ui.ctx()
+                .output_mut(|output| output.copied_text = payload.clone());
+            trace!(event = %summary, "Copied scheduler event QA JSON");
+            self.log_scheduler_event_copy(event, &summary);
+        }
+        if ui.small_button("Pin timeline entry").clicked() {
+            let history_entry = TimelineHistoryEntry::from_entry(&entry);
+            self.pin_timeline_entry(&history_entry);
         }
     }
 
@@ -4199,7 +4321,7 @@ enum SchedulerEventKind {
         evicted_text_layer_pages: Vec<usize>,
     },
     RetryOverlay {
-        reason: &'static str,
+        reason: String,
         highlight_page: Option<usize>,
         budget_pages: usize,
         overlay_reason: Option<String>,
@@ -4443,14 +4565,14 @@ impl SerializableTimelineKind {
                 )
             }
             RegressionSnapshotTimelineKind::AudioEvent(event) => {
-                SerializableTimelineKind::AudioEvent(
-                    SerializableAudioBudgetEvent::from_event(event),
-                )
+                SerializableTimelineKind::AudioEvent(SerializableAudioBudgetEvent::from_event(
+                    event,
+                ))
             }
             RegressionSnapshotTimelineKind::SchedulerEvent(event) => {
-                SerializableTimelineKind::SchedulerEvent(
-                    SerializableSchedulerEvent::from_event(event),
-                )
+                SerializableTimelineKind::SchedulerEvent(SerializableSchedulerEvent::from_event(
+                    event,
+                ))
             }
             RegressionSnapshotTimelineKind::Status(status) => {
                 SerializableTimelineKind::Status(SerializableStatusLogEntry {
@@ -4471,9 +4593,9 @@ impl SerializableTimelineKind {
             SerializableTimelineKind::PdfThrottleEvent(event) => Some(
                 RegressionSnapshotTimelineKind::PdfThrottleEvent(event.to_event()),
             ),
-            SerializableTimelineKind::AudioEvent(event) => Some(
-                RegressionSnapshotTimelineKind::AudioEvent(event.to_event()),
-            ),
+            SerializableTimelineKind::AudioEvent(event) => {
+                Some(RegressionSnapshotTimelineKind::AudioEvent(event.to_event()))
+            }
             SerializableTimelineKind::SchedulerEvent(event) => Some(
                 RegressionSnapshotTimelineKind::SchedulerEvent(event.to_event()),
             ),
@@ -4621,7 +4743,9 @@ impl SerializableAudioBudgetEvent {
             target_sentence: event.target_sentence,
             anchor: event.anchor,
             fallback: event.fallback,
-            overlay_snapshot: SerializableOverlayDecisionSnapshot::from_snapshot(&event.overlay_snapshot),
+            overlay_snapshot: SerializableOverlayDecisionSnapshot::from_snapshot(
+                &event.overlay_snapshot,
+            ),
             highlight_page: event.highlight_page,
         }
     }
@@ -4861,10 +4985,7 @@ impl RegressionSnapshotTimelineKind {
             RegressionSnapshotTimelineKind::AudioEvent(event) => format!(
                 "audio {} sentence {}",
                 event.command,
-                event
-                    .target_sentence
-                    .map(|idx| idx + 1)
-                    .unwrap_or(0)
+                event.target_sentence.map(|idx| idx + 1).unwrap_or(0)
             ),
             RegressionSnapshotTimelineKind::SchedulerEvent(event) => match &event.kind {
                 SchedulerEventKind::Eviction {

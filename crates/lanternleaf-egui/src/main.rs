@@ -48,6 +48,7 @@ const READER_RENDR_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/
 const PDF_SUBSYSTEM_ROADMAP_URL: &str =
     "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-native-pdf-roadmap.md";
 const PRIORITIZATION_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/implementation-prioritization-roadmap.md";
+const TTS_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-tts-audio-and-playback-roadmap.md";
 
 fn main() {
     let config_path = app_config_path();
@@ -85,6 +86,7 @@ struct LanternLeafApp {
     auto_scroll_state: AutoScrollState,
     anchor_diagnostics: AnchorDiagnostics,
     overlay_diagnostics: OverlayDiagnostics,
+    audio_diagnostics: AudioDiagnostics,
     overlay_pressure_focus: bool,
     scheduler_events: Vec<SchedulerEvent>,
     pdf_render_state: PdfRenderState,
@@ -119,6 +121,7 @@ impl LanternLeafApp {
             auto_scroll_state: AutoScrollState::default(),
             anchor_diagnostics: AnchorDiagnostics::default(),
             overlay_diagnostics: OverlayDiagnostics::default(),
+            audio_diagnostics: AudioDiagnostics::default(),
             overlay_pressure_focus: false,
             scheduler_events: Vec::new(),
             pdf_render_state: PdfRenderState::default(),
@@ -130,6 +133,9 @@ impl LanternLeafApp {
     }
 
     fn execute_command(&mut self, command: AppCommand) {
+        let state_snapshot = self.runtime.state_snapshot();
+        let reader_snapshot = state_snapshot.reader_document.snapshot.as_ref();
+        self.maybe_record_audio_command(&command, reader_snapshot);
         let plan = self.runtime.plan_command(command);
         self.log_plan(&plan);
         self.last_plan = Some(plan);
@@ -1010,6 +1016,126 @@ impl LanternLeafApp {
         trace!(decision = ?decision, "Replayed overlay budget decision for QA");
     }
 
+    fn audio_budget_span(&self, event: &AudioBudgetEvent) -> tracing::span::Span {
+        tracing::span!(
+            Level::TRACE,
+            "JumpToSentence",
+            budget_plan = "shell.performance_budget",
+            audio_command = event.command,
+            target_sentence = ?event.target_sentence,
+            anchor_path = event.fallback.label(),
+            anchor_index = ?event.anchor,
+            auto_scroll = event.auto_scroll,
+            overlay_budget_pages = event.overlay_snapshot.budget_pages,
+            overlay_budget_allowed = event.overlay_snapshot.allowed,
+            overlay_rect_count = event.overlay_snapshot.overlay_rects_available,
+            overlay_alignment_reason = ?event.overlay_snapshot.overlay_reason.as_deref(),
+            highlight_page = ?event.highlight_page,
+        )
+    }
+
+    fn replay_audio_event(&self, event: &AudioBudgetEvent) {
+        let span = self.audio_budget_span(event);
+        let _enter = span.enter();
+        trace!(event = %event.describe(), "Replayed audio budget span for QA");
+    }
+
+    fn audio_event_payload(&self, event: &AudioBudgetEvent, summary: &str) -> String {
+        let payload = json!({
+            "id": event.id,
+            "command": event.command,
+            "auto_scroll": event.auto_scroll,
+            "target_sentence": event.target_sentence,
+            "anchor_fallback": event.fallback.label(),
+            "anchor_index": event.anchor,
+            "overlay_budget_pages": event.overlay_snapshot.budget_pages,
+            "overlay_allowed": event.overlay_snapshot.allowed,
+            "highlight_page": event.highlight_page,
+            "overlay_rects_cached": event.overlay_snapshot.overlay_rects_available,
+            "overlay_reason": event.overlay_snapshot.overlay_reason,
+            "summary": summary,
+        });
+        serde_json::to_string(&payload).unwrap_or_else(|_| summary.to_string())
+    }
+
+    fn log_qa_audio_copy(&mut self, event: &AudioBudgetEvent, summary: &str) {
+        let payload = self.audio_event_payload(event, summary);
+        self.push_status(format!("QA audio span copy: {}", payload));
+    }
+
+    fn maybe_record_audio_command(
+        &mut self,
+        command: &AppCommand,
+        snapshot: Option<&ReaderSnapshot>,
+    ) {
+        let session_cmd = match command {
+            AppCommand::Reader(ReaderCommand::Session(session_cmd)) => session_cmd,
+            _ => return,
+        };
+        let label = match Self::audio_command_label(session_cmd) {
+            Some(label) => label,
+            None => return,
+        };
+        let snapshot = match snapshot {
+            Some(snapshot) => snapshot,
+            None => return,
+        };
+        let target_sentence = snapshot.highlighted_sentence_idx;
+        let (anchor, fallback) = target_sentence
+            .map(|idx| LanternLeafApp::resolve_sentence_anchor(snapshot, idx))
+            .unwrap_or((None, AnchorFallback::Missing));
+        let overlay_snapshot = self.capture_overlay_decision();
+        let highlight_page = self.pdf_render_state.highlighted_page;
+        let event = AudioBudgetEvent {
+            id: self.audio_diagnostics.allocate_event_id(),
+            timestamp: Instant::now(),
+            command: label,
+            auto_scroll: Self::audio_command_auto_scroll(session_cmd),
+            target_sentence,
+            anchor,
+            fallback,
+            overlay_snapshot: overlay_snapshot.clone(),
+            highlight_page,
+        };
+        let span = self.audio_budget_span(&event);
+        let _enter = span.enter();
+        trace!(
+            audio_command = event.command,
+            target_sentence = ?event.target_sentence,
+            auto_scroll = event.auto_scroll,
+            budget_pages = event.overlay_snapshot.budget_pages,
+            "Recorded audio JumpToSentence decision"
+        );
+        self.audio_diagnostics.record(event);
+    }
+
+    fn audio_command_label(command: &SessionCommand) -> Option<&'static str> {
+        match command {
+            SessionCommand::TtsPlay => Some("tts.play"),
+            SessionCommand::TtsPause => Some("tts.pause"),
+            SessionCommand::TtsTogglePlayPause => Some("tts.toggle_play_pause"),
+            SessionCommand::TtsPlayFromPageStart => Some("tts.play_page_start"),
+            SessionCommand::TtsPlayFromHighlight => Some("tts.play_from_highlight"),
+            SessionCommand::TtsSeekNext => Some("tts.seek_next"),
+            SessionCommand::TtsSeekPrev => Some("tts.seek_prev"),
+            SessionCommand::TtsRepeatSentence => Some("tts.repeat_sentence"),
+            SessionCommand::TtsStop => Some("tts.stop"),
+            _ => None,
+        }
+    }
+
+    fn audio_command_auto_scroll(command: &SessionCommand) -> bool {
+        matches!(
+            command,
+            SessionCommand::TtsPlay
+                | SessionCommand::TtsPlayFromPageStart
+                | SessionCommand::TtsPlayFromHighlight
+                | SessionCommand::TtsSeekNext
+                | SessionCommand::TtsSeekPrev
+                | SessionCommand::TtsRepeatSentence
+        )
+    }
+
     fn capture_overlay_pressure_from_native_render_span(&mut self, span: &NativeRenderSpan) {
         if span.target != RenderTarget::TextLayer || span.cache_hit {
             return;
@@ -1647,6 +1773,63 @@ impl LanternLeafApp {
                                 if ui.button("Log QA JSON").clicked() {
                                     let summary = self.overlay_pressure_span_summary(alert);
                                     self.log_qa_span_copy(alert, &summary);
+                                }
+                            });
+                        });
+                    }
+                }
+                ui.separator();
+                ui.label("Audio budget traces:");
+                let audio_events = self.audio_diagnostics.recent_events().to_vec();
+                if audio_events.is_empty() {
+                    ui.label("(No audio JumpToSentence events yet)");
+                } else {
+                    ui.horizontal(|ui| {
+                        ui.label("Related tranches:");
+                        ui.hyperlink_to("Audio & TTS integration", TTS_ROADMAP_URL);
+                        ui.hyperlink_to("Reader Rendering Core", READER_RENDR_ROADMAP_URL);
+                        ui.hyperlink_to("Implementation prioritization", PRIORITIZATION_ROADMAP_URL);
+                    });
+                    for event in audio_events.iter().rev() {
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} ({:.1}s ago)",
+                                        event.describe(),
+                                        event.age_secs()
+                                    ))
+                                    .small()
+                                    .weak(),
+                                );
+                                ui.label(
+                                    RichText::new(format!("[span id: {}]", event.id))
+                                        .small()
+                                        .weak(),
+                                );
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(format!(
+                                    "Anchor: {} (auto_scroll: {}, overlay budget {} pages)",
+                                    event.fallback.label(),
+                                    event.auto_scroll,
+                                    event.overlay_snapshot.budget_pages
+                                ));
+                            });
+                            ui.horizontal(|ui| {
+                                if ui.button("Replay audio span").clicked() {
+                                    self.replay_audio_event(event);
+                                }
+                                if ui.button("Copy QA JSON").clicked() {
+                                    let summary = event.describe();
+                                    ui.ctx()
+                                        .output_mut(|output| output.copied_text = summary.clone());
+                                    trace!(span_summary = %summary, "Copied audio budget span for QA");
+                                    self.log_qa_audio_copy(event, &summary);
+                                }
+                                if ui.button("Log QA JSON").clicked() {
+                                    let summary = event.describe();
+                                    self.log_qa_audio_copy(event, &summary);
                                 }
                             });
                         });
@@ -2590,6 +2773,63 @@ impl OverlayDiagnostics {
 
     fn last_jump_decision(&self) -> Option<(&'static str, OverlayDecisionSnapshot)> {
         self.last_jump_decision.clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct AudioBudgetEvent {
+    id: usize,
+    timestamp: Instant,
+    command: &'static str,
+    auto_scroll: bool,
+    target_sentence: Option<usize>,
+    anchor: Option<usize>,
+    fallback: AnchorFallback,
+    overlay_snapshot: OverlayDecisionSnapshot,
+    highlight_page: Option<usize>,
+}
+
+impl AudioBudgetEvent {
+    fn describe(&self) -> String {
+        let sentence_label = self
+            .target_sentence
+            .map(|idx| format!("{}", idx + 1))
+            .unwrap_or_else(|| "unknown".to_string());
+        let fallback_label = self.fallback.label();
+        format!(
+            "{} → sentence {} ({fallback_label}, budget {})",
+            self.command, sentence_label, self.overlay_snapshot.budget_pages
+        )
+    }
+
+    fn age_secs(&self) -> f32 {
+        self.timestamp.elapsed().as_secs_f32()
+    }
+}
+
+#[derive(Default)]
+struct AudioDiagnostics {
+    events: Vec<AudioBudgetEvent>,
+    next_id: usize,
+}
+
+impl AudioDiagnostics {
+    fn record(&mut self, event: AudioBudgetEvent) {
+        const MAX_AUDIO_EVENTS: usize = 16;
+        self.events.push(event);
+        if self.events.len() > MAX_AUDIO_EVENTS {
+            self.events.remove(0);
+        }
+    }
+
+    fn recent_events(&self) -> &[AudioBudgetEvent] {
+        &self.events
+    }
+
+    fn allocate_event_id(&mut self) -> usize {
+        let id = self.next_id;
+        self.next_id = self.next_id.wrapping_add(1);
+        id
     }
 }
 

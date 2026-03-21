@@ -3417,6 +3417,7 @@ dependencies = [
  "lanternleaf-core",
  "pdfium-auto",
  "pdfium-render",
+ "serde_json",
  "tracing",
  "tracing-appender",
 ]

@@ -37,12 +37,17 @@ use lanternleaf_core::{
     cache, config,
     session::{SessionCommand, TtsPlaybackState},
 };
+use serde_json::json;
 use tracing::{Level, info, trace, warn};
 
 pub const PDF_CANVAS_BUDGET_PAGES: usize = 2;
 pub const PDF_TEXT_LAYER_BUDGET_PAGES: usize = 1;
 pub const PDF_CANVAS_TEXTURE_SIZE: [usize; 2] = [320, 450];
 pub const PDF_TEXT_TEXTURE_SIZE: [usize; 2] = [300, 420];
+const READER_RENDR_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-reader-rendering-roadmap.md";
+const PDF_SUBSYSTEM_ROADMAP_URL: &str =
+    "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-native-pdf-roadmap.md";
+const PRIORITIZATION_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/implementation-prioritization-roadmap.md";
 
 fn main() {
     let config_path = app_config_path();
@@ -136,6 +141,10 @@ impl LanternLeafApp {
 
     fn log_plan(&mut self, plan: &DispatchPlan) {
         let entry = format!("Planned {} ({})", plan.action, plan.effects.len());
+        self.push_status(entry);
+    }
+
+    fn push_status(&mut self, entry: String) {
         self.status_log.push(entry);
         if self.status_log.len() > 8 {
             self.status_log.remove(0);
@@ -175,11 +184,8 @@ impl LanternLeafApp {
             ShortcutAction::Command(command) => self.execute_command(command.clone()),
             ShortcutAction::Ui(UiShortcutAction::FocusSearch) => {
                 self.pending_search_focus = true;
-                self.status_log.push("Shortcut: focus search".to_string());
+                self.push_status("Shortcut: focus search".to_string());
             }
-        }
-        if self.status_log.len() > 8 {
-            self.status_log.remove(0);
         }
     }
 
@@ -1052,6 +1058,42 @@ impl LanternLeafApp {
         }
     }
 
+    fn overlay_pressure_span_payload(&self, alert: &OverlayPressureAlert, summary: &str) -> String {
+        let kind_info = match &alert.kind {
+            OverlayPressureKind::NativeRender { span, reason_text } => json!({
+                "type": "native_render",
+                "page": span.page_index + 1,
+                "target": span.target.label(),
+                "cache_hit": span.cache_hit,
+                "duration_ms": span.duration.as_secs_f32() * 1000.0,
+                "reason": reason_text,
+            }),
+            OverlayPressureKind::NativeEviction {
+                eviction,
+                reason_text,
+            } => json!({
+                "type": "native_eviction",
+                "page": eviction.page_index + 1,
+                "target": eviction.target.label(),
+                "eviction_reason": eviction.reason,
+                "reason": reason_text,
+            }),
+        };
+        let payload = json!({
+            "tranche": alert.tranche_label(),
+            "overlay_budget_pages": alert.overlay_budget_pages,
+            "age_secs": alert.age_secs(),
+            "span": kind_info,
+            "summary": summary,
+        });
+        serde_json::to_string(&payload).unwrap_or_else(|_| summary.to_string())
+    }
+
+    fn log_qa_span_copy(&mut self, alert: &OverlayPressureAlert, summary: &str) {
+        let payload = self.overlay_pressure_span_payload(alert, summary);
+        self.push_status(format!("QA span copy: {}", payload));
+    }
+
     fn replay_native_render_span(&self, span: &NativeRenderSpan) {
         let highlight_page = self.pdf_render_state.highlighted_page == Some(span.page_index);
         let replay_span = tracing::span!(
@@ -1507,10 +1549,19 @@ impl LanternLeafApp {
                 ui.separator();
                 let warning_label = ui.label("Overlay pressure warnings:");
                 overlay_warning_rect = Some(warning_label.rect);
-                let overlay_warnings = self.pdf_render_state.recent_overlay_pressure_alerts();
+                let overlay_warnings = self
+                    .pdf_render_state
+                    .recent_overlay_pressure_alerts()
+                    .to_vec();
                 if overlay_warnings.is_empty() {
                     ui.label("(No overlay pressure warnings yet)");
                 } else {
+                    ui.horizontal(|ui| {
+                        ui.label("Related tranches:");
+                        ui.hyperlink_to("Reader Rendering Core", READER_RENDR_ROADMAP_URL);
+                        ui.hyperlink_to("PDF Subsystem", PDF_SUBSYSTEM_ROADMAP_URL);
+                        ui.hyperlink_to("Implementation prioritization", PRIORITIZATION_ROADMAP_URL);
+                    });
                     for alert in overlay_warnings.iter().rev() {
                         ui.horizontal(|ui| {
                             ui.label(self.overlay_pressure_badge(alert));
@@ -1531,6 +1582,7 @@ impl LanternLeafApp {
                                 ui.ctx()
                                     .output_mut(|output| output.copied_text = summary.clone());
                                 trace!(span_summary = %summary, "Copied overlay pressure span for QA");
+                                self.log_qa_span_copy(alert, &summary);
                             }
                         });
                     }
@@ -2539,6 +2591,13 @@ impl OverlayPressureAlert {
             self.kind.detail(),
             highlight_note
         )
+    }
+
+    fn tranche_label(&self) -> &'static str {
+        match self.kind {
+            OverlayPressureKind::NativeRender { .. } => "PDF Subsystem (Tranche 4)",
+            OverlayPressureKind::NativeEviction { .. } => "PDF Subsystem (Tranche 4)",
+        }
     }
 }
 

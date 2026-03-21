@@ -35,8 +35,8 @@
 - Maintain a record of which tranche tests were run for release verification.
 
 ## Recent Tranche Progress
-- **Reader Rendering Core (Tranche 3)**: `[x]` Tied the JumpToSentence/preview renderer flows into the scheduler so canvas/text budgets now emit `shell.performance_budget` spans and QA can replay throttle decisions via the diagnostics surface.
-- **PDF Subsystem (Tranche 4)**: `[x]` Hooked `PdfViewportRenderPlan` plus eviction decisions into the actual preview surfaces, honored overlay/text-layer budgets, streamed throttle spans, and surfaced badge-style budget rejections for shell perf-budget auditing.
+- **Reader Rendering Core (Tranche 3)**: `[x]` Tied the JumpToSentence/preview renderer flows into the scheduler so canvas/text budgets now emit `shell.performance_budget` spans, QA can replay throttle decisions via the diagnostics surface, and the UI now badges overlay budget pressure signals that jump into the diagnostics panel for replay.
+- **PDF Subsystem (Tranche 4)**: `[x]` Hooked `PdfViewportRenderPlan` plus eviction decisions into the actual preview surfaces, honored overlay/text-layer budgets, streamed throttle spans, and surfaced badge-style budget rejections for shell perf-budget auditing while also surfacing native render/eviction pressure spans into the diagnostics panel for QA replay.
 
 ## Traceability Notes
 - Keep referencing the shared tracing schema (`highlight.anchor`, `pdf.*`, `shell.*`) when describing work in every tranche so instrumentation remains consistent.

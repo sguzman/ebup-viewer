@@ -96,6 +96,7 @@
 - [ ] Document hooks for tracing/metrics instrumentation so the reader can emit frame-level spans that feed into the shell’s tracing plan (Chapter 6) for latency and redraw accounting.
 - [ ] Define the interplay between the reader’s scroll/jump logic and the shell’s performance throttles so auto-scrolls never trigger runaway repaints.
 - [x] Surface an anchor diagnostics panel that reports fallback reason counts, JumpToSentence throttle telemetry, and shell-budget tracing markers for the reader viewport.
+- [x] Expand the diagnostics surface so overlay budget pressure badges now report native render/eviction spans and point QA toward replaying those spans in context.
 - [ ] Phase exit:
 - [ ] the reader rendering plan articulates how it obeys the shell’s performance expectations before interactive widgets are implemented.
 

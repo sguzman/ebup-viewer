@@ -80,6 +80,7 @@ struct LanternLeafApp {
     auto_scroll_state: AutoScrollState,
     anchor_diagnostics: AnchorDiagnostics,
     overlay_diagnostics: OverlayDiagnostics,
+    overlay_pressure_focus: bool,
     scheduler_events: Vec<SchedulerEvent>,
     pdf_render_state: PdfRenderState,
     pdf_renderer: Option<NativePdfRenderer>,
@@ -111,6 +112,7 @@ impl LanternLeafApp {
             auto_scroll_state: AutoScrollState::default(),
             anchor_diagnostics: AnchorDiagnostics::default(),
             overlay_diagnostics: OverlayDiagnostics::default(),
+            overlay_pressure_focus: false,
             scheduler_events: Vec::new(),
             pdf_render_state: PdfRenderState::default(),
             pdf_renderer,
@@ -438,7 +440,7 @@ impl LanternLeafApp {
         }
     }
 
-    fn render_reader_summary(&self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+    fn render_reader_summary(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
         let anchor_hits = snapshot
             .sentence_anchor_map
             .iter()
@@ -495,6 +497,32 @@ impl LanternLeafApp {
                     "{} Overlay budget: {} pages, {} overlays drawn ({})",
                     badge, decision.budget_pages, decision.overlays_drawn, reason
                 ));
+            });
+        }
+        if let Some(alert) = self
+            .pdf_render_state
+            .recent_overlay_pressure_alerts()
+            .last()
+            .cloned()
+        {
+            ui.horizontal(|ui| {
+                ui.label(self.overlay_pressure_badge(&alert));
+                ui.label(
+                    RichText::new(format!(
+                        "Overlay pressure on page {} (budget {} pages, {:.1}s ago)",
+                        alert.kind.page_index() + 1,
+                        alert.overlay_budget_pages,
+                        alert.age_secs()
+                    ))
+                    .small(),
+                );
+                if ui
+                    .small_button("Inspect PDF diagnostics")
+                    .on_hover_text("Highlight the diagnostics panel to replay the pressure span")
+                    .clicked()
+                {
+                    self.overlay_pressure_focus = true;
+                }
             });
         }
     }
@@ -872,6 +900,99 @@ impl LanternLeafApp {
         let span = self.overlay_budget_span(event, &decision);
         let _enter = span.enter();
         trace!(decision = ?decision, "Replayed overlay budget decision for QA");
+    }
+
+    fn capture_overlay_pressure_from_native_render_span(&mut self, span: &NativeRenderSpan) {
+        if span.target != RenderTarget::TextLayer || span.cache_hit {
+            return;
+        }
+        let overlay_budget_pages = self.pdf_render_state.overlay_budget_pages();
+        if overlay_budget_pages == 0 {
+            return;
+        }
+        let highlight_page = self.pdf_render_state.highlighted_page;
+        let reason_text = if highlight_page == Some(span.page_index) {
+            "Highlight text layer rendered while overlay budget contested"
+        } else {
+            "Neighbor text layer render consumed the overlay budget"
+        };
+        let alert = OverlayPressureAlert::new(
+            OverlayPressureKind::NativeRender {
+                span: span.clone(),
+                reason_text: reason_text.to_string(),
+            },
+            overlay_budget_pages,
+            highlight_page,
+        );
+        self.pdf_render_state.record_overlay_pressure_alert(alert);
+    }
+
+    fn capture_overlay_pressure_from_native_eviction(&mut self, eviction: &NativeRenderEviction) {
+        if eviction.target != RenderTarget::TextLayer {
+            return;
+        }
+        let highlight_page = self.pdf_render_state.highlighted_page;
+        if highlight_page != Some(eviction.page_index) {
+            return;
+        }
+        let alert = OverlayPressureAlert::new(
+            OverlayPressureKind::NativeEviction {
+                eviction: eviction.clone(),
+                reason_text: "Highlight text layer evicted by budget pressure".to_string(),
+            },
+            self.pdf_render_state.overlay_budget_pages(),
+            highlight_page,
+        );
+        self.pdf_render_state.record_overlay_pressure_alert(alert);
+    }
+
+    fn overlay_pressure_badge(&self, alert: &OverlayPressureAlert) -> RichText {
+        let (color, label) = alert.kind.badge_info();
+        RichText::new(label).color(color).small().strong()
+    }
+
+    fn replay_native_render_span(&self, span: &NativeRenderSpan) {
+        let highlight_page = self.pdf_render_state.highlighted_page == Some(span.page_index);
+        let replay_span = tracing::span!(
+            Level::TRACE,
+            "PdfNativeRenderReplay",
+            budget_plan = "shell.performance_budget",
+            target = ?span.target,
+            page = span.page_index + 1,
+            highlight_page = highlight_page,
+            cache_hit = span.cache_hit,
+            duration_ms = span.duration.as_secs_f32(),
+            overlay_budget_pages = self.pdf_render_state.overlay_budget_pages(),
+        );
+        let _enter = replay_span.enter();
+        trace!(span = ?span.describe(), "Replayed native render span for QA");
+    }
+
+    fn replay_native_eviction(&self, event: &NativeRenderEviction) {
+        let highlight_page = self.pdf_render_state.highlighted_page == Some(event.page_index);
+        let replay_span = tracing::span!(
+            Level::TRACE,
+            "PdfNativeEvictionReplay",
+            budget_plan = "shell.performance_budget",
+            target = ?event.target,
+            page = event.page_index + 1,
+            highlight_page = highlight_page,
+            reason = event.reason,
+            overlay_budget_pages = self.pdf_render_state.overlay_budget_pages(),
+        );
+        let _enter = replay_span.enter();
+        trace!(event = ?event.describe(), "Replayed native eviction for QA");
+    }
+
+    fn replay_overlay_pressure_alert(&self, alert: &OverlayPressureAlert) {
+        match &alert.kind {
+            OverlayPressureKind::NativeRender { span, .. } => {
+                self.replay_native_render_span(span)
+            }
+            OverlayPressureKind::NativeEviction { eviction, .. } => {
+                self.replay_native_eviction(eviction)
+            }
+        }
     }
 
     fn replay_throttle_span(&self, event: &PdfRenderThrottleEvent) {
@@ -1281,6 +1402,39 @@ impl LanternLeafApp {
                         );
                     }
                 }
+                ui.separator();
+                ui.label("Overlay pressure warnings:");
+                let overlay_warnings = self.pdf_render_state.recent_overlay_pressure_alerts();
+                if overlay_warnings.is_empty() {
+                    ui.label("(No overlay pressure warnings yet)");
+                } else {
+                    for alert in overlay_warnings.iter().rev() {
+                        ui.horizontal(|ui| {
+                            ui.label(self.overlay_pressure_badge(alert));
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} ({:.1}s ago)",
+                                    alert.describe(),
+                                    alert.age_secs()
+                                ))
+                                .small()
+                                .weak(),
+                            );
+                            if ui.button("Replay pressure span").clicked() {
+                                self.replay_overlay_pressure_alert(alert);
+                            }
+                        });
+                    }
+                    if self.overlay_pressure_focus {
+                        ui.label(
+                            RichText::new("Overlay pressure focus requested.")
+                                .color(Color32::from_rgb(220, 200, 120))
+                                .small()
+                                .strong(),
+                        );
+                    }
+                }
+                self.overlay_pressure_focus = false;
                 let budget_rejections = self
                     .scheduler_events
                     .iter()
@@ -1789,32 +1943,43 @@ impl LanternLeafApp {
         target: RenderTarget,
     ) -> Option<ColorImage> {
         let source_path = self.current_pdf_path.as_deref()?;
-        let renderer = self.pdf_renderer.as_mut()?;
-        let outcome = match target {
-            RenderTarget::Canvas => renderer.render_canvas(source_path, page_index),
-            RenderTarget::TextLayer => renderer.render_text_layer(source_path, page_index),
+        let render_result = {
+            let renderer = self.pdf_renderer.as_mut()?;
+            let outcome = match target {
+                RenderTarget::Canvas => renderer.render_canvas(source_path, page_index),
+                RenderTarget::TextLayer => renderer.render_text_layer(source_path, page_index),
+            };
+            match outcome {
+                Ok(outcome) => {
+                    let render_span = NativeRenderSpan {
+                        timestamp: Instant::now(),
+                        target,
+                        page_index,
+                        duration: outcome.duration,
+                        cache_hit: outcome.cache_hit,
+                    };
+                    let evictions = renderer.drain_eviction_events();
+                    Ok((outcome, render_span, evictions))
+                }
+                Err(err) => Err(err),
+            }
         };
-        match outcome {
-            Ok(outcome) => {
-                let render_span = NativeRenderSpan {
-                    timestamp: Instant::now(),
-                    target,
-                    page_index,
-                    duration: outcome.duration,
-                    cache_hit: outcome.cache_hit,
-                };
+        match render_result {
+            Ok((outcome, render_span, evictions)) => {
                 let span = tracing::span!(
                     Level::TRACE,
                     "PdfNativeRender",
                     budget_plan = "shell.performance_budget",
                     target = ?target,
                     page = page_index + 1,
-                    cache_hit = outcome.cache_hit,
-                    duration_ms = outcome.duration.as_secs_f32(),
+                    cache_hit = render_span.cache_hit,
+                    duration_ms = render_span.duration.as_secs_f32(),
                 );
                 let _enter = span.enter();
+                self.capture_overlay_pressure_from_native_render_span(&render_span);
                 self.pdf_render_state.record_native_render_span(render_span);
-                for eviction in renderer.drain_eviction_events() {
+                for eviction in evictions {
+                    self.capture_overlay_pressure_from_native_eviction(&eviction);
                     self.pdf_render_state.record_native_eviction(eviction);
                 }
                 Some(outcome.image)
@@ -2226,6 +2391,98 @@ impl SchedulerEvent {
     }
 }
 
+#[derive(Clone, Debug)]
+struct OverlayPressureAlert {
+    timestamp: Instant,
+    overlay_budget_pages: usize,
+    highlight_page: Option<usize>,
+    kind: OverlayPressureKind,
+}
+
+impl OverlayPressureAlert {
+    fn new(
+        kind: OverlayPressureKind,
+        overlay_budget_pages: usize,
+        highlight_page: Option<usize>,
+    ) -> Self {
+        Self {
+            timestamp: Instant::now(),
+            overlay_budget_pages,
+            highlight_page,
+            kind,
+        }
+    }
+
+    fn age_secs(&self) -> f32 {
+        self.timestamp.elapsed().as_secs_f32()
+    }
+
+    fn describe(&self) -> String {
+        let highlight_note = self
+            .highlight_page
+            .map(|page| format!(" (highlight page {})", page + 1))
+            .unwrap_or_default();
+        format!("{}: {}{}", self.kind.label(), self.kind.detail(), highlight_note)
+    }
+}
+
+#[derive(Clone, Debug)]
+enum OverlayPressureKind {
+    NativeRender {
+        span: NativeRenderSpan,
+        reason_text: String,
+    },
+    NativeEviction {
+        eviction: NativeRenderEviction,
+        reason_text: String,
+    },
+}
+
+impl OverlayPressureKind {
+    fn label(&self) -> &'static str {
+        match self {
+            OverlayPressureKind::NativeRender { .. } => "Native render pressure",
+            OverlayPressureKind::NativeEviction { .. } => "Eviction pressure",
+        }
+    }
+
+    fn page_index(&self) -> usize {
+        match self {
+            OverlayPressureKind::NativeRender { span, .. } => span.page_index,
+            OverlayPressureKind::NativeEviction { eviction, .. } => eviction.page_index,
+        }
+    }
+
+    fn detail(&self) -> String {
+        match self {
+            OverlayPressureKind::NativeRender { span, reason_text } => format!(
+                "{} (cache hit: {}, duration {:.2?})",
+                reason_text, span.cache_hit, span.duration
+            ),
+            OverlayPressureKind::NativeEviction { eviction, reason_text } => format!(
+                "{} (target {} {}, reason {})",
+                reason_text,
+                eviction.target.label(),
+                eviction.page_index + 1,
+                eviction.reason
+            ),
+        }
+    }
+
+    fn badge_info(&self) -> (Color32, &'static str) {
+        match self {
+            OverlayPressureKind::NativeRender { .. } => (
+                Color32::from_rgb(220, 140, 80),
+                "RENDER",
+            ),
+            OverlayPressureKind::NativeEviction { .. } => (
+                Color32::from_rgb(220, 90, 90),
+                "EVICT",
+            ),
+        }
+    }
+}
+
 impl SchedulerEventKind {
     fn describe(&self) -> String {
         match self {
@@ -2346,6 +2603,7 @@ struct PdfRenderState {
     throttle_events: Vec<PdfRenderThrottleEvent>,
     native_render_spans: Vec<NativeRenderSpan>,
     native_eviction_events: Vec<NativeRenderEviction>,
+    overlay_pressure_alerts: Vec<OverlayPressureAlert>,
 }
 
 impl PdfRenderState {
@@ -2370,6 +2628,7 @@ impl PdfRenderState {
         self.throttle_events.clear();
         self.native_render_spans.clear();
         self.native_eviction_events.clear();
+        self.overlay_pressure_alerts.clear();
     }
 
     fn updated_age(&self) -> Option<Duration> {
@@ -2423,6 +2682,18 @@ impl PdfRenderState {
 
     fn recent_native_evictions(&self) -> &[NativeRenderEviction] {
         &self.native_eviction_events
+    }
+
+    fn record_overlay_pressure_alert(&mut self, alert: OverlayPressureAlert) {
+        const MAX_OVERLAY_PRESSURE_ALERTS: usize = 12;
+        self.overlay_pressure_alerts.push(alert);
+        if self.overlay_pressure_alerts.len() > MAX_OVERLAY_PRESSURE_ALERTS {
+            self.overlay_pressure_alerts.remove(0);
+        }
+    }
+
+    fn recent_overlay_pressure_alerts(&self) -> &[OverlayPressureAlert] {
+        &self.overlay_pressure_alerts
     }
 
     fn record_throttle_event(&mut self, event: PdfRenderThrottleEvent) {

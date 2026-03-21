@@ -182,43 +182,74 @@ impl LanternLeafApp {
 
     fn render_top_bar(&mut self, ctx: &Context, state: &AppState) {
         TopBottomPanel::top("top_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading("LanternLeaf (egui)");
-                ui.separator();
-                if ui
-                    .button("Refresh recents (AppCommand::RefreshRecents)")
-                    .clicked()
-                {
-                    self.execute_command(AppCommand::RefreshRecents { limit: Some(10) });
-                }
-                if ui.button("Safe quit (AppCommand::SafeQuit)").clicked() {
-                    self.show_safe_quit_modal = true;
-                }
-                let session_mode = state.session.session.as_ref().map(|session| session.mode);
-                ui.label(format!(
-                    "Mode: {:?}",
-                    session_mode.unwrap_or(UiMode::Starter)
-                ));
-                ui.label(format!("Busy: {}", state.app_shell.busy));
-                if let Some(decision) = self.overlay_diagnostics.preview_decision() {
-                    if !decision.allowed {
-                        let reason = if !decision.highlight_page_has_text_layer {
-                            "no text layer"
-                        } else {
-                            "overlay budget exhausted"
-                        };
-                        ui.label(
-                            RichText::new(format!(
-                                "Overlay warning: {} (budget {} pages)",
-                                reason, decision.budget_pages
-                            ))
-                            .color(Color32::from_rgb(255, 190, 110))
-                            .strong(),
-                        );
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.heading("LanternLeaf (egui)");
+                    ui.separator();
+                    if ui
+                        .button("Refresh recents (AppCommand::RefreshRecents)")
+                        .clicked()
+                    {
+                        self.execute_command(AppCommand::RefreshRecents { limit: Some(10) });
                     }
-                }
+                    if ui.button("Safe quit (AppCommand::SafeQuit)").clicked() {
+                        self.show_safe_quit_modal = true;
+                    }
+                    let session_mode = state.session.session.as_ref().map(|session| session.mode);
+                    ui.label(format!(
+                        "Mode: {:?}",
+                        session_mode.unwrap_or(UiMode::Starter)
+                    ));
+                    ui.label(format!("Busy: {}", state.app_shell.busy));
+                    if let Some(decision) = self.overlay_diagnostics.preview_decision() {
+                        if !decision.allowed {
+                            let reason = if !decision.highlight_page_has_text_layer {
+                                "no text layer"
+                            } else {
+                                "overlay budget exhausted"
+                            };
+                            ui.label(
+                                RichText::new(format!(
+                                    "Overlay warning: {} (budget {} pages)",
+                                    reason, decision.budget_pages
+                                ))
+                                .color(Color32::from_rgb(255, 190, 110))
+                                .strong(),
+                            );
+                        }
+                    }
+                });
+                self.render_overlay_pressure_toast(ui);
             });
         });
+    }
+
+    fn render_overlay_pressure_toast(&mut self, ui: &mut Ui) {
+        if let Some(alert) = self
+            .pdf_render_state
+            .recent_overlay_pressure_alerts()
+            .last()
+            .cloned()
+        {
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label(self.overlay_pressure_badge(&alert));
+                ui.label(
+                    RichText::new(format!(
+                        "{} ({:.1}s ago, budget {} pages)",
+                        alert.describe(),
+                        alert.age_secs(),
+                        alert.overlay_budget_pages
+                    ))
+                    .small()
+                    .weak(),
+                );
+                if ui.small_button("Open overlay diagnostics").clicked() {
+                    self.overlay_pressure_focus = true;
+                    ui.ctx().request_repaint();
+                }
+            });
+        }
     }
 
     fn render_panels(
@@ -986,9 +1017,7 @@ impl LanternLeafApp {
 
     fn replay_overlay_pressure_alert(&self, alert: &OverlayPressureAlert) {
         match &alert.kind {
-            OverlayPressureKind::NativeRender { span, .. } => {
-                self.replay_native_render_span(span)
-            }
+            OverlayPressureKind::NativeRender { span, .. } => self.replay_native_render_span(span),
             OverlayPressureKind::NativeEviction { eviction, .. } => {
                 self.replay_native_eviction(eviction)
             }
@@ -1090,9 +1119,12 @@ impl LanternLeafApp {
         if snapshot.pretty_kind != PrettyKind::Pdf {
             return;
         }
+        let focus_request = self.overlay_pressure_focus;
+        let mut overlay_warning_rect: Option<Rect> = None;
         CollapsingHeader::new("PDF diagnostics")
             .id_source("pdf-diagnostics")
             .default_open(false)
+            .open(if focus_request { Some(true) } else { None })
             .show(ui, |ui| {
                 ui.label(format!(
                     "Page {}/{}",
@@ -1403,7 +1435,8 @@ impl LanternLeafApp {
                     }
                 }
                 ui.separator();
-                ui.label("Overlay pressure warnings:");
+                let warning_label = ui.label("Overlay pressure warnings:");
+                overlay_warning_rect = Some(warning_label.rect);
                 let overlay_warnings = self.pdf_render_state.recent_overlay_pressure_alerts();
                 if overlay_warnings.is_empty() {
                     ui.label("(No overlay pressure warnings yet)");
@@ -1425,16 +1458,18 @@ impl LanternLeafApp {
                             }
                         });
                     }
-                    if self.overlay_pressure_focus {
-                        ui.label(
-                            RichText::new("Overlay pressure focus requested.")
-                                .color(Color32::from_rgb(220, 200, 120))
-                                .small()
-                                .strong(),
-                        );
-                    }
                 }
-                self.overlay_pressure_focus = false;
+                if focus_request {
+                    if let Some(rect) = overlay_warning_rect {
+                        ui.scroll_to_rect(rect, Some(Align::Center));
+                    }
+                    ui.label(
+                        RichText::new("Overlay pressure focus requested.")
+                            .color(Color32::from_rgb(220, 200, 120))
+                            .small()
+                            .strong(),
+                    );
+                }
                 let budget_rejections = self
                     .scheduler_events
                     .iter()
@@ -2422,7 +2457,12 @@ impl OverlayPressureAlert {
             .highlight_page
             .map(|page| format!(" (highlight page {})", page + 1))
             .unwrap_or_default();
-        format!("{}: {}{}", self.kind.label(), self.kind.detail(), highlight_note)
+        format!(
+            "{}: {}{}",
+            self.kind.label(),
+            self.kind.detail(),
+            highlight_note
+        )
     }
 }
 
@@ -2459,7 +2499,10 @@ impl OverlayPressureKind {
                 "{} (cache hit: {}, duration {:.2?})",
                 reason_text, span.cache_hit, span.duration
             ),
-            OverlayPressureKind::NativeEviction { eviction, reason_text } => format!(
+            OverlayPressureKind::NativeEviction {
+                eviction,
+                reason_text,
+            } => format!(
                 "{} (target {} {}, reason {})",
                 reason_text,
                 eviction.target.label(),
@@ -2471,14 +2514,8 @@ impl OverlayPressureKind {
 
     fn badge_info(&self) -> (Color32, &'static str) {
         match self {
-            OverlayPressureKind::NativeRender { .. } => (
-                Color32::from_rgb(220, 140, 80),
-                "RENDER",
-            ),
-            OverlayPressureKind::NativeEviction { .. } => (
-                Color32::from_rgb(220, 90, 90),
-                "EVICT",
-            ),
+            OverlayPressureKind::NativeRender { .. } => (Color32::from_rgb(220, 140, 80), "RENDER"),
+            OverlayPressureKind::NativeEviction { .. } => (Color32::from_rgb(220, 90, 90), "EVICT"),
         }
     }
 }

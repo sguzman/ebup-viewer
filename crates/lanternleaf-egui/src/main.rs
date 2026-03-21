@@ -44,6 +44,7 @@ pub const PDF_CANVAS_BUDGET_PAGES: usize = 2;
 pub const PDF_TEXT_LAYER_BUDGET_PAGES: usize = 1;
 pub const PDF_CANVAS_TEXTURE_SIZE: [usize; 2] = [320, 450];
 pub const PDF_TEXT_TEXTURE_SIZE: [usize; 2] = [300, 420];
+const REGRESSION_EVENT_WINDOW: Duration = Duration::from_secs(3);
 const READER_RENDR_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-reader-rendering-roadmap.md";
 const PDF_SUBSYSTEM_ROADMAP_URL: &str =
     "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-native-pdf-roadmap.md";
@@ -1643,6 +1644,23 @@ impl LanternLeafApp {
         self.push_status(format!("QA span copy: {}", payload));
     }
 
+    fn replay_pdf_render_event(&self, event: &PdfRenderEvent) {
+        let highlight_page = self.pdf_render_state.highlighted_page == Some(event.page_index);
+        let replay_span = tracing::span!(
+            Level::TRACE,
+            "PdfRenderEventReplay",
+            budget_plan = "shell.performance_budget",
+            page = event.page_index + 1,
+            kind = ?event.kind,
+            highlight_page = highlight_page,
+            overlay_budget_pages = event.overlay_budget_pages,
+            overlays_drawn = event.overlays_drawn,
+            overlay_reason = ?event.overlay_reason.as_deref(),
+        );
+        let _enter = replay_span.enter();
+        trace!(event = ?event.describe(), "Replayed PDF render event for QA");
+    }
+
     fn replay_native_render_span(&self, span: &NativeRenderSpan) {
         let highlight_page = self.pdf_render_state.highlighted_page == Some(span.page_index);
         let replay_span = tracing::span!(
@@ -1699,6 +1717,54 @@ impl LanternLeafApp {
         );
         let _enter = span.enter();
         trace!(event = ?event, "Replayed throttle span for QA");
+    }
+
+    fn regression_snapshot_event_links<'a>(
+        &'a self,
+        snapshot: &'a RegressionSnapshot,
+    ) -> RegressionSnapshotEventLinks<'a> {
+        let render_events = self
+            .pdf_render_state
+            .recent_render_events()
+            .iter()
+            .filter(|event| Self::matches_snapshot_page(snapshot, event.page_index))
+            .filter(|event| {
+                Self::within_snapshot_window(
+                    snapshot.timestamp,
+                    event.timestamp,
+                    REGRESSION_EVENT_WINDOW,
+                )
+            })
+            .collect();
+        let throttle_events = self
+            .pdf_render_state
+            .recent_throttle_events()
+            .iter()
+            .filter(|event| Self::matches_snapshot_page(snapshot, event.page_index))
+            .filter(|event| {
+                Self::within_snapshot_window(
+                    snapshot.timestamp,
+                    event.timestamp,
+                    REGRESSION_EVENT_WINDOW,
+                )
+            })
+            .collect();
+        RegressionSnapshotEventLinks {
+            render_events,
+            throttle_events,
+        }
+    }
+
+    fn matches_snapshot_page(snapshot: &RegressionSnapshot, page_index: usize) -> bool {
+        snapshot.current_page.map_or(true, |page| page == page_index)
+    }
+
+    fn within_snapshot_window(snapshot_ts: Instant, event_ts: Instant, window: Duration) -> bool {
+        if event_ts >= snapshot_ts {
+            event_ts.duration_since(snapshot_ts) <= window
+        } else {
+            snapshot_ts.duration_since(event_ts) <= window
+        }
     }
 
     fn log_render_throttle(
@@ -2363,11 +2429,54 @@ impl LanternLeafApp {
                                     );
                                     self.log_regression_snapshot_copy(snapshot, &payload);
                                 }
-                                if ui.button("Log QA JSON").clicked() {
-                                    let payload = self.regression_snapshot_payload(snapshot);
-                                    self.log_regression_snapshot_copy(snapshot, &payload);
-                                }
+                            if ui.button("Log QA JSON").clicked() {
+                                let payload = self.regression_snapshot_payload(snapshot);
+                                self.log_regression_snapshot_copy(snapshot, &payload);
+                            }
                             });
+                            let event_links = self.regression_snapshot_event_links(snapshot);
+                            if !event_links.render_events.is_empty() {
+                                ui.label("Related PDF render spans:");
+                                for event in event_links.render_events.iter() {
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            RichText::new(event.describe())
+                                                .small()
+                                                .weak(),
+                                        );
+                                        if ui.button("Replay render span").clicked() {
+                                            self.replay_pdf_render_event(event);
+                                        }
+                                    });
+                                }
+                            }
+                            if !event_links.throttle_events.is_empty() {
+                                ui.label("Related throttle spans:");
+                                for event in event_links.throttle_events.iter() {
+                                    ui.horizontal(|ui| {
+                                        ui.label(Self::throttle_badge(event.kind));
+                                        ui.label(
+                                            RichText::new(event.describe())
+                                                .small()
+                                                .weak(),
+                                        );
+                                        if ui.button("Replay throttle span").clicked() {
+                                            self.replay_throttle_span(event);
+                                        }
+                                    });
+                                }
+                            }
+                            if let Some(overlay_decision) = snapshot.overlay_snapshot.clone() {
+                                let scenario_label = snapshot.scenario.label();
+                                ui.horizontal(|ui| {
+                                    if ui.button("Replay overlay decision").clicked() {
+                                        self.replay_overlay_span(
+                                            scenario_label,
+                                            overlay_decision.clone(),
+                                        );
+                                    }
+                                });
+                            }
                         });
                     }
                 }
@@ -3541,6 +3650,12 @@ impl RegressionSnapshot {
     fn age_secs(&self) -> f32 {
         self.timestamp.elapsed().as_secs_f32()
     }
+}
+
+#[derive(Clone, Debug)]
+struct RegressionSnapshotEventLinks<'a> {
+    render_events: Vec<&'a PdfRenderEvent>,
+    throttle_events: Vec<&'a PdfRenderThrottleEvent>,
 }
 
 #[derive(Clone, Debug)]

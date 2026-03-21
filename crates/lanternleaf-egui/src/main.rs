@@ -104,6 +104,7 @@ struct LanternLeafApp {
     current_pdf_path: Option<PathBuf>,
     sentence_scroll_offset: Option<Vec2>,
     overlay_eviction_warning_at: Option<Instant>,
+    timeline_history: Vec<TimelineHistoryEntry>,
 }
 
 impl LanternLeafApp {
@@ -145,6 +146,7 @@ impl LanternLeafApp {
             current_pdf_path: None,
             sentence_scroll_offset: None,
             overlay_eviction_warning_at: None,
+            timeline_history: Vec::new(),
         }
     }
 
@@ -361,6 +363,39 @@ impl LanternLeafApp {
                 ui.label(format!("{} → {:?}", binding.combo, binding.action));
             }
         });
+    }
+
+    fn execute_timeline_kind(&mut self, kind: &RegressionSnapshotTimelineKind) {
+        match kind {
+            RegressionSnapshotTimelineKind::OverlayAlert(alert) => {
+                self.overlay_pressure_focus = true;
+                self.overlay_eviction_warning_at = Some(Instant::now());
+                self.push_status(format!("QA timeline overlay alert: {}", alert.describe()));
+                self.replay_overlay_pressure_alert(alert);
+            }
+            RegressionSnapshotTimelineKind::PdfRenderEvent(event) => {
+                self.replay_pdf_render_event(event);
+            }
+            RegressionSnapshotTimelineKind::PdfThrottleEvent(event) => {
+                self.replay_throttle_span(event);
+            }
+            RegressionSnapshotTimelineKind::Status(status) => {
+                self.push_status(format!("QA timeline status: {}", status.message));
+            }
+        }
+    }
+
+    fn record_timeline_history(&mut self, kind: &RegressionSnapshotTimelineKind) {
+        const MAX_HISTORY: usize = 16;
+        let entry = TimelineHistoryEntry {
+            entry: RegressionSnapshotTimelineEntry::new(kind.clone()),
+            qa_url: kind.qa_url(),
+            ref_label: kind.ref_label(),
+        };
+        self.timeline_history.push(entry);
+        if self.timeline_history.len() > MAX_HISTORY {
+            self.timeline_history.remove(0);
+        }
     }
 
     fn render_settings_sidebar(&mut self, ui: &mut Ui, snapshot: Option<&ReaderSnapshot>) {
@@ -2478,46 +2513,18 @@ impl LanternLeafApp {
                             if !timeline_entries.is_empty() {
                                 ui.horizontal_wrapped(|ui| {
                                     ui.label("Timeline:");
-                                    for entry in timeline_entries.iter() {
-                                        let button = Button::new(entry.badge_label(snapshot.timestamp))
-                                            .rounding(6.0)
-                                            .fill(entry.badge_color());
-                                        if ui.add(button).clicked() {
-                                            let kind = entry.kind.clone();
-                                            match kind {
-                                                RegressionSnapshotTimelineKind::OverlayAlert(
-                                                    alert,
-                                                ) => {
-                                                    self.overlay_pressure_focus = true;
-                                                    self.overlay_eviction_warning_at =
-                                                        Some(Instant::now());
-                                                    self.push_status(format!(
-                                                        "QA timeline overlay alert: {}",
-                                                        alert.describe()
-                                                    ));
-                                                    self.replay_overlay_pressure_alert(&alert);
-                                                }
-                                                RegressionSnapshotTimelineKind::PdfRenderEvent(
-                                                    event,
-                                                ) => {
-                                                    self.replay_pdf_render_event(&event);
-                                                }
-                                                RegressionSnapshotTimelineKind::PdfThrottleEvent(
-                                                    event,
-                                                ) => {
-                                                    self.replay_throttle_span(&event);
-                                                }
-                                                RegressionSnapshotTimelineKind::Status(status) => {
-                                                    self.push_status(format!(
-                                                        "QA timeline status: {}",
-                                                        status.message
-                                                    ));
-                                                }
-                                            }
-                                        }
+                                for entry in timeline_entries.iter() {
+                                    let button = Button::new(entry.badge_label(snapshot.timestamp))
+                                        .rounding(6.0)
+                                        .fill(entry.badge_color());
+                                    if ui.add(button).clicked() {
+                                        let kind = entry.kind.clone();
+                                        self.execute_timeline_kind(&kind);
+                                        self.record_timeline_history(&kind);
                                     }
-                                });
-                            }
+                                }
+                            });
+                        }
                             ui.horizontal(|ui| {
                                 ui.label("Related docs:");
                                 ui.hyperlink_to("QA checklist", QA_REGRESSION_URL);
@@ -2629,6 +2636,28 @@ impl LanternLeafApp {
                                 );
                             });
                         }
+                    }
+                }
+                ui.separator();
+                ui.label("QA timeline archive:");
+                if self.timeline_history.is_empty() {
+                    ui.label("(No QA timeline entries yet)");
+                } else {
+                    let timeline_history = self.timeline_history.clone();
+                    for entry in timeline_history.iter().rev() {
+                        ui.horizontal(|ui| {
+                            let badge = Button::new(entry.badge_label(Instant::now()))
+                                .rounding(6.0)
+                                .fill(entry.badge_color());
+                            if ui.add(badge).clicked() {
+                                self.execute_timeline_kind(&entry.entry.kind);
+                                self.record_timeline_history(&entry.entry.kind);
+                            }
+                            ui.label(entry.details());
+                            ui.hyperlink_to("QA link", entry.qa_url);
+                            let age_secs = entry.entry.timestamp.elapsed().as_secs_f32();
+                            ui.label(format!("{:.1}s ago", age_secs));
+                        });
                     }
                 }
             });
@@ -3775,6 +3804,31 @@ impl StatusLogEntry {
 }
 
 #[derive(Clone, Debug)]
+struct TimelineHistoryEntry {
+    entry: RegressionSnapshotTimelineEntry,
+    qa_url: &'static str,
+    ref_label: String,
+}
+
+impl TimelineHistoryEntry {
+    fn badge_label(&self, reference: Instant) -> String {
+        self.entry.badge_label(reference)
+    }
+
+    fn badge_color(&self) -> Color32 {
+        self.entry.badge_color()
+    }
+
+    fn details(&self) -> String {
+        format!(
+            "{} | {}",
+            self.entry.kind_label(),
+            self.ref_label
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
 struct RegressionSnapshotTimelineEntry {
     kind: RegressionSnapshotTimelineKind,
     timestamp: Instant,
@@ -3788,7 +3842,46 @@ enum RegressionSnapshotTimelineKind {
     Status(StatusLogEntry),
 }
 
+impl RegressionSnapshotTimelineKind {
+    fn qa_url(&self) -> &'static str {
+        match self {
+            RegressionSnapshotTimelineKind::OverlayAlert(_) => QA_REGRESSION_URL,
+            RegressionSnapshotTimelineKind::PdfRenderEvent(_) => READER_RENDR_ROADMAP_URL,
+            RegressionSnapshotTimelineKind::PdfThrottleEvent(_) => PDF_SUBSYSTEM_ROADMAP_URL,
+            RegressionSnapshotTimelineKind::Status(_) => QA_REGRESSION_URL,
+        }
+    }
+
+    fn ref_label(&self) -> String {
+        match self {
+            RegressionSnapshotTimelineKind::OverlayAlert(alert) => {
+                format!("overlay span {}", alert.id())
+            }
+            RegressionSnapshotTimelineKind::PdfRenderEvent(event) => {
+                format!("render pg {}", event.page_index + 1)
+            }
+            RegressionSnapshotTimelineKind::PdfThrottleEvent(event) => format!(
+                "{} throttle pg {}",
+                match event.kind {
+                    PdfRenderThrottleKind::Canvas => "Canvas",
+                    PdfRenderThrottleKind::TextLayer => "Text",
+                    PdfRenderThrottleKind::Overlay => "Overlay",
+                },
+                event.page_index + 1
+            ),
+            RegressionSnapshotTimelineKind::Status(_) => "status log".to_string(),
+        }
+    }
+}
+
 impl RegressionSnapshotTimelineEntry {
+    fn new(kind: RegressionSnapshotTimelineKind) -> Self {
+        Self {
+            kind,
+            timestamp: Instant::now(),
+        }
+    }
+
     fn badge_label(&self, reference: Instant) -> String {
         format!(
             "{} {:.1}s",

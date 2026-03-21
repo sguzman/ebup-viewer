@@ -55,35 +55,35 @@
 - [ ] end-to-end reading flows on real content
 
 ## Phase 1: Coverage Inventory
-- [ ] Inventory current test responsibilities by feature area.
-- [ ] For each current JS/Tauri suite, define the future Rust-native owner or manual QA replacement.
-- [ ] Build a parity matrix linking features to new test classes.
+- [x] Inventory current test responsibilities by feature area.
+- [x] For each current JS/Tauri suite, define the future Rust-native owner or manual QA replacement.
+- [x] Build a parity matrix linking features to new test classes (`docs/roadmaps/egui-testing-parity-matrix.md`).
 - Phase exit:
-- [ ] no current major test responsibility is orphaned.
+- [x] no current major test responsibility is orphaned.
 
 ## Phase 2: Rust-Native Test Architecture
-- [ ] Define locations and patterns for:
-- [ ] crate-local unit tests
-- [ ] workspace integration tests
-- [ ] service harnesses
-- [ ] deterministic fixture handling for reader/PDF/browser-tab inputs
-- [ ] Define whether any egui-specific UI harness or screenshot tooling is adopted.
+- [x] Define locations and patterns for:
+- [x] crate-local unit tests
+- [x] workspace integration tests
+- [x] service harnesses
+- [x] deterministic fixture handling for reader/PDF/browser-tab inputs
+- [x] Define whether any egui-specific UI harness or screenshot tooling is adopted (minimal harness; fidelity via manual QA).
 - Phase exit:
-- [ ] implementers have a clear Rust-native testing structure for the migration.
+- [x] implementers have a clear Rust-native testing structure for the migration.
 
 ## Phase 3: Parity Gates By Subsystem
-- [ ] Define explicit subsystem parity gates for:
-- [ ] starter/local-open/recents
-- [ ] Calibre
-- [ ] browser-tab import
-- [ ] text-only reader
-- [ ] HTML/EPUB pretty reader
-- [ ] PDF reader
-- [ ] TTS controls/runtime
-- [ ] persistence and safe quit
-- [ ] Each gate must specify automated coverage, manual QA, and build verification expectations.
+- [x] Define explicit subsystem parity gates for:
+- [x] starter/local-open/recents
+- [x] Calibre
+- [x] browser-tab import
+- [x] text-only reader
+- [x] HTML/EPUB pretty reader
+- [x] PDF reader
+- [x] TTS controls/runtime
+- [x] persistence and safe quit
+- [x] Each gate specifies automated coverage, manual QA, and build verification expectations (`docs/roadmaps/egui-testing-parity-matrix.md`).
 - Phase exit:
-- [ ] parity is measurable across the migration, not just asserted qualitatively.
+- [x] parity is measurable across the migration, not just asserted qualitatively.
 
 ## Phase 4: Manual QA Strategy
 - [ ] Rewrite existing QA checklists for the egui app where needed.
@@ -106,13 +106,13 @@
 - Migration may appear “done” prematurely if parity gates are not explicit and subsystem-specific.
 
 ## Test / Parity Requirements
-- [ ] Maintain a live parity matrix through the migration.
-- [ ] Require subsystem signoff before deleting old tests.
+- [x] Maintain a live parity matrix through the migration (`docs/roadmaps/egui-testing-parity-matrix.md`).
+- [x] Require subsystem signoff before deleting old tests.
 - [ ] Preserve representative PDF/EPUB/browser-tab fixtures for regression use.
-- [ ] Require full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
+- [x] Require full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
-- [ ] Every current JS/Tauri-era testing responsibility has a Rust-native or manual QA replacement.
-- [ ] The egui migration has explicit automated/manual parity gates by subsystem.
-- [ ] Build and CI expectations are clear during dual-stack migration and after cutover.
-- [ ] The roadmap is sufficient to retire the browser/Tauri test stack without losing quality coverage.
+- [x] Every current JS/Tauri-era testing responsibility has a Rust-native or manual QA replacement.
+- [x] The egui migration has explicit automated/manual parity gates by subsystem.
+- [x] Build and CI expectations are clear during dual-stack migration and after cutover.
+- [x] The roadmap is sufficient to retire the browser/Tauri test stack without losing quality coverage.

@@ -315,6 +315,17 @@ impl LanternLeafApp {
                     let summary = self.overlay_pressure_span_summary(&alert);
                     self.log_qa_span_copy(&alert, &summary);
                 }
+                if ui.small_button("Replay budget span").clicked() {
+                    self.execute_timeline_kind(&RegressionSnapshotTimelineKind::OverlayAlert(alert.clone()));
+                }
+                if ui.small_button("Pin span").clicked() {
+                    let entry = RegressionSnapshotTimelineEntry {
+                        kind: RegressionSnapshotTimelineKind::OverlayAlert(alert.clone()),
+                        timestamp: alert.timestamp,
+                    };
+                    let history_entry = TimelineHistoryEntry::from_entry(&entry);
+                    self.pin_timeline_entry(&history_entry);
+                }
                 if ui.small_button("Open overlay diagnostics").clicked() {
                     self.overlay_pressure_focus = true;
                     ui.ctx().request_repaint();
@@ -391,6 +402,12 @@ impl LanternLeafApp {
             RegressionSnapshotTimelineKind::PdfThrottleEvent(event) => {
                 self.replay_throttle_span(event);
             }
+            RegressionSnapshotTimelineKind::AudioEvent(event) => {
+                self.replay_audio_event(event);
+            }
+            RegressionSnapshotTimelineKind::SchedulerEvent(event) => {
+                self.replay_scheduler_event(event);
+            }
             RegressionSnapshotTimelineKind::Status(status) => {
                 self.push_status(format!("QA timeline status: {}", status.message));
             }
@@ -412,9 +429,18 @@ impl LanternLeafApp {
             trace!(
                 kind = %last.entry.kind_label(),
                 reference = %last.ref_label,
-                "Recorded QA timeline entry",
+            "Recorded QA timeline entry",
             );
         }
+    }
+
+    fn push_budget_timeline_entry(
+        &mut self,
+        kind: RegressionSnapshotTimelineKind,
+        timestamp: Instant,
+    ) {
+        let entry = RegressionSnapshotTimelineEntry { kind, timestamp };
+        self.record_timeline_history(&entry);
     }
 
     fn timeline_archive_root(&self) -> PathBuf {
@@ -1603,10 +1629,26 @@ impl LanternLeafApp {
         {
             return;
         }
-        self.scheduler_events.push(event);
+        self.scheduler_events.push(event.clone());
         if self.scheduler_events.len() > 8 {
             self.scheduler_events.remove(0);
         }
+        let span = tracing::span!(
+            Level::TRACE,
+            "PdfSchedulerEvent",
+            budget_plan = "shell.performance_budget",
+            kind = ?event.kind,
+            highlight_page = match &event.kind {
+                SchedulerEventKind::RetryOverlay { highlight_page, .. } => highlight_page.map(|idx| idx + 1),
+                _ => None,
+            },
+        );
+        let _enter = span.enter();
+        trace!(event = %event.kind.describe(), "PDF scheduler event recorded");
+        self.push_budget_timeline_entry(
+            RegressionSnapshotTimelineKind::SchedulerEvent(event.clone()),
+            event.timestamp,
+        );
     }
 
     fn overlay_budget_span(
@@ -1640,7 +1682,7 @@ impl LanternLeafApp {
             Level::TRACE,
             "JumpToSentence",
             budget_plan = "shell.performance_budget",
-            audio_command = event.command,
+            audio_command = event.command.as_str(),
             target_sentence = ?event.target_sentence,
             anchor_path = event.fallback.label(),
             anchor_index = ?event.anchor,
@@ -1917,7 +1959,7 @@ impl LanternLeafApp {
         let event = AudioBudgetEvent {
             id: self.audio_diagnostics.allocate_event_id(),
             timestamp: Instant::now(),
-            command: label,
+            command: label.to_string(),
             auto_scroll: Self::audio_command_auto_scroll(session_cmd),
             target_sentence,
             anchor,
@@ -1928,13 +1970,17 @@ impl LanternLeafApp {
         let span = self.audio_budget_span(&event);
         let _enter = span.enter();
         trace!(
-            audio_command = event.command,
+            audio_command = event.command.as_str(),
             target_sentence = ?event.target_sentence,
             auto_scroll = event.auto_scroll,
             budget_pages = event.overlay_snapshot.budget_pages,
             "Recorded audio JumpToSentence decision"
         );
-        self.audio_diagnostics.record(event);
+        self.audio_diagnostics.record(event.clone());
+        self.push_budget_timeline_entry(
+            RegressionSnapshotTimelineKind::AudioEvent(event.clone()),
+            event.timestamp,
+        );
     }
 
     fn audio_command_label(command: &SessionCommand) -> Option<&'static str> {
@@ -1988,7 +2034,12 @@ impl LanternLeafApp {
             overlay_budget_pages,
             highlight_page,
         );
-        self.pdf_render_state.record_overlay_pressure_alert(alert);
+        self.pdf_render_state
+            .record_overlay_pressure_alert(alert.clone());
+        self.push_budget_timeline_entry(
+            RegressionSnapshotTimelineKind::OverlayAlert(alert.clone()),
+            alert.timestamp,
+        );
     }
 
     fn capture_overlay_pressure_from_native_eviction(&mut self, eviction: &NativeRenderEviction) {
@@ -2009,7 +2060,12 @@ impl LanternLeafApp {
             self.pdf_render_state.overlay_budget_pages(),
             highlight_page,
         );
-        self.pdf_render_state.record_overlay_pressure_alert(alert);
+        self.pdf_render_state
+            .record_overlay_pressure_alert(alert.clone());
+        self.push_budget_timeline_entry(
+            RegressionSnapshotTimelineKind::OverlayAlert(alert.clone()),
+            alert.timestamp,
+        );
         self.overlay_eviction_warning_at = Some(Instant::now());
         let eviction_span = tracing::span!(
             Level::WARN,
@@ -2168,6 +2224,22 @@ impl LanternLeafApp {
         trace!(event = ?event, "Replayed throttle span for QA");
     }
 
+    fn replay_scheduler_event(&self, event: &SchedulerEvent) {
+        let highlight_page = match &event.kind {
+            SchedulerEventKind::RetryOverlay { highlight_page, .. } => *highlight_page,
+            _ => None,
+        };
+        let span = tracing::span!(
+            Level::TRACE,
+            "PdfSchedulerReplay",
+            budget_plan = "shell.performance_budget",
+            kind = ?event.kind,
+            highlight_page = highlight_page.map(|page| page + 1),
+        );
+        let _enter = span.enter();
+        trace!(event = %event.kind.describe(), "Replayed scheduler event for QA");
+    }
+
     fn regression_snapshot_event_links(
         &self,
         snapshot: &RegressionSnapshot,
@@ -2293,6 +2365,10 @@ impl LanternLeafApp {
     ) {
         let event = PdfRenderThrottleEvent::new(kind, page_index, reason.to_string());
         self.pdf_render_state.record_throttle_event(event.clone());
+        self.push_budget_timeline_entry(
+            RegressionSnapshotTimelineKind::PdfThrottleEvent(event.clone()),
+            event.timestamp,
+        );
         let span = tracing::span!(
             Level::TRACE,
             "PdfRenderThrottle",
@@ -3248,12 +3324,13 @@ impl LanternLeafApp {
                     overlay_budget_pages = overlay_budget,
                 );
                 let _canvas_enter = canvas_span.enter();
+                let canvas_event = PdfRenderEvent::canvas(page, is_highlight_page, overlay_budget);
                 self.pdf_render_state
-                    .record_render_event(PdfRenderEvent::canvas(
-                        page,
-                        is_highlight_page,
-                        overlay_budget,
-                    ));
+                    .record_render_event(canvas_event.clone());
+                self.push_budget_timeline_entry(
+                    RegressionSnapshotTimelineKind::PdfRenderEvent(canvas_event.clone()),
+                    canvas_event.timestamp,
+                );
                 canvas_drawn += 1;
             } else if has_canvas_intent {
                 let reason = if self.pdf_render_state.is_canvas_evicted(page) {
@@ -3322,12 +3399,14 @@ impl LanternLeafApp {
                     highlight_page = is_highlight_page,
                     "Drawing text layer"
                 );
+                let text_event =
+                    PdfRenderEvent::text_layer(page, is_highlight_page, overlay_budget);
                 self.pdf_render_state
-                    .record_render_event(PdfRenderEvent::text_layer(
-                        page,
-                        is_highlight_page,
-                        overlay_budget,
-                    ));
+                    .record_render_event(text_event.clone());
+                self.push_budget_timeline_entry(
+                    RegressionSnapshotTimelineKind::PdfRenderEvent(text_event.clone()),
+                    text_event.timestamp,
+                );
                 let text_layer_rect = inner.shrink(2.0);
                 if let Some(texture) = text_texture {
                     painter.image(
@@ -3412,13 +3491,18 @@ impl LanternLeafApp {
                         overlays = page_overlay_drawn,
                         "Rendered highlight overlays"
                     );
+                    let overlay_event = PdfRenderEvent::overlay(
+                        page,
+                        page_overlay_drawn,
+                        overlay_budget,
+                        overlay_reason.clone(),
+                    );
                     self.pdf_render_state
-                        .record_render_event(PdfRenderEvent::overlay(
-                            page,
-                            page_overlay_drawn,
-                            overlay_budget,
-                            overlay_reason.clone(),
-                        ));
+                        .record_render_event(overlay_event.clone());
+                    self.push_budget_timeline_entry(
+                        RegressionSnapshotTimelineKind::PdfRenderEvent(overlay_event.clone()),
+                        overlay_event.timestamp,
+                    );
                 }
                 if !highlight_page_text_ready && !self.pdf_render_state.overlay_rects.is_empty() {
                     self.log_render_throttle(
@@ -3881,7 +3965,7 @@ impl eframe::App for LanternLeafApp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum AnchorFallback {
     Exact,
     Nearest,
@@ -4017,7 +4101,7 @@ impl OverlayDiagnostics {
 struct AudioBudgetEvent {
     id: usize,
     timestamp: Instant,
-    command: &'static str,
+    command: String,
     auto_scroll: bool,
     target_sentence: Option<usize>,
     anchor: Option<usize>,
@@ -4108,7 +4192,7 @@ impl PersistenceTraceEvent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum SchedulerEventKind {
     Eviction {
         evicted_canvas_pages: Vec<usize>,
@@ -4335,6 +4419,8 @@ enum SerializableTimelineKind {
     OverlayAlert(SerializableOverlayPressureAlert),
     PdfRenderEvent(SerializablePdfRenderEvent),
     PdfThrottleEvent(SerializablePdfRenderThrottleEvent),
+    AudioEvent(SerializableAudioBudgetEvent),
+    SchedulerEvent(SerializableSchedulerEvent),
     Status(SerializableStatusLogEntry),
 }
 
@@ -4356,6 +4442,16 @@ impl SerializableTimelineKind {
                     SerializablePdfRenderThrottleEvent::from_event(event),
                 )
             }
+            RegressionSnapshotTimelineKind::AudioEvent(event) => {
+                SerializableTimelineKind::AudioEvent(
+                    SerializableAudioBudgetEvent::from_event(event),
+                )
+            }
+            RegressionSnapshotTimelineKind::SchedulerEvent(event) => {
+                SerializableTimelineKind::SchedulerEvent(
+                    SerializableSchedulerEvent::from_event(event),
+                )
+            }
             RegressionSnapshotTimelineKind::Status(status) => {
                 SerializableTimelineKind::Status(SerializableStatusLogEntry {
                     message: status.message.clone(),
@@ -4374,6 +4470,12 @@ impl SerializableTimelineKind {
             ),
             SerializableTimelineKind::PdfThrottleEvent(event) => Some(
                 RegressionSnapshotTimelineKind::PdfThrottleEvent(event.to_event()),
+            ),
+            SerializableTimelineKind::AudioEvent(event) => Some(
+                RegressionSnapshotTimelineKind::AudioEvent(event.to_event()),
+            ),
+            SerializableTimelineKind::SchedulerEvent(event) => Some(
+                RegressionSnapshotTimelineKind::SchedulerEvent(event.to_event()),
             ),
             SerializableTimelineKind::Status(entry) => {
                 Some(RegressionSnapshotTimelineKind::Status(entry.to_entry()))
@@ -4457,6 +4559,104 @@ impl SerializableOverlayPressureKind {
                 eviction: eviction.to_eviction(),
                 reason_text: reason_text.clone(),
             }),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializableOverlayDecisionSnapshot {
+    allowed: bool,
+    budget_pages: usize,
+    overlays_drawn: usize,
+    highlight_page_has_text_layer: bool,
+    highlight_page: Option<usize>,
+    overlay_rects_available: usize,
+    overlay_reason: Option<String>,
+}
+
+impl SerializableOverlayDecisionSnapshot {
+    fn from_snapshot(snapshot: &OverlayDecisionSnapshot) -> Self {
+        Self {
+            allowed: snapshot.allowed,
+            budget_pages: snapshot.budget_pages,
+            overlays_drawn: snapshot.overlays_drawn,
+            highlight_page_has_text_layer: snapshot.highlight_page_has_text_layer,
+            highlight_page: snapshot.highlight_page,
+            overlay_rects_available: snapshot.overlay_rects_available,
+            overlay_reason: snapshot.overlay_reason.clone(),
+        }
+    }
+
+    fn to_snapshot(&self) -> OverlayDecisionSnapshot {
+        OverlayDecisionSnapshot {
+            allowed: self.allowed,
+            budget_pages: self.budget_pages,
+            overlays_drawn: self.overlays_drawn,
+            highlight_page_has_text_layer: self.highlight_page_has_text_layer,
+            highlight_page: self.highlight_page,
+            overlay_rects_available: self.overlay_rects_available,
+            overlay_reason: self.overlay_reason.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializableAudioBudgetEvent {
+    id: usize,
+    command: String,
+    auto_scroll: bool,
+    target_sentence: Option<usize>,
+    anchor: Option<usize>,
+    fallback: AnchorFallback,
+    overlay_snapshot: SerializableOverlayDecisionSnapshot,
+    highlight_page: Option<usize>,
+}
+
+impl SerializableAudioBudgetEvent {
+    fn from_event(event: &AudioBudgetEvent) -> Self {
+        Self {
+            id: event.id,
+            command: event.command.clone(),
+            auto_scroll: event.auto_scroll,
+            target_sentence: event.target_sentence,
+            anchor: event.anchor,
+            fallback: event.fallback,
+            overlay_snapshot: SerializableOverlayDecisionSnapshot::from_snapshot(&event.overlay_snapshot),
+            highlight_page: event.highlight_page,
+        }
+    }
+
+    fn to_event(&self) -> AudioBudgetEvent {
+        AudioBudgetEvent {
+            id: self.id,
+            timestamp: Instant::now(),
+            command: self.command.clone(),
+            auto_scroll: self.auto_scroll,
+            target_sentence: self.target_sentence,
+            anchor: self.anchor,
+            fallback: self.fallback,
+            overlay_snapshot: self.overlay_snapshot.to_snapshot(),
+            highlight_page: self.highlight_page,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializableSchedulerEvent {
+    kind: SchedulerEventKind,
+}
+
+impl SerializableSchedulerEvent {
+    fn from_event(event: &SchedulerEvent) -> Self {
+        Self {
+            kind: event.kind.clone(),
+        }
+    }
+
+    fn to_event(&self) -> SchedulerEvent {
+        SchedulerEvent {
+            timestamp: Instant::now(),
+            kind: self.kind.clone(),
         }
     }
 }
@@ -4624,6 +4824,8 @@ enum RegressionSnapshotTimelineKind {
     OverlayAlert(OverlayPressureAlert),
     PdfRenderEvent(PdfRenderEvent),
     PdfThrottleEvent(PdfRenderThrottleEvent),
+    AudioEvent(AudioBudgetEvent),
+    SchedulerEvent(SchedulerEvent),
     Status(StatusLogEntry),
 }
 
@@ -4633,6 +4835,8 @@ impl RegressionSnapshotTimelineKind {
             RegressionSnapshotTimelineKind::OverlayAlert(_) => QA_REGRESSION_URL,
             RegressionSnapshotTimelineKind::PdfRenderEvent(_) => READER_RENDR_ROADMAP_URL,
             RegressionSnapshotTimelineKind::PdfThrottleEvent(_) => PDF_SUBSYSTEM_ROADMAP_URL,
+            RegressionSnapshotTimelineKind::AudioEvent(_) => TTS_ROADMAP_URL,
+            RegressionSnapshotTimelineKind::SchedulerEvent(_) => PDF_SUBSYSTEM_ROADMAP_URL,
             RegressionSnapshotTimelineKind::Status(_) => QA_REGRESSION_URL,
         }
     }
@@ -4654,6 +4858,30 @@ impl RegressionSnapshotTimelineKind {
                 },
                 event.page_index + 1
             ),
+            RegressionSnapshotTimelineKind::AudioEvent(event) => format!(
+                "audio {} sentence {}",
+                event.command,
+                event
+                    .target_sentence
+                    .map(|idx| idx + 1)
+                    .unwrap_or(0)
+            ),
+            RegressionSnapshotTimelineKind::SchedulerEvent(event) => match &event.kind {
+                SchedulerEventKind::Eviction {
+                    evicted_canvas_pages,
+                    evicted_text_layer_pages,
+                } => format!(
+                    "scheduler eviction canvases {} / text {}",
+                    LanternLeafApp::format_pdf_page_list(evicted_canvas_pages),
+                    LanternLeafApp::format_pdf_page_list(evicted_text_layer_pages)
+                ),
+                SchedulerEventKind::RetryOverlay { highlight_page, .. } => format!(
+                    "scheduler retry page {}",
+                    highlight_page
+                        .map(|page| page + 1)
+                        .map_or("unknown".to_string(), |page| page.to_string())
+                ),
+            },
             RegressionSnapshotTimelineKind::Status(_) => "status log".to_string(),
         }
     }
@@ -4673,6 +4901,8 @@ impl RegressionSnapshotTimelineEntry {
             RegressionSnapshotTimelineKind::OverlayAlert(_) => "Overlay",
             RegressionSnapshotTimelineKind::PdfRenderEvent(_) => "Canvas/Text",
             RegressionSnapshotTimelineKind::PdfThrottleEvent(_) => "Throttle",
+            RegressionSnapshotTimelineKind::AudioEvent(_) => "Audio",
+            RegressionSnapshotTimelineKind::SchedulerEvent(_) => "Scheduler",
             RegressionSnapshotTimelineKind::Status(_) => "Status",
         }
     }
@@ -4682,6 +4912,8 @@ impl RegressionSnapshotTimelineEntry {
             RegressionSnapshotTimelineKind::OverlayAlert(_) => Color32::from_rgb(222, 163, 91),
             RegressionSnapshotTimelineKind::PdfRenderEvent(_) => Color32::from_rgb(130, 190, 230),
             RegressionSnapshotTimelineKind::PdfThrottleEvent(_) => Color32::from_rgb(200, 120, 120),
+            RegressionSnapshotTimelineKind::AudioEvent(_) => Color32::from_rgb(200, 160, 230),
+            RegressionSnapshotTimelineKind::SchedulerEvent(_) => Color32::from_rgb(180, 220, 170),
             RegressionSnapshotTimelineKind::Status(_) => Color32::from_rgb(110, 170, 200),
         }
     }

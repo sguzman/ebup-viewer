@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
     convert::TryFrom,
@@ -121,7 +122,7 @@ impl NativePdfRenderer {
                     timestamp: Instant::now(),
                     target: old_key.target,
                     page_index: old_key.page_index,
-                    reason: "capacity_evicted",
+                    reason: "capacity_evicted".to_string(),
                 });
             }
         }
@@ -142,7 +143,7 @@ impl NativePdfRenderer {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) enum RenderTarget {
     Canvas,
     TextLayer,
@@ -209,7 +210,7 @@ pub struct NativeRenderEviction {
     pub timestamp: Instant,
     pub target: RenderTarget,
     pub page_index: usize,
-    pub reason: &'static str,
+    pub reason: String,
 }
 
 impl NativeRenderEviction {

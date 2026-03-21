@@ -3,6 +3,7 @@ mod pdf;
 mod pdf_renderer;
 
 use std::{
+    cmp::Reverse,
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
@@ -40,6 +41,7 @@ use lanternleaf_core::{
     cache, config,
     session::{ReaderSettingsPatch, SessionCommand, TtsPlaybackState},
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{Level, info, trace, warn};
 
@@ -58,6 +60,7 @@ const PERSISTENCE_ROADMAP_URL: &str = SETTINGS_ROADMAP_URL;
 const QA_REGRESSION_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-testing-and-parity-roadmap.md";
 const TIMELINE_ARCHIVE_DIR: &str = "logs/qa-timeline";
 const MAX_PINNED_TIMELINE_ENTRIES: usize = 8;
+const PINNED_TIMELINE_FILE: &str = "pinned-timeline.json";
 
 fn main() {
     let config_path = app_config_path();
@@ -127,7 +130,7 @@ impl LanternLeafApp {
                 None
             }
         };
-        Self {
+        let mut app = Self {
             runtime,
             _tracing_guard: tracing_guard,
             status_log: Vec::new(),
@@ -154,7 +157,9 @@ impl LanternLeafApp {
             overlay_eviction_warning_at: None,
             timeline_history: Vec::new(),
             pinned_timeline_entries: Vec::new(),
-        }
+        };
+        app.load_pinned_timeline_entries();
+        app
     }
 
     fn execute_command(&mut self, command: AppCommand) {
@@ -393,8 +398,12 @@ impl LanternLeafApp {
     }
 
     fn record_timeline_history(&mut self, entry: &RegressionSnapshotTimelineEntry) {
-        const MAX_HISTORY: usize = 16;
         let entry = TimelineHistoryEntry::from_entry(entry);
+        self.push_history_entry(entry);
+    }
+
+    fn push_history_entry(&mut self, entry: TimelineHistoryEntry) {
+        const MAX_HISTORY: usize = 16;
         self.timeline_history.push(entry);
         if self.timeline_history.len() > MAX_HISTORY {
             self.timeline_history.remove(0);
@@ -426,13 +435,159 @@ impl LanternLeafApp {
         )
     }
 
-    fn timeline_archive_records(&self) -> Vec<serde_json::Value> {
+    fn timeline_archive_records(&self) -> Vec<SerializableTimelineHistoryEntry> {
         self.timeline_history
             .iter()
-            .map(|entry| entry.export_record())
+            .map(|entry| entry.to_serializable())
             .collect()
     }
 
+    fn timeline_archive_candidates(&self) -> Vec<PathBuf> {
+        let root = self.timeline_archive_root();
+        let mut candidates = Vec::new();
+        if let Ok(entries) = fs::read_dir(&root) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map_or(false, |ext| ext.eq_ignore_ascii_case("json"))
+                {
+                    if let Ok(metadata) = entry.metadata() {
+                        let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                        candidates.push((path, modified));
+                    }
+                }
+            }
+        }
+        candidates.sort_by_key(|(_, modified)| Reverse(*modified));
+        candidates.into_iter().map(|(path, _)| path).collect()
+    }
+
+    fn import_timeline_archive(&mut self, path: &Path) {
+        let data = match fs::read(path) {
+            Ok(data) => data,
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    path = %path.display(),
+                    "Failed to read QA timeline archive for import"
+                );
+                self.push_status(format!(
+                    "Failed to read timeline archive {}: {}",
+                    path.display(),
+                    err
+                ));
+                return;
+            }
+        };
+        let records: Vec<SerializableTimelineHistoryEntry> = match serde_json::from_slice(&data) {
+            Ok(records) => records,
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    path = %path.display(),
+                    "Failed to deserialize QA timeline archive"
+                );
+                self.push_status(format!(
+                    "Invalid timeline archive {}: {}",
+                    path.display(),
+                    err
+                ));
+                return;
+            }
+        };
+        let mut imported = 0;
+        for record in records.into_iter() {
+            if let Some(entry) = record.to_entry() {
+                self.push_history_entry(entry);
+                imported += 1;
+            }
+        }
+        self.push_status(format!(
+            "Imported {} entries from {}",
+            imported,
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("archive")
+        ));
+        info!(
+            path = ?path,
+            imported,
+            "Imported QA timeline archive entries"
+        );
+    }
+
+    fn pinned_timeline_path(&self) -> PathBuf {
+        self.timeline_archive_root().join(PINNED_TIMELINE_FILE)
+    }
+
+    fn persist_pinned_timeline_entries(&self) {
+        let path = self.pinned_timeline_path();
+        if self.pinned_timeline_entries.is_empty() {
+            let _ = fs::remove_file(&path);
+            return;
+        }
+        if let Some(parent) = path.parent() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                warn!(
+                    error = %err,
+                    path = ?path,
+                    "Failed to create pinned timeline directory"
+                );
+                return;
+            }
+        }
+        let records = self
+            .pinned_timeline_entries
+            .iter()
+            .map(|entry| entry.to_serializable())
+            .collect::<Vec<_>>();
+        match serde_json::to_vec_pretty(&records) {
+            Ok(payload) => {
+                if let Err(err) = fs::write(&path, payload) {
+                    warn!(
+                        error = %err,
+                        path = ?path,
+                        "Failed to persist pinned timeline entries"
+                    );
+                }
+            }
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    path = ?path,
+                    "Failed to serialize pinned timeline entries"
+                );
+            }
+        }
+    }
+
+    fn load_pinned_timeline_entries(&mut self) {
+        let path = self.pinned_timeline_path();
+        let data = match fs::read(&path) {
+            Ok(data) => data,
+            Err(_) => return,
+        };
+        let records: Vec<SerializableTimelineHistoryEntry> = match serde_json::from_slice(&data) {
+            Ok(records) => records,
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    path = ?path,
+                    "Failed to deserialize pinned timeline entries"
+                );
+                return;
+            }
+        };
+        let entries = records
+            .into_iter()
+            .filter_map(|record| record.to_entry())
+            .collect::<Vec<_>>();
+        if !entries.is_empty() {
+            self.pinned_timeline_entries = entries;
+        }
+    }
     fn timeline_archive_csv(&self) -> String {
         let mut rows =
             vec!["\"timestamp\",\"kind\",\"reference\",\"qa_url\",\"details\"".to_owned()];
@@ -507,6 +662,7 @@ impl LanternLeafApp {
         self.pinned_timeline_entries.push(entry.clone());
         trace!(entry = %entry.details(), "Pinned QA timeline entry");
         self.push_status(format!("Pinned timeline entry: {}", entry.details()));
+        self.persist_pinned_timeline_entries();
     }
 
     fn unpin_timeline_entry(&mut self, entry: &TimelineHistoryEntry) -> bool {
@@ -518,6 +674,7 @@ impl LanternLeafApp {
             let removed = self.pinned_timeline_entries.remove(pos);
             trace!(entry = %removed.details(), "Unpinned QA timeline entry");
             self.push_status(format!("Unpinned timeline entry: {}", removed.details()));
+            self.persist_pinned_timeline_entries();
             true
         } else {
             false
@@ -530,6 +687,7 @@ impl LanternLeafApp {
             if ui.button("Clear pinned entries").clicked() {
                 self.pinned_timeline_entries.clear();
                 self.push_status("Cleared pinned timeline entries.".to_string());
+                self.persist_pinned_timeline_entries();
             }
         });
         if self.pinned_timeline_entries.is_empty() {
@@ -548,11 +706,32 @@ impl LanternLeafApp {
                     self.record_timeline_history(&entry.entry);
                 }
                 ui.label(entry.details());
-                ui.hyperlink_to("QA link", entry.qa_url);
+                ui.hyperlink_to("QA link", entry.qa_url.as_str());
                 let age_secs = entry.entry.timestamp.elapsed().as_secs_f32();
                 ui.label(format!("{:.1}s ago", age_secs));
                 if ui.button("Unpin").clicked() {
                     self.unpin_timeline_entry(entry);
+                }
+            });
+        }
+    }
+
+    fn render_timeline_archive_imports(&mut self, ui: &mut Ui) {
+        let archives = self.timeline_archive_candidates();
+        if archives.is_empty() {
+            ui.label("(No QA timeline archives available)");
+            return;
+        }
+        ui.label(RichText::new("Available timeline archives:").small());
+        for archive in archives.iter() {
+            let file_name = archive
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("timeline.json");
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(file_name).small().weak());
+                if ui.button("Import JSON").clicked() {
+                    self.import_timeline_archive(archive);
                 }
             });
         }
@@ -2813,6 +2992,7 @@ impl LanternLeafApp {
                         self.handle_timeline_export(TimelineArchiveFormat::Csv);
                     }
                 });
+                self.render_timeline_archive_imports(ui);
                 self.render_pinned_timeline_entries(ui);
                 if !self.pinned_timeline_entries.is_empty() {
                     ui.separator();
@@ -2832,7 +3012,7 @@ impl LanternLeafApp {
                                 self.record_timeline_history(&entry.entry);
                             }
                             ui.label(entry.details());
-                            ui.hyperlink_to("QA link", entry.qa_url);
+                            ui.hyperlink_to("QA link", entry.qa_url.as_str());
                             let age_secs = entry.entry.timestamp.elapsed().as_secs_f32();
                             ui.label(format!("{:.1}s ago", age_secs));
                             if is_pinned {
@@ -3987,8 +4167,9 @@ impl StatusLogEntry {
 #[derive(Clone, Debug)]
 struct TimelineHistoryEntry {
     entry: RegressionSnapshotTimelineEntry,
-    qa_url: &'static str,
+    qa_url: String,
     ref_label: String,
+    wall_clock_secs: f64,
 }
 
 impl TimelineHistoryEntry {
@@ -4005,10 +4186,14 @@ impl TimelineHistoryEntry {
     }
 
     fn from_entry(entry: &RegressionSnapshotTimelineEntry) -> Self {
+        let wall_clock = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_else(|_| Duration::from_secs(0));
         Self {
             entry: entry.clone(),
-            qa_url: entry.kind.qa_url(),
+            qa_url: entry.kind.qa_url().to_string(),
             ref_label: entry.kind.ref_label(),
+            wall_clock_secs: wall_clock.as_secs_f64(),
         }
     }
 
@@ -4023,29 +4208,10 @@ impl TimelineHistoryEntry {
     }
 
     fn timestamp_iso(&self) -> String {
-        let now = Instant::now();
-        let duration = if now >= self.entry.timestamp {
-            now.duration_since(self.entry.timestamp)
-        } else {
-            self.entry.timestamp.duration_since(now)
-        };
-        let wall_clock = SystemTime::now()
-            .checked_sub(duration)
-            .unwrap_or(SystemTime::now());
-        match wall_clock.duration_since(UNIX_EPOCH) {
-            Ok(since_epoch) => format!("{:.3}", since_epoch.as_secs_f64()),
-            Err(_) => "unknown".to_string(),
+        if self.wall_clock_secs <= 0.0 {
+            return "unknown".to_string();
         }
-    }
-
-    fn export_record(&self) -> serde_json::Value {
-        json!({
-            "timestamp": self.timestamp_iso(),
-            "kind": self.entry.kind_label(),
-            "reference": self.ref_label,
-            "qa_url": self.qa_url,
-            "details": self.details(),
-        })
+        format!("{:.3}", self.wall_clock_secs)
     }
 
     fn export_csv_row(&self) -> String {
@@ -4057,6 +4223,299 @@ impl TimelineHistoryEntry {
             self.qa_url,
             self.details().replace('"', "\"\""),
         )
+    }
+
+    fn to_serializable(&self) -> SerializableTimelineHistoryEntry {
+        SerializableTimelineHistoryEntry {
+            kind: SerializableTimelineKind::from_kind(&self.entry.kind),
+            qa_url: self.qa_url.clone(),
+            ref_label: self.ref_label.clone(),
+            wall_clock_secs: self.wall_clock_secs,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializableTimelineHistoryEntry {
+    kind: SerializableTimelineKind,
+    qa_url: String,
+    ref_label: String,
+    wall_clock_secs: f64,
+}
+
+impl SerializableTimelineHistoryEntry {
+    fn to_entry(&self) -> Option<TimelineHistoryEntry> {
+        let kind = self.kind.to_kind()?;
+        Some(TimelineHistoryEntry {
+            entry: RegressionSnapshotTimelineEntry {
+                kind,
+                timestamp: Instant::now(),
+            },
+            qa_url: self.qa_url.clone(),
+            ref_label: self.ref_label.clone(),
+            wall_clock_secs: self.wall_clock_secs,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+enum SerializableTimelineKind {
+    OverlayAlert(SerializableOverlayPressureAlert),
+    PdfRenderEvent(SerializablePdfRenderEvent),
+    PdfThrottleEvent(SerializablePdfRenderThrottleEvent),
+    Status(SerializableStatusLogEntry),
+}
+
+impl SerializableTimelineKind {
+    fn from_kind(kind: &RegressionSnapshotTimelineKind) -> Self {
+        match kind {
+            RegressionSnapshotTimelineKind::OverlayAlert(alert) => {
+                SerializableTimelineKind::OverlayAlert(
+                    SerializableOverlayPressureAlert::from_alert(alert),
+                )
+            }
+            RegressionSnapshotTimelineKind::PdfRenderEvent(event) => {
+                SerializableTimelineKind::PdfRenderEvent(SerializablePdfRenderEvent::from_event(
+                    event,
+                ))
+            }
+            RegressionSnapshotTimelineKind::PdfThrottleEvent(event) => {
+                SerializableTimelineKind::PdfThrottleEvent(
+                    SerializablePdfRenderThrottleEvent::from_event(event),
+                )
+            }
+            RegressionSnapshotTimelineKind::Status(status) => {
+                SerializableTimelineKind::Status(SerializableStatusLogEntry {
+                    message: status.message.clone(),
+                })
+            }
+        }
+    }
+
+    fn to_kind(&self) -> Option<RegressionSnapshotTimelineKind> {
+        match self {
+            SerializableTimelineKind::OverlayAlert(alert) => alert
+                .to_alert()
+                .map(RegressionSnapshotTimelineKind::OverlayAlert),
+            SerializableTimelineKind::PdfRenderEvent(event) => Some(
+                RegressionSnapshotTimelineKind::PdfRenderEvent(event.to_event()),
+            ),
+            SerializableTimelineKind::PdfThrottleEvent(event) => Some(
+                RegressionSnapshotTimelineKind::PdfThrottleEvent(event.to_event()),
+            ),
+            SerializableTimelineKind::Status(entry) => {
+                Some(RegressionSnapshotTimelineKind::Status(entry.to_entry()))
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializableOverlayPressureAlert {
+    id: usize,
+    overlay_budget_pages: usize,
+    highlight_page: Option<usize>,
+    kind: SerializableOverlayPressureKind,
+}
+
+impl SerializableOverlayPressureAlert {
+    fn from_alert(alert: &OverlayPressureAlert) -> Self {
+        Self {
+            id: alert.id,
+            overlay_budget_pages: alert.overlay_budget_pages,
+            highlight_page: alert.highlight_page,
+            kind: SerializableOverlayPressureKind::from_kind(&alert.kind),
+        }
+    }
+
+    fn to_alert(&self) -> Option<OverlayPressureAlert> {
+        let kind = self.kind.to_kind()?;
+        Some(OverlayPressureAlert::new(
+            self.id,
+            kind,
+            self.overlay_budget_pages,
+            self.highlight_page,
+        ))
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+enum SerializableOverlayPressureKind {
+    NativeRender {
+        span: SerializableNativeRenderSpan,
+        reason_text: String,
+    },
+    NativeEviction {
+        eviction: SerializableNativeRenderEviction,
+        reason_text: String,
+    },
+}
+
+impl SerializableOverlayPressureKind {
+    fn from_kind(kind: &OverlayPressureKind) -> Self {
+        match kind {
+            OverlayPressureKind::NativeRender { span, reason_text } => {
+                SerializableOverlayPressureKind::NativeRender {
+                    span: SerializableNativeRenderSpan::from_span(span),
+                    reason_text: reason_text.clone(),
+                }
+            }
+            OverlayPressureKind::NativeEviction {
+                eviction,
+                reason_text,
+            } => SerializableOverlayPressureKind::NativeEviction {
+                eviction: SerializableNativeRenderEviction::from_eviction(eviction),
+                reason_text: reason_text.clone(),
+            },
+        }
+    }
+
+    fn to_kind(&self) -> Option<OverlayPressureKind> {
+        match self {
+            SerializableOverlayPressureKind::NativeRender { span, reason_text } => {
+                Some(OverlayPressureKind::NativeRender {
+                    span: span.to_span(),
+                    reason_text: reason_text.clone(),
+                })
+            }
+            SerializableOverlayPressureKind::NativeEviction {
+                eviction,
+                reason_text,
+            } => Some(OverlayPressureKind::NativeEviction {
+                eviction: eviction.to_eviction(),
+                reason_text: reason_text.clone(),
+            }),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializableNativeRenderSpan {
+    target: RenderTarget,
+    page_index: usize,
+    duration_secs: f32,
+    cache_hit: bool,
+}
+
+impl SerializableNativeRenderSpan {
+    fn from_span(span: &NativeRenderSpan) -> Self {
+        Self {
+            target: span.target,
+            page_index: span.page_index,
+            duration_secs: span.duration.as_secs_f32(),
+            cache_hit: span.cache_hit,
+        }
+    }
+
+    fn to_span(&self) -> NativeRenderSpan {
+        NativeRenderSpan {
+            timestamp: Instant::now(),
+            target: self.target,
+            page_index: self.page_index,
+            duration: Duration::from_secs_f32(self.duration_secs),
+            cache_hit: self.cache_hit,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializableNativeRenderEviction {
+    target: RenderTarget,
+    page_index: usize,
+    reason: String,
+}
+
+impl SerializableNativeRenderEviction {
+    fn from_eviction(eviction: &NativeRenderEviction) -> Self {
+        Self {
+            target: eviction.target,
+            page_index: eviction.page_index,
+            reason: eviction.reason.clone(),
+        }
+    }
+
+    fn to_eviction(&self) -> NativeRenderEviction {
+        NativeRenderEviction {
+            timestamp: Instant::now(),
+            target: self.target,
+            page_index: self.page_index,
+            reason: self.reason.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializablePdfRenderEvent {
+    kind: PdfRenderEventKind,
+    page_index: usize,
+    highlight_page: bool,
+    overlay_budget_pages: usize,
+    overlays_drawn: usize,
+    overlay_reason: Option<String>,
+}
+
+impl SerializablePdfRenderEvent {
+    fn from_event(event: &PdfRenderEvent) -> Self {
+        Self {
+            kind: event.kind,
+            page_index: event.page_index,
+            highlight_page: event.highlight_page,
+            overlay_budget_pages: event.overlay_budget_pages,
+            overlays_drawn: event.overlays_drawn,
+            overlay_reason: event.overlay_reason.clone(),
+        }
+    }
+
+    fn to_event(&self) -> PdfRenderEvent {
+        PdfRenderEvent {
+            timestamp: Instant::now(),
+            kind: self.kind,
+            page_index: self.page_index,
+            highlight_page: self.highlight_page,
+            overlay_budget_pages: self.overlay_budget_pages,
+            overlays_drawn: self.overlays_drawn,
+            overlay_reason: self.overlay_reason.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializablePdfRenderThrottleEvent {
+    kind: PdfRenderThrottleKind,
+    page_index: usize,
+    reason: String,
+}
+
+impl SerializablePdfRenderThrottleEvent {
+    fn from_event(event: &PdfRenderThrottleEvent) -> Self {
+        Self {
+            kind: event.kind,
+            page_index: event.page_index,
+            reason: event.reason.clone(),
+        }
+    }
+
+    fn to_event(&self) -> PdfRenderThrottleEvent {
+        PdfRenderThrottleEvent {
+            timestamp: Instant::now(),
+            kind: self.kind,
+            page_index: self.page_index,
+            reason: self.reason.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SerializableStatusLogEntry {
+    message: String,
+}
+
+impl SerializableStatusLogEntry {
+    fn to_entry(&self) -> StatusLogEntry {
+        StatusLogEntry {
+            timestamp: Instant::now(),
+            message: self.message.clone(),
+        }
     }
 }
 
@@ -4129,13 +4588,6 @@ impl RegressionSnapshotTimelineKind {
 }
 
 impl RegressionSnapshotTimelineEntry {
-    fn new(kind: RegressionSnapshotTimelineKind) -> Self {
-        Self {
-            kind,
-            timestamp: Instant::now(),
-        }
-    }
-
     fn badge_label(&self, reference: Instant) -> String {
         format!(
             "{} {:.1}s",
@@ -4747,7 +5199,7 @@ impl PdfViewportSurface {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 enum PdfRenderEventKind {
     Canvas,
     TextLayer,
@@ -4844,7 +5296,7 @@ impl PdfRenderEvent {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 enum PdfRenderThrottleKind {
     Canvas,
     TextLayer,

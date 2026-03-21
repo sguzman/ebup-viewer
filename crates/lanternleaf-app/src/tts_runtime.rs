@@ -14,6 +14,11 @@ use tracing::{info, trace, warn};
 
 const TTS_PROGRESS_POLL_INTERVAL: Duration = Duration::from_millis(8);
 const TTS_PREPARE_SENTENCE_WINDOW: usize = 8;
+const TTS_TARGET_PLAY_FROM_PAGE_MS: u64 = 1500;
+const TTS_TARGET_PLAY_FROM_HIGHLIGHT_MS: u64 = 600;
+const TTS_TARGET_NEXT_SENTENCE_MS: u64 = 180;
+const TTS_TARGET_WARM_CACHE_MS: u64 = 250;
+const TTS_TARGET_COLD_CACHE_MS: u64 = 2000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TtsRuntimeMode {
@@ -192,6 +197,7 @@ pub struct TtsRuntime {
     session: Arc<Mutex<Option<session::ReaderSession>>>,
     request: Arc<Mutex<Option<TtsRequestRuntime>>>,
     next_request_id: Arc<AtomicU64>,
+    last_command: Arc<Mutex<Option<String>>>,
     event_tx: mpsc::Sender<TtsRuntimeEvent>,
     event_rx: Arc<Mutex<mpsc::Receiver<TtsRuntimeEvent>>>,
     event_batcher: Arc<Mutex<TtsEventBatcher>>,
@@ -211,6 +217,7 @@ impl TtsRuntime {
             session: Arc::new(Mutex::new(None)),
             request: Arc::new(Mutex::new(None)),
             next_request_id: Arc::new(AtomicU64::new(1)),
+            last_command: Arc::new(Mutex::new(None)),
             event_tx,
             event_rx: Arc::new(Mutex::new(event_rx)),
             event_batcher: Arc::new(Mutex::new(TtsEventBatcher::default())),
@@ -243,6 +250,9 @@ impl TtsRuntime {
 
     pub fn apply_command(&self, command: TtsCommand) -> Option<session::ReaderSnapshot> {
         trace!(tts_command = command.label(), "Applying TTS command");
+        if let Ok(mut guard) = self.last_command.lock() {
+            *guard = Some(command.label().to_string());
+        }
         let mut should_sync_tts = true;
         match command {
             TtsCommand::Play => {
@@ -464,6 +474,11 @@ impl TtsRuntime {
             page = plan.page + 1,
             sentence_idx = plan.start_idx,
             sentence_count = plan.sentences.len(),
+            target_play_from_page_ms = TTS_TARGET_PLAY_FROM_PAGE_MS,
+            target_play_from_highlight_ms = TTS_TARGET_PLAY_FROM_HIGHLIGHT_MS,
+            target_next_sentence_ms = TTS_TARGET_NEXT_SENTENCE_MS,
+            target_warm_cache_ms = TTS_TARGET_WARM_CACHE_MS,
+            target_cold_cache_ms = TTS_TARGET_COLD_CACHE_MS,
             "Starting TTS runtime playback job"
         );
 
@@ -473,6 +488,7 @@ impl TtsRuntime {
             panels: self.panels.clone(),
             session: self.session.clone(),
             request: self.request.clone(),
+            last_command: self.last_command.clone(),
             event_tx: self.event_tx.clone(),
         };
 
@@ -526,6 +542,7 @@ struct TtsRuntimeContext {
     panels: Arc<Mutex<session::PanelState>>,
     session: Arc<Mutex<Option<session::ReaderSession>>>,
     request: Arc<Mutex<Option<TtsRequestRuntime>>>,
+    last_command: Arc<Mutex<Option<String>>>,
     event_tx: mpsc::Sender<TtsRuntimeEvent>,
 }
 
@@ -550,6 +567,9 @@ fn run_tts_runtime_loop(
     }
 
     let mut engine: Option<tts::TtsEngine> = None;
+    let runtime_started_at = Instant::now();
+    let mut playback_started_at: Option<Instant> = None;
+    let mut last_sentence_advance_at: Option<Instant> = None;
     let mut ready_prefetch: Option<PrefetchedBatch> = None;
 
     loop {
@@ -661,6 +681,15 @@ fn run_tts_runtime_loop(
             }
         };
 
+        if playback_started_at.is_none() {
+            playback_started_at = Some(Instant::now());
+            log_tts_playback_latency(
+                &ctx,
+                runtime_request_id,
+                runtime_started_at,
+                playback_started_at,
+            );
+        }
         emit_queued_event(&ctx, runtime_request_id, &plan, &prepared);
 
         let mut continue_playback = true;
@@ -722,6 +751,15 @@ fn run_tts_runtime_loop(
             if !advance_tts_runtime_cursor(&ctx, runtime_request_id) {
                 continue_playback = false;
                 break;
+            }
+            if let Some(last_tick) = last_sentence_advance_at.replace(Instant::now()) {
+                let elapsed_ms = last_tick.elapsed().as_millis();
+                trace!(
+                    runtime_request_id,
+                    elapsed_ms,
+                    target_next_sentence_ms = TTS_TARGET_NEXT_SENTENCE_MS,
+                    "TTS sentence transition completed"
+                );
             }
         }
 
@@ -969,6 +1007,13 @@ fn prepare_tts_batch(
     engine: Option<&tts::TtsEngine>,
 ) -> Result<Vec<PreparedSentence>, String> {
     let chunk_sentences = plan.sentences[chunk_start..chunk_end].to_vec();
+    trace!(
+        page = plan.page + 1,
+        chunk_start,
+        chunk_end,
+        mode = ?ctx.mode,
+        "Preparing TTS batch"
+    );
     match ctx.mode {
         TtsRuntimeMode::Simulated => Ok(chunk_sentences
             .iter()
@@ -989,6 +1034,11 @@ fn prepare_tts_batch(
                     plan.progress_log_interval,
                 )
                 .map_err(|err| err.to_string())?;
+            trace!(
+                page = plan.page + 1,
+                prepared = prepared.len(),
+                "Prepared TTS batch"
+            );
             Ok(prepared
                 .into_iter()
                 .map(|(path, duration)| PreparedSentence {
@@ -1196,6 +1246,34 @@ fn patch_has_tts_fields(patch: &session::ReaderSettingsPatch) -> bool {
 
 fn panels_snapshot(panels: &Mutex<session::PanelState>) -> session::PanelState {
     panels.lock().map(|guard| *guard).unwrap_or_default()
+}
+
+fn log_tts_playback_latency(
+    ctx: &TtsRuntimeContext,
+    request_id: u64,
+    runtime_started_at: Instant,
+    playback_started_at: Option<Instant>,
+) {
+    let elapsed_ms = playback_started_at
+        .unwrap_or(runtime_started_at)
+        .saturating_duration_since(runtime_started_at)
+        .as_millis();
+    let command = ctx
+        .last_command
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .unwrap_or_else(|| "tts.unknown".to_string());
+    trace!(
+        request_id,
+        tts_command = %command,
+        elapsed_ms,
+        target_play_from_page_ms = TTS_TARGET_PLAY_FROM_PAGE_MS,
+        target_play_from_highlight_ms = TTS_TARGET_PLAY_FROM_HIGHLIGHT_MS,
+        target_warm_cache_ms = TTS_TARGET_WARM_CACHE_MS,
+        target_cold_cache_ms = TTS_TARGET_COLD_CACHE_MS,
+        "TTS playback latency recorded"
+    );
 }
 
 fn simulated_sentence_duration(sentence: &str, speed: f32) -> Duration {

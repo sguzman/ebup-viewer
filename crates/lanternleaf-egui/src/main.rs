@@ -258,6 +258,15 @@ impl LanternLeafApp {
             }
 
             if let Some(snapshot) = event.snapshot.clone() {
+                if let Some(cursor) = event.cursor {
+                    trace!(
+                        request_id,
+                        page = cursor.page + 1,
+                        audio_idx = ?cursor.audio_idx,
+                        display_idx = ?cursor.display_idx,
+                        "TTS cursor updated"
+                    );
+                }
                 self.runtime.apply_event(AppEvent::ReaderUpdated(ReaderStateEvent {
                     request_id,
                     action: event.action.clone(),

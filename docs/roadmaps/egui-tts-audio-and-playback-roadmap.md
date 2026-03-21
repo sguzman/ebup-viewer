@@ -81,10 +81,10 @@
 - [x] TTS runtime architecture is specified for the egui app with no UI-thread blocking risk.
 
 ## Phase 4: Playback Cursor And Highlight Flow
-- [ ] Preserve the current canonical flow:
-- [ ] text ownership -> playback plan -> progress updates -> highlighted sentence -> UI scroll/highlight
-- [ ] Specify how playback progress enters reader document and PDF/non-PDF renderers in Rust-native state.
-- [ ] Preserve multi-chunk sentence mapping and audio/display index mapping semantics.
+- [x] Preserve the current canonical flow:
+- [x] text ownership -> playback plan -> progress updates -> highlighted sentence -> UI scroll/highlight
+- [x] Specify how playback progress enters reader document and PDF/non-PDF renderers in Rust-native state.
+- [x] Preserve multi-chunk sentence mapping and audio/display index mapping semantics.
 - Phase exit:
 - [ ] playback cursor and highlight propagation are explicit and implementation-ready.
 
@@ -102,11 +102,11 @@
 ## Phase 6: Performance, Caching, And Telemetry
 - [x] Define cache ownership for synthesized audio and playback artifacts.
 - [x] Keep prefetch and cache metrics visible in tracing.
-- [ ] Define acceptable latency targets for:
-- [ ] play from page
-- [ ] play from highlighted sentence
-- [ ] next sentence transitions
-- [ ] cold vs warm cache behavior
+- [x] Define acceptable latency targets for:
+- [x] play from page
+- [x] play from highlighted sentence
+- [x] next sentence transitions
+- [x] cold vs warm cache behavior
 - Phase exit:
 - [ ] implementation has concrete playback performance and observability goals.
 
@@ -123,7 +123,7 @@
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
-- [ ] The egui migration has a complete Rust-native plan for TTS controls, runtime orchestration, and playback events.
+- [x] The egui migration has a complete Rust-native plan for TTS controls, runtime orchestration, and playback events.
 - [x] Piper, rodio, cache, and progress semantics remain explicit and in scope.
-- [ ] Highlight/cursor propagation from playback into readers is fully specified.
-- [ ] No TTS/runtime ownership question remains open for the UI migration.
+- [x] Highlight/cursor propagation from playback into readers is fully specified.
+- [x] No TTS/runtime ownership question remains open for the UI migration.

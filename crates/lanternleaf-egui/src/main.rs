@@ -1028,6 +1028,30 @@ impl LanternLeafApp {
         RichText::new(label).color(color).small().strong()
     }
 
+    fn overlay_pressure_span_summary(&self, alert: &OverlayPressureAlert) -> String {
+        match &alert.kind {
+            OverlayPressureKind::NativeRender { span, reason_text } => format!(
+                "[OverlayBudget][Render] page={} target={} cache_hit={} duration_ms={:.2} budget={} reason={}",
+                span.page_index + 1,
+                span.target.label(),
+                span.cache_hit,
+                span.duration.as_secs_f32() * 1000.0,
+                alert.overlay_budget_pages,
+                reason_text,
+            ),
+            OverlayPressureKind::NativeEviction {
+                eviction,
+                reason_text,
+            } => format!(
+                "[OverlayBudget][Eviction] page={} target={} reason={} budget={}",
+                eviction.page_index + 1,
+                eviction.target.label(),
+                reason_text,
+                alert.overlay_budget_pages,
+            ),
+        }
+    }
+
     fn replay_native_render_span(&self, span: &NativeRenderSpan) {
         let highlight_page = self.pdf_render_state.highlighted_page == Some(span.page_index);
         let replay_span = tracing::span!(
@@ -1501,6 +1525,12 @@ impl LanternLeafApp {
                             );
                             if ui.button("Replay pressure span").clicked() {
                                 self.replay_overlay_pressure_alert(alert);
+                            }
+                            if ui.button("Copy span data").clicked() {
+                                let summary = self.overlay_pressure_span_summary(alert);
+                                ui.ctx()
+                                    .output_mut(|output| output.copied_text = summary.clone());
+                                trace!(span_summary = %summary, "Copied overlay pressure span for QA");
                             }
                         });
                     }

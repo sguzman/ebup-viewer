@@ -10,9 +10,9 @@ use std::{
 use eframe::{
     NativeOptions,
     egui::{
-        self, Align, Align2, Button, CentralPanel, CollapsingHeader, Color32, Context, FontFamily,
-        FontId, Pos2, Rect, RichText, ScrollArea, Sense, SidePanel, Stroke, TopBottomPanel, Ui,
-        Vec2, Visuals,
+        self, Align, Align2, Button, CentralPanel, CollapsingHeader, Color32, ColorImage, Context,
+        FontFamily, FontId, Pos2, Rect, RichText, ScrollArea, Sense, SidePanel, Stroke,
+        TextureHandle, TextureOptions, TopBottomPanel, Ui, Vec2, Visuals,
     },
 };
 use helpers::{app_config_path, bootstrap_config_from_app_config, format_combo};
@@ -37,6 +37,8 @@ use tracing::{Level, info, trace};
 
 const PDF_CANVAS_BUDGET_PAGES: usize = 2;
 const PDF_TEXT_LAYER_BUDGET_PAGES: usize = 1;
+const PDF_CANVAS_TEXTURE_SIZE: [usize; 2] = [320, 450];
+const PDF_TEXT_TEXTURE_SIZE: [usize; 2] = [300, 420];
 
 fn main() {
     let config_path = app_config_path();
@@ -1290,6 +1292,7 @@ impl LanternLeafApp {
                 return;
             }
         };
+        self.prepare_pdf_textures(ui.ctx());
         const MAX_PREVIEW_PAGES: usize = 6;
         let preview_size = Vec2::new(ui.available_width(), 180.0);
         let (preview_rect, _) = ui.allocate_exact_size(preview_size, Sense::hover());
@@ -1358,13 +1361,43 @@ impl LanternLeafApp {
             current_x += page_width + gap;
             let is_highlight_page = Some(page) == highlight_page;
             let is_priority = plan.priority_page_indexes.contains(&page);
-            let surface = self.pdf_render_state.surface_for_page(page);
-            let canvas_allowed = surface.map(|surface| surface.canvas_ready).unwrap_or(false);
-            let text_allowed = surface
-                .map(|surface| surface.text_layer_ready)
-                .unwrap_or(false);
+            let (
+                canvas_allowed,
+                text_allowed,
+                canvas_texture,
+                text_texture,
+                overlays_source,
+                overlay_reason,
+            ) = {
+                let surface = self.pdf_render_state.surface_for_page(page);
+                let canvas_allowed = surface.map(|surface| surface.canvas_ready).unwrap_or(false);
+                let text_allowed = surface
+                    .map(|surface| surface.text_layer_ready)
+                    .unwrap_or(false);
+                let canvas_texture = surface
+                    .and_then(|surface| surface.canvas_texture.as_ref())
+                    .map(|texture| texture.id());
+                let text_texture = surface
+                    .and_then(|surface| surface.text_layer_texture.as_ref())
+                    .map(|texture| texture.id());
+                let overlays_source = surface
+                    .map(|surface| surface.overlay_rects.clone())
+                    .unwrap_or_else(|| self.pdf_render_state.overlay_rects.clone());
+                let overlay_reason = surface
+                    .and_then(|surface| surface.overlay_reason.clone())
+                    .or_else(|| self.pdf_render_state.overlay_alignment_reason.clone());
+                (
+                    canvas_allowed,
+                    text_allowed,
+                    canvas_texture,
+                    text_texture,
+                    overlays_source,
+                    overlay_reason,
+                )
+            };
             let has_canvas_intent = plan.canvas_page_indexes.contains(&page);
             let has_text_intent = plan.text_layer_page_indexes.contains(&page);
+            let uv_rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
 
             if canvas_allowed {
                 let canvas_span = tracing::span!(
@@ -1430,6 +1463,11 @@ impl LanternLeafApp {
                 6.0,
                 Stroke::new(if is_priority { 3.0 } else { 1.4 }, border_color),
             );
+            if canvas_allowed {
+                if let Some(texture) = canvas_texture {
+                    painter.image(texture, page_rect, uv_rect, Color32::WHITE);
+                }
+            }
             let inner = page_rect.shrink(4.0);
             if text_allowed {
                 text_drawn += 1;
@@ -1454,16 +1492,25 @@ impl LanternLeafApp {
                         overlay_budget,
                     ));
                 let text_layer_rect = inner.shrink(2.0);
-                painter.rect_filled(
-                    text_layer_rect,
-                    4.0,
-                    Color32::from_rgba_unmultiplied(50, 170, 120, 90),
-                );
-                painter.rect_stroke(
-                    text_layer_rect,
-                    4.0,
-                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(140, 220, 180, 200)),
-                );
+                if let Some(texture) = text_texture {
+                    painter.image(
+                        texture,
+                        text_layer_rect,
+                        uv_rect,
+                        Color32::from_white_alpha(200),
+                    );
+                } else {
+                    painter.rect_filled(
+                        text_layer_rect,
+                        4.0,
+                        Color32::from_rgba_unmultiplied(50, 170, 120, 90),
+                    );
+                    painter.rect_stroke(
+                        text_layer_rect,
+                        4.0,
+                        Stroke::new(1.0, Color32::from_rgba_unmultiplied(140, 220, 180, 200)),
+                    );
+                }
             } else if has_text_intent {
                 let reason = if self.pdf_render_state.is_text_layer_evicted(page) {
                     "budget_exhausted"
@@ -1488,7 +1535,7 @@ impl LanternLeafApp {
             if Some(page) == highlight_page {
                 let mut page_overlay_drawn = 0;
                 if overlays_allowed {
-                    for (idx, rect) in self.pdf_render_state.overlay_rects.iter().enumerate() {
+                    for (idx, rect) in overlays_source.iter().enumerate() {
                         if idx >= overlay_budget {
                             break;
                         }
@@ -1520,10 +1567,7 @@ impl LanternLeafApp {
                         highlight_page = true,
                         overlays_drawn = page_overlay_drawn,
                         overlay_budget_pages = overlay_budget,
-                        overlay_alignment_reason = ?self
-                            .pdf_render_state
-                            .overlay_alignment_reason
-                            .as_deref(),
+                        overlay_alignment_reason = ?overlay_reason.as_deref(),
                     );
                     let _overlay_enter = overlay_span.enter();
                     trace!(
@@ -1536,7 +1580,7 @@ impl LanternLeafApp {
                             page,
                             page_overlay_drawn,
                             overlay_budget,
-                            self.pdf_render_state.overlay_alignment_reason.clone(),
+                            overlay_reason.clone(),
                         ));
                 }
                 if !highlight_page_text_ready && !self.pdf_render_state.overlay_rects.is_empty() {
@@ -1602,6 +1646,76 @@ impl LanternLeafApp {
             overlay_reason = ?self.pdf_render_state.overlay_alignment_reason.as_deref(),
             "Rendered simplified PDF preview"
         );
+    }
+
+    fn prepare_pdf_textures(&mut self, ctx: &Context) {
+        if self.pdf_render_state.plan.is_none() {
+            return;
+        }
+        for surface in self.pdf_render_state.viewport_surfaces.iter_mut() {
+            if surface.canvas_ready && surface.canvas_texture.is_none() {
+                let image = Self::build_canvas_color_image(surface.page_index);
+                let texture = ctx.load_texture(
+                    format!("pdf-canvas-{}", surface.page_index),
+                    image,
+                    TextureOptions::LINEAR,
+                );
+                surface.canvas_texture = Some(texture);
+            }
+            if surface.text_layer_ready && surface.text_layer_texture.is_none() {
+                let image = Self::build_text_layer_color_image(surface.page_index);
+                let texture = ctx.load_texture(
+                    format!("pdf-text-layer-{}", surface.page_index),
+                    image,
+                    TextureOptions::LINEAR,
+                );
+                surface.text_layer_texture = Some(texture);
+            }
+        }
+    }
+
+    fn build_canvas_color_image(page_index: usize) -> ColorImage {
+        Self::build_placeholder_texture(
+            page_index,
+            PDF_CANVAS_TEXTURE_SIZE,
+            [180, 190, 205],
+            [60, 80, 110],
+        )
+    }
+
+    fn build_text_layer_color_image(page_index: usize) -> ColorImage {
+        Self::build_placeholder_texture(
+            page_index,
+            PDF_TEXT_TEXTURE_SIZE,
+            [230, 230, 210],
+            [80, 90, 70],
+        )
+    }
+
+    fn build_placeholder_texture(
+        page_index: usize,
+        size: [usize; 2],
+        base: [u8; 3],
+        accent: [u8; 3],
+    ) -> ColorImage {
+        let (width, height) = (size[0], size[1]);
+        let mut data = Vec::with_capacity(width * height * 4);
+        for y in 0..height {
+            let stripe = (y + page_index * 3) % 32 < 18;
+            for x in 0..width {
+                let pattern = ((x * 3 + y * 5 + page_index * 7) % 256) as u8;
+                let extra = if stripe { 24 } else { 0 };
+                let r = base[0]
+                    .saturating_add((pattern / 16) as u8)
+                    .saturating_add(extra);
+                let g = base[1]
+                    .saturating_add((pattern / 20) as u8)
+                    .saturating_add(extra / 2);
+                let b = accent[2].saturating_add((pattern / 24) as u8);
+                data.extend_from_slice(&[r, g, b, 255u8]);
+            }
+        }
+        ColorImage::from_rgba_unmultiplied([width, height], &data)
     }
 
     fn page_index_for_global_sentence(
@@ -2180,7 +2294,11 @@ impl PdfRenderState {
     }
 
     fn update_surfaces(&mut self, plan: &PdfViewportRenderPlan) {
-        let mut surfaces_map: HashMap<usize, PdfViewportSurface> = HashMap::new();
+        let mut surfaces_map: HashMap<usize, PdfViewportSurface> = self
+            .viewport_surfaces
+            .drain(..)
+            .map(|surface| (surface.page_index, surface))
+            .collect();
         for &page in plan.canvas_page_indexes.iter() {
             surfaces_map
                 .entry(page)
@@ -2210,12 +2328,14 @@ impl PdfRenderState {
                 .contains(&surface.page_index)
             {
                 surface.canvas_ready = false;
+                surface.canvas_texture = None;
             }
             if decision
                 .evict_text_layer_page_indexes
                 .contains(&surface.page_index)
             {
                 surface.text_layer_ready = false;
+                surface.text_layer_texture = None;
             }
         }
     }
@@ -2264,6 +2384,14 @@ impl PdfRenderState {
         } else {
             overlay_reason
         };
+        if let Some(surface) = self
+            .viewport_surfaces
+            .iter_mut()
+            .find(|surface| surface.page_index == page_index)
+        {
+            surface.overlay_rects = self.overlay_rects.clone();
+            surface.overlay_reason = self.overlay_alignment_reason.clone();
+        }
     }
 
     fn generate_overlay_rects(sentence_idx: Option<usize>) -> Vec<[f32; 4]> {
@@ -2362,6 +2490,10 @@ struct PdfViewportSurface {
     page_index: usize,
     canvas_ready: bool,
     text_layer_ready: bool,
+    canvas_texture: Option<TextureHandle>,
+    text_layer_texture: Option<TextureHandle>,
+    overlay_rects: Vec<[f32; 4]>,
+    overlay_reason: Option<String>,
 }
 
 impl PdfViewportSurface {
@@ -2370,6 +2502,10 @@ impl PdfViewportSurface {
             page_index,
             canvas_ready: false,
             text_layer_ready: false,
+            canvas_texture: None,
+            text_layer_texture: None,
+            overlay_rects: Vec::new(),
+            overlay_reason: None,
         }
     }
 }

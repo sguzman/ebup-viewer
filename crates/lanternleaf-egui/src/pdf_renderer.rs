@@ -3,6 +3,7 @@ use std::{
     convert::TryFrom,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 use crate::{PDF_CANVAS_TEXTURE_SIZE, PDF_TEXT_TEXTURE_SIZE};
@@ -37,6 +38,7 @@ pub struct NativePdfRenderer {
     cache: HashMap<RenderCacheKey, ColorImage>,
     order: VecDeque<RenderCacheKey>,
     capacity: usize,
+    eviction_events: Vec<NativeRenderEviction>,
 }
 
 impl NativePdfRenderer {
@@ -47,6 +49,7 @@ impl NativePdfRenderer {
             cache: HashMap::new(),
             order: VecDeque::new(),
             capacity: CACHE_CAPACITY,
+            eviction_events: Vec::new(),
         })
     }
 
@@ -54,7 +57,7 @@ impl NativePdfRenderer {
         &mut self,
         source_path: &Path,
         page_index: usize,
-    ) -> Result<ColorImage, NativePdfRendererError> {
+    ) -> Result<RenderOutcome, NativePdfRendererError> {
         self.render_for_target(source_path, page_index, RenderTarget::Canvas)
     }
 
@@ -62,7 +65,7 @@ impl NativePdfRenderer {
         &mut self,
         source_path: &Path,
         page_index: usize,
-    ) -> Result<ColorImage, NativePdfRendererError> {
+    ) -> Result<RenderOutcome, NativePdfRendererError> {
         self.render_for_target(source_path, page_index, RenderTarget::TextLayer)
     }
 
@@ -71,17 +74,22 @@ impl NativePdfRenderer {
         source_path: &Path,
         page_index: usize,
         target: RenderTarget,
-    ) -> Result<ColorImage, NativePdfRendererError> {
+    ) -> Result<RenderOutcome, NativePdfRendererError> {
         let key = RenderCacheKey {
             source: source_path.to_path_buf(),
             page_index,
             target,
         };
         if let Some(image) = self.cache.get(&key) {
-            return Ok(image.clone());
+            return Ok(RenderOutcome {
+                image: image.clone(),
+                duration: Duration::from_micros(0),
+                cache_hit: true,
+            });
         }
 
-        let image = {
+        let start = Instant::now();
+        let (image, duration) = {
             let document = self.pdfium.load_pdf_from_file(source_path, None)?;
             let page_index = PdfPageIndex::try_from(page_index)
                 .map_err(|_| NativePdfRendererError::PageIndexOutOfBounds(page_index))?;
@@ -92,10 +100,14 @@ impl NativePdfRenderer {
                 .set_target_height(dims.height);
 
             let bitmap = page.render_with_config(&config)?;
-            Self::bitmap_to_color_image(bitmap)?
+            (Self::bitmap_to_color_image(bitmap)?, start.elapsed())
         };
         self.insert_cache(key.clone(), image.clone());
-        Ok(image)
+        Ok(RenderOutcome {
+            image,
+            duration,
+            cache_hit: false,
+        })
     }
 
     fn insert_cache(&mut self, key: RenderCacheKey, image: ColorImage) {
@@ -105,6 +117,12 @@ impl NativePdfRenderer {
         while self.cache.len() >= self.capacity {
             if let Some(old_key) = self.order.pop_front() {
                 self.cache.remove(&old_key);
+                self.eviction_events.push(NativeRenderEviction {
+                    timestamp: Instant::now(),
+                    target: old_key.target,
+                    page_index: old_key.page_index,
+                    reason: "capacity_evicted",
+                });
             }
         }
         self.order.push_back(key.clone());
@@ -117,6 +135,10 @@ impl NativePdfRenderer {
         let height = rgba.height() as usize;
         let raw = rgba.into_raw();
         Ok(ColorImage::from_rgba_unmultiplied([width, height], &raw))
+    }
+
+    pub fn drain_eviction_events(&mut self) -> Vec<NativeRenderEviction> {
+        std::mem::take(&mut self.eviction_events)
     }
 }
 
@@ -152,6 +174,52 @@ impl RenderTarget {
             RenderTarget::Canvas => "canvas",
             RenderTarget::TextLayer => "text-layer",
         }
+    }
+}
+
+pub struct RenderOutcome {
+    pub image: ColorImage,
+    pub duration: Duration,
+    pub cache_hit: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeRenderSpan {
+    pub timestamp: Instant,
+    pub target: RenderTarget,
+    pub page_index: usize,
+    pub duration: Duration,
+    pub cache_hit: bool,
+}
+
+impl NativeRenderSpan {
+    pub fn describe(&self) -> String {
+        format!(
+            "Native render: page {} {} (cache hit: {}) {:.2?}",
+            self.page_index + 1,
+            self.target.label(),
+            self.cache_hit,
+            self.duration,
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeRenderEviction {
+    pub timestamp: Instant,
+    pub target: RenderTarget,
+    pub page_index: usize,
+    pub reason: &'static str,
+}
+
+impl NativeRenderEviction {
+    pub fn describe(&self) -> String {
+        format!(
+            "Evicted page {} {} ({})",
+            self.page_index + 1,
+            self.target.label(),
+            self.reason
+        )
     }
 }
 

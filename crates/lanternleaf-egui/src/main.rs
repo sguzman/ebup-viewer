@@ -22,7 +22,9 @@ use crate::pdf::{
     PdfPageRegistryEntry, PdfViewportBudgetDecision, PdfViewportBudgetInput, PdfViewportPlanInput,
     PdfViewportRenderPlan, build_pdf_viewport_render_plan, choose_pdf_viewport_evictions,
 };
-use crate::pdf_renderer::{NativePdfRenderer, RenderTarget};
+use crate::pdf_renderer::{
+    NativePdfRenderer, NativeRenderEviction, NativeRenderSpan, RenderTarget,
+};
 use lanternleaf_app::{
     AppRuntime,
     contracts::{PrettyKind, ReaderSnapshot, UiMode},
@@ -1243,6 +1245,42 @@ impl LanternLeafApp {
                         );
                     }
                 }
+                ui.separator();
+                ui.label("Native render traces:");
+                let native_spans = self.pdf_render_state.recent_native_render_spans();
+                if native_spans.is_empty() {
+                    ui.label("(No native renders yet)");
+                } else {
+                    for span in native_spans.iter().rev() {
+                        ui.label(
+                            RichText::new(format!(
+                                "{} ({:.2?} ago)",
+                                span.describe(),
+                                Instant::now().saturating_duration_since(span.timestamp)
+                            ))
+                            .small()
+                            .weak(),
+                        );
+                    }
+                }
+                ui.separator();
+                ui.label("Native render evictions:");
+                let evictions = self.pdf_render_state.recent_native_evictions();
+                if evictions.is_empty() {
+                    ui.label("(No evictions yet)");
+                } else {
+                    for event in evictions.iter().rev() {
+                        ui.label(
+                            RichText::new(format!(
+                                "{} ({:.2?} ago)",
+                                event.describe(),
+                                Instant::now().saturating_duration_since(event.timestamp)
+                            ))
+                            .small()
+                            .weak(),
+                        );
+                    }
+                }
                 let budget_rejections = self
                     .scheduler_events
                     .iter()
@@ -1752,12 +1790,35 @@ impl LanternLeafApp {
     ) -> Option<ColorImage> {
         let source_path = self.current_pdf_path.as_deref()?;
         let renderer = self.pdf_renderer.as_mut()?;
-        let result = match target {
+        let outcome = match target {
             RenderTarget::Canvas => renderer.render_canvas(source_path, page_index),
             RenderTarget::TextLayer => renderer.render_text_layer(source_path, page_index),
         };
-        match result {
-            Ok(image) => Some(image),
+        match outcome {
+            Ok(outcome) => {
+                let render_span = NativeRenderSpan {
+                    timestamp: Instant::now(),
+                    target,
+                    page_index,
+                    duration: outcome.duration,
+                    cache_hit: outcome.cache_hit,
+                };
+                let span = tracing::span!(
+                    Level::TRACE,
+                    "PdfNativeRender",
+                    budget_plan = "shell.performance_budget",
+                    target = ?target,
+                    page = page_index + 1,
+                    cache_hit = outcome.cache_hit,
+                    duration_ms = outcome.duration.as_secs_f32(),
+                );
+                let _enter = span.enter();
+                self.pdf_render_state.record_native_render_span(render_span);
+                for eviction in renderer.drain_eviction_events() {
+                    self.pdf_render_state.record_native_eviction(eviction);
+                }
+                Some(outcome.image)
+            }
             Err(err) => {
                 warn!(
                     pdf_path = %source_path.display(),
@@ -2283,6 +2344,8 @@ struct PdfRenderState {
     render_events: Vec<PdfRenderEvent>,
     viewport_surfaces: Vec<PdfViewportSurface>,
     throttle_events: Vec<PdfRenderThrottleEvent>,
+    native_render_spans: Vec<NativeRenderSpan>,
+    native_eviction_events: Vec<NativeRenderEviction>,
 }
 
 impl PdfRenderState {
@@ -2305,6 +2368,8 @@ impl PdfRenderState {
         self.render_events.clear();
         self.viewport_surfaces.clear();
         self.throttle_events.clear();
+        self.native_render_spans.clear();
+        self.native_eviction_events.clear();
     }
 
     fn updated_age(&self) -> Option<Duration> {
@@ -2332,8 +2397,32 @@ impl PdfRenderState {
         }
     }
 
+    fn record_native_render_span(&mut self, span: NativeRenderSpan) {
+        const MAX_NATIVE_SPANS: usize = 16;
+        self.native_render_spans.push(span);
+        if self.native_render_spans.len() > MAX_NATIVE_SPANS {
+            self.native_render_spans.remove(0);
+        }
+    }
+
+    fn record_native_eviction(&mut self, event: NativeRenderEviction) {
+        const MAX_NATIVE_EVICTIONS: usize = 12;
+        self.native_eviction_events.push(event);
+        if self.native_eviction_events.len() > MAX_NATIVE_EVICTIONS {
+            self.native_eviction_events.remove(0);
+        }
+    }
+
     fn recent_render_events(&self) -> &[PdfRenderEvent] {
         &self.render_events
+    }
+
+    fn recent_native_render_spans(&self) -> &[NativeRenderSpan] {
+        &self.native_render_spans
+    }
+
+    fn recent_native_evictions(&self) -> &[NativeRenderEviction] {
+        &self.native_eviction_events
     }
 
     fn record_throttle_event(&mut self, event: PdfRenderThrottleEvent) {

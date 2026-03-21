@@ -86,9 +86,11 @@ struct LanternLeafApp {
     pdf_renderer: Option<NativePdfRenderer>,
     current_pdf_path: Option<PathBuf>,
     sentence_scroll_offset: Option<Vec2>,
+    overlay_eviction_warning_at: Option<Instant>,
 }
 
 impl LanternLeafApp {
+    const OVERLAY_EVICTION_SNACK_DURATION: Duration = Duration::from_secs(5);
     fn new(
         _cc: &eframe::CreationContext<'_>,
         runtime: AppRuntime,
@@ -118,6 +120,7 @@ impl LanternLeafApp {
             pdf_renderer,
             current_pdf_path: None,
             sentence_scroll_offset: None,
+            overlay_eviction_warning_at: None,
         }
     }
 
@@ -219,6 +222,24 @@ impl LanternLeafApp {
                         }
                     }
                 });
+                if let Some(elapsed) = self.overlay_eviction_warning_age() {
+                    if let Some(alert) = self
+                        .pdf_render_state
+                        .recent_overlay_pressure_alerts()
+                        .last()
+                    {
+                        ui.label(
+                            RichText::new(format!(
+                                "Overlay eviction warning: {} ({:.1}s ago)",
+                                alert.describe(),
+                                elapsed.as_secs_f32()
+                            ))
+                            .color(Color32::from_rgb(255, 130, 90))
+                            .small()
+                            .strong(),
+                        );
+                    }
+                }
                 self.render_overlay_pressure_toast(ui);
             });
         });
@@ -250,6 +271,18 @@ impl LanternLeafApp {
                 }
             });
         }
+    }
+
+    fn overlay_eviction_warning_age(&mut self) -> Option<Duration> {
+        let now = Instant::now();
+        if let Some(start) = self.overlay_eviction_warning_at {
+            let elapsed = now.duration_since(start);
+            if elapsed < Self::OVERLAY_EVICTION_SNACK_DURATION {
+                return Some(elapsed);
+            }
+            self.overlay_eviction_warning_at = None;
+        }
+        None
     }
 
     fn render_panels(
@@ -975,6 +1008,19 @@ impl LanternLeafApp {
             highlight_page,
         );
         self.pdf_render_state.record_overlay_pressure_alert(alert);
+        self.overlay_eviction_warning_at = Some(Instant::now());
+        let eviction_span = tracing::span!(
+            Level::WARN,
+            "OverlayEvictionWarning",
+            budget_plan = "shell.performance_budget",
+            page = eviction.page_index + 1,
+            highlight_page = highlight_page.is_some(),
+            overlay_budget_pages = self.pdf_render_state.overlay_budget_pages(),
+            reason = eviction.reason,
+            target = ?eviction.target,
+        );
+        let _enter = eviction_span.enter();
+        trace!(event = %eviction.describe(), "Overlay eviction logged for QA");
     }
 
     fn overlay_pressure_badge(&self, alert: &OverlayPressureAlert) -> RichText {

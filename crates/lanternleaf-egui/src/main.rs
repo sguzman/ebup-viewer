@@ -263,14 +263,19 @@ impl LanternLeafApp {
                 ui.label(self.overlay_pressure_badge(&alert));
                 ui.label(
                     RichText::new(format!(
-                        "{} ({:.1}s ago, budget {} pages)",
+                        "{} (span #{}, {:.1}s ago, budget {} pages)",
                         alert.describe(),
+                        alert.id(),
                         alert.age_secs(),
                         alert.overlay_budget_pages
                     ))
                     .small()
                     .weak(),
                 );
+                if ui.small_button("Copy QA JSON").clicked() {
+                    let summary = self.overlay_pressure_span_summary(&alert);
+                    self.log_qa_span_copy(&alert, &summary);
+                }
                 if ui.small_button("Open overlay diagnostics").clicked() {
                     self.overlay_pressure_focus = true;
                     ui.ctx().request_repaint();
@@ -567,6 +572,39 @@ impl LanternLeafApp {
                     "{} Overlay budget: {} pages, {} overlays drawn ({})",
                     badge, decision.budget_pages, decision.overlays_drawn, reason
                 ));
+            });
+        }
+        if snapshot.pretty_kind == PrettyKind::Pdf {
+            let overlay_budget = self.pdf_render_state.overlay_budget_pages();
+            let highlight_ready = self.highlight_page_has_text_layer();
+            let overlay_status = if overlay_budget > 0 {
+                "Overlay budget available"
+            } else {
+                "Overlay budget exhausted"
+            };
+            let overlay_color = if highlight_ready && overlay_budget > 0 {
+                Color32::from_rgb(130, 210, 170)
+            } else {
+                Color32::from_rgb(220, 130, 110)
+            };
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "{} — cached rects: {}, highlight layer ready: {}",
+                        overlay_status,
+                        self.pdf_render_state.overlay_rects.len(),
+                        highlight_ready
+                    ))
+                    .color(overlay_color)
+                    .strong(),
+                );
+                if overlay_budget == 0 {
+                    ui.label(
+                        RichText::new("Budget blocked")
+                            .color(Color32::from_rgb(220, 180, 120))
+                            .small(),
+                    );
+                }
             });
         }
         if let Some(alert) = self
@@ -986,7 +1024,9 @@ impl LanternLeafApp {
         } else {
             "Neighbor text layer render consumed the overlay budget"
         };
+        let alert_id = self.pdf_render_state.allocate_overlay_alert_id();
         let alert = OverlayPressureAlert::new(
+            alert_id,
             OverlayPressureKind::NativeRender {
                 span: span.clone(),
                 reason_text: reason_text.to_string(),
@@ -1005,7 +1045,9 @@ impl LanternLeafApp {
         if highlight_page != Some(eviction.page_index) {
             return;
         }
+        let alert_id = self.pdf_render_state.allocate_overlay_alert_id();
         let alert = OverlayPressureAlert::new(
+            alert_id,
             OverlayPressureKind::NativeEviction {
                 eviction: eviction.clone(),
                 reason_text: "Highlight text layer evicted by budget pressure".to_string(),
@@ -1080,8 +1122,11 @@ impl LanternLeafApp {
             }),
         };
         let payload = json!({
+            "id": alert.id(),
             "tranche": alert.tranche_label(),
+            "tranche_url": alert.tranche_url(),
             "overlay_budget_pages": alert.overlay_budget_pages,
+            "highlight_page": alert.highlight_page,
             "age_secs": alert.age_secs(),
             "span": kind_info,
             "summary": summary,
@@ -1560,30 +1605,50 @@ impl LanternLeafApp {
                         ui.label("Related tranches:");
                         ui.hyperlink_to("Reader Rendering Core", READER_RENDR_ROADMAP_URL);
                         ui.hyperlink_to("PDF Subsystem", PDF_SUBSYSTEM_ROADMAP_URL);
-                        ui.hyperlink_to("Implementation prioritization", PRIORITIZATION_ROADMAP_URL);
+                        ui.hyperlink_to(
+                            "Implementation prioritization",
+                            PRIORITIZATION_ROADMAP_URL,
+                        );
                     });
                     for alert in overlay_warnings.iter().rev() {
-                        ui.horizontal(|ui| {
-                            ui.label(self.overlay_pressure_badge(alert));
-                            ui.label(
-                                RichText::new(format!(
-                                    "{} ({:.1}s ago)",
-                                    alert.describe(),
-                                    alert.age_secs()
-                                ))
-                                .small()
-                                .weak(),
-                            );
-                            if ui.button("Replay pressure span").clicked() {
-                                self.replay_overlay_pressure_alert(alert);
-                            }
-                            if ui.button("Copy span data").clicked() {
-                                let summary = self.overlay_pressure_span_summary(alert);
-                                ui.ctx()
-                                    .output_mut(|output| output.copied_text = summary.clone());
-                                trace!(span_summary = %summary, "Copied overlay pressure span for QA");
-                                self.log_qa_span_copy(alert, &summary);
-                            }
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(self.overlay_pressure_badge(alert));
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} ({:.1}s ago)",
+                                        alert.describe(),
+                                        alert.age_secs()
+                                    ))
+                                    .small()
+                                    .weak(),
+                                );
+                                ui.label(
+                                    RichText::new(format!("[span id: {}]", alert.id()))
+                                        .small()
+                                        .weak(),
+                                );
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Tranche link:");
+                                ui.hyperlink_to(alert.tranche_label(), alert.tranche_url());
+                            });
+                            ui.horizontal(|ui| {
+                                if ui.button("Replay pressure span").clicked() {
+                                    self.replay_overlay_pressure_alert(alert);
+                                }
+                                if ui.button("Copy span data").clicked() {
+                                    let summary = self.overlay_pressure_span_summary(alert);
+                                    ui.ctx()
+                                        .output_mut(|output| output.copied_text = summary.clone());
+                                    trace!(span_summary = %summary, "Copied overlay pressure span for QA");
+                                    self.log_qa_span_copy(alert, &summary);
+                                }
+                                if ui.button("Log QA JSON").clicked() {
+                                    let summary = self.overlay_pressure_span_summary(alert);
+                                    self.log_qa_span_copy(alert, &summary);
+                                }
+                            });
                         });
                     }
                 }
@@ -2556,6 +2621,7 @@ impl SchedulerEvent {
 
 #[derive(Clone, Debug)]
 struct OverlayPressureAlert {
+    id: usize,
     timestamp: Instant,
     overlay_budget_pages: usize,
     highlight_page: Option<usize>,
@@ -2564,16 +2630,26 @@ struct OverlayPressureAlert {
 
 impl OverlayPressureAlert {
     fn new(
+        id: usize,
         kind: OverlayPressureKind,
         overlay_budget_pages: usize,
         highlight_page: Option<usize>,
     ) -> Self {
         Self {
+            id,
             timestamp: Instant::now(),
             overlay_budget_pages,
             highlight_page,
             kind,
         }
+    }
+
+    fn id(&self) -> usize {
+        self.id
+    }
+
+    fn tranche_url(&self) -> &'static str {
+        self.kind.tranche_url()
     }
 
     fn age_secs(&self) -> f32 {
@@ -2651,6 +2727,13 @@ impl OverlayPressureKind {
         match self {
             OverlayPressureKind::NativeRender { .. } => (Color32::from_rgb(220, 140, 80), "RENDER"),
             OverlayPressureKind::NativeEviction { .. } => (Color32::from_rgb(220, 90, 90), "EVICT"),
+        }
+    }
+
+    fn tranche_url(&self) -> &'static str {
+        match self {
+            OverlayPressureKind::NativeRender { .. } => PDF_SUBSYSTEM_ROADMAP_URL,
+            OverlayPressureKind::NativeEviction { .. } => PDF_SUBSYSTEM_ROADMAP_URL,
         }
     }
 }
@@ -2776,6 +2859,7 @@ struct PdfRenderState {
     native_render_spans: Vec<NativeRenderSpan>,
     native_eviction_events: Vec<NativeRenderEviction>,
     overlay_pressure_alerts: Vec<OverlayPressureAlert>,
+    next_overlay_alert_id: usize,
 }
 
 impl PdfRenderState {
@@ -2801,6 +2885,7 @@ impl PdfRenderState {
         self.native_render_spans.clear();
         self.native_eviction_events.clear();
         self.overlay_pressure_alerts.clear();
+        self.next_overlay_alert_id = 0;
     }
 
     fn updated_age(&self) -> Option<Duration> {
@@ -2862,6 +2947,12 @@ impl PdfRenderState {
         if self.overlay_pressure_alerts.len() > MAX_OVERLAY_PRESSURE_ALERTS {
             self.overlay_pressure_alerts.remove(0);
         }
+    }
+
+    fn allocate_overlay_alert_id(&mut self) -> usize {
+        let id = self.next_overlay_alert_id;
+        self.next_overlay_alert_id = self.next_overlay_alert_id.wrapping_add(1);
+        id
     }
 
     fn recent_overlay_pressure_alerts(&self) -> &[OverlayPressureAlert] {

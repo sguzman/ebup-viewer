@@ -82,7 +82,7 @@ fn main() {
 struct LanternLeafApp {
     runtime: AppRuntime,
     _tracing_guard: tracing_appender::non_blocking::WorkerGuard,
-    status_log: Vec<String>,
+    status_log: Vec<StatusLogEntry>,
     show_safe_quit_modal: bool,
     show_reader_confirm_modal: bool,
     pending_search_focus: bool,
@@ -166,8 +166,11 @@ impl LanternLeafApp {
         self.push_status(entry);
     }
 
-    fn push_status(&mut self, entry: String) {
-        self.status_log.push(entry);
+    fn push_status(&mut self, message: String) {
+        self.status_log.push(StatusLogEntry {
+            timestamp: Instant::now(),
+            message,
+        });
         if self.status_log.len() > 8 {
             self.status_log.remove(0);
         }
@@ -1719,10 +1722,7 @@ impl LanternLeafApp {
         trace!(event = ?event, "Replayed throttle span for QA");
     }
 
-    fn regression_snapshot_event_links<'a>(
-        &'a self,
-        snapshot: &'a RegressionSnapshot,
-    ) -> RegressionSnapshotEventLinks<'a> {
+    fn regression_snapshot_event_links(&self, snapshot: &RegressionSnapshot) -> RegressionSnapshotEventLinks {
         let render_events = self
             .pdf_render_state
             .recent_render_events()
@@ -1735,6 +1735,7 @@ impl LanternLeafApp {
                     REGRESSION_EVENT_WINDOW,
                 )
             })
+            .cloned()
             .collect();
         let throttle_events = self
             .pdf_render_state
@@ -1748,11 +1749,75 @@ impl LanternLeafApp {
                     REGRESSION_EVENT_WINDOW,
                 )
             })
+            .cloned()
+            .collect();
+        let status_entries = self
+            .status_log
+            .iter()
+            .filter(|entry| {
+                Self::within_snapshot_window(
+                    snapshot.timestamp,
+                    entry.timestamp,
+                    REGRESSION_EVENT_WINDOW,
+                )
+            })
+            .cloned()
             .collect();
         RegressionSnapshotEventLinks {
             render_events,
             throttle_events,
+            status_entries,
         }
+    }
+
+    fn regression_snapshot_timeline_entries(
+        &self,
+        snapshot: &RegressionSnapshot,
+        event_links: &RegressionSnapshotEventLinks,
+    ) -> Vec<RegressionSnapshotTimelineEntry> {
+        let mut entries = Vec::new();
+        for alert in self
+            .pdf_render_state
+            .recent_overlay_pressure_alerts()
+            .iter()
+            .filter(|alert| {
+                Self::within_snapshot_window(
+                    snapshot.timestamp,
+                    alert.timestamp,
+                    REGRESSION_EVENT_WINDOW,
+                )
+            })
+            .filter(|alert| {
+                alert
+                    .highlight_page
+                    .map_or(true, |page| Self::matches_snapshot_page(snapshot, page))
+            })
+        {
+            entries.push(RegressionSnapshotTimelineEntry {
+                kind: RegressionSnapshotTimelineKind::OverlayAlert(alert.clone()),
+                timestamp: alert.timestamp,
+            });
+        }
+        for event in event_links.render_events.iter() {
+            entries.push(RegressionSnapshotTimelineEntry {
+                kind: RegressionSnapshotTimelineKind::PdfRenderEvent(event.clone()),
+                timestamp: event.timestamp,
+            });
+        }
+        for event in event_links.throttle_events.iter() {
+            entries.push(RegressionSnapshotTimelineEntry {
+                kind: RegressionSnapshotTimelineKind::PdfThrottleEvent(event.clone()),
+                timestamp: event.timestamp,
+            });
+        }
+        for status in event_links.status_entries.iter() {
+            entries.push(RegressionSnapshotTimelineEntry {
+                kind: RegressionSnapshotTimelineKind::Status(status.clone()),
+                timestamp: status.timestamp,
+            });
+        }
+        entries.sort_by_key(|entry| entry.timestamp);
+        entries
     }
 
     fn matches_snapshot_page(snapshot: &RegressionSnapshot, page_index: usize) -> bool {
@@ -2367,6 +2432,9 @@ impl LanternLeafApp {
                         ui.hyperlink_to("Settings/persistence roadmap (Tranche 6)", SETTINGS_ROADMAP_URL);
                     });
                     for snapshot in regression_snapshots.iter().rev() {
+                        let event_links = self.regression_snapshot_event_links(snapshot);
+                        let timeline_entries =
+                            self.regression_snapshot_timeline_entries(snapshot, &event_links);
                         ui.vertical(|ui| {
                             ui.horizontal(|ui| {
                                 ui.label(
@@ -2407,6 +2475,49 @@ impl LanternLeafApp {
                                     overlay.budget_pages, overlay_reason
                                 ));
                             }
+                            if !timeline_entries.is_empty() {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label("Timeline:");
+                                    for entry in timeline_entries.iter() {
+                                        let button = Button::new(entry.badge_label(snapshot.timestamp))
+                                            .rounding(6.0)
+                                            .fill(entry.badge_color());
+                                        if ui.add(button).clicked() {
+                                            let kind = entry.kind.clone();
+                                            match kind {
+                                                RegressionSnapshotTimelineKind::OverlayAlert(
+                                                    alert,
+                                                ) => {
+                                                    self.overlay_pressure_focus = true;
+                                                    self.overlay_eviction_warning_at =
+                                                        Some(Instant::now());
+                                                    self.push_status(format!(
+                                                        "QA timeline overlay alert: {}",
+                                                        alert.describe()
+                                                    ));
+                                                    self.replay_overlay_pressure_alert(&alert);
+                                                }
+                                                RegressionSnapshotTimelineKind::PdfRenderEvent(
+                                                    event,
+                                                ) => {
+                                                    self.replay_pdf_render_event(&event);
+                                                }
+                                                RegressionSnapshotTimelineKind::PdfThrottleEvent(
+                                                    event,
+                                                ) => {
+                                                    self.replay_throttle_span(&event);
+                                                }
+                                                RegressionSnapshotTimelineKind::Status(status) => {
+                                                    self.push_status(format!(
+                                                        "QA timeline status: {}",
+                                                        status.message
+                                                    ));
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }
                             ui.horizontal(|ui| {
                                 ui.label("Related docs:");
                                 ui.hyperlink_to("QA checklist", QA_REGRESSION_URL);
@@ -2429,12 +2540,11 @@ impl LanternLeafApp {
                                     );
                                     self.log_regression_snapshot_copy(snapshot, &payload);
                                 }
-                            if ui.button("Log QA JSON").clicked() {
-                                let payload = self.regression_snapshot_payload(snapshot);
-                                self.log_regression_snapshot_copy(snapshot, &payload);
-                            }
+                                if ui.button("Log QA JSON").clicked() {
+                                    let payload = self.regression_snapshot_payload(snapshot);
+                                    self.log_regression_snapshot_copy(snapshot, &payload);
+                                }
                             });
-                            let event_links = self.regression_snapshot_event_links(snapshot);
                             if !event_links.render_events.is_empty() {
                                 ui.label("Related PDF render spans:");
                                 for event in event_links.render_events.iter() {
@@ -3191,7 +3301,7 @@ impl LanternLeafApp {
             ui.horizontal(|ui| {
                 ui.label("Status log:");
                 for entry in &self.status_log {
-                    ui.label(entry);
+                    ui.label(format!("{} ({:.1}s)", entry.message, entry.age_secs()));
                 }
             });
         });
@@ -3653,9 +3763,72 @@ impl RegressionSnapshot {
 }
 
 #[derive(Clone, Debug)]
-struct RegressionSnapshotEventLinks<'a> {
-    render_events: Vec<&'a PdfRenderEvent>,
-    throttle_events: Vec<&'a PdfRenderThrottleEvent>,
+struct StatusLogEntry {
+    timestamp: Instant,
+    message: String,
+}
+
+impl StatusLogEntry {
+    fn age_secs(&self) -> f32 {
+        self.timestamp.elapsed().as_secs_f32()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct RegressionSnapshotTimelineEntry {
+    kind: RegressionSnapshotTimelineKind,
+    timestamp: Instant,
+}
+
+#[derive(Clone, Debug)]
+enum RegressionSnapshotTimelineKind {
+    OverlayAlert(OverlayPressureAlert),
+    PdfRenderEvent(PdfRenderEvent),
+    PdfThrottleEvent(PdfRenderThrottleEvent),
+    Status(StatusLogEntry),
+}
+
+impl RegressionSnapshotTimelineEntry {
+    fn badge_label(&self, reference: Instant) -> String {
+        format!(
+            "{} {:.1}s",
+            self.kind_label(),
+            Self::relative_secs(reference, self.timestamp)
+        )
+    }
+
+    fn kind_label(&self) -> &'static str {
+        match &self.kind {
+            RegressionSnapshotTimelineKind::OverlayAlert(_) => "Overlay",
+            RegressionSnapshotTimelineKind::PdfRenderEvent(_) => "Canvas/Text",
+            RegressionSnapshotTimelineKind::PdfThrottleEvent(_) => "Throttle",
+            RegressionSnapshotTimelineKind::Status(_) => "Status",
+        }
+    }
+
+    fn badge_color(&self) -> Color32 {
+        match &self.kind {
+            RegressionSnapshotTimelineKind::OverlayAlert(_) => Color32::from_rgb(222, 163, 91),
+            RegressionSnapshotTimelineKind::PdfRenderEvent(_) => Color32::from_rgb(130, 190, 230),
+            RegressionSnapshotTimelineKind::PdfThrottleEvent(_) => Color32::from_rgb(200, 120, 120),
+            RegressionSnapshotTimelineKind::Status(_) => Color32::from_rgb(110, 170, 200),
+        }
+    }
+
+    fn relative_secs(reference: Instant, timestamp: Instant) -> f32 {
+        if timestamp >= reference {
+            timestamp.duration_since(reference).as_secs_f32()
+        } else {
+            reference.duration_since(timestamp).as_secs_f32()
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct RegressionSnapshotEventLinks {
+    render_events: Vec<PdfRenderEvent>,
+    throttle_events: Vec<PdfRenderThrottleEvent>,
+    status_entries: Vec<StatusLogEntry>,
 }
 
 #[derive(Clone, Debug)]

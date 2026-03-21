@@ -15,8 +15,8 @@
 |--------|---------|-------|------------------|--------------|--------------------|
 | [x] | 1 | Runtime & Instrumentation Foundation | Implement the Rust-native app state/effect engine (State roadmap Phases 1-6) + centralized tracing bootstrap + command/effect pipeline skeleton + shortcut registry | None (foundation) | Typed command models, tracing spans defined, `AppState` accessible |
 | [x] | 2 | Shell Frame & Navigation | Build egui app shell frame, mode management, modal/shortcut contracts (Shell roadmap Phases 1-4) tying into runtime commands | Runtime tranches, tracing instrumentation | `eframe` shell renders starter/reader skeleton + navigation commands wired |
-| [ ] | 3 | Reader Rendering Core | Implement text-only reader, content-block models, anchor mapping (Reader roadmap Phases 2–5) leveraging shell redraw budgets | Runtime + Shell tranches | canonical sentence renderer, highlight/jump service, shell instrumentation logs |
-| [ ] | 4 | PDF Subsystem | Build Rust-owned PDF renderer, overlays, viewport scheduler, OCR fallback (PDF roadmap Phases 1–6) | Runtime + Shell + Reader (for highlight sync) | Native PDF pipeline outputs textures, overlays, commands logged |
+| [x] | 3 | Reader Rendering Core | Implement text-only reader, content-block models, anchor mapping (Reader roadmap Phases 2–5) leveraging shell redraw budgets | Runtime + Shell tranches | canonical sentence renderer, highlight/jump service, shell instrumentation logs |
+| [x] | 4 | PDF Subsystem | Build Rust-owned PDF renderer, overlays, viewport scheduler, OCR fallback (PDF roadmap Phases 1–6) | Runtime + Shell + Reader (for highlight sync) | Native PDF pipeline outputs textures, overlays, commands logged |
 | [ ] | 5 | Audio & TTS Integration | Wire Piper/rodio playback, sentence timing, caching, and command integration in egui (covered indirectly via existing roadmaps) | Runtime + Reader + Shell for highlight sync | Playback controls drive highlights with tracing |
 | [ ] | 6 | Settings/Cache Persistence & QA | Migrate persistence, cache, bookmarks, plus testing harness replacements (Config + Testing roadmaps) | Runtime + Shell + Reader + PDF | Native persistence API, egui settings surfaces, Rust test suites pass |
 
@@ -35,8 +35,8 @@
 - Maintain a record of which tranche tests were run for release verification.
 
 ## Recent Tranche Progress
-- **Reader Rendering Core (Tranche 3)**: `[x]` Documented instrumentation + overlay diagnostics that feed `shell.performance_budget` spans, now tying the preview renderer and JumpToSentence path into the budgeted overlay story and QA-friendly logs.
-- **PDF Subsystem (Tranche 4)**: `[x]` Wired the viewport scheduler’s render plan into the preview canvas, emitted budget-aware render/overlay spans, and exposed render activity + budget rejection diagnostics for QA so the shell plan sees the same events.
+- **Reader Rendering Core (Tranche 3)**: `[x]` Tied the JumpToSentence/preview renderer flows into the scheduler so canvas/text budgets now emit `shell.performance_budget` spans and QA can replay throttle decisions via the diagnostics surface.
+- **PDF Subsystem (Tranche 4)**: `[x]` Hooked `PdfViewportRenderPlan` plus eviction decisions into the actual preview surfaces, honored overlay/text-layer budgets, streamed throttle spans, and surfaced badge-style budget rejections for shell perf-budget auditing.
 
 ## Traceability Notes
 - Keep referencing the shared tracing schema (`highlight.anchor`, `pdf.*`, `shell.*`) when describing work in every tranche so instrumentation remains consistent.

@@ -35,6 +35,9 @@ use lanternleaf_core::{
 };
 use tracing::{Level, info, trace};
 
+const PDF_CANVAS_BUDGET_PAGES: usize = 2;
+const PDF_TEXT_LAYER_BUDGET_PAGES: usize = 1;
+
 fn main() {
     let config_path = app_config_path();
     let app_config = config::load_config(&config_path);
@@ -764,12 +767,14 @@ impl LanternLeafApp {
     }
 
     fn highlight_page_has_text_layer(&self) -> bool {
-        if let Some(page) = self.pdf_render_state.highlighted_page {
-            if let Some(plan) = &self.pdf_render_state.plan {
-                return plan.text_layer_page_indexes.contains(&page);
-            }
-        }
-        false
+        self.pdf_render_state
+            .highlighted_page
+            .and_then(|page| {
+                self.pdf_render_state
+                    .surface_for_page(page)
+                    .map(|surface| surface.text_layer_ready)
+            })
+            .unwrap_or(false)
     }
 
     fn capture_overlay_decision(&self) -> OverlayDecisionSnapshot {
@@ -850,6 +855,52 @@ impl LanternLeafApp {
         let span = self.overlay_budget_span(event, &decision);
         let _enter = span.enter();
         trace!(decision = ?decision, "Replayed overlay budget decision for QA");
+    }
+
+    fn replay_throttle_span(&self, event: &PdfRenderThrottleEvent) {
+        let highlight_page = self.pdf_render_state.highlighted_page == Some(event.page_index);
+        let span = tracing::span!(
+            Level::TRACE,
+            "PdfRenderThrottle",
+            budget_plan = "shell.performance_budget",
+            page = (event.page_index + 1),
+            highlight_page = highlight_page,
+            kind = ?event.kind,
+            reason = event.reason.as_str(),
+            overlay_budget_pages = self.pdf_render_state.overlay_budget_pages(),
+        );
+        let _enter = span.enter();
+        trace!(event = ?event, "Replayed throttle span for QA");
+    }
+
+    fn log_render_throttle(
+        &mut self,
+        kind: PdfRenderThrottleKind,
+        page_index: usize,
+        highlight_page: bool,
+        overlay_budget_pages: usize,
+        reason: &'static str,
+    ) {
+        let event = PdfRenderThrottleEvent::new(kind, page_index, reason.to_string());
+        self.pdf_render_state.record_throttle_event(event.clone());
+        let span = tracing::span!(
+            Level::TRACE,
+            "PdfRenderThrottle",
+            budget_plan = "shell.performance_budget",
+            page = (page_index + 1),
+            highlight_page = highlight_page,
+            kind = ?kind,
+            reason = reason,
+            overlay_budget_pages = overlay_budget_pages,
+        );
+        let _enter = span.enter();
+        trace!(
+            page = (page_index + 1),
+            kind = ?kind,
+            reason = reason,
+            highlight_page = highlight_page,
+            "PDF render stage throttled/skipped"
+        );
     }
 
     fn resolve_sentence_anchor(
@@ -1137,22 +1188,21 @@ impl LanternLeafApp {
                     }
                 }
                 ui.separator();
-                ui.label("Render throttles:");
+                ui.label("Render throttle timeline:");
                 let throttle_events = self.pdf_render_state.recent_throttle_events();
                 if throttle_events.is_empty() {
                     ui.label("(No throttle events yet)");
                 } else {
                     for event in throttle_events.iter().rev() {
                         ui.horizontal(|ui| {
+                            ui.label(LanternLeafApp::throttle_badge(event.kind));
                             ui.label(
                                 RichText::new(format!(
                                     "{} ({:.1}s ago)",
                                     event.describe(),
                                     event.age_secs()
                                 ))
-                                .small()
-                                .strong()
-                                .color(Color32::from_rgb(220, 120, 80)),
+                                .small(),
                             );
                             if ui.button("Replay throttle span").clicked() {
                                 self.replay_throttle_span(event);
@@ -1188,20 +1238,44 @@ impl LanternLeafApp {
                     ui.label("Overlay budget rejections:");
                     for event in self.scheduler_events.iter().rev() {
                         if let SchedulerEventKind::RetryOverlay { .. } = &event.kind {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{} ({:.1}s ago)",
-                                    event.kind.describe(),
-                                    event.age_secs()
-                                ))
-                                .small()
-                                .strong()
-                                .color(Color32::from_rgb(220, 180, 120)),
-                            );
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new("BUDGET REJECTION")
+                                        .color(Color32::from_rgb(220, 180, 120))
+                                        .strong()
+                                        .small(),
+                                );
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} ({:.1}s ago)",
+                                        event.kind.describe(),
+                                        event.age_secs()
+                                    ))
+                                    .small()
+                                    .weak(),
+                                );
+                            });
                         }
                     }
                 }
             });
+    }
+
+    fn throttle_badge(kind: PdfRenderThrottleKind) -> RichText {
+        match kind {
+            PdfRenderThrottleKind::Canvas => RichText::new("CANVAS")
+                .color(Color32::from_rgb(150, 190, 230))
+                .small()
+                .strong(),
+            PdfRenderThrottleKind::TextLayer => RichText::new("TEXT")
+                .color(Color32::from_rgb(130, 210, 170))
+                .small()
+                .strong(),
+            PdfRenderThrottleKind::Overlay => RichText::new("OVERLAY")
+                .color(Color32::from_rgb(220, 170, 100))
+                .small()
+                .strong(),
+        }
     }
 
     fn render_pdf_preview(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
@@ -1263,10 +1337,14 @@ impl LanternLeafApp {
         let font = FontId::new(11.0, FontFamily::Monospace);
         let highlight_page = self.pdf_render_state.highlighted_page;
         let overlay_budget = self.pdf_render_state.overlay_budget_pages();
-        let highlight_page_in_text_layers = highlight_page
-            .map(|page| plan.text_layer_page_indexes.contains(&page))
+        let highlight_page_text_ready = highlight_page
+            .and_then(|page| {
+                self.pdf_render_state
+                    .surface_for_page(page)
+                    .map(|surface| surface.text_layer_ready)
+            })
             .unwrap_or(false);
-        let overlays_allowed = highlight_page_in_text_layers && overlay_budget > 0;
+        let overlays_allowed = highlight_page_text_ready && overlay_budget > 0;
 
         let mut canvas_drawn = 0;
         let mut text_drawn = 0;
@@ -1280,36 +1358,68 @@ impl LanternLeafApp {
             current_x += page_width + gap;
             let is_highlight_page = Some(page) == highlight_page;
             let is_priority = plan.priority_page_indexes.contains(&page);
-            let has_canvas = plan.canvas_page_indexes.contains(&page);
-            let has_text_layer = plan.text_layer_page_indexes.contains(&page);
-            let canvas_span = tracing::span!(
-                Level::TRACE,
-                "PdfRenderCanvas",
-                budget_plan = "shell.performance_budget",
-                page = (page + 1),
-                highlight_page = is_highlight_page,
-                priority_page = is_priority,
-                text_layer_available = has_text_layer,
-                overlay_budget_pages = overlay_budget,
-            );
-            let _canvas_enter = canvas_span.enter();
-            self.pdf_render_state
-                .record_render_event(PdfRenderEvent::canvas(
+            let surface = self.pdf_render_state.surface_for_page(page);
+            let canvas_allowed = surface.map(|surface| surface.canvas_ready).unwrap_or(false);
+            let text_allowed = surface
+                .map(|surface| surface.text_layer_ready)
+                .unwrap_or(false);
+            let has_canvas_intent = plan.canvas_page_indexes.contains(&page);
+            let has_text_intent = plan.text_layer_page_indexes.contains(&page);
+
+            if canvas_allowed {
+                let canvas_span = tracing::span!(
+                    Level::TRACE,
+                    "PdfRenderCanvas",
+                    budget_plan = "shell.performance_budget",
+                    page = (page + 1),
+                    highlight_page = is_highlight_page,
+                    priority_page = is_priority,
+                    text_layer_available = text_allowed,
+                    overlay_budget_pages = overlay_budget,
+                );
+                let _canvas_enter = canvas_span.enter();
+                self.pdf_render_state
+                    .record_render_event(PdfRenderEvent::canvas(
+                        page,
+                        is_highlight_page,
+                        overlay_budget,
+                    ));
+                canvas_drawn += 1;
+            } else if has_canvas_intent {
+                let reason = if self.pdf_render_state.is_canvas_evicted(page) {
+                    "evicted_from_budget"
+                } else {
+                    "not_ready"
+                };
+                self.log_render_throttle(
+                    PdfRenderThrottleKind::Canvas,
                     page,
                     is_highlight_page,
                     overlay_budget,
-                ));
-            canvas_drawn += 1;
-            let fill_color = if Some(page) == highlight_page {
+                    reason,
+                );
+            } else {
+                self.log_render_throttle(
+                    PdfRenderThrottleKind::Canvas,
+                    page,
+                    is_highlight_page,
+                    overlay_budget,
+                    "not_scheduled",
+                );
+            }
+
+            let fill_color = if !canvas_allowed {
+                Color32::from_gray(10)
+            } else if is_highlight_page {
                 Color32::from_rgb(38, 105, 170)
-            } else if has_canvas {
+            } else if has_canvas_intent {
                 Color32::from_rgb(25, 25, 25)
             } else {
                 Color32::from_rgb(15, 15, 15)
             };
             let border_color = if is_priority {
                 Color32::from_rgb(220, 190, 120)
-            } else if has_canvas {
+            } else if canvas_allowed || has_canvas_intent {
                 Color32::from_rgb(90, 150, 210)
             } else {
                 Color32::from_gray(70)
@@ -1321,7 +1431,7 @@ impl LanternLeafApp {
                 Stroke::new(if is_priority { 3.0 } else { 1.4 }, border_color),
             );
             let inner = page_rect.shrink(4.0);
-            if has_text_layer {
+            if text_allowed {
                 text_drawn += 1;
                 let text_span = tracing::span!(
                     Level::TRACE,
@@ -1354,6 +1464,19 @@ impl LanternLeafApp {
                     4.0,
                     Stroke::new(1.0, Color32::from_rgba_unmultiplied(140, 220, 180, 200)),
                 );
+            } else if has_text_intent {
+                let reason = if self.pdf_render_state.is_text_layer_evicted(page) {
+                    "budget_exhausted"
+                } else {
+                    "not_ready"
+                };
+                self.log_render_throttle(
+                    PdfRenderThrottleKind::TextLayer,
+                    page,
+                    is_highlight_page,
+                    overlay_budget,
+                    reason,
+                );
             }
             painter.text(
                 Pos2::new(page_rect.center().x, page_rect.bottom() - 12.0),
@@ -1362,55 +1485,88 @@ impl LanternLeafApp {
                 font.clone(),
                 Color32::WHITE,
             );
-            let mut page_overlay_drawn = 0;
-            if Some(page) == highlight_page && overlays_allowed {
-                for (idx, rect) in self.pdf_render_state.overlay_rects.iter().enumerate() {
-                    if idx >= overlay_budget {
-                        break;
+            if Some(page) == highlight_page {
+                let mut page_overlay_drawn = 0;
+                if overlays_allowed {
+                    for (idx, rect) in self.pdf_render_state.overlay_rects.iter().enumerate() {
+                        if idx >= overlay_budget {
+                            break;
+                        }
+                        overlays_drawn += 1;
+                        page_overlay_drawn += 1;
+                        let overlay = Rect::from_min_max(
+                            Pos2::new(
+                                inner.left() + rect[0] * inner.width(),
+                                inner.top() + rect[1] * inner.height(),
+                            ),
+                            Pos2::new(
+                                inner.left() + rect[2] * inner.width(),
+                                inner.top() + rect[3] * inner.height(),
+                            ),
+                        );
+                        painter.rect_filled(
+                            overlay,
+                            2.0,
+                            Color32::from_rgba_unmultiplied(255, 190, 80, 160),
+                        );
                     }
-                    overlays_drawn += 1;
-                    page_overlay_drawn += 1;
-                    let overlay = Rect::from_min_max(
-                        Pos2::new(
-                            inner.left() + rect[0] * inner.width(),
-                            inner.top() + rect[1] * inner.height(),
-                        ),
-                        Pos2::new(
-                            inner.left() + rect[2] * inner.width(),
-                            inner.top() + rect[3] * inner.height(),
-                        ),
+                }
+                if page_overlay_drawn > 0 {
+                    let overlay_span = tracing::span!(
+                        Level::TRACE,
+                        "PdfRenderOverlay",
+                        budget_plan = "shell.performance_budget",
+                        page = (page + 1),
+                        highlight_page = true,
+                        overlays_drawn = page_overlay_drawn,
+                        overlay_budget_pages = overlay_budget,
+                        overlay_alignment_reason = ?self
+                            .pdf_render_state
+                            .overlay_alignment_reason
+                            .as_deref(),
                     );
-                    painter.rect_filled(
-                        overlay,
-                        2.0,
-                        Color32::from_rgba_unmultiplied(255, 190, 80, 160),
+                    let _overlay_enter = overlay_span.enter();
+                    trace!(
+                        page = (page + 1),
+                        overlays = page_overlay_drawn,
+                        "Rendered highlight overlays"
+                    );
+                    self.pdf_render_state
+                        .record_render_event(PdfRenderEvent::overlay(
+                            page,
+                            page_overlay_drawn,
+                            overlay_budget,
+                            self.pdf_render_state.overlay_alignment_reason.clone(),
+                        ));
+                }
+                if !highlight_page_text_ready && !self.pdf_render_state.overlay_rects.is_empty() {
+                    self.log_render_throttle(
+                        PdfRenderThrottleKind::Overlay,
+                        page,
+                        true,
+                        overlay_budget,
+                        "text_layer_missing",
+                    );
+                } else if highlight_page_text_ready && overlay_budget == 0 {
+                    self.log_render_throttle(
+                        PdfRenderThrottleKind::Overlay,
+                        page,
+                        true,
+                        overlay_budget,
+                        "budget_exhausted",
+                    );
+                } else if overlays_allowed
+                    && !self.pdf_render_state.overlay_rects.is_empty()
+                    && self.pdf_render_state.overlay_rects.len() > overlay_budget
+                {
+                    self.log_render_throttle(
+                        PdfRenderThrottleKind::Overlay,
+                        page,
+                        true,
+                        overlay_budget,
+                        "budget_exhausted",
                     );
                 }
-            }
-            if page_overlay_drawn > 0 {
-                let overlay_span = tracing::span!(
-                    Level::TRACE,
-                    "PdfRenderOverlay",
-                    budget_plan = "shell.performance_budget",
-                    page = (page + 1),
-                    highlight_page = true,
-                    overlays_drawn = page_overlay_drawn,
-                    overlay_budget_pages = overlay_budget,
-                    overlay_alignment_reason = ?self.pdf_render_state.overlay_alignment_reason.as_deref(),
-                );
-                let _overlay_enter = overlay_span.enter();
-                trace!(
-                    page = (page + 1),
-                    overlays = page_overlay_drawn,
-                    "Rendered highlight overlays"
-                );
-                self.pdf_render_state
-                    .record_render_event(PdfRenderEvent::overlay(
-                        page,
-                        page_overlay_drawn,
-                        overlay_budget,
-                        self.pdf_render_state.overlay_alignment_reason.clone(),
-                    ));
             }
         }
 
@@ -1427,11 +1583,14 @@ impl LanternLeafApp {
             "PdfPreviewRender",
             budget_plan = "shell.performance_budget",
             highlight_page = ?highlight_page,
-            highlight_page_text_layer = overlay_snapshot.highlight_page_has_text_layer,
+            highlight_page_text_layer = highlight_page_text_ready,
             overlay_budget_pages = overlay_snapshot.budget_pages,
             overlay_budget_allowed = overlay_snapshot.allowed,
             overlay_rect_count = overlay_snapshot.overlay_rects_available,
             overlay_alignment_reason = ?overlay_snapshot.overlay_reason.as_deref(),
+            canvas_drawn = canvas_drawn,
+            text_drawn = text_drawn,
+            overlays = overlays_drawn,
         );
         let _enter = preview_span.enter();
         trace!(
@@ -1594,21 +1753,42 @@ impl LanternLeafApp {
                     jump_target_page_index: Some(highlighted_page),
                 };
                 let plan = build_pdf_viewport_render_plan(&plan_input);
-                let entries = (0..snapshot.total_pages)
+                let mut registry_pages = plan.canvas_page_indexes.clone();
+                registry_pages.extend(plan.text_layer_page_indexes.iter().copied());
+                registry_pages.sort_unstable();
+                registry_pages.dedup();
+                let entries = registry_pages
+                    .into_iter()
                     .map(|page_index| PdfPageRegistryEntry {
                         page_index,
                         last_touched_at: (snapshot.current_page as u64)
                             .saturating_add(page_index as u64),
-                        rendered_zoom: Some(1.0),
-                        text_layer_zoom: Some(1.0),
+                        rendered_zoom: if plan.canvas_page_indexes.contains(&page_index) {
+                            Some(1.0)
+                        } else {
+                            None
+                        },
+                        text_layer_zoom: if plan.text_layer_page_indexes.contains(&page_index) {
+                            Some(1.0)
+                        } else {
+                            None
+                        },
                     })
                     .collect::<Vec<_>>();
+                let mut keep_canvas_page_indexes = plan.priority_page_indexes.clone();
+                keep_canvas_page_indexes.push(highlighted_page);
+                keep_canvas_page_indexes.sort_unstable();
+                keep_canvas_page_indexes.dedup();
+                let mut keep_text_layer_page_indexes = keep_canvas_page_indexes.clone();
+                keep_text_layer_page_indexes.extend(plan.text_layer_page_indexes.iter().copied());
+                keep_text_layer_page_indexes.sort_unstable();
+                keep_text_layer_page_indexes.dedup();
                 let decision = choose_pdf_viewport_evictions(&PdfViewportBudgetInput {
                     entries,
-                    keep_canvas_page_indexes: plan.canvas_page_indexes.clone(),
-                    keep_text_layer_page_indexes: plan.text_layer_page_indexes.clone(),
-                    max_canvas_pages: plan.canvas_page_indexes.len().max(1),
-                    max_text_layer_pages: plan.text_layer_page_indexes.len().max(1),
+                    keep_canvas_page_indexes,
+                    keep_text_layer_page_indexes,
+                    max_canvas_pages: PDF_CANVAS_BUDGET_PAGES.max(1),
+                    max_text_layer_pages: PDF_TEXT_LAYER_BUDGET_PAGES.max(1),
                 });
                 if !decision.evict_canvas_page_indexes.is_empty()
                     || !decision.evict_text_layer_page_indexes.is_empty()
@@ -1623,11 +1803,14 @@ impl LanternLeafApp {
                     evicted_canvases = ?decision.evict_canvas_page_indexes,
                     evicted_text_layers = ?decision.evict_text_layer_page_indexes,
                     highlighted_page,
+                    canvas_budget = PDF_CANVAS_BUDGET_PAGES,
+                    text_layer_budget = PDF_TEXT_LAYER_BUDGET_PAGES,
                     "PDF scheduler updated"
                 );
                 self.pdf_render_state.plan = Some(plan.clone());
                 self.pdf_render_state.update_surfaces(&plan);
-                self.pdf_render_state.decision = Some(decision);
+                self.pdf_render_state.decision = Some(decision.clone());
+                self.pdf_render_state.apply_budget_evictions(&decision);
                 self.pdf_render_state.visible_page_indexes = visible_page_indexes;
                 self.pdf_render_state.active_tts_page_index = plan_input.active_tts_page_index;
                 self.pdf_render_state.jump_target_page_index = plan_input.jump_target_page_index;
@@ -1960,10 +2143,10 @@ impl PdfRenderState {
     }
 
     fn overlay_budget_pages(&self) -> usize {
-        self.plan
-            .as_ref()
-            .map(|plan| plan.text_layer_page_indexes.len())
-            .unwrap_or(0)
+        self.viewport_surfaces
+            .iter()
+            .filter(|surface| surface.text_layer_ready)
+            .count()
     }
 
     fn record_render_metrics(&mut self, canvas_pages: usize, text_layers: usize, overlays: usize) {
@@ -2011,15 +2194,50 @@ impl PdfRenderState {
                 .text_layer_ready = true;
         }
         for &page in plan.priority_page_indexes.iter() {
-            surfaces_map.entry(page).or_insert_with(|| PdfViewportSurface::new(page));
+            surfaces_map
+                .entry(page)
+                .or_insert_with(|| PdfViewportSurface::new(page));
         }
         let mut surfaces = surfaces_map.into_values().collect::<Vec<_>>();
         surfaces.sort_by_key(|surface| surface.page_index);
         self.viewport_surfaces = surfaces;
     }
 
+    fn apply_budget_evictions(&mut self, decision: &PdfViewportBudgetDecision) {
+        for surface in self.viewport_surfaces.iter_mut() {
+            if decision
+                .evict_canvas_page_indexes
+                .contains(&surface.page_index)
+            {
+                surface.canvas_ready = false;
+            }
+            if decision
+                .evict_text_layer_page_indexes
+                .contains(&surface.page_index)
+            {
+                surface.text_layer_ready = false;
+            }
+        }
+    }
+
     fn surface_for_page(&self, page: usize) -> Option<&PdfViewportSurface> {
-        self.viewport_surfaces.iter().find(|surface| surface.page_index == page)
+        self.viewport_surfaces
+            .iter()
+            .find(|surface| surface.page_index == page)
+    }
+
+    fn is_canvas_evicted(&self, page_index: usize) -> bool {
+        self.decision
+            .as_ref()
+            .map(|decision| decision.evict_canvas_page_indexes.contains(&page_index))
+            .unwrap_or(false)
+    }
+
+    fn is_text_layer_evicted(&self, page_index: usize) -> bool {
+        self.decision
+            .as_ref()
+            .map(|decision| decision.evict_text_layer_page_indexes.contains(&page_index))
+            .unwrap_or(false)
     }
 
     fn set_highlighted_page(

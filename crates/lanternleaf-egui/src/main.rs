@@ -1112,7 +1112,11 @@ impl LanternLeafApp {
         }
     }
 
-    fn maybe_record_overlay_retry(&mut self, decision: &OverlayDecisionSnapshot) {
+    fn maybe_record_overlay_retry(
+        &mut self,
+        decision: &OverlayDecisionSnapshot,
+        snapshot: &ReaderSnapshot,
+    ) {
         if decision.allowed {
             return;
         }
@@ -1123,6 +1127,11 @@ impl LanternLeafApp {
         } else {
             "overlay_blocked"
         };
+        self.record_regression_snapshot(
+            RegressionScenario::OverlayBacklog { reason },
+            Some(snapshot),
+            Some(decision.clone()),
+        );
         self.record_scheduler_event(SchedulerEventKind::RetryOverlay {
             reason,
             highlight_page: decision.highlight_page,
@@ -1346,6 +1355,90 @@ impl LanternLeafApp {
     fn log_persistence_trace_copy(&mut self, event: &PersistenceTraceEvent) {
         let payload = self.persistence_event_payload(event);
         self.push_status(format!("QA persistence span copy: {}", payload));
+    }
+
+    fn replay_regression_snapshot(&self, snapshot: &RegressionSnapshot) {
+        let span = tracing::span!(
+            Level::TRACE,
+            "RegressionSnapshotReplay",
+            budget_plan = "shell.performance_budget",
+            scenario = snapshot.scenario.label(),
+            snapshot_id = snapshot.id,
+        );
+        let _enter = span.enter();
+        trace!(snapshot = %snapshot.describe(), "Replayed regression snapshot for QA");
+    }
+
+    fn regression_snapshot_payload(&self, snapshot: &RegressionSnapshot) -> String {
+        let payload = json!({
+            "id": snapshot.id,
+            "scenario": snapshot.scenario.label(),
+            "description": snapshot.describe(),
+            "source_path": snapshot.source_path,
+            "page": snapshot.current_page.map(|page| page + 1),
+            "highlighted_sentence": snapshot.highlighted_sentence.map(|idx| idx + 1),
+            "overlay_budget_pages": snapshot.overlay_snapshot.as_ref().map(|overlay| overlay.budget_pages),
+            "overlay_reason": snapshot.overlay_snapshot.as_ref().and_then(|overlay| overlay.overlay_reason.clone()),
+            "persistence_trigger": snapshot.scenario.persistence_trigger().map(|trigger| format!("{:?}", trigger)),
+            "roadmap_url": snapshot.scenario.roadmap_url(),
+            "qa_checklist": QA_REGRESSION_URL,
+            "age_secs": snapshot.age_secs(),
+        });
+        serde_json::to_string(&payload).unwrap_or_else(|_| snapshot.describe())
+    }
+
+    fn log_regression_snapshot_copy(&mut self, snapshot: &RegressionSnapshot, payload: &str) {
+        self.push_status(format!(
+            "QA regression snapshot copy ({}): {}",
+            snapshot.scenario.label(),
+            payload
+        ));
+    }
+
+    fn record_regression_snapshot(
+        &mut self,
+        scenario: RegressionScenario,
+        snapshot: Option<&ReaderSnapshot>,
+        overlay_snapshot: Option<OverlayDecisionSnapshot>,
+    ) {
+        const MAX_SNAPSHOTS: usize = 10;
+        let now = Instant::now();
+        let scenario_clone = scenario.clone();
+        if let Some(last) = self.regression_snapshots.last() {
+            if last.scenario == scenario_clone
+                && now.duration_since(last.timestamp) < Duration::from_secs(8)
+            {
+                return;
+            }
+        }
+        let (source_path, current_page, highlighted_sentence) = snapshot
+            .map(|snapshot| {
+                (
+                    Some(snapshot.source_path.clone()),
+                    Some(snapshot.current_page),
+                    snapshot.highlighted_sentence_idx,
+                )
+            })
+            .unwrap_or((None, None, None));
+        let entry = RegressionSnapshot {
+            id: self.regression_snapshot_next_id,
+            timestamp: now,
+            scenario,
+            source_path,
+            current_page,
+            highlighted_sentence,
+            overlay_snapshot,
+        };
+        self.regression_snapshot_next_id = self.regression_snapshot_next_id.wrapping_add(1);
+        self.regression_snapshots.push(entry.clone());
+        if self.regression_snapshots.len() > MAX_SNAPSHOTS {
+            self.regression_snapshots.remove(0);
+        }
+        trace!(
+            regression_snapshot = entry.describe(),
+            id = entry.id,
+            "Captured regression snapshot for QA"
+        );
     }
 
     fn maybe_record_audio_command(
@@ -2198,16 +2291,85 @@ impl LanternLeafApp {
                 }
                 ui.separator();
                 ui.label("Regression watchlist:");
-                let regression_items = [
-                    ("TTS session close during overlay backlog", QA_REGRESSION_URL),
-                    ("Bookmark restoration after persistence flush", QA_REGRESSION_URL),
-                    ("Overlay budget pressure replayed vs persistence throttles", QA_REGRESSION_URL),
-                ];
-                for (item, url) in regression_items {
+                let regression_snapshots = self.regression_snapshots.clone();
+                if regression_snapshots.is_empty() {
+                    ui.label("(No regression snapshots captured yet)");
+                } else {
                     ui.horizontal(|ui| {
-                        ui.label(item);
-                        ui.hyperlink_to("QA checklist", url);
+                        ui.label("Related QA resources:");
+                        ui.hyperlink_to("QA checklist", QA_REGRESSION_URL);
+                        ui.hyperlink_to("Settings/persistence roadmap (Tranche 6)", SETTINGS_ROADMAP_URL);
                     });
+                    for snapshot in regression_snapshots.iter().rev() {
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} ({:.1}s ago) [id {}]",
+                                        snapshot.describe(),
+                                        snapshot.age_secs(),
+                                        snapshot.id
+                                    ))
+                                    .small()
+                                    .weak(),
+                                );
+                            });
+                            if let Some(source_path) = snapshot.source_path.as_ref() {
+                                ui.horizontal(|ui| {
+                                    ui.label("Source:");
+                                    ui.label(
+                                        RichText::new(source_path)
+                                            .small()
+                                            .weak()
+                                            .monospace(),
+                                    );
+                                });
+                            }
+                            if let Some(page) = snapshot.current_page {
+                                ui.label(format!("Page: {}", page + 1));
+                            }
+                            if let Some(sentence) = snapshot.highlighted_sentence {
+                                ui.label(format!("Highlighted sentence: {}", sentence + 1));
+                            }
+                            if let Some(overlay) = snapshot.overlay_snapshot.as_ref() {
+                                let overlay_reason = overlay
+                                    .overlay_reason
+                                    .as_deref()
+                                    .unwrap_or("unknown");
+                                ui.label(format!(
+                                    "Overlay budget {} pages (reason {})",
+                                    overlay.budget_pages, overlay_reason
+                                ));
+                            }
+                            ui.horizontal(|ui| {
+                                ui.label("Related docs:");
+                                ui.hyperlink_to("QA checklist", QA_REGRESSION_URL);
+                                ui.hyperlink_to(
+                                    snapshot.scenario.label(),
+                                    snapshot.scenario.roadmap_url(),
+                                );
+                            });
+                            ui.horizontal(|ui| {
+                                if ui.button("Replay regression snapshot").clicked() {
+                                    self.replay_regression_snapshot(snapshot);
+                                }
+                                if ui.button("Copy QA JSON").clicked() {
+                                    let payload = self.regression_snapshot_payload(snapshot);
+                                    ui.ctx()
+                                        .output_mut(|output| output.copied_text = payload.clone());
+                                    trace!(
+                                        span_summary = %snapshot.describe(),
+                                        "Copied regression snapshot QA JSON"
+                                    );
+                                    self.log_regression_snapshot_copy(snapshot, &payload);
+                                }
+                                if ui.button("Log QA JSON").clicked() {
+                                    let payload = self.regression_snapshot_payload(snapshot);
+                                    self.log_regression_snapshot_copy(snapshot, &payload);
+                                }
+                            });
+                        });
+                    }
                 }
                 if focus_request {
                     if let Some(rect) = overlay_warning_rect {
@@ -2607,7 +2769,7 @@ impl LanternLeafApp {
         self.pdf_render_state
             .record_render_metrics(canvas_drawn, text_drawn, overlays_drawn);
         let overlay_snapshot = self.capture_overlay_decision();
-        self.maybe_record_overlay_retry(&overlay_snapshot);
+        self.maybe_record_overlay_retry(&overlay_snapshot, snapshot);
         self.overlay_diagnostics
             .record_preview(overlay_snapshot.clone());
         let overlay_span = self.overlay_budget_span("preview", &overlay_snapshot);
@@ -2844,7 +3006,7 @@ impl LanternLeafApp {
         )
     }
 
-    fn render_modals(&mut self, ctx: &Context) {
+    fn render_modals(&mut self, ctx: &Context, reader_snapshot: Option<&ReaderSnapshot>) {
         let mut show_safe_quit_modal = self.show_safe_quit_modal;
         let mut show_reader_confirm_modal = self.show_reader_confirm_modal;
         let mut safe_quit_confirmed = false;
@@ -2888,6 +3050,14 @@ impl LanternLeafApp {
         }
         self.show_safe_quit_modal = show_safe_quit_modal;
         if safe_quit_confirmed {
+            self.record_persistence_event(PersistenceTrigger::SafeQuit, "safe_quit_flow");
+            self.record_regression_snapshot(
+                RegressionScenario::BookmarkRestore {
+                    trigger: PersistenceTrigger::SafeQuit,
+                },
+                reader_snapshot,
+                None,
+            );
             self.execute_command(AppCommand::SafeQuit);
         }
         if close_reader_confirm_modal {
@@ -2895,6 +3065,14 @@ impl LanternLeafApp {
         }
         self.show_reader_confirm_modal = show_reader_confirm_modal;
         if return_confirmed {
+            self.record_persistence_event(PersistenceTrigger::SessionClose, "reader_close_flow");
+            self.record_regression_snapshot(
+                RegressionScenario::BookmarkRestore {
+                    trigger: PersistenceTrigger::SessionClose,
+                },
+                reader_snapshot,
+                None,
+            );
             self.execute_command(AppCommand::ReturnToStarter);
         }
     }
@@ -3013,7 +3191,7 @@ impl eframe::App for LanternLeafApp {
         self.render_top_bar(ctx, &snapshot);
         self.render_panels(ctx, &snapshot, reader_snapshot);
         self.render_center(ctx, &snapshot);
-        self.render_modals(ctx);
+        self.render_modals(ctx, reader_snapshot);
         self.render_status(ctx);
     }
 }
@@ -3266,6 +3444,100 @@ struct SchedulerEvent {
 }
 
 impl SchedulerEvent {
+    fn age_secs(&self) -> f32 {
+        self.timestamp.elapsed().as_secs_f32()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum RegressionScenario {
+    OverlayBacklog {
+        reason: &'static str,
+    },
+    BookmarkRestore {
+        trigger: PersistenceTrigger,
+    },
+}
+
+impl RegressionScenario {
+    fn label(&self) -> &'static str {
+        match self {
+            RegressionScenario::OverlayBacklog { .. } => "Overlay backlog",
+            RegressionScenario::BookmarkRestore { .. } => "Bookmark restore",
+        }
+    }
+
+    fn roadmap_url(&self) -> &'static str {
+        match self {
+            RegressionScenario::OverlayBacklog { .. } => READER_RENDR_ROADMAP_URL,
+            RegressionScenario::BookmarkRestore { .. } => SETTINGS_ROADMAP_URL,
+        }
+    }
+
+    fn persistence_trigger(&self) -> Option<PersistenceTrigger> {
+        match self {
+            RegressionScenario::BookmarkRestore { trigger } => Some(*trigger),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct RegressionSnapshot {
+    id: usize,
+    timestamp: Instant,
+    scenario: RegressionScenario,
+    source_path: Option<String>,
+    current_page: Option<usize>,
+    highlighted_sentence: Option<usize>,
+    overlay_snapshot: Option<OverlayDecisionSnapshot>,
+}
+
+impl RegressionSnapshot {
+    fn describe(&self) -> String {
+        match &self.scenario {
+            RegressionScenario::OverlayBacklog { reason } => {
+                let page_label = self
+                    .current_page
+                    .map(|page| format!("page {}", page + 1))
+                    .unwrap_or_else(|| "page unknown".to_string());
+                let overlay_reason = self
+                    .overlay_snapshot
+                    .as_ref()
+                    .and_then(|overlay| overlay.overlay_reason.as_deref())
+                    .unwrap_or("unknown");
+                format!(
+                    "{} ({}) on {} (budget {} pages, overlay reason {})",
+                    self.scenario.label(),
+                    reason,
+                    page_label,
+                    self.overlay_snapshot
+                        .as_ref()
+                        .map(|overlay| overlay.budget_pages)
+                        .unwrap_or(0),
+                    overlay_reason
+                )
+            }
+            RegressionScenario::BookmarkRestore { trigger } => {
+                let page_label = self
+                    .current_page
+                    .map(|page| format!("page {}", page + 1))
+                    .unwrap_or_else(|| "page unknown".to_string());
+                let sentence_label = self
+                    .highlighted_sentence
+                    .map(|idx| format!("{}", idx + 1))
+                    .unwrap_or_else(|| "unknown sentence".to_string());
+                format!(
+                    "{} after {:?} on {} (highlighted sentence {})",
+                    self.scenario.label(),
+                    trigger,
+                    page_label,
+                    sentence_label
+                )
+            }
+        }
+    }
+
     fn age_secs(&self) -> f32 {
         self.timestamp.elapsed().as_secs_f32()
     }

@@ -4,8 +4,9 @@ mod pdf_renderer;
 
 use std::{
     collections::HashMap,
+    fs,
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use eframe::{
@@ -16,7 +17,9 @@ use eframe::{
         TextureHandle, TextureOptions, TopBottomPanel, Ui, Vec2, Visuals,
     },
 };
-use helpers::{app_config_path, bootstrap_config_from_app_config, format_combo};
+use helpers::{
+    app_config_path, bootstrap_config_from_app_config, format_combo, workspace_root_from_cwd,
+};
 
 use crate::pdf::{
     PdfPageRegistryEntry, PdfViewportBudgetDecision, PdfViewportBudgetInput, PdfViewportPlanInput,
@@ -53,6 +56,8 @@ const TTS_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main
 const SETTINGS_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-config-cache-and-persistence-roadmap.md";
 const PERSISTENCE_ROADMAP_URL: &str = SETTINGS_ROADMAP_URL;
 const QA_REGRESSION_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-testing-and-parity-roadmap.md";
+const TIMELINE_ARCHIVE_DIR: &str = "logs/qa-timeline";
+const MAX_PINNED_TIMELINE_ENTRIES: usize = 8;
 
 fn main() {
     let config_path = app_config_path();
@@ -105,6 +110,7 @@ struct LanternLeafApp {
     sentence_scroll_offset: Option<Vec2>,
     overlay_eviction_warning_at: Option<Instant>,
     timeline_history: Vec<TimelineHistoryEntry>,
+    pinned_timeline_entries: Vec<TimelineHistoryEntry>,
 }
 
 impl LanternLeafApp {
@@ -147,6 +153,7 @@ impl LanternLeafApp {
             sentence_scroll_offset: None,
             overlay_eviction_warning_at: None,
             timeline_history: Vec::new(),
+            pinned_timeline_entries: Vec::new(),
         }
     }
 
@@ -385,16 +392,169 @@ impl LanternLeafApp {
         }
     }
 
-    fn record_timeline_history(&mut self, kind: &RegressionSnapshotTimelineKind) {
+    fn record_timeline_history(&mut self, entry: &RegressionSnapshotTimelineEntry) {
         const MAX_HISTORY: usize = 16;
-        let entry = TimelineHistoryEntry {
-            entry: RegressionSnapshotTimelineEntry::new(kind.clone()),
-            qa_url: kind.qa_url(),
-            ref_label: kind.ref_label(),
-        };
+        let entry = TimelineHistoryEntry::from_entry(entry);
         self.timeline_history.push(entry);
         if self.timeline_history.len() > MAX_HISTORY {
             self.timeline_history.remove(0);
+        }
+        if let Some(last) = self.timeline_history.last() {
+            trace!(
+                kind = %last.entry.kind_label(),
+                reference = %last.ref_label,
+                "Recorded QA timeline entry",
+            );
+        }
+    }
+
+    fn timeline_archive_root(&self) -> PathBuf {
+        workspace_root_from_cwd()
+            .map(|root| root.join(TIMELINE_ARCHIVE_DIR))
+            .unwrap_or_else(|| PathBuf::from(TIMELINE_ARCHIVE_DIR))
+    }
+
+    fn timeline_archive_filename(format: TimelineArchiveFormat) -> String {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_else(|_| Duration::from_secs(0));
+        format!(
+            "qa-timeline-{}-{:09}.{}",
+            now.as_secs(),
+            now.subsec_nanos(),
+            format.extension()
+        )
+    }
+
+    fn timeline_archive_records(&self) -> Vec<serde_json::Value> {
+        self.timeline_history
+            .iter()
+            .map(|entry| entry.export_record())
+            .collect()
+    }
+
+    fn timeline_archive_csv(&self) -> String {
+        let mut rows =
+            vec!["\"timestamp\",\"kind\",\"reference\",\"qa_url\",\"details\"".to_owned()];
+        rows.extend(
+            self.timeline_history
+                .iter()
+                .map(|entry| entry.export_csv_row()),
+        );
+        rows.join("\n")
+    }
+
+    fn export_timeline_archive(
+        &mut self,
+        format: TimelineArchiveFormat,
+    ) -> Result<PathBuf, String> {
+        let payload = match format {
+            TimelineArchiveFormat::Json => {
+                serde_json::to_string_pretty(&self.timeline_archive_records())
+                    .map_err(|err| format!("serialize timeline archive: {}", err))?
+            }
+            TimelineArchiveFormat::Csv => self.timeline_archive_csv(),
+        };
+        let root = self.timeline_archive_root();
+        if let Err(err) = fs::create_dir_all(&root) {
+            return Err(format!(
+                "create export directory {}: {}",
+                root.display(),
+                err
+            ));
+        }
+        let path = root.join(Self::timeline_archive_filename(format));
+        fs::write(&path, payload)
+            .map_err(|err| format!("write archive {}: {}", path.display(), err))?;
+        trace!(path = ?path, format = ?format.label(), "Wrote QA timeline archive");
+        Ok(path)
+    }
+
+    fn handle_timeline_export(&mut self, format: TimelineArchiveFormat) {
+        match self.export_timeline_archive(format) {
+            Ok(path) => {
+                self.push_status(format!("Exported QA timeline archive ({})", path.display()));
+                info!(
+                    path = ?path,
+                    format = %format.label(),
+                    "QA timeline archive exported"
+                );
+            }
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    format = %format.label(),
+                    "Failed exporting QA timeline archive"
+                );
+                self.push_status(format!("Failed to export QA timeline archive: {}", err));
+            }
+        }
+    }
+
+    fn is_timeline_entry_pinned(&self, entry: &TimelineHistoryEntry) -> bool {
+        self.pinned_timeline_entries
+            .iter()
+            .any(|pinned| pinned.matches(entry))
+    }
+
+    fn pin_timeline_entry(&mut self, entry: &TimelineHistoryEntry) {
+        if self.is_timeline_entry_pinned(entry) {
+            return;
+        }
+        if self.pinned_timeline_entries.len() >= MAX_PINNED_TIMELINE_ENTRIES {
+            self.pinned_timeline_entries.remove(0);
+        }
+        self.pinned_timeline_entries.push(entry.clone());
+        trace!(entry = %entry.details(), "Pinned QA timeline entry");
+        self.push_status(format!("Pinned timeline entry: {}", entry.details()));
+    }
+
+    fn unpin_timeline_entry(&mut self, entry: &TimelineHistoryEntry) -> bool {
+        if let Some(pos) = self
+            .pinned_timeline_entries
+            .iter()
+            .position(|pinned| pinned.matches(entry))
+        {
+            let removed = self.pinned_timeline_entries.remove(pos);
+            trace!(entry = %removed.details(), "Unpinned QA timeline entry");
+            self.push_status(format!("Unpinned timeline entry: {}", removed.details()));
+            true
+        } else {
+            false
+        }
+    }
+
+    fn render_pinned_timeline_entries(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Pinned QA timeline entries:").strong());
+            if ui.button("Clear pinned entries").clicked() {
+                self.pinned_timeline_entries.clear();
+                self.push_status("Cleared pinned timeline entries.".to_string());
+            }
+        });
+        if self.pinned_timeline_entries.is_empty() {
+            ui.label("(No pinned entries yet.)");
+            return;
+        }
+        let pinned_entries = self.pinned_timeline_entries.clone();
+        for entry in pinned_entries.iter().rev() {
+            ui.horizontal(|ui| {
+                let badge = Button::new(entry.badge_label(Instant::now()))
+                    .rounding(6.0)
+                    .fill(entry.badge_color());
+                if ui.add(badge).clicked() {
+                    let kind = entry.entry.kind.clone();
+                    self.execute_timeline_kind(&kind);
+                    self.record_timeline_history(&entry.entry);
+                }
+                ui.label(entry.details());
+                ui.hyperlink_to("QA link", entry.qa_url);
+                let age_secs = entry.entry.timestamp.elapsed().as_secs_f32();
+                ui.label(format!("{:.1}s ago", age_secs));
+                if ui.button("Unpin").clicked() {
+                    self.unpin_timeline_entry(entry);
+                }
+            });
         }
     }
 
@@ -1757,7 +1917,10 @@ impl LanternLeafApp {
         trace!(event = ?event, "Replayed throttle span for QA");
     }
 
-    fn regression_snapshot_event_links(&self, snapshot: &RegressionSnapshot) -> RegressionSnapshotEventLinks {
+    fn regression_snapshot_event_links(
+        &self,
+        snapshot: &RegressionSnapshot,
+    ) -> RegressionSnapshotEventLinks {
         let render_events = self
             .pdf_render_state
             .recent_render_events()
@@ -1856,7 +2019,9 @@ impl LanternLeafApp {
     }
 
     fn matches_snapshot_page(snapshot: &RegressionSnapshot, page_index: usize) -> bool {
-        snapshot.current_page.map_or(true, |page| page == page_index)
+        snapshot
+            .current_page
+            .map_or(true, |page| page == page_index)
     }
 
     fn within_snapshot_window(snapshot_ts: Instant, event_ts: Instant, window: Duration) -> bool {
@@ -2520,7 +2685,7 @@ impl LanternLeafApp {
                                     if ui.add(button).clicked() {
                                         let kind = entry.kind.clone();
                                         self.execute_timeline_kind(&kind);
-                                        self.record_timeline_history(&kind);
+                                        self.record_timeline_history(entry);
                                     }
                                 }
                             });
@@ -2534,24 +2699,24 @@ impl LanternLeafApp {
                                 );
                             });
                             ui.horizontal(|ui| {
-                                if ui.button("Replay regression snapshot").clicked() {
-                                    self.replay_regression_snapshot(snapshot);
-                                }
-                                if ui.button("Copy QA JSON").clicked() {
-                                    let payload = self.regression_snapshot_payload(snapshot);
-                                    ui.ctx()
-                                        .output_mut(|output| output.copied_text = payload.clone());
-                                    trace!(
-                                        span_summary = %snapshot.describe(),
-                                        "Copied regression snapshot QA JSON"
-                                    );
-                                    self.log_regression_snapshot_copy(snapshot, &payload);
-                                }
-                                if ui.button("Log QA JSON").clicked() {
-                                    let payload = self.regression_snapshot_payload(snapshot);
-                                    self.log_regression_snapshot_copy(snapshot, &payload);
-                                }
-                            });
+                            if ui.button("Replay regression snapshot").clicked() {
+                                self.replay_regression_snapshot(snapshot);
+                            }
+                            if ui.button("Copy QA JSON").clicked() {
+                                let payload = self.regression_snapshot_payload(snapshot);
+                                ui.ctx()
+                                    .output_mut(|output| output.copied_text = payload.clone());
+                                trace!(
+                                    span_summary = %snapshot.describe(),
+                                    "Copied regression snapshot QA JSON"
+                                );
+                                self.log_regression_snapshot_copy(snapshot, &payload);
+                            }
+                            if ui.button("Log QA JSON").clicked() {
+                                let payload = self.regression_snapshot_payload(snapshot);
+                                self.log_regression_snapshot_copy(snapshot, &payload);
+                            }
+                        });
                             if !event_links.render_events.is_empty() {
                                 ui.label("Related PDF render spans:");
                                 for event in event_links.render_events.iter() {
@@ -2639,24 +2804,44 @@ impl LanternLeafApp {
                     }
                 }
                 ui.separator();
-                ui.label("QA timeline archive:");
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("QA timeline archive:").strong());
+                    if ui.button("Export JSON").clicked() {
+                        self.handle_timeline_export(TimelineArchiveFormat::Json);
+                    }
+                    if ui.button("Export CSV").clicked() {
+                        self.handle_timeline_export(TimelineArchiveFormat::Csv);
+                    }
+                });
+                self.render_pinned_timeline_entries(ui);
+                if !self.pinned_timeline_entries.is_empty() {
+                    ui.separator();
+                }
                 if self.timeline_history.is_empty() {
                     ui.label("(No QA timeline entries yet)");
                 } else {
                     let timeline_history = self.timeline_history.clone();
                     for entry in timeline_history.iter().rev() {
+                        let is_pinned = self.is_timeline_entry_pinned(entry);
                         ui.horizontal(|ui| {
                             let badge = Button::new(entry.badge_label(Instant::now()))
                                 .rounding(6.0)
                                 .fill(entry.badge_color());
                             if ui.add(badge).clicked() {
                                 self.execute_timeline_kind(&entry.entry.kind);
-                                self.record_timeline_history(&entry.entry.kind);
+                                self.record_timeline_history(&entry.entry);
                             }
                             ui.label(entry.details());
                             ui.hyperlink_to("QA link", entry.qa_url);
                             let age_secs = entry.entry.timestamp.elapsed().as_secs_f32();
                             ui.label(format!("{:.1}s ago", age_secs));
+                            if is_pinned {
+                                if ui.button("Unpin").clicked() {
+                                    self.unpin_timeline_entry(entry);
+                                }
+                            } else if ui.button("Pin").clicked() {
+                                self.pin_timeline_entry(entry);
+                            }
                         });
                     }
                 }
@@ -3699,12 +3884,8 @@ impl SchedulerEvent {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum RegressionScenario {
-    OverlayBacklog {
-        reason: &'static str,
-    },
-    BookmarkRestore {
-        trigger: PersistenceTrigger,
-    },
+    OverlayBacklog { reason: &'static str },
+    BookmarkRestore { trigger: PersistenceTrigger },
 }
 
 impl RegressionScenario {
@@ -3820,11 +4001,84 @@ impl TimelineHistoryEntry {
     }
 
     fn details(&self) -> String {
+        format!("{} | {}", self.entry.kind_label(), self.ref_label)
+    }
+
+    fn from_entry(entry: &RegressionSnapshotTimelineEntry) -> Self {
+        Self {
+            entry: entry.clone(),
+            qa_url: entry.kind.qa_url(),
+            ref_label: entry.kind.ref_label(),
+        }
+    }
+
+    fn kind_label(&self) -> &'static str {
+        self.entry.kind_label()
+    }
+
+    fn matches(&self, other: &TimelineHistoryEntry) -> bool {
+        self.entry.timestamp == other.entry.timestamp
+            && self.ref_label == other.ref_label
+            && self.kind_label() == other.kind_label()
+    }
+
+    fn timestamp_iso(&self) -> String {
+        let now = Instant::now();
+        let duration = if now >= self.entry.timestamp {
+            now.duration_since(self.entry.timestamp)
+        } else {
+            self.entry.timestamp.duration_since(now)
+        };
+        let wall_clock = SystemTime::now()
+            .checked_sub(duration)
+            .unwrap_or(SystemTime::now());
+        match wall_clock.duration_since(UNIX_EPOCH) {
+            Ok(since_epoch) => format!("{:.3}", since_epoch.as_secs_f64()),
+            Err(_) => "unknown".to_string(),
+        }
+    }
+
+    fn export_record(&self) -> serde_json::Value {
+        json!({
+            "timestamp": self.timestamp_iso(),
+            "kind": self.entry.kind_label(),
+            "reference": self.ref_label,
+            "qa_url": self.qa_url,
+            "details": self.details(),
+        })
+    }
+
+    fn export_csv_row(&self) -> String {
         format!(
-            "{} | {}",
+            "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"",
+            self.timestamp_iso(),
             self.entry.kind_label(),
-            self.ref_label
+            self.ref_label,
+            self.qa_url,
+            self.details().replace('"', "\"\""),
         )
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum TimelineArchiveFormat {
+    Json,
+    Csv,
+}
+
+impl TimelineArchiveFormat {
+    fn extension(&self) -> &'static str {
+        match self {
+            TimelineArchiveFormat::Json => "json",
+            TimelineArchiveFormat::Csv => "csv",
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            TimelineArchiveFormat::Json => "JSON",
+            TimelineArchiveFormat::Csv => "CSV",
+        }
     }
 }
 

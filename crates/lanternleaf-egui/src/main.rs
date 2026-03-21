@@ -2865,56 +2865,65 @@ impl LanternLeafApp {
                 }
                 ui.separator();
                 ui.label("Audio budget traces:");
-                let audio_events = self.audio_diagnostics.recent_events().to_vec();
+                let audio_events = self.audio_diagnostics.recent_events().iter().cloned().collect::<Vec<_>>();
                 if audio_events.is_empty() {
                     ui.label("(No audio JumpToSentence events yet)");
                 } else {
-                ui.horizontal(|ui| {
-                    ui.label("Related tranches:");
-                    ui.hyperlink_to("Audio & TTS integration", TTS_ROADMAP_URL);
+                    ui.horizontal(|ui| {
+                        ui.label("Related tranches:");
+                        ui.hyperlink_to("Audio & TTS integration", TTS_ROADMAP_URL);
                         ui.hyperlink_to("Reader Rendering Core", READER_RENDR_ROADMAP_URL);
                         ui.hyperlink_to("Implementation prioritization", PRIORITIZATION_ROADMAP_URL);
                     });
                     for event in audio_events.iter().rev() {
-                        ui.vertical(|ui| {
+                        ui.group(|ui| {
                             ui.horizontal(|ui| {
+                                ui.label(Self::audio_event_badge(event));
                                 ui.label(
                                     RichText::new(format!(
-                                        "{} ({:.1}s ago)",
+                                        "{} ({:.1}s ago) [span id: {}]",
                                         event.describe(),
-                                        event.age_secs()
+                                        event.age_secs(),
+                                        event.id
                                     ))
                                     .small()
                                     .weak(),
                                 );
-                                ui.label(
-                                    RichText::new(format!("[span id: {}]", event.id))
-                                        .small()
-                                        .weak(),
-                                );
                             });
+                            let highlight_label = event
+                                .highlight_page
+                                .map(|page| page + 1)
+                                .map_or_else(|| "unknown".to_string(), |page| page.to_string());
+                            let overlay_reason = event
+                                .overlay_snapshot
+                                .overlay_reason
+                                .as_deref()
+                                .unwrap_or("unspecified");
                             ui.horizontal(|ui| {
                                 ui.label(format!(
-                                    "Anchor: {} (auto_scroll: {}, overlay budget {} pages)",
+                                    "Anchor: {} | auto_scroll: {} | highlight page: {}",
                                     event.fallback.label(),
                                     event.auto_scroll,
-                                    event.overlay_snapshot.budget_pages
+                                    highlight_label
                                 ));
                             });
                             ui.horizontal(|ui| {
-                                if ui.button("Replay audio span").clicked() {
-                                    self.replay_audio_event(event);
-                                }
-                                if ui.button("Copy QA JSON").clicked() {
-                                    let summary = event.describe();
-                                    ui.ctx()
-                                        .output_mut(|output| output.copied_text = summary.clone());
-                                    trace!(span_summary = %summary, "Copied audio budget span for QA");
-                                    self.log_qa_audio_copy(event, &summary);
-                                }
-                                if ui.button("Log QA JSON").clicked() {
-                                    let summary = event.describe();
-                                    self.log_qa_audio_copy(event, &summary);
+                                ui.label(format!(
+                                    "Overlay budget: {} pages (drawn {}), allowed: {} | overlay reason: {}",
+                                    event.overlay_snapshot.budget_pages,
+                                    event.overlay_snapshot.overlays_drawn,
+                                    event.overlay_snapshot.allowed,
+                                    overlay_reason
+                                ));
+                            });
+                            ui.horizontal(|ui| {
+                                self.audio_event_controls(ui, event);
+                                if ui
+                                    .small_button("Focus overlays")
+                                    .on_hover_text("Scroll diagnostics to overlay pressure warnings")
+                                    .clicked()
+                                {
+                                    self.overlay_pressure_focus = true;
                                 }
                             });
                         });
@@ -3308,6 +3317,51 @@ impl LanternLeafApp {
                 .output_mut(|output| output.copied_text = payload.clone());
             trace!(event = %summary, "Copied scheduler event QA JSON");
             self.log_scheduler_event_copy(event, &summary);
+        }
+        if ui.small_button("Pin timeline entry").clicked() {
+            let history_entry = TimelineHistoryEntry::from_entry(&entry);
+            self.pin_timeline_entry(&history_entry);
+        }
+    }
+
+    fn audio_timeline_entry(event: &AudioBudgetEvent) -> RegressionSnapshotTimelineEntry {
+        RegressionSnapshotTimelineEntry {
+            kind: RegressionSnapshotTimelineKind::AudioEvent(event.clone()),
+            timestamp: event.timestamp,
+        }
+    }
+
+    fn audio_event_badge(event: &AudioBudgetEvent) -> RichText {
+        if event.overlay_snapshot.allowed {
+            RichText::new("AUDIO OK")
+                .color(Color32::from_rgb(110, 210, 190))
+                .small()
+                .strong()
+        } else {
+            RichText::new("AUDIO BLOCKED")
+                .color(Color32::from_rgb(230, 150, 110))
+                .small()
+                .strong()
+        }
+    }
+
+    fn audio_event_controls(&mut self, ui: &mut Ui, event: &AudioBudgetEvent) {
+        let entry = Self::audio_timeline_entry(event);
+        if ui.small_button("Replay audio span").clicked() {
+            self.replay_audio_event(event);
+            self.record_timeline_history(&entry);
+        }
+        if ui.small_button("Copy QA JSON").clicked() {
+            let summary = event.describe();
+            let payload = self.audio_event_payload(event, &summary);
+            ui.ctx()
+                .output_mut(|output| output.copied_text = payload.clone());
+            trace!(span_summary = %summary, "Copied audio budget span for QA");
+            self.log_qa_audio_copy(event, &summary);
+        }
+        if ui.small_button("Log QA JSON").clicked() {
+            let summary = event.describe();
+            self.log_qa_audio_copy(event, &summary);
         }
         if ui.small_button("Pin timeline entry").clicked() {
             let history_entry = TimelineHistoryEntry::from_entry(&entry);

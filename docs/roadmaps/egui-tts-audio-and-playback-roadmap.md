@@ -1,9 +1,9 @@
 # Egui TTS Audio And Playback Roadmap
 
 ## Objective
-- [ ] Move TTS controls, playback coordination, audio progress updates, and worker/runtime orchestration into the egui app runtime.
-- [ ] Preserve Piper-backed speech synthesis, caching, timing accuracy, and sentence cursor semantics.
-- [ ] Ensure the UI consumes typed Rust playback state rather than frontend bridge events.
+- [x] Move TTS controls, playback coordination, audio progress updates, and worker/runtime orchestration into the egui app runtime.
+- [x] Preserve Piper-backed speech synthesis, caching, timing accuracy, and sentence cursor semantics.
+- [x] Ensure the UI consumes typed Rust playback state rather than frontend bridge events.
 
 ## Current-State Grounding In This Repo
 - Current TTS/runtime ownership is split across:
@@ -42,43 +42,43 @@
 - Tracing is mandatory for synthesis, cache hits/misses, append, progress, and failure modes.
 
 ## Phase 1: Runtime Ownership Boundary
-- [ ] Define which runtime responsibilities live in:
-- [ ] core playback/session crate
-- [ ] TTS engine/service layer
-- [ ] egui app runtime coordinator
-- [ ] UI widgets
-- [ ] Replace any Tauri event assumptions with typed Rust-native playback events/messages.
+- [x] Define which runtime responsibilities live in:
+- [x] core playback/session crate
+- [x] TTS engine/service layer
+- [x] egui app runtime coordinator
+- [x] UI widgets
+- [x] Replace any Tauri event assumptions with typed Rust-native playback events/messages.
 - Phase exit:
-- [ ] playback ownership is fully assigned inside the Rust workspace.
+- [x] playback ownership is fully assigned inside the Rust workspace.
 
 ## Phase 2: Command And Event Surface
-- [ ] Define typed playback commands:
-- [ ] play
-- [ ] pause
-- [ ] toggle
-- [ ] play from page start
-- [ ] play from highlight
-- [ ] previous/next sentence
-- [ ] speed/volume/settings changes
-- [ ] Define typed runtime events:
-- [ ] progress changed
-- [ ] highlight changed
-- [ ] queued/prefetched
-- [ ] completed
-- [ ] failed/cancelled
+- [x] Define typed playback commands:
+- [x] play
+- [x] pause
+- [x] toggle
+- [x] play from page start
+- [x] play from highlight
+- [x] previous/next sentence
+- [x] speed/volume/settings changes
+- [x] Define typed runtime events:
+- [x] progress changed
+- [x] highlight changed
+- [x] queued/prefetched
+- [x] completed
+- [x] failed/cancelled
 - Phase exit:
-- [ ] egui widgets can bind to a stable playback control surface without command bridging.
+- [x] egui widgets can bind to a stable playback control surface without command bridging.
 
 ## Phase 3: Worker And Audio Pipeline
-- [ ] Preserve or refactor worker orchestration for:
-- [ ] synthesis subprocess/work queue
-- [ ] cache lookup
-- [ ] prefetch
-- [ ] append to output
-- [ ] cancellation
-- [ ] Define thread boundaries so audio and synthesis events enter the UI through coalesced message channels.
+- [x] Preserve or refactor worker orchestration for:
+- [x] synthesis subprocess/work queue
+- [x] cache lookup
+- [x] prefetch
+- [x] append to output
+- [x] cancellation
+- [x] Define thread boundaries so audio and synthesis events enter the UI through coalesced message channels.
 - Phase exit:
-- [ ] TTS runtime architecture is specified for the egui app with no UI-thread blocking risk.
+- [x] TTS runtime architecture is specified for the egui app with no UI-thread blocking risk.
 
 ## Phase 4: Playback Cursor And Highlight Flow
 - [ ] Preserve the current canonical flow:
@@ -89,19 +89,19 @@
 - [ ] playback cursor and highlight propagation are explicit and implementation-ready.
 
 ## Phase 5: Widget And Status Surface
-- [ ] Rebuild playback controls in egui:
-- [ ] transport controls
-- [ ] speed/volume controls
-- [ ] sentence navigation
-- [ ] time remaining/progress labels
-- [ ] runtime diagnostics where needed
-- [ ] Preserve current user-visible semantics and stats behavior.
+- [x] Rebuild playback controls in egui:
+- [x] transport controls
+- [x] speed/volume controls
+- [x] sentence navigation
+- [x] time remaining/progress labels
+- [x] runtime diagnostics where needed
+- [x] Preserve current user-visible semantics and stats behavior.
 - Phase exit:
-- [ ] playback UI behavior is fully defined for native widgets.
+- [x] playback UI behavior is fully defined for native widgets.
 
 ## Phase 6: Performance, Caching, And Telemetry
-- [ ] Define cache ownership for synthesized audio and playback artifacts.
-- [ ] Keep prefetch and cache metrics visible in tracing.
+- [x] Define cache ownership for synthesized audio and playback artifacts.
+- [x] Keep prefetch and cache metrics visible in tracing.
 - [ ] Define acceptable latency targets for:
 - [ ] play from page
 - [ ] play from highlighted sentence
@@ -117,13 +117,13 @@
 - Prefetch/caching complexity can be lost if the migration focuses only on visible controls.
 
 ## Test / Parity Requirements
-- [ ] Rust unit tests for playback transitions and mapping behavior.
-- [ ] Rust integration tests for worker queueing, cancellation, and progress propagation.
+- [x] Rust unit tests for playback transitions and mapping behavior.
+- [x] Rust integration tests for worker queueing, cancellation, and progress propagation.
 - [ ] Manual parity checks for all TTS controls, cursor movement, and progress/stat displays.
-- [ ] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
+- [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
 - [ ] The egui migration has a complete Rust-native plan for TTS controls, runtime orchestration, and playback events.
-- [ ] Piper, rodio, cache, and progress semantics remain explicit and in scope.
+- [x] Piper, rodio, cache, and progress semantics remain explicit and in scope.
 - [ ] Highlight/cursor propagation from playback into readers is fully specified.
 - [ ] No TTS/runtime ownership question remains open for the UI migration.

@@ -8,6 +8,7 @@ pub mod services;
 pub mod shortcuts;
 pub mod state;
 pub mod tracing;
+pub mod tts_runtime;
 
 pub use runtime::AppRuntime;
 pub use shortcuts::{ShortcutAction, ShortcutRegistry, ShortcutScope, UiShortcutAction};

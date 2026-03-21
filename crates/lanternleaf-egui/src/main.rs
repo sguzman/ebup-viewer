@@ -31,14 +31,18 @@ use crate::pdf_renderer::{
 };
 use lanternleaf_app::{
     AppRuntime,
-    contracts::{PrettyKind, ReaderSnapshot, UiMode},
-    pipeline::{AppCommand, DispatchPlan, PersistenceTrigger, ReaderCommand},
+    contracts::{
+        BridgeError, PrettyKind, ReaderPlaybackStateEvent, ReaderSnapshot, ReaderStateEvent,
+        TtsStateEvent, UiMode,
+    },
+    pipeline::{AppCommand, AppEvent, DispatchPlan, OperationScope, PersistenceTrigger, ReaderCommand},
     shortcuts::{ShortcutAction, ShortcutScope, UiShortcutAction},
     state::AppState,
     tracing::init_tracing,
+    tts_runtime::{TtsCommand, TtsRuntime, TtsRuntimeEvent, TtsRuntimeEventKind},
 };
 use lanternleaf_core::{
-    cache, config,
+    cache, config, normalizer,
     session::{ReaderSettingsPatch, SessionCommand, TtsPlaybackState},
 };
 use serde::{Deserialize, Serialize};
@@ -61,6 +65,20 @@ const QA_REGRESSION_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/ma
 const TIMELINE_ARCHIVE_DIR: &str = "logs/qa-timeline";
 const MAX_PINNED_TIMELINE_ENTRIES: usize = 8;
 const PINNED_TIMELINE_FILE: &str = "pinned-timeline.json";
+
+fn format_duration_secs(seconds: f64) -> String {
+    if !seconds.is_finite() {
+        return "n/a".to_string();
+    }
+    let total = seconds.max(0.0).round() as u64;
+    let mins = total / 60;
+    let secs = total % 60;
+    if mins > 0 {
+        format!("{mins}m {secs}s")
+    } else {
+        format!("{secs}s")
+    }
+}
 
 fn main() {
     let config_path = app_config_path();
@@ -99,6 +117,8 @@ struct LanternLeafApp {
     anchor_diagnostics: AnchorDiagnostics,
     overlay_diagnostics: OverlayDiagnostics,
     audio_diagnostics: AudioDiagnostics,
+    tts_runtime: TtsRuntime,
+    last_tts_runtime_event: Option<TtsRuntimeEvent>,
     settings_trace_events: Vec<SettingsTraceEvent>,
     settings_trace_next_id: usize,
     persistence_trace_events: Vec<PersistenceTraceEvent>,
@@ -142,6 +162,8 @@ impl LanternLeafApp {
             anchor_diagnostics: AnchorDiagnostics::default(),
             overlay_diagnostics: OverlayDiagnostics::default(),
             audio_diagnostics: AudioDiagnostics::default(),
+            tts_runtime: TtsRuntime::new(normalizer::TextNormalizer::load_default()),
+            last_tts_runtime_event: None,
             settings_trace_events: Vec::new(),
             settings_trace_next_id: 0,
             persistence_trace_events: Vec::new(),
@@ -166,13 +188,113 @@ impl LanternLeafApp {
         let state_snapshot = self.runtime.state_snapshot();
         let reader_snapshot = state_snapshot.reader_document.snapshot.as_ref();
         self.maybe_record_audio_command(&command, reader_snapshot);
-        let plan = self.runtime.plan_command(command);
+        let plan = self.runtime.plan_command(command.clone());
         self.log_plan(&plan);
         self.last_plan = Some(plan);
+        self.apply_tts_command_if_needed(&command);
     }
 
     fn execute_reader_command(&mut self, command: ReaderCommand) {
         self.execute_command(AppCommand::Reader(command));
+    }
+
+    fn apply_tts_command_if_needed(&mut self, command: &AppCommand) {
+        let AppCommand::Reader(ReaderCommand::Session(session_command)) = command else {
+            return;
+        };
+        let Some(tts_command) = TtsCommand::from_session_command(session_command) else {
+            return;
+        };
+        trace!(
+            tts_command = tts_command.label(),
+            action = session_command.action(),
+            "Dispatching TTS command to egui runtime"
+        );
+        let _ = self.tts_runtime.apply_command(tts_command);
+    }
+
+    fn handle_tts_runtime_events(&mut self) {
+        for event in self.tts_runtime.collect_events() {
+            let request_id = event.request_id;
+            match event.kind {
+                TtsRuntimeEventKind::Progress | TtsRuntimeEventKind::StateChanged => {
+                    trace!(
+                        request_id,
+                        action = %event.action,
+                        kind = ?event.kind,
+                        "Applying TTS runtime state event"
+                    );
+                }
+                TtsRuntimeEventKind::Queued => {
+                    info!(
+                        request_id,
+                        action = %event.action,
+                        message = event.message.as_deref().unwrap_or("queued"),
+                        "Queued TTS runtime batch"
+                    );
+                }
+                TtsRuntimeEventKind::Completed => {
+                    info!(
+                        request_id,
+                        action = %event.action,
+                        "TTS runtime completed"
+                    );
+                }
+                TtsRuntimeEventKind::Cancelled => {
+                    warn!(
+                        request_id,
+                        action = %event.action,
+                        "TTS runtime cancelled"
+                    );
+                }
+                TtsRuntimeEventKind::Failed => {
+                    warn!(
+                        request_id,
+                        action = %event.action,
+                        message = event.message.as_deref().unwrap_or("unknown"),
+                        "TTS runtime failed"
+                    );
+                }
+            }
+
+            if let Some(snapshot) = event.snapshot.clone() {
+                self.runtime.apply_event(AppEvent::ReaderUpdated(ReaderStateEvent {
+                    request_id,
+                    action: event.action.clone(),
+                    reader: snapshot.clone(),
+                }));
+                self.runtime.apply_event(AppEvent::TtsStateUpdated(TtsStateEvent {
+                    request_id,
+                    action: event.action.clone(),
+                    tts: snapshot.tts.clone(),
+                }));
+            } else if let Some(playback) = event.playback.clone() {
+                self.runtime
+                    .apply_event(AppEvent::ReaderPlaybackUpdated(ReaderPlaybackStateEvent {
+                        request_id,
+                        action: event.action.clone(),
+                        playback,
+                    }));
+            }
+
+            if event.kind == TtsRuntimeEventKind::Failed {
+                let error_message = event
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "TTS runtime failed".to_string());
+                let error = BridgeError {
+                    code: "tts_runtime_failed".to_string(),
+                    message: error_message,
+                };
+                self.runtime.apply_event(AppEvent::CommandFailed {
+                    request_id,
+                    scope: Some(OperationScope::ReaderTts),
+                    error,
+                });
+            }
+
+            self.last_tts_runtime_event = Some(event);
+        }
     }
 
     fn log_plan(&mut self, plan: &DispatchPlan) {
@@ -1109,34 +1231,7 @@ impl LanternLeafApp {
                 "rendering reader shell content"
             );
             ui.heading("Reader shell");
-            ui.horizontal(|ui| {
-                if ui
-                    .button(
-                        "Play/Pause (ReaderCommand::Session(SessionCommand::TtsTogglePlayPause))",
-                    )
-                    .clicked()
-                {
-                    self.execute_reader_command(ReaderCommand::Session(
-                        SessionCommand::TtsTogglePlayPause,
-                    ));
-                }
-                if ui
-                    .button("Next sentence (ReaderCommand::Session(SessionCommand::TtsSeekNext))")
-                    .clicked()
-                {
-                    self.execute_reader_command(ReaderCommand::Session(
-                        SessionCommand::TtsSeekNext,
-                    ));
-                }
-                if ui
-                    .button("Prev sentence (ReaderCommand::Session(SessionCommand::TtsSeekPrev))")
-                    .clicked()
-                {
-                    self.execute_reader_command(ReaderCommand::Session(
-                        SessionCommand::TtsSeekPrev,
-                    ));
-                }
-            });
+            self.render_tts_widget(ui, snapshot);
             ui.separator();
             self.render_reader_summary(ui, snapshot);
             ui.add_space(6.0);
@@ -1157,6 +1252,109 @@ impl LanternLeafApp {
             ui.heading("Reader shell");
             ui.label("No reader session currently active.");
         }
+    }
+
+    fn render_tts_widget(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+        ui.group(|ui| {
+            ui.label("TTS controls");
+            ui.horizontal(|ui| {
+                if ui.button("Play").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(SessionCommand::TtsPlay));
+                }
+                if ui.button("Pause").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(SessionCommand::TtsPause));
+                }
+                if ui.button("Stop").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(SessionCommand::TtsStop));
+                }
+                if ui.button("Repeat").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsRepeatSentence,
+                    ));
+                }
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Play from page").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsPlayFromPageStart,
+                    ));
+                }
+                if ui.button("Play from highlight").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsPlayFromHighlight,
+                    ));
+                }
+                if ui.button("Prev sentence").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsSeekPrev,
+                    ));
+                }
+                if ui.button("Next sentence").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsSeekNext,
+                    ));
+                }
+            });
+            ui.horizontal(|ui| {
+                let mut tts_speed = snapshot.settings.tts_speed;
+                if ui
+                    .add(Slider::new(&mut tts_speed, 0.5..=2.5).text("Speed"))
+                    .changed()
+                {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::ApplySettings {
+                            patch: ReaderSettingsPatch {
+                                tts_speed: Some(tts_speed),
+                                ..Default::default()
+                            },
+                        },
+                    ));
+                }
+                let mut tts_volume = snapshot.settings.tts_volume;
+                if ui
+                    .add(Slider::new(&mut tts_volume, 0.0..=2.0).text("Volume"))
+                    .changed()
+                {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::ApplySettings {
+                            patch: ReaderSettingsPatch {
+                                tts_volume: Some(tts_volume),
+                                ..Default::default()
+                            },
+                        },
+                    ));
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(format!(
+                    "TTS progress: {:.1}%",
+                    snapshot.tts.progress_pct
+                ));
+                ui.separator();
+                ui.label(format!(
+                    "Page ETA: {}",
+                    format_duration_secs(snapshot.stats.page_time_remaining_secs)
+                ));
+                ui.separator();
+                ui.label(format!(
+                    "Book ETA: {}",
+                    format_duration_secs(snapshot.stats.book_time_remaining_secs)
+                ));
+            });
+            if let Some(event) = self.last_tts_runtime_event.as_ref() {
+                ui.horizontal(|ui| {
+                    ui.label(format!("Last TTS event: {:?}", event.kind));
+                    ui.separator();
+                    ui.label(event.action.as_str());
+                    if let Some(message) = event.message.as_ref() {
+                        ui.separator();
+                        ui.label(message);
+                    }
+                });
+            } else {
+                ui.label("Last TTS event: none");
+            }
+        });
     }
 
     fn render_reader_summary(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
@@ -4127,7 +4325,15 @@ impl LanternLeafApp {
 
 impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        self.handle_tts_runtime_events();
         let snapshot = self.runtime.state_snapshot();
+        let panels = snapshot
+            .session
+            .session
+            .as_ref()
+            .map(|session| session.panels)
+            .unwrap_or_default();
+        self.tts_runtime.set_panels(panels);
         let reader_snapshot = snapshot.reader_document.snapshot.as_ref();
         self.refresh_anchor_diagnostics(reader_snapshot);
         self.update_pdf_render_state(reader_snapshot);

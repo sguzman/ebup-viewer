@@ -12,7 +12,7 @@ use eframe::{
     NativeOptions,
     egui::{
         self, Align, Align2, Button, CentralPanel, CollapsingHeader, Color32, ColorImage, Context,
-        FontFamily, FontId, Pos2, Rect, RichText, ScrollArea, Sense, SidePanel, Stroke,
+        FontFamily, FontId, Pos2, Rect, RichText, ScrollArea, Sense, SidePanel, Slider, Stroke,
         TextureHandle, TextureOptions, TopBottomPanel, Ui, Vec2, Visuals,
     },
 };
@@ -28,14 +28,14 @@ use crate::pdf_renderer::{
 use lanternleaf_app::{
     AppRuntime,
     contracts::{PrettyKind, ReaderSnapshot, UiMode},
-    pipeline::{AppCommand, DispatchPlan, ReaderCommand},
+    pipeline::{AppCommand, DispatchPlan, PersistenceTrigger, ReaderCommand},
     shortcuts::{ShortcutAction, ShortcutScope, UiShortcutAction},
     state::AppState,
     tracing::init_tracing,
 };
 use lanternleaf_core::{
     cache, config,
-    session::{SessionCommand, TtsPlaybackState},
+    session::{ReaderSettingsPatch, SessionCommand, TtsPlaybackState},
 };
 use serde_json::json;
 use tracing::{Level, info, trace, warn};
@@ -49,6 +49,9 @@ const PDF_SUBSYSTEM_ROADMAP_URL: &str =
     "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-native-pdf-roadmap.md";
 const PRIORITIZATION_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/implementation-prioritization-roadmap.md";
 const TTS_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-tts-audio-and-playback-roadmap.md";
+const SETTINGS_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-config-cache-and-persistence-roadmap.md";
+const PERSISTENCE_ROADMAP_URL: &str = SETTINGS_ROADMAP_URL;
+const QA_REGRESSION_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-testing-and-parity-roadmap.md";
 
 fn main() {
     let config_path = app_config_path();
@@ -87,6 +90,10 @@ struct LanternLeafApp {
     anchor_diagnostics: AnchorDiagnostics,
     overlay_diagnostics: OverlayDiagnostics,
     audio_diagnostics: AudioDiagnostics,
+    settings_trace_events: Vec<SettingsTraceEvent>,
+    settings_trace_next_id: usize,
+    persistence_trace_events: Vec<PersistenceTraceEvent>,
+    persistence_trace_next_id: usize,
     overlay_pressure_focus: bool,
     scheduler_events: Vec<SchedulerEvent>,
     pdf_render_state: PdfRenderState,
@@ -122,6 +129,10 @@ impl LanternLeafApp {
             anchor_diagnostics: AnchorDiagnostics::default(),
             overlay_diagnostics: OverlayDiagnostics::default(),
             audio_diagnostics: AudioDiagnostics::default(),
+            settings_trace_events: Vec::new(),
+            settings_trace_next_id: 0,
+            persistence_trace_events: Vec::new(),
+            persistence_trace_next_id: 0,
             overlay_pressure_focus: false,
             scheduler_events: Vec::new(),
             pdf_render_state: PdfRenderState::default(),
@@ -334,6 +345,7 @@ impl LanternLeafApp {
                 ui.label(format!("TTS: {}", panels.show_tts));
             }
             self.render_anchor_diagnostics(ui, reader_snapshot);
+            self.render_settings_sidebar(ui, reader_snapshot);
         });
         SidePanel::right("shortcuts").show(ctx, |ui| {
             ui.heading("Shortcut registry");
@@ -341,6 +353,150 @@ impl LanternLeafApp {
                 ui.label(format!("{} → {:?}", binding.combo, binding.action));
             }
         });
+    }
+
+    fn render_settings_sidebar(&mut self, ui: &mut Ui, snapshot: Option<&ReaderSnapshot>) {
+        CollapsingHeader::new("Settings & persistence")
+            .id_source("settings-sidebar")
+            .default_open(false)
+            .show(ui, |ui| {
+                let snapshot = match snapshot {
+                    Some(snapshot) => snapshot,
+                    None => {
+                        ui.label("Open a reader session to adjust settings.");
+                        return;
+                    }
+                };
+                let settings = &snapshot.settings;
+                ui.label(format!("Theme: {:?}", settings.theme));
+                ui.horizontal(|ui| {
+                    let mut auto_scroll = settings.auto_scroll_tts;
+                    if ui
+                        .checkbox(&mut auto_scroll, "Auto-scroll TTS playback")
+                        .changed()
+                    {
+                        self.apply_reader_settings_patch(
+                            ReaderSettingsPatch {
+                                auto_scroll_tts: Some(auto_scroll),
+                                ..Default::default()
+                            },
+                            "auto_scroll_tts",
+                        );
+                    }
+                    let mut center_spoken = settings.center_spoken_sentence;
+                    if ui
+                        .checkbox(&mut center_spoken, "Center spoken sentence")
+                        .changed()
+                    {
+                        self.apply_reader_settings_patch(
+                            ReaderSettingsPatch {
+                                center_spoken_sentence: Some(center_spoken),
+                                ..Default::default()
+                            },
+                            "center_spoken_sentence",
+                        );
+                    }
+                });
+                ui.horizontal(|ui| {
+                    let mut show_original = settings.text_only_show_original_text;
+                    if ui
+                        .checkbox(&mut show_original, "Text-only shows original text")
+                        .changed()
+                    {
+                        self.apply_reader_settings_patch(
+                            ReaderSettingsPatch {
+                                text_only_show_original_text: Some(show_original),
+                                ..Default::default()
+                            },
+                            "text_only_show_original_text",
+                        );
+                    }
+                });
+                ui.add_space(4.0);
+                let mut line_spacing = settings.line_spacing;
+                if ui
+                    .add(
+                        Slider::new(&mut line_spacing, 1.0..=2.5)
+                            .text("Line spacing")
+                            .prefix("Line: "),
+                    )
+                    .changed()
+                {
+                    self.apply_reader_settings_patch(
+                        ReaderSettingsPatch {
+                            line_spacing: Some(line_spacing),
+                            ..Default::default()
+                        },
+                        "line_spacing",
+                    );
+                }
+                let mut pause_after = settings.pause_after_sentence;
+                if ui
+                    .add(
+                        Slider::new(&mut pause_after, 0.1..=3.0)
+                            .text("Pause after sentence")
+                            .suffix("s"),
+                    )
+                    .changed()
+                {
+                    self.apply_reader_settings_patch(
+                        ReaderSettingsPatch {
+                            pause_after_sentence: Some(pause_after),
+                            ..Default::default()
+                        },
+                        "pause_after_sentence",
+                    );
+                }
+                let mut tts_speed = settings.tts_speed;
+                if ui
+                    .add(
+                        Slider::new(&mut tts_speed, 0.5..=2.5)
+                            .text("TTS speed")
+                            .suffix("x"),
+                    )
+                    .changed()
+                {
+                    self.apply_reader_settings_patch(
+                        ReaderSettingsPatch {
+                            tts_speed: Some(tts_speed),
+                            ..Default::default()
+                        },
+                        "tts_speed",
+                    );
+                }
+                let mut tts_volume = settings.tts_volume;
+                if ui
+                    .add(
+                        Slider::new(&mut tts_volume, 0.0..=2.0)
+                            .text("TTS volume")
+                            .suffix("x"),
+                    )
+                    .changed()
+                {
+                    self.apply_reader_settings_patch(
+                        ReaderSettingsPatch {
+                            tts_volume: Some(tts_volume),
+                            ..Default::default()
+                        },
+                        "tts_volume",
+                    );
+                }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Persist settings now").clicked() {
+                        self.trigger_persistence_flush(
+                            PersistenceTrigger::RuntimeConfigChange,
+                            "manual_settings_persist",
+                        );
+                    }
+                    if ui.button("Flush persistence caches").clicked() {
+                        self.trigger_persistence_flush(
+                            PersistenceTrigger::ReaderCommand,
+                            "manual_cache_flush",
+                        );
+                    }
+                });
+            });
     }
 
     fn refresh_anchor_diagnostics(&mut self, snapshot: Option<&ReaderSnapshot>) {
@@ -1061,6 +1217,131 @@ impl LanternLeafApp {
     fn log_qa_audio_copy(&mut self, event: &AudioBudgetEvent, summary: &str) {
         let payload = self.audio_event_payload(event, summary);
         self.push_status(format!("QA audio span copy: {}", payload));
+    }
+
+    fn apply_reader_settings_patch(
+        &mut self,
+        patch: ReaderSettingsPatch,
+        description: &'static str,
+    ) {
+        let summary = format!("{:?}", patch);
+        let span = tracing::span!(
+            Level::TRACE,
+            "ReaderSettingsChange",
+            budget_plan = "shell.performance_budget",
+            settings_action = description,
+            patch = %summary,
+        );
+        let _enter = span.enter();
+        self.record_settings_event(description, summary.clone());
+        self.execute_reader_command(ReaderCommand::Session(SessionCommand::ApplySettings {
+            patch,
+        }));
+    }
+
+    fn record_settings_event(&mut self, description: &'static str, summary: String) {
+        const MAX_EVENTS: usize = 12;
+        let event = SettingsTraceEvent {
+            id: self.settings_trace_next_id,
+            timestamp: Instant::now(),
+            description,
+            summary,
+            roadmap_url: SETTINGS_ROADMAP_URL,
+        };
+        self.settings_trace_next_id = self.settings_trace_next_id.wrapping_add(1);
+        self.settings_trace_events.push(event);
+        if self.settings_trace_events.len() > MAX_EVENTS {
+            self.settings_trace_events.remove(0);
+        }
+    }
+
+    fn replay_settings_event(&self, event: &SettingsTraceEvent) {
+        let span = tracing::span!(
+            Level::TRACE,
+            "ReaderSettingsReplay",
+            budget_plan = "shell.performance_budget",
+            description = event.description,
+            summary = event.summary.as_str(),
+        );
+        let _enter = span.enter();
+        trace!(event = event.describe(), "Replayed settings change for QA");
+    }
+
+    fn settings_event_payload(&self, event: &SettingsTraceEvent) -> String {
+        let payload = json!({
+            "id": event.id,
+            "description": event.description,
+            "summary": event.summary,
+            "roadmap_url": event.roadmap_url,
+            "age_secs": event.age_secs(),
+        });
+        serde_json::to_string(&payload).unwrap_or_else(|_| event.summary.clone())
+    }
+
+    fn log_settings_trace_copy(&mut self, event: &SettingsTraceEvent) {
+        let payload = self.settings_event_payload(event);
+        self.push_status(format!("QA settings span copy: {}", payload));
+    }
+
+    fn trigger_persistence_flush(
+        &mut self,
+        trigger: PersistenceTrigger,
+        description: &'static str,
+    ) {
+        let span = tracing::span!(
+            Level::TRACE,
+            "PersistenceFlush",
+            budget_plan = "shell.performance_budget",
+            trigger = ?trigger,
+            description = description,
+        );
+        let _enter = span.enter();
+        self.record_persistence_event(trigger, description);
+        self.execute_command(AppCommand::FlushPersistence { trigger });
+    }
+
+    fn record_persistence_event(&mut self, trigger: PersistenceTrigger, description: &'static str) {
+        const MAX_EVENTS: usize = 12;
+        let event = PersistenceTraceEvent {
+            id: self.persistence_trace_next_id,
+            timestamp: Instant::now(),
+            trigger,
+            description,
+            roadmap_url: PERSISTENCE_ROADMAP_URL,
+        };
+        self.persistence_trace_next_id = self.persistence_trace_next_id.wrapping_add(1);
+        self.persistence_trace_events.push(event);
+        if self.persistence_trace_events.len() > MAX_EVENTS {
+            self.persistence_trace_events.remove(0);
+        }
+    }
+
+    fn replay_persistence_event(&self, event: &PersistenceTraceEvent) {
+        let span = tracing::span!(
+            Level::TRACE,
+            "PersistenceReplay",
+            budget_plan = "shell.performance_budget",
+            trigger = ?event.trigger,
+            description = event.description,
+        );
+        let _enter = span.enter();
+        trace!(event = event.describe(), "Replayed persistence span for QA");
+    }
+
+    fn persistence_event_payload(&self, event: &PersistenceTraceEvent) -> String {
+        let payload = json!({
+            "id": event.id,
+            "description": event.description,
+            "trigger": format!("{:?}", event.trigger),
+            "roadmap_url": event.roadmap_url,
+            "age_secs": event.age_secs(),
+        });
+        serde_json::to_string(&payload).unwrap_or_else(|_| event.describe())
+    }
+
+    fn log_persistence_trace_copy(&mut self, event: &PersistenceTraceEvent) {
+        let payload = self.persistence_event_payload(event);
+        self.push_status(format!("QA persistence span copy: {}", payload));
     }
 
     fn maybe_record_audio_command(
@@ -1784,9 +2065,9 @@ impl LanternLeafApp {
                 if audio_events.is_empty() {
                     ui.label("(No audio JumpToSentence events yet)");
                 } else {
-                    ui.horizontal(|ui| {
-                        ui.label("Related tranches:");
-                        ui.hyperlink_to("Audio & TTS integration", TTS_ROADMAP_URL);
+                ui.horizontal(|ui| {
+                    ui.label("Related tranches:");
+                    ui.hyperlink_to("Audio & TTS integration", TTS_ROADMAP_URL);
                         ui.hyperlink_to("Reader Rendering Core", READER_RENDR_ROADMAP_URL);
                         ui.hyperlink_to("Implementation prioritization", PRIORITIZATION_ROADMAP_URL);
                     });
@@ -1834,6 +2115,95 @@ impl LanternLeafApp {
                             });
                         });
                     }
+                }
+                ui.separator();
+                ui.label("Settings trace events:");
+                let settings_events = self.settings_trace_events.clone();
+                if settings_events.is_empty() {
+                    ui.label("(No settings spans captured yet)");
+                } else {
+                    for event in settings_events.iter().rev() {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} ({:.1}s ago)",
+                                    event.describe(),
+                                    event.age_secs()
+                                ))
+                                .small()
+                                .weak(),
+                            );
+                            ui.label(
+                                RichText::new(format!("[span id: {}]", event.id))
+                                    .small()
+                                    .weak(),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.hyperlink_to("Settings roadmap", event.roadmap_url);
+                            if ui.button("Replay settings span").clicked() {
+                                self.replay_settings_event(event);
+                            }
+                            if ui.button("Copy QA JSON").clicked() {
+                                let summary = event.summary.clone();
+                                ui.ctx()
+                                    .output_mut(|output| output.copied_text = summary.clone());
+                                trace!(span_summary = %summary, "Copied settings span for QA");
+                                self.log_settings_trace_copy(event);
+                            }
+                        });
+                    }
+                }
+                ui.separator();
+                ui.label("Persistence trace events:");
+                let persistence_events = self.persistence_trace_events.clone();
+                if persistence_events.is_empty() {
+                    ui.label("(No persistence spans yet)");
+                } else {
+                    for event in persistence_events.iter().rev() {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} ({:.1}s ago)",
+                                    event.describe(),
+                                    event.age_secs()
+                                ))
+                                .small()
+                                .weak(),
+                            );
+                            ui.label(
+                                RichText::new(format!("[span id: {}]", event.id))
+                                    .small()
+                                    .weak(),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.hyperlink_to("Persistence roadmap", event.roadmap_url);
+                            if ui.button("Replay persistence span").clicked() {
+                                self.replay_persistence_event(event);
+                            }
+                            if ui.button("Copy QA JSON").clicked() {
+                                let summary = event.describe();
+                                ui.ctx()
+                                    .output_mut(|output| output.copied_text = summary.clone());
+                                trace!(span_summary = %summary, "Copied persistence span for QA");
+                                self.log_persistence_trace_copy(event);
+                            }
+                        });
+                    }
+                }
+                ui.separator();
+                ui.label("Regression watchlist:");
+                let regression_items = [
+                    ("TTS session close during overlay backlog", QA_REGRESSION_URL),
+                    ("Bookmark restoration after persistence flush", QA_REGRESSION_URL),
+                    ("Overlay budget pressure replayed vs persistence throttles", QA_REGRESSION_URL),
+                ];
+                for (item, url) in regression_items {
+                    ui.horizontal(|ui| {
+                        ui.label(item);
+                        ui.hyperlink_to("QA checklist", url);
+                    });
                 }
                 if focus_request {
                     if let Some(rect) = overlay_warning_rect {
@@ -2830,6 +3200,44 @@ impl AudioDiagnostics {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
         id
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SettingsTraceEvent {
+    id: usize,
+    timestamp: Instant,
+    description: &'static str,
+    summary: String,
+    roadmap_url: &'static str,
+}
+
+impl SettingsTraceEvent {
+    fn describe(&self) -> String {
+        format!("{} — {}", self.description, self.summary)
+    }
+
+    fn age_secs(&self) -> f32 {
+        self.timestamp.elapsed().as_secs_f32()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct PersistenceTraceEvent {
+    id: usize,
+    timestamp: Instant,
+    trigger: PersistenceTrigger,
+    description: &'static str,
+    roadmap_url: &'static str,
+}
+
+impl PersistenceTraceEvent {
+    fn describe(&self) -> String {
+        format!("{} (trigger={:?})", self.description, self.trigger)
+    }
+
+    fn age_secs(&self) -> f32 {
+        self.timestamp.elapsed().as_secs_f32()
     }
 }
 

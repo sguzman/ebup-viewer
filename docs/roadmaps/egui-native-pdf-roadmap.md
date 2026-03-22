@@ -43,26 +43,26 @@
 - The roadmap must recommend a primary Rust-native rendering stack and lock fallback criteria.
 
 ## Decisioned Evaluation: Renderer Strategy
-- [ ] Primary recommendation: adopt a Rust-native PDF stack that separates:
-- [ ] page raster/rendering
-- [ ] text extraction/layout metadata
-- [ ] optional OCR augmentation
-- [ ] egui texture presentation
-- [ ] Evaluation target for the primary path:
-- [ ] one crate or a pair of crates can provide deterministic page rastering plus reliable enough text extraction for sync ownership
-- [ ] page render output can be cached and uploaded into egui textures efficiently
-- [ ] licensing and maintenance are acceptable for long-term desktop shipping
-- [ ] Explicit fallback criteria for deviating from a single-stack Rust-native approach:
-- [ ] text extraction quality is insufficient for current PDF sync contracts
-- [ ] rendering fidelity/performance is not competitive on representative PDFs
-- [ ] viewport memory behavior is not controllable enough for multi-page documents
-- [ ] If no single Rust crate satisfies both rendering and text extraction:
-- [ ] split rendering and text extraction into separate Rust-owned components
-- [ ] keep all integration native and in-process
-- [ ] do not reintroduce browser/WebView ownership as a fallback
-- [ ] Align PDF rendering instrumentation with the egui shell performance and tracing contracts (shell roadmap Phase 6):
-- [ ] page render requests must respect the same coalescing/back-pressure rules as panel state updates to avoid frame drops.
-- [ ] highlight overlay updates must emit tracing spans (command, sentence, anchor) so the shell instrumentation sees the same state transitions as it does for text and reader interactions.
+- [x] Primary recommendation: adopt a Rust-native PDF stack that separates:
+- [x] page raster/rendering
+- [x] text extraction/layout metadata
+- [x] optional OCR augmentation
+- [x] egui texture presentation
+- [x] Evaluation target for the primary path:
+- [x] one crate or a pair of crates can provide deterministic page rastering plus reliable enough text extraction for sync ownership
+- [x] page render output can be cached and uploaded into egui textures efficiently
+- [x] licensing and maintenance are acceptable for long-term desktop shipping
+- [x] Explicit fallback criteria for deviating from a single-stack Rust-native approach:
+- [x] text extraction quality is insufficient for current PDF sync contracts
+- [x] rendering fidelity/performance is not competitive on representative PDFs
+- [x] viewport memory behavior is not controllable enough for multi-page documents
+- [x] If no single Rust crate satisfies both rendering and text extraction:
+- [x] split rendering and text extraction into separate Rust-owned components
+- [x] keep all integration native and in-process
+- [x] do not reintroduce browser/WebView ownership as a fallback
+- [x] Align PDF rendering instrumentation with the egui shell performance and tracing contracts (shell roadmap Phase 6):
+- [x] page render requests must respect the same coalescing/back-pressure rules as panel state updates to avoid frame drops.
+- [x] highlight overlay updates must emit tracing spans (command, sentence, anchor) so the shell instrumentation sees the same state transitions as it does for text and reader interactions.
 - [ ] Text sync/resync cycles should log the fallback path taken (exact/mixed/block/page) in the shared tracing schema so QA can correlate highlight jumps with PDF metrics.
 
 ## Phase 1: PDF Subsystem Boundaries

@@ -2430,6 +2430,10 @@ impl LanternLeafApp {
                             .as_ref()
                             .map(|entry| entry.rects.clone())
                             .unwrap_or_default();
+                        let overlay_anchor = overlay_geometry
+                            .as_ref()
+                            .map(|entry| entry.anchor_label.clone())
+                            .unwrap_or_else(|| "render_only".to_string());
                         let overlay_reason = overlay_geometry
                             .as_ref()
                             .and_then(|entry| entry.reason.clone());
@@ -2438,6 +2442,7 @@ impl LanternLeafApp {
                             Some(idx),
                             overlay_rects,
                             overlay_reason.clone(),
+                            Some(overlay_anchor),
                         );
                     }
                     let mut label_text = format!("{}: {}", idx + 1, sentence);
@@ -5277,10 +5282,15 @@ impl LanternLeafApp {
                     active_tts_page_index: Some(snapshot.current_page),
                     jump_target_page_index: Some(highlighted_page),
                 };
-                let plan = build_pdf_viewport_render_plan(&plan_input);
                 let visible_range = PdfViewportRange::from_pages(&visible_page_indexes);
-                let overscan_range = PdfViewportRange::from_pages(&plan.canvas_page_indexes);
                 let trigger = self.pdf_viewport_trigger(snapshot, highlighted_page, &visible_page_indexes);
+                let throttled = self.should_throttle_pdf_viewport_update();
+                if throttled && matches!(trigger, PdfViewportUpdateTrigger::Refresh) {
+                    trace!("PDF viewport update throttled");
+                    return;
+                }
+                let plan = build_pdf_viewport_render_plan(&plan_input);
+                let overscan_range = PdfViewportRange::from_pages(&plan.canvas_page_indexes);
                 let mut registry_pages = plan.canvas_page_indexes.clone();
                 registry_pages.extend(plan.text_layer_page_indexes.iter().copied());
                 registry_pages.sort_unstable();
@@ -5332,7 +5342,6 @@ impl LanternLeafApp {
                         "PDF texture eviction decision"
                     );
                 }
-                let throttled = self.should_throttle_pdf_viewport_update();
                 let viewport_span = tracing::span!(
                     Level::TRACE,
                     "pdf.viewport.update",
@@ -5561,6 +5570,83 @@ impl AudioBudgetEvent {
 
     fn age_secs(&self) -> f32 {
         self.timestamp.elapsed().as_secs_f32()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lanternleaf_core::cache::{PdfOcrSentenceAlignment, PdfRect};
+
+    fn rect() -> PdfRect {
+        PdfRect {
+            left: 0.1,
+            top: 0.2,
+            width: 0.3,
+            height: 0.4,
+        }
+    }
+
+    fn alignment_with(
+        rects: Vec<PdfRect>,
+        line_rects: Vec<PdfRect>,
+        block_rects: Vec<PdfRect>,
+        page_idx: Option<usize>,
+    ) -> PdfOcrSentenceAlignment {
+        PdfOcrSentenceAlignment {
+            sentence_idx: 0,
+            sentence_text_hash: String::new(),
+            page_idx,
+            rects,
+            line_rects,
+            block_rects,
+            confidence_tier: "test".to_string(),
+            fallback_reason: String::new(),
+            token_lineage: Vec::new(),
+            score: 0.8,
+            crosses_column_boundaries: false,
+            cross_column_confident: false,
+        }
+    }
+
+    #[test]
+    fn alignment_fallback_label_prefers_rects_over_lines() {
+        let alignment = alignment_with(vec![rect()], vec![rect()], vec![rect()], Some(1));
+        assert_eq!(
+            PdfRenderState::alignment_fallback_label(&alignment),
+            "exact"
+        );
+    }
+
+    #[test]
+    fn alignment_fallback_label_falls_through_geometry_tiers() {
+        let line_only = alignment_with(Vec::new(), vec![rect()], Vec::new(), Some(2));
+        assert_eq!(
+            PdfRenderState::alignment_fallback_label(&line_only),
+            "line"
+        );
+        let block_only = alignment_with(Vec::new(), Vec::new(), vec![rect()], Some(2));
+        assert_eq!(
+            PdfRenderState::alignment_fallback_label(&block_only),
+            "block"
+        );
+        let page_only = alignment_with(Vec::new(), Vec::new(), Vec::new(), Some(2));
+        assert_eq!(
+            PdfRenderState::alignment_fallback_label(&page_only),
+            "page"
+        );
+        let render_only = alignment_with(Vec::new(), Vec::new(), Vec::new(), None);
+        assert_eq!(
+            PdfRenderState::alignment_fallback_label(&render_only),
+            "render_only"
+        );
+    }
+
+    #[test]
+    fn overlay_geometry_entry_preserves_anchor_label() {
+        let alignment = alignment_with(vec![rect()], Vec::new(), Vec::new(), Some(0));
+        let entry = OverlayGeometryEntry::from_alignment(&alignment).expect("entry");
+        assert_eq!(entry.anchor_label, "exact");
     }
 }
 
@@ -6605,6 +6691,7 @@ struct PdfRenderState {
     highlighted_sentence_idx: Option<usize>,
     overlay_rects: Vec<[f32; 4]>,
     overlay_alignment_reason: Option<String>,
+    overlay_anchor: Option<String>,
     overlay_alignment_source: Option<String>,
     overlay_alignment_rects: HashMap<usize, OverlayGeometryEntry>,
     render_events: Vec<PdfRenderEvent>,
@@ -6637,6 +6724,7 @@ impl Default for PdfRenderState {
             highlighted_sentence_idx: None,
             overlay_rects: Vec::new(),
             overlay_alignment_reason: None,
+            overlay_anchor: None,
             overlay_alignment_source: None,
             overlay_alignment_rects: HashMap::new(),
             render_events: Vec::new(),
@@ -6670,6 +6758,7 @@ impl PdfRenderState {
         self.highlighted_sentence_idx = None;
         self.overlay_rects.clear();
         self.overlay_alignment_reason = None;
+        self.overlay_anchor = None;
         self.overlay_alignment_source = None;
         self.overlay_alignment_rects.clear();
         self.render_events.clear();
@@ -6837,11 +6926,32 @@ impl PdfRenderState {
         sentence_idx: Option<usize>,
         overlay_rects: Vec<[f32; 4]>,
         overlay_reason: Option<String>,
+        overlay_anchor: Option<String>,
     ) {
         if self.highlighted_page == Some(page_index)
             && self.highlighted_sentence_idx == sentence_idx
         {
             return;
+        }
+        if let Some(prev_page) = self.highlighted_page {
+            let reason = if prev_page != page_index {
+                "page_change"
+            } else if self.highlighted_sentence_idx != sentence_idx {
+                "new_sentence"
+            } else {
+                "refresh"
+            };
+            let cleanup_span = tracing::span!(
+                Level::TRACE,
+                "pdf.highlight.cleanup",
+                reason,
+                page = prev_page + 1,
+                sentence_idx = self.highlighted_sentence_idx,
+                rect_count = self.overlay_rects.len(),
+                highlight_anchor = self.overlay_anchor.as_deref().unwrap_or("unknown")
+            );
+            let _enter = cleanup_span.enter();
+            trace!("Cleared PDF highlight overlay");
         }
         self.highlighted_page = Some(page_index);
         self.highlighted_sentence_idx = sentence_idx;
@@ -6855,6 +6965,18 @@ impl PdfRenderState {
         } else {
             overlay_reason
         };
+        self.overlay_anchor = overlay_anchor.clone();
+        let apply_span = tracing::span!(
+            Level::TRACE,
+            "pdf.highlight.apply",
+            page = page_index + 1,
+            sentence_idx,
+            rect_count = self.overlay_rects.len(),
+            highlight_anchor = self.overlay_anchor.as_deref().unwrap_or("unknown"),
+            overlay_reason = self.overlay_alignment_reason.as_deref().unwrap_or("none")
+        );
+        let _enter = apply_span.enter();
+        trace!("Applied PDF highlight overlay");
         if let Some(surface) = self
             .viewport_surfaces
             .iter_mut()
@@ -6862,6 +6984,7 @@ impl PdfRenderState {
         {
             surface.overlay_rects = self.overlay_rects.clone();
             surface.overlay_reason = self.overlay_alignment_reason.clone();
+            surface.overlay_anchor = overlay_anchor;
         }
     }
 
@@ -6902,6 +7025,18 @@ impl PdfRenderState {
         self.overlay_alignment_rects.clear();
         let path = Path::new(source_path);
         if let Some(artifact) = cache_service.load_pdf_ocr_alignment_artifact(path) {
+            let span = tracing::span!(
+                Level::TRACE,
+                "pdf.ocr.load",
+                quality_class = ?artifact.quality_class,
+                source_kind = ?artifact.source_kind,
+                sentence_count = artifact.sentence_count,
+                mapped_sentence_count = artifact.mapped_sentence_count,
+                highlightable_sentence_count = artifact.highlightable_sentence_count,
+                alignment_build_ms = artifact.alignment_build_ms
+            );
+            let _enter = span.enter();
+            trace!("Loaded PDF OCR alignment artifact");
             for alignment in artifact.alignments.iter() {
                 if alignment.page_idx.is_none() {
                     continue;
@@ -6911,6 +7046,20 @@ impl PdfRenderState {
                         .insert(alignment.sentence_idx, entry);
                 }
             }
+        }
+    }
+
+    fn alignment_fallback_label(alignment: &crate::cache::PdfOcrSentenceAlignment) -> &'static str {
+        if !alignment.rects.is_empty() {
+            "exact"
+        } else if !alignment.line_rects.is_empty() {
+            "line"
+        } else if !alignment.block_rects.is_empty() {
+            "block"
+        } else if alignment.page_idx.is_some() {
+            "page"
+        } else {
+            "render_only"
         }
     }
 
@@ -6939,11 +7088,16 @@ impl PdfRenderState {
 struct OverlayGeometryEntry {
     rects: Vec<[f32; 4]>,
     reason: Option<String>,
+    anchor_label: String,
 }
 
 impl OverlayGeometryEntry {
-    fn new(rects: Vec<[f32; 4]>, reason: Option<String>) -> Self {
-        Self { rects, reason }
+    fn new(rects: Vec<[f32; 4]>, reason: Option<String>, anchor_label: String) -> Self {
+        Self {
+            rects,
+            reason,
+            anchor_label,
+        }
     }
 
     fn from_alignment(alignment: &crate::cache::PdfOcrSentenceAlignment) -> Option<Self> {
@@ -6957,7 +7111,8 @@ impl OverlayGeometryEntry {
         } else {
             Some(reason_text.to_string())
         };
-        Some(Self::new(rects, reason))
+        let anchor_label = PdfRenderState::alignment_fallback_label(alignment).to_string();
+        Some(Self::new(rects, reason, anchor_label))
     }
 }
 
@@ -6970,6 +7125,7 @@ struct PdfViewportSurface {
     text_layer_texture: Option<TextureHandle>,
     overlay_rects: Vec<[f32; 4]>,
     overlay_reason: Option<String>,
+    overlay_anchor: Option<String>,
 }
 
 impl PdfViewportSurface {
@@ -6982,6 +7138,7 @@ impl PdfViewportSurface {
             text_layer_texture: None,
             overlay_rects: Vec::new(),
             overlay_reason: None,
+            overlay_anchor: None,
         }
     }
 }

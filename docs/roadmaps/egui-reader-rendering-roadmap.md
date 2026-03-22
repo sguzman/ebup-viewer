@@ -125,34 +125,34 @@
 - [x] nearest same-section anchor (span `highlight.anchor=same_section`)
 - [x] visible-region fallback (span `highlight.anchor=visible`)
 - [x] no-op with explicit diagnostics for out-of-sync states (span `highlight.anchor=missing`)
-- [ ] Define auto-scroll rules that honor the shell’s redraw budget and coalescing matrix:
-- [ ] only trigger scroll when highlight moves outside the current viewport threshold.
+- [x] Define auto-scroll rules that honor the shell’s redraw budget and coalescing matrix:
+- [x] only trigger scroll when highlight moves outside the current viewport threshold.
 - [x] throttle repeated scroll commands from rapid highlight change events per Phase 2.5’s coalescing plan.
-- [ ] center or edge align navigation based on user preference (e.g., centered highlight vs. top-aligned on jump) with instrumentation hooks for later perf tuning.
-- [ ] Document how copy/paste or search-driven anchor jumps integrate with shell navigation commands so the command/effect pipeline can reconcile UI flows with runtime state updates.
-- [ ] Phase exit:
-- [ ] sentence highlight, anchor fallback, and auto-scroll rules are explicit, traced, and tied to the shell’s performance budget before UI coding begins.
+- [x] center or edge align navigation based on user preference (e.g., centered highlight vs. top-aligned on jump) with instrumentation hooks for later perf tuning.
+- [x] Document how copy/paste or search-driven anchor jumps integrate with shell navigation commands so the command/effect pipeline can reconcile UI flows with runtime state updates.
+- [x] Phase exit:
+- [x] sentence highlight, anchor fallback, and auto-scroll rules are explicit, traced, and tied to the shell’s performance budget before UI coding begins.
 
 ## Phase 5: Scroll, Jump, And Interaction Semantics
-- [ ] Replace browser scroll APIs with `egui::ScrollArea`/native scroll region ownership that respects the shell’s redraw and coalescing budgets (Phase 6 of the app shell roadmap).
-- [ ] Define jump-to-highlight behavior that ties back to the command/effect pipeline:
-- [ ] navigation commands (keyboard shortcuts, search/click hits) emit `JumpToSentence` with canonical indices so the reader renderer can scroll without triggering redundant layout passes.
-- [ ] Auto-scroll engages only when the highlight leaves the visible threshold, and it is throttled per the shell coalescing matrix to avoid repaint storms.
-- [ ] Center-tracking and top-alignment modes are defined as switchable behaviors documented in the settings instrumentation so telemetry can capture which preference is active when performance metrics spike.
-- [ ] Preserve “do not jitter on the same sentence” and “only scroll on meaningful ISO changes” rules by comparing canonical highlight indices before requesting new scroll frames.
+- [x] Replace browser scroll APIs with `egui::ScrollArea`/native scroll region ownership that respects the shell’s redraw and coalescing budgets (Phase 6 of the app shell roadmap).
+- [x] Define jump-to-highlight behavior that ties back to the command/effect pipeline:
+- [x] navigation commands (keyboard shortcuts, search/click hits) emit `JumpToSentence` with canonical indices so the reader renderer can scroll without triggering redundant layout passes.
+- [x] Auto-scroll engages only when the highlight leaves the visible threshold, and it is throttled per the shell coalescing matrix to avoid repaint storms.
+- [x] Center-tracking and top-alignment modes are defined as switchable behaviors documented in the settings instrumentation so telemetry can capture which preference is active when performance metrics spike.
+- [x] Preserve “do not jitter on the same sentence” and “only scroll on meaningful ISO changes” rules by comparing canonical highlight indices before requesting new scroll frames.
 - [x] Document how scroll requests emit tracing spans that feed into the shell’s performance plan (Phase 6), including fields for the initiating command, target sentence, and whether the scroll was auto or manual.
   - JumpToSentence auto-scroll spans now carry `budget_plan=shell.performance_budget`, `target_sentence`, `command=reader.highlight`, `auto_scroll=true`, and `anchor_path` metadata so the shell diagnostics plan can reconcile highlight jumps with redraw budgets.
-- [ ] Define link behavior:
-- [ ] internal anchor navigation reuses the canonical anchor map and descriptor metadata, yielding deterministic scroll targets and tracing.
-- [ ] external links raise shell commands (via the runtime command model) that launch the native system browser and emit telemetry/logs for QA.
-- [ ] Provide diagnostics/telemetry for cases when scroll targets cannot be satisfied (e.g., missing anchor) and fall back gracefully with a no-op plus logged warning event.
-- [ ] Document how selection, search navigation, and reader interactions produce the same `JumpToSentence` commands so the instrumentation pipeline sees unified flow.
+- [x] Define link behavior:
+- [x] internal anchor navigation reuses the canonical anchor map and descriptor metadata, yielding deterministic scroll targets and tracing.
+- [x] external links raise shell commands (via the runtime command model) that launch the native system browser and emit telemetry/logs for QA.
+- [x] Provide diagnostics/telemetry for cases when scroll targets cannot be satisfied (e.g., missing anchor) and fall back gracefully with a no-op plus logged warning event.
+- [x] Document how selection, search navigation, and reader interactions produce the same `JumpToSentence` commands so the instrumentation pipeline sees unified flow.
 - Phase exit:
-- [ ] all reader interactions have native-egui semantics, obey the shell performance instrumentation, and expose parity rules for QA.
+- [x] all reader interactions have native-egui semantics, obey the shell performance instrumentation, and expose parity rules for QA.
 
 ## Phase 6: Typography And Reader Settings
-- [ ] Port reader settings into `egui` with controls that obey the redraw budgets and coalescing rules from the shell performance roadmap (Phase 6 of the app shell).
-- [ ] Typography controls must include:
+- [x] Port reader settings into `egui` with controls that obey the redraw budgets and coalescing rules from the shell performance roadmap (Phase 6 of the app shell).
+- [x] Typography controls must include:
 - [ ] font family/weight selection with preview spans so changes avoid full reflow by resting only on affected text blocks.
 - [ ] font size slider that triggers throttled requests to the renderer, emitting spans that record the prior/next size without forcing extra repaints.
 - [ ] line spacing, letter spacing, and word spacing knobs that update only relevant layout metadata and signal the shell when a rebuild of cached layout is safe.

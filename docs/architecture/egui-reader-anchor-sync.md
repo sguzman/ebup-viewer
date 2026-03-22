@@ -23,5 +23,10 @@ Fallbacks are explicit and traced:
 - Each fallback emits a span with the chosen anchor path and sentence index.
 - Missing anchors log a warning and avoid scroll jitter.
 
+## Auto-scroll rules
+- Auto-scroll only triggers when the highlight moves outside the viewport threshold.
+- Navigation alignment respects user preference (centered highlight or edge/top aligned).
+- Copy/paste or search-driven jumps flow through the same shell navigation commands so the command/effect pipeline remains consistent.
+
 ## Phase 4 exit condition
 Sentence highlight, anchor fallback, and auto-scroll rules are explicit, traced, and tied to the shell performance budget.

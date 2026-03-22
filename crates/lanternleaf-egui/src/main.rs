@@ -1,6 +1,7 @@
 mod helpers;
 mod pdf;
 mod pdf_renderer;
+mod shell;
 
 use std::{
     cmp::Reverse,
@@ -29,6 +30,7 @@ use crate::pdf::{
 use crate::pdf_renderer::{
     NativePdfRenderer, NativeRenderEviction, NativeRenderSpan, RenderTarget,
 };
+use crate::shell::{LayoutPolicy, NotificationLevel, ShellState};
 use lanternleaf_app::{
     AppRuntime,
     contracts::{
@@ -167,6 +169,8 @@ struct LanternLeafApp {
     persistence_logged: bool,
     last_reader_source: Option<String>,
     last_reader_snapshot: Option<ReaderSnapshot>,
+    shell_state: ShellState,
+    layout_policy: LayoutPolicy,
     settings_trace_events: Vec<SettingsTraceEvent>,
     settings_trace_next_id: usize,
     persistence_trace_events: Vec<PersistenceTraceEvent>,
@@ -278,6 +282,8 @@ impl LanternLeafApp {
             persistence_logged: false,
             last_reader_source: None,
             last_reader_snapshot: None,
+            shell_state: ShellState::default(),
+            layout_policy: LayoutPolicy::default(),
             settings_trace_events: Vec::new(),
             settings_trace_next_id: 0,
             persistence_trace_events: Vec::new(),
@@ -495,13 +501,40 @@ impl LanternLeafApp {
     }
 
     fn push_status(&mut self, message: String) {
+        let message_lower = message.to_lowercase();
+        let level = if message_lower.contains("error") || message_lower.contains("failed") {
+            NotificationLevel::Error
+        } else if message_lower.contains("warn") {
+            NotificationLevel::Warn
+        } else {
+            NotificationLevel::Info
+        };
         self.status_log.push(StatusLogEntry {
             timestamp: Instant::now(),
             message,
         });
+        if let Some(entry) = self.status_log.last() {
+            self.shell_state
+                .record_notification(level, entry.message.clone());
+        }
         if self.status_log.len() > 8 {
             self.status_log.remove(0);
         }
+    }
+
+    fn update_shell_state(&mut self, ctx: &Context, state: &AppState) {
+        let width = ctx.available_rect().width();
+        let new_policy = LayoutPolicy::from_width(width);
+        if new_policy != self.layout_policy {
+            trace!(?self.layout_policy, ?new_policy, "Shell layout policy updated");
+            self.layout_policy = new_policy;
+        }
+        self.shell_state.update_from_app_state(
+            state,
+            self.show_safe_quit_modal,
+            self.show_reader_confirm_modal,
+            self.pending_search_focus,
+        );
     }
 
     fn handle_shortcuts(&mut self, ctx: &Context, state: &AppState) {
@@ -1408,12 +1441,19 @@ impl LanternLeafApp {
         let model = StarterViewModel::from_state(state);
         ui.heading("Starter shell");
         ui.add_space(8.0);
-        ui.columns(2, |columns| {
-            self.render_starter_open_controls(&mut columns[0], &model);
-            self.render_starter_recents(&mut columns[0], &model);
-            self.render_starter_calibre(&mut columns[1], &model);
-            self.render_starter_browser_tabs(&mut columns[1], &model);
-        });
+        if self.layout_policy.is_narrow() {
+            self.render_starter_open_controls(ui, &model);
+            self.render_starter_recents(ui, &model);
+            self.render_starter_calibre(ui, &model);
+            self.render_starter_browser_tabs(ui, &model);
+        } else {
+            ui.columns(2, |columns| {
+                self.render_starter_open_controls(&mut columns[0], &model);
+                self.render_starter_recents(&mut columns[0], &model);
+                self.render_starter_calibre(&mut columns[1], &model);
+                self.render_starter_browser_tabs(&mut columns[1], &model);
+            });
+        }
         ui.add_space(8.0);
         self.render_starter_diagnostics(ui, &model);
     }
@@ -4840,7 +4880,24 @@ impl LanternLeafApp {
                 for entry in &self.status_log {
                     ui.label(format!("{} ({:.1}s)", entry.message, entry.age_secs()));
                 }
+                if self.shell_state.screen_lock_active {
+                    ui.colored_label(Color32::YELLOW, "Screen lock active");
+                }
             });
+            if !self.shell_state.notifications.is_empty() {
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("Notifications:");
+                    for note in &self.shell_state.notifications {
+                        let color = match note.level {
+                            NotificationLevel::Info => Color32::LIGHT_GRAY,
+                            NotificationLevel::Warn => Color32::YELLOW,
+                            NotificationLevel::Error => Color32::RED,
+                        };
+                        ui.colored_label(color, &note.message);
+                    }
+                });
+            }
         });
     }
 
@@ -4942,6 +4999,7 @@ impl eframe::App for LanternLeafApp {
         let snapshot = self.runtime.state_snapshot();
         let reader_snapshot = snapshot.reader_document.snapshot.as_ref();
         self.update_persistence_lifecycle(reader_snapshot);
+        self.update_shell_state(ctx, &snapshot);
         let panels = snapshot
             .session
             .session

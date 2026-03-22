@@ -53,13 +53,13 @@
 - The shell should document which `AppCommand`/`ReaderCommand` each UI action targets (open source, toggle panel, send shortcut) and track the effect owners so tracing spans correlate with `AppRuntime` commands.
 - Modal confirmations, navigation transitions, and panel switches should never mutate `AppState` directly; they should emit `AppCommand`s so the runtime enforces operation scopes and instrumentation.
 ## Module And Widget Mapping
-- [ ] `App.tsx` maps to a Rust app entry module that owns top-level frame composition and startup.
-- [ ] `StarterShell.tsx` maps to starter-mode widgets:
-- [ ] local open controls
-- [ ] recents panel
-- [ ] Calibre panel
-- [ ] browser-tab import panel
-- [ ] `ReaderShell.tsx` maps to reader-mode shell widgets:
+- [x] `App.tsx` maps to a Rust app entry module that owns top-level frame composition and startup.
+- [x] `StarterShell.tsx` maps to starter-mode widgets:
+- [x] local open controls
+- [x] recents panel
+- [x] Calibre panel
+- [x] browser-tab import panel
+- [x] `ReaderShell.tsx` maps to reader-mode shell widgets:
 - [ ] toolbar
 - [ ] panel regions
 - [ ] content pane selection
@@ -76,26 +76,26 @@
 
 ## Phase 1: Shell Contract And Frame Layout
 - [x] Capture the current starter-vs-reader split, modal surfaces, and panel stack before any UI coding begins.
-- [ ] Define top-level shell state:
-- [ ] `ActiveMode` (`Starter`, `Reader`, `SourceLoading`, `SourceError`, `Calibre`, `BrowserTabImport`)
-- [ ] panel visibility/exclusivity state machine (settings, search, stats, TTS controls)
-- [ ] modal/dialog state machine including blocking confirmation flows
-- [ ] global notifications queue (info/warn/error) and session transition indicators
-- [ ] runaway screen lock or safe-quit gating flags
-- [ ] Define frame regions with memoized layout policies:
-- [ ] top toolbar/command bar with grouped actions and status indicators
+- [x] Define top-level shell state:
+- [x] `ActiveMode` (`Starter`, `Reader`, `SourceLoading`, `SourceError`, `Calibre`, `BrowserTabImport`)
+- [x] panel visibility/exclusivity state machine (settings, search, stats, TTS controls)
+- [x] modal/dialog state machine including blocking confirmation flows
+- [x] global notifications queue (info/warn/error) and session transition indicators
+- [x] runaway screen lock or safe-quit gating flags
+- [x] Define frame regions with memoized layout policies:
+- [x] top toolbar/command bar with grouped actions and status indicators
 - [ ] optional navigation/status row for compact mode feedback
-- [ ] left/right side panels for library controls and reader-specific widgets
-- [ ] central content pane for starter or reader content
+- [x] left/right side panels for library controls and reader-specific widgets
+- [x] central content pane for starter or reader content
 - [ ] overlay modal layer that can host blocking or lightweight dialogs
-- [ ] Document desktop size-class strategy, minimum supported width (e.g., 900px), and density assumptions (panel collapse thresholds).
-- [ ] Define API surfaces for layout helpers that currently live in CSS/media queries (e.g., `isNarrow`, `shouldShowPanels`). These Rust helpers will be called from the runtime to decide redraw scopes.
+- [x] Document desktop size-class strategy, minimum supported width (e.g., 900px), and density assumptions (panel collapse thresholds).
+- [x] Define API surfaces for layout helpers that currently live in CSS/media queries (e.g., `isNarrow`, `shouldShowPanels`). These Rust helpers will be called from the runtime to decide redraw scopes.
 ### Architectural Artifacts To Deliver
 - Shell state enums/structs representing the existing App.tsx runtime decisions.
 - Layout helpers describing how panel state affects reader width/padding, derived from current CSS breakpoints, to prevent guesswork when implementing UI.
 - A modal overlay contract describing focus and escape semantics so future egui widgets can reuse a single modal manager.
 ### Phase Exit
-- [ ] Shell composition and panel ownership are explicit enough for implementation without revisiting layout strategy.
+- [x] Shell composition and panel ownership are explicit enough for implementation without revisiting layout strategy.
 
 ## Tranche 2 Implementation Plan
 - **Top bar / command bar**: Define an egui `TopBottomPanel` that lists main shell commands (open source, import, shortcuts). Each button converts to an `AppCommand` (`OpenSourcePath`, `SafeQuit`, `ToggleSettingsPanel`, etc.) and calls `AppRuntime::plan_command`; the returned `DispatchPlan` drives the same `ApplicationEvent`s as the existing runtime so tracing records the effect owner. The top bar should also display telemetry chips from `state_snapshot` (e.g., busy operations) so instrumentation links UI state to runtime events.

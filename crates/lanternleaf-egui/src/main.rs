@@ -18,8 +18,9 @@ use eframe::{
     NativeOptions,
     egui::{
         self, Align, Align2, Button, CentralPanel, CollapsingHeader, Color32, ColorImage, Context,
-        ComboBox, FontFamily, FontId, Id, Order, Pos2, Rect, RichText, ScrollArea, Sense, SidePanel,
-        Slider, Stroke, TextureHandle, TextureOptions, TopBottomPanel, Ui, Vec2, Visuals,
+        ComboBox, FontFamily, FontId, Id, Label, Margin, Order, Pos2, Rect, RichText, ScrollArea,
+        Sense, SidePanel, Slider, Stroke, TextureHandle, TextureOptions, TopBottomPanel, Ui, Vec2,
+        Visuals,
     },
 };
 use helpers::{
@@ -2385,6 +2386,9 @@ impl LanternLeafApp {
         } else {
             Align::Min
         };
+        let font_size = snapshot.settings.font_size as f32;
+        let search_match_bg = Color32::from_rgba_unmultiplied(110, 90, 40, 140);
+        let search_match_text = Color32::from_rgb(240, 220, 160);
         let scroll_response = ScrollArea::vertical()
             .auto_shrink([false, true])
             .id_source("reader-sentence-scroll")
@@ -2458,22 +2462,39 @@ impl LanternLeafApp {
                             Some(overlay_anchor),
                         );
                     }
-                    let mut label_text = format!("{}: {}", idx + 1, sentence);
-                    if is_search_match {
-                        label_text.push_str(" (search match)");
-                    }
-                    let mut text = RichText::new(label_text).size(14.0);
+                    let label_text = format!("{}: {}", idx + 1, sentence);
+                    let mut text = RichText::new(label_text).size(font_size);
                     if is_highlighted {
-                        text = text.text_style(egui::TextStyle::Body);
+                        text = text.strong();
                     }
-                    let button = Button::new(text)
-                        .fill(if is_highlighted {
-                            highlight_color
-                        } else {
-                            ui.visuals().widgets.inactive.bg_fill
+                    if is_search_match {
+                        text = text.color(search_match_text);
+                    }
+                    let background = if is_highlighted {
+                        highlight_color
+                    } else if is_search_match {
+                        search_match_bg
+                    } else {
+                        ui.visuals().widgets.inactive.bg_fill
+                    };
+                    let stroke = if is_search_match && !is_highlighted {
+                        Stroke::new(1.0, search_match_text)
+                    } else {
+                        Stroke::NONE
+                    };
+                    let response = egui::Frame::none()
+                        .fill(background)
+                        .stroke(stroke)
+                        .rounding(4.0)
+                        .inner_margin(Margin::symmetric(8.0, 6.0))
+                        .show(ui, |ui| {
+                            ui.add(
+                                Label::new(text)
+                                    .wrap(true)
+                                    .sense(Sense::click()),
+                            )
                         })
-                        .wrap(true);
-                    let response = ui.add(button);
+                        .inner;
                     if is_highlighted && auto_scroll_enabled {
                         match self
                             .auto_scroll_state
@@ -2594,6 +2615,14 @@ impl LanternLeafApp {
                         ));
                         self.overlay_diagnostics
                             .record_jump("sentence-click", overlay_snapshot);
+                    }
+                    if is_search_match {
+                        ui.label(
+                            RichText::new("Search hit")
+                                .small()
+                                .color(search_match_text)
+                                .italics(),
+                        );
                     }
                     let fallback_label = anchor_meta.fallback.label();
                     if let Some((anchor, canonical)) = canonical_preview {

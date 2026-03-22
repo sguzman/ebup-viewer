@@ -66,39 +66,39 @@
 - [x] `pretty_kind`
 - [x] Replace browser-facing HTML/markdown output assumptions with Rust-native view model outputs.
 - [x] Decide per-source representation:
-- [ ] plain text source -> sentence/block model directly
-- [ ] markdown source -> markdown-to-content-block conversion
-- [ ] HTML/EPUB source -> sanitized HTML-to-content-block conversion
+- [x] plain text source -> sentence/block model directly
+- [x] markdown source -> markdown-to-content-block conversion
+- [x] HTML/EPUB source -> sanitized HTML-to-content-block conversion
 - Phase exit:
-- [ ] there is a decision-complete Rust render-model contract for all non-PDF reader sources.
+- [x] there is a decision-complete Rust render-model contract for all non-PDF reader sources.
 
 ## Phase 2: Text-Only Reader In Egui
 - [x] Rebuild sentence list rendering with:
-- [ ] clickable sentence rows/spans
-- [ ] highlight styling
-- [ ] search hit styling
+- [x] clickable sentence rows/spans
+- [x] highlight styling
+- [x] search hit styling
 - [x] jump-to-highlight behavior
-- [ ] text selection policy
-- [ ] Preserve canonical sentence ownership and click-to-play semantics.
-- [ ] Implement typography controls using egui text styling rather than CSS.
+- [x] text selection policy
+- [x] Preserve canonical sentence ownership and click-to-play semantics.
+- [x] Implement typography controls using egui text styling rather than CSS.
 - Phase exit:
-- [ ] text-only reader parity is reachable without any WebView dependency.
+- [x] text-only reader parity is reachable without any WebView dependency.
 - Runtime integration:
-- [ ] Consume `AppRuntime::state_snapshot` for canonical sentences and highlight data instead of duplicating the data into UI-local stores.
-- [ ] Emit `AppRuntime::plan_command(AppCommand::Reader(session::SessionCommand::SentenceClick { ... }))` or `SessionCommand::NextSentence` when the user clicks a sentence or uses reader navigation so the runtime command/effect pipeline stays in sync with shortcut bindings.
+- [x] Consume `AppRuntime::state_snapshot` for canonical sentences and highlight data instead of duplicating the data into UI-local stores.
+- [x] Emit `AppRuntime::plan_command(AppCommand::Reader(session::SessionCommand::SentenceClick { ... }))` or `SessionCommand::NextSentence` when the user clicks a sentence or uses reader navigation so the runtime command/effect pipeline stays in sync with shortcut bindings.
 
 ## Phase 2.5: Shell Performance Integration
-- [ ] Capture the shell redraw/coalescing constraints specified in `egui-app-shell-and-navigation-roadmap` Phase 6 and tie them to the reader rendering pipeline.
-- [ ] Define how reader render invalidation scopes align with shell-dictated redraw budgets:
-- [ ] sentence-level highlights/reactive blocks request repaint only when their canonical state changes.
-- [ ] panel-induced layout changes recompute reader width via Phase 1 layout helpers without forcing a full scroll reflow.
-- [ ] In-progress runtime events (TTS heartbeat, ingestion progress) are throttled before reaching the reader render widgets to honor the shell’s coalescing matrix.
-- [ ] Document hooks for tracing/metrics instrumentation so the reader can emit frame-level spans that feed into the shell’s tracing plan (Chapter 6) for latency and redraw accounting.
-- [ ] Define the interplay between the reader’s scroll/jump logic and the shell’s performance throttles so auto-scrolls never trigger runaway repaints.
+- [x] Capture the shell redraw/coalescing constraints specified in `egui-app-shell-and-navigation-roadmap` Phase 6 and tie them to the reader rendering pipeline.
+- [x] Define how reader render invalidation scopes align with shell-dictated redraw budgets:
+- [x] sentence-level highlights/reactive blocks request repaint only when their canonical state changes.
+- [x] panel-induced layout changes recompute reader width via Phase 1 layout helpers without forcing a full scroll reflow.
+- [x] In-progress runtime events (TTS heartbeat, ingestion progress) are throttled before reaching the reader render widgets to honor the shell’s coalescing matrix.
+- [x] Document hooks for tracing/metrics instrumentation so the reader can emit frame-level spans that feed into the shell’s tracing plan (Chapter 6) for latency and redraw accounting.
+- [x] Define the interplay between the reader’s scroll/jump logic and the shell’s performance throttles so auto-scrolls never trigger runaway repaints.
 - [x] Surface an anchor diagnostics panel that reports fallback reason counts, JumpToSentence throttle telemetry, and shell-budget tracing markers for the reader viewport.
 - [x] Expand the diagnostics surface so overlay budget pressure badges now report native render/eviction spans and point QA toward replaying those spans in context.
 - [ ] Phase exit:
-- [ ] the reader rendering plan articulates how it obeys the shell’s performance expectations before interactive widgets are implemented.
+- [x] the reader rendering plan articulates how it obeys the shell’s performance expectations before interactive widgets are implemented.
 
 ## Phase 3: Pretty Rendering For Markdown / HTML / EPUB
 - [ ] Build rendering widgets for the content-block model that emit the smallest necessary redraw scopes described in Phase 2.5.

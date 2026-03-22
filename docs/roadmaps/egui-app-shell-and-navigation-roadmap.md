@@ -1,9 +1,9 @@
 # Egui App Shell And Navigation Roadmap
 
 ## Objective
-- [ ] Replace the current Tauri window shell and React component composition with a native `eframe` + `egui` application shell.
-- [ ] Rebuild starter-mode and reader-mode navigation, top bars, side panels, dialogs, and keyboard shortcuts in Rust.
-- [ ] Preserve existing interaction semantics while moving all UI ownership into egui widgets and Rust-native app state.
+- [x] Replace the current Tauri window shell and React component composition with a native `eframe` + `egui` application shell.
+- [x] Rebuild starter-mode and reader-mode navigation, top bars, side panels, dialogs, and keyboard shortcuts in Rust.
+- [x] Preserve existing interaction semantics while moving all UI ownership into egui widgets and Rust-native app state.
 
 ## Current-State Grounding In This Repo
 - Current top-level shell ownership lives in `ui/src/App.tsx`, `ui/src/components/StarterShell.tsx`, `ui/src/components/ReaderShell.tsx`, and `ui/src/components/readerPanels.tsx`.
@@ -325,8 +325,8 @@
 ## Test / Parity Requirements
 - [ ] Manual parity checks for starter-to-reader transitions, close/reopen flows, panel exclusivity, and keyboard shortcuts.
 - [x] Rust integration tests for shell state transitions and command routing.
-- [ ] UI behavior harnesses where feasible for panel toggles and modal lifecycle.
-- [ ] Verification that control bars remain readable and do not collapse vertically under narrow widths.
+- [x] UI behavior harnesses where feasible for panel toggles and modal lifecycle.
+- [x] Verification that control bars remain readable and do not collapse vertically under narrow widths.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria

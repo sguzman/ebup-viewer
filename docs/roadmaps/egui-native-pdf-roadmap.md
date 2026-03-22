@@ -1,9 +1,9 @@
 # Egui Native PDF Roadmap
 
 ## Objective
-- [ ] Replace the current pdf.js/WebView-based PDF reader with a Rust-native PDF subsystem integrated into egui.
-- [ ] Preserve existing PDF quality contracts, degraded modes, text ownership rules, and playback/search/highlight semantics.
-- [ ] Deliver native PDF rendering, zoom, viewport management, text extraction, and overlay sync without relying on Tauri or browser technology.
+- [x] Replace the current pdf.js/WebView-based PDF reader with a Rust-native PDF subsystem integrated into egui.
+- [x] Preserve existing PDF quality contracts, degraded modes, text ownership rules, and playback/search/highlight semantics.
+- [x] Deliver native PDF rendering, zoom, viewport management, text extraction, and overlay sync without relying on Tauri or browser technology.
 
 ## Current-State Grounding In This Repo
 - Current PDF behavior is defined across:

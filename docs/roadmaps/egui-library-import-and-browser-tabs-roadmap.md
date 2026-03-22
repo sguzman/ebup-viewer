@@ -1,9 +1,9 @@
 # Egui Library Import And Browser Tabs Roadmap
 
 ## Objective
-- [ ] Rebuild starter, recent books, local open, Calibre browsing, and browser-tab import in egui.
-- [ ] Preserve current source acquisition, refresh, recents, and deletion semantics.
-- [ ] Keep browser-tab import and Calibre as first-class migration scope items.
+- [x] Rebuild starter, recent books, local open, Calibre browsing, and browser-tab import in egui.
+- [x] Preserve current source acquisition, refresh, recents, and deletion semantics.
+- [x] Keep browser-tab import and Calibre as first-class migration scope items.
 
 ## Current-State Grounding In This Repo
 - Current starter/library/import UI ownership lives in:
@@ -95,13 +95,13 @@
 - Recent-delete and reopen behavior can regress if cache/persistence work is treated separately from starter UI work.
 
 ## Test / Parity Requirements
-- [ ] Rust integration tests for source opening, recent deletion, and import-service behavior.
+- [x] Rust integration tests for source opening, recent deletion, and import-service behavior.
 - [ ] Manual QA for starter-mode transitions, Calibre browsing, and browser-tab import/refresh/delete flows.
-- [ ] Parity checks against the existing browser-tab and starter roadmaps/checklists.
+- [x] Parity checks against the existing browser-tab and starter roadmaps/checklists.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
-- [ ] Starter/library/import features are fully in scope and explicitly owned in the egui migration.
-- [ ] Calibre and browser-tab flows have native-egui UI and service contracts.
-- [ ] Recents/local-open/delete/reopen behavior is specified without reliance on Tauri/UI code.
-- [ ] No major starter/import parity decision remains open.
+- [x] Starter/library/import features are fully in scope and explicitly owned in the egui migration.
+- [x] Calibre and browser-tab flows have native-egui UI and service contracts.
+- [x] Recents/local-open/delete/reopen behavior is specified without reliance on Tauri/UI code.
+- [x] No major starter/import parity decision remains open.

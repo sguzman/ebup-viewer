@@ -172,7 +172,7 @@
 - [x] Rust tests for markdown/HTML-to-content-block conversion.
 - [x] Rust tests for sentence-to-anchor mapping and fallback logic.
 - [ ] Manual QA on EPUB/HTML-heavy books with images, headings, footnotes, and internal links.
-- [ ] Parity checks for click-to-play, search navigation, highlight sync, and settings behavior.
+- [x] Parity checks for click-to-play, search navigation, highlight sync, and settings behavior.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria

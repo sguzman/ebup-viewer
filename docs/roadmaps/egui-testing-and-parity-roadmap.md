@@ -108,7 +108,7 @@
 ## Test / Parity Requirements
 - [x] Maintain a live parity matrix through the migration (`docs/roadmaps/egui-testing-parity-matrix.md`).
 - [x] Require subsystem signoff before deleting old tests.
-- [ ] Preserve representative PDF/EPUB/browser-tab fixtures for regression use.
+- [x] Preserve representative PDF/EPUB/browser-tab fixtures for regression use.
 - [x] Require full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria

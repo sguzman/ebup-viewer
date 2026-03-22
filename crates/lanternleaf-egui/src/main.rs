@@ -1673,7 +1673,10 @@ impl LanternLeafApp {
                 ui.label("No recent books yet.");
                 return;
             }
-            ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+            ScrollArea::vertical()
+                .id_source("starter_recents_scroll")
+                .max_height(240.0)
+                .show(ui, |ui| {
                 for recent in model.recents {
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -1801,6 +1804,7 @@ impl LanternLeafApp {
             let row_height = 88.0;
             let total_rows = self.starter_calibre_view.len();
             ScrollArea::vertical()
+                .id_source("starter_calibre_scroll")
                 .max_height(240.0)
                 .show_rows(ui, row_height, total_rows, |ui, range| {
                     for row in range {
@@ -1950,7 +1954,10 @@ impl LanternLeafApp {
                 return;
             }
             let query = self.starter_browser_tab_query.trim().to_lowercase();
-            ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+            ScrollArea::vertical()
+                .id_source("starter_browser_tabs_scroll")
+                .max_height(220.0)
+                .show(ui, |ui| {
                 for tab in model.browser_tabs_tabs {
                     if !query.is_empty()
                         && !tab.title.to_lowercase().contains(&query)

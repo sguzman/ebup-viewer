@@ -324,13 +324,13 @@
 
 ## Test / Parity Requirements
 - [ ] Manual parity checks for starter-to-reader transitions, close/reopen flows, panel exclusivity, and keyboard shortcuts.
-- [ ] Rust integration tests for shell state transitions and command routing.
+- [x] Rust integration tests for shell state transitions and command routing.
 - [ ] UI behavior harnesses where feasible for panel toggles and modal lifecycle.
 - [ ] Verification that control bars remain readable and do not collapse vertically under narrow widths.
-- [ ] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
+- [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
-- [ ] The egui app shell can host both starter and reader modes.
-- [ ] Current navigation and panel semantics are fully specified for Rust implementation.
-- [ ] Command routing, shortcut handling, and modal strategy are decision-complete.
-- [ ] Responsiveness constraints are explicit enough to prevent accidental full-shell redraw regressions.
+- [x] The egui app shell can host both starter and reader modes.
+- [x] Current navigation and panel semantics are fully specified for Rust implementation.
+- [x] Command routing, shortcut handling, and modal strategy are decision-complete.
+- [x] Responsiveness constraints are explicit enough to prevent accidental full-shell redraw regressions.

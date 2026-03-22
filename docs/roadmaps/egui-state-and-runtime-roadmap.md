@@ -195,10 +195,10 @@
 - Runtime tasks may overwhelm the UI thread if channel and coalescing rules are unspecified.
 
 ## Test / Parity Requirements
-- [ ] Rust unit tests for state reducers/transitions.
-- [ ] Rust integration tests for command/effect/event flows.
-- [ ] Persistence lifecycle tests for open/close/quit behavior.
-- [ ] Runtime cancellation/progress tests for long-running jobs.
+- [x] Rust unit tests for state reducers/transitions.
+- [x] Rust integration tests for command/effect/event flows.
+- [x] Persistence lifecycle tests for open/close/quit behavior.
+- [x] Runtime cancellation/progress tests for long-running jobs.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria

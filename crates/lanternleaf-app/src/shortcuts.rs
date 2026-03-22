@@ -206,7 +206,7 @@ mod tests {
     use super::*;
     use crate::contracts::BootstrapConfig;
     use crate::pipeline::ReaderCommand;
-    use config::{FontFamily, FontWeight, HighlightColor, ThemeMode};
+    use lanternleaf_core::config::{FontFamily, FontWeight, HighlightColor, ThemeMode};
 
     fn sample_bootstrap_config() -> BootstrapConfig {
         BootstrapConfig {

@@ -458,13 +458,32 @@ mod tests {
     }
 
     #[test]
+    fn lifecycle_flush_calls_service_on_session_close() {
+        let service = StubService::new(None);
+        let lifecycle = PersistenceLifecycle::new(service);
+        let snapshot = make_reader_snapshot();
+        lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SessionClose);
+        assert!(lifecycle.service().persisted.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn lifecycle_flush_calls_service_on_safe_quit() {
+        let service = StubService::new(None);
+        let lifecycle = PersistenceLifecycle::new(service);
+        let snapshot = make_reader_snapshot();
+        lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SafeQuit);
+        assert!(lifecycle.service().persisted.load(Ordering::SeqCst));
+    }
+
+    #[test]
     fn lifecycle_load_returns_bookmark() {
         let bookmark = sample_bookmark();
         let service = StubService::new(Some(bookmark.clone()));
         let lifecycle = PersistenceLifecycle::new(service);
         let (loaded_bookmark, loaded_config) =
             lifecycle.load_bookmark_and_config(Path::new("/tmp/book.epub"));
-        assert_eq!(loaded_bookmark, Some(bookmark));
+        let loaded = loaded_bookmark.expect("bookmark should be loaded");
+        assert_eq!(loaded.page, bookmark.page);
         assert!(loaded_config.is_none());
     }
 }

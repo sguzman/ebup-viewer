@@ -321,10 +321,9 @@ mod tests {
     use std::time::Duration;
 
     use crate::contracts::BootstrapConfig;
-    use crate::pipeline::ReaderCommand;
     use crate::shortcuts::{ShortcutAction, ShortcutScope};
-    use config::{FontFamily, FontWeight, HighlightColor, ThemeMode};
-    use lanternleaf_core::session::{self, SessionCommand};
+    use lanternleaf_core::config::{FontFamily, FontWeight, HighlightColor, ThemeMode};
+    use lanternleaf_core::session::SessionCommand;
 
     #[test]
     fn cancellation_token_detects_cancel() {
@@ -388,6 +387,39 @@ mod tests {
         thread::sleep(Duration::from_millis(20));
         let results = runtime.collect_progress();
         assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn runtime_cancel_reports_cancelled_progress() {
+        let runtime = TaskRuntime::new();
+        let planned = PlannedEffect {
+            request_id: 7,
+            effect: RuntimeEffect::LoadBootstrap,
+        };
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+
+        runtime.spawn_task(planned.clone(), move |context| {
+            let _ = started_tx.send(());
+            while !context.cancellation.is_cancelled() {
+                thread::sleep(Duration::from_millis(5));
+            }
+            context.report(
+                TaskPhase::Cancelled,
+                None,
+                Some("cancelled_by_test".to_string()),
+            );
+        });
+
+        started_rx
+            .recv_timeout(Duration::from_millis(50))
+            .expect("task started");
+        runtime.cancel(planned.request_id);
+        thread::sleep(Duration::from_millis(50));
+
+        let progress = runtime.collect_progress();
+        assert!(progress.iter().any(|entry| {
+            entry.request_id == planned.request_id && entry.phase == TaskPhase::Cancelled
+        }));
     }
 
     fn sample_bootstrap_config() -> BootstrapConfig {

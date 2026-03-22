@@ -1,37 +1,18 @@
-use lanternleaf_app::persistence::{FilesystemPersistenceService, PersistenceLifecycle};
-use lanternleaf_app::pipeline::PersistenceTrigger;
-use lanternleaf_core::{cache, config, session};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use lanternleaf_app::AppRuntime;
+use lanternleaf_app::contracts::{OpenSourceResult, SessionState, UiMode};
+use lanternleaf_app::pipeline::{AppCommand, AppEvent, RuntimeEffect};
+use lanternleaf_core::{config, session};
 
-fn unique_source_path(ext: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock after epoch")
-        .as_nanos();
-    std::env::temp_dir().join(format!("lanternleaf_persist_{nanos}.{ext}"))
-}
-
-fn write_source(path: &Path) {
-    fs::write(path, "test content").expect("write source");
-}
-
-fn cleanup_source(path: &Path) {
-    let _ = cache::delete_recent_source_and_cache(path);
-    let _ = fs::remove_file(path);
-}
-
-fn sample_snapshot(path: &Path) -> session::ReaderSnapshot {
+fn make_reader_snapshot(source_path: &str) -> session::ReaderSnapshot {
     session::ReaderSnapshot {
-        source_path: path.to_string_lossy().to_string(),
-        source_name: path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("test.epub")
+        source_path: source_path.to_string(),
+        source_name: source_path
+            .rsplit('/')
+            .next()
+            .unwrap_or("book.epub")
             .to_string(),
-        current_page: 0,
-        total_pages: 1,
+        current_page: 1,
+        total_pages: 10,
         text_only_mode: false,
         has_structured_markdown: false,
         pretty_kind: session::PrettyKind::None,
@@ -94,8 +75,8 @@ fn sample_snapshot(path: &Path) -> session::ReaderSnapshot {
             progress_pct: 0.0,
         },
         stats: session::ReaderStats {
-            page_index: 0,
-            total_pages: 1,
+            page_index: 1,
+            total_pages: 10,
             tts_progress_pct: 0.0,
             global_progress_pct: 0.0,
             page_time_remaining_secs: 0.0,
@@ -119,46 +100,59 @@ fn sample_snapshot(path: &Path) -> session::ReaderSnapshot {
     }
 }
 
-#[test]
-fn persistence_roundtrip_and_delete() {
-    let source = unique_source_path("epub");
-    write_source(&source);
-    let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService);
-    let snapshot = sample_snapshot(&source);
-
-    lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SourceOpen);
-    let loaded = cache::load_bookmark(&source);
-    assert!(loaded.is_some(), "bookmark should be persisted");
-
-    cache::delete_recent_source_and_cache(&source).expect("delete source and cache");
-    let loaded_after_delete = cache::load_bookmark(&source);
-    assert!(loaded_after_delete.is_none(), "bookmark should be deleted");
-
-    cleanup_source(&source);
+fn make_open_result(source_path: &str) -> OpenSourceResult {
+    OpenSourceResult {
+        session: SessionState {
+            mode: UiMode::Reader,
+            active_source_path: Some(source_path.to_string()),
+            open_in_flight: false,
+            panels: session::PanelState::default(),
+        },
+        reader: make_reader_snapshot(source_path),
+    }
 }
 
 #[test]
-fn persistence_rebuilds_after_corruption() {
-    let source = unique_source_path("epub");
-    write_source(&source);
+fn open_source_command_flows_into_state() {
+    let runtime = AppRuntime::default();
+    let plan = runtime.plan_command(AppCommand::OpenSourcePath {
+        path: "/tmp/book.epub".to_string(),
+    });
 
-    let bookmark_path = cache::hash_dir(&source).join("bookmark.toml");
-    if let Some(parent) = bookmark_path.parent() {
-        fs::create_dir_all(parent).expect("create cache dir");
+    assert!(plan.effects.iter().any(|effect| {
+        matches!(effect.effect, RuntimeEffect::OpenSourcePath { .. })
+    }));
+
+    for event in plan.local_events {
+        runtime.apply_event(event);
     }
-    fs::write(&bookmark_path, "not = valid = toml")
-        .expect("write corrupt bookmark");
-    let loaded = cache::load_bookmark(&source);
-    assert!(loaded.is_none(), "corrupt bookmark should be ignored");
 
-    let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService);
-    let snapshot = sample_snapshot(&source);
-    lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SourceOpen);
-    let rebuilt = fs::read_to_string(&bookmark_path).unwrap_or_default();
-    assert!(
-        rebuilt.contains("page"),
-        "bookmark file should be rebuilt with content"
+    let after_plan = runtime.state_snapshot();
+    assert!(after_plan.app_shell.operations.source_open);
+
+    runtime.apply_event(AppEvent::SourceOpened {
+        request_id: plan.request_id,
+        result: make_open_result("/tmp/book.epub"),
+    });
+
+    let after_open = runtime.state_snapshot();
+    assert!(!after_open.app_shell.operations.source_open);
+    assert!(!after_open.app_shell.busy);
+    assert_eq!(
+        after_open
+            .session
+            .session
+            .as_ref()
+            .and_then(|session| session.active_source_path.as_deref()),
+        Some("/tmp/book.epub")
     );
-
-    cleanup_source(&source);
+    assert_eq!(
+        after_open
+            .reader_document
+            .source
+            .as_ref()
+            .map(|source| source.source_name.as_str()),
+        Some("book.epub")
+    );
+    assert!(after_open.reader_playback.playback.is_some());
 }

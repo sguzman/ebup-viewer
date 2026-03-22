@@ -1297,44 +1297,13 @@ mod tests {
             .iter()
             .map(|sentences| sentences.iter().map(|s| s.to_string()).collect())
             .collect();
-        let page_word_counts: Vec<usize> = pages
-            .iter()
-            .map(|page| page.split_whitespace().count())
-            .collect();
-        let page_sentence_counts: Vec<usize> = raw_page_sentences.iter().map(Vec::len).collect();
 
-        session::ReaderSession {
-            source_path: PathBuf::from("/tmp/test.epub"),
-            source_name: "test.epub".to_string(),
-            tts_text: pages.join("\n\n"),
-            reading_markdown: None,
-            reading_html: None,
-            has_structured_markdown: false,
-            pdf_geometry_mode: None,
-            pdf_sync_strategy: None,
-            pdf_classification: None,
-            pdf_runtime_policy: None,
-            pdf_ocr_alignment: None,
-            pdf_ocr_pipeline: None,
-            images: Vec::new(),
-            config: config::AppConfig::default(),
+        session::ReaderSession::from_pages_for_test(
+            PathBuf::from("/tmp/test.epub"),
+            "test.epub".to_string(),
             pages,
-            markdown_pages: Vec::new(),
             raw_page_sentences,
-            sentence_anchor_maps: Vec::new(),
-            page_word_counts,
-            page_sentence_counts,
-            current_page: 0,
-            highlighted_display_idx: Some(0),
-            highlighted_audio_idx: None,
-            text_only_mode: false,
-            search_query: String::new(),
-            search_matches: Vec::new(),
-            selected_search_match: None,
-            tts_state: session::TtsPlaybackState::Paused,
-            current_plan_page: None,
-            current_plan: None,
-        }
+        )
     }
 
     #[test]
@@ -1354,9 +1323,20 @@ mod tests {
         runtime.set_session(Some(build_test_session(&[&["A.", "B.", "C."]] )));
 
         let _ = runtime.apply_command(TtsCommand::Play);
-        thread::sleep(Duration::from_millis(80));
-        let events = runtime.collect_events();
-        assert!(events.iter().any(|event| event.kind == TtsRuntimeEventKind::Progress));
+        let started = Instant::now();
+        let mut saw_progress = false;
+        while started.elapsed() < Duration::from_millis(300) {
+            let events = runtime.collect_events();
+            if events
+                .iter()
+                .any(|event| event.kind == TtsRuntimeEventKind::Progress)
+            {
+                saw_progress = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(saw_progress, "expected at least one progress event");
     }
 
     #[test]

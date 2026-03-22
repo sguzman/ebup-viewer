@@ -259,6 +259,56 @@ pub struct ReaderSession {
     current_plan: Option<normalizer::PageNormalization>,
 }
 
+impl ReaderSession {
+    /// Lightweight constructor for test-only sessions without IO.
+    pub fn from_pages_for_test(
+        source_path: PathBuf,
+        source_name: String,
+        pages: Vec<String>,
+        raw_page_sentences: Vec<Vec<String>>,
+    ) -> Self {
+        let tts_text = pages.join("\n\n");
+        let page_word_counts: Vec<usize> = pages
+            .iter()
+            .map(|page| page.split_whitespace().count())
+            .collect();
+        let page_sentence_counts: Vec<usize> = raw_page_sentences.iter().map(Vec::len).collect();
+
+        Self {
+            source_path,
+            source_name,
+            tts_text,
+            reading_markdown: None,
+            reading_html: None,
+            has_structured_markdown: false,
+            pdf_geometry_mode: None,
+            pdf_sync_strategy: None,
+            pdf_classification: None,
+            pdf_runtime_policy: None,
+            pdf_ocr_alignment: None,
+            pdf_ocr_pipeline: None,
+            images: Vec::new(),
+            config: config::AppConfig::default(),
+            pages,
+            markdown_pages: Vec::new(),
+            raw_page_sentences,
+            sentence_anchor_maps: Vec::new(),
+            page_word_counts,
+            page_sentence_counts,
+            current_page: 0,
+            highlighted_display_idx: Some(0),
+            highlighted_audio_idx: None,
+            text_only_mode: false,
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            selected_search_match: None,
+            tts_state: TtsPlaybackState::Paused,
+            current_plan_page: None,
+            current_plan: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct SessionImage {
     raw_path: String,

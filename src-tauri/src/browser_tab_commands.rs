@@ -1,4 +1,5 @@
 use super::*;
+use lanternleaf_core::cache_service::CacheService;
 use tracing::{info, warn};
 
 async fn lookup_browser_tab_metadata(
@@ -111,7 +112,9 @@ pub(crate) async fn source_open_browser_tab(
         .snapshot_tab(tab_id)
         .await
         .map_err(|err| bridge_error("browsr_snapshot_failed", err.to_string()))?;
-    let source_path = cache::persist_browser_tab_source(&snapshot, tab_meta.as_ref())
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    let source_path = cache_service
+        .persist_browser_tab_source(&snapshot, tab_meta.as_ref())
         .map_err(|err| bridge_error("browser_tab_cache_error", err))?;
     info!(
         tab_id,
@@ -243,7 +246,9 @@ pub(crate) async fn source_open_browser_tab_bundle(
         selection: document.selection.clone(),
         assets,
     };
-    let source_path = cache::persist_browser_tab_bundle_source(&bundle_capture, tab_meta.as_ref())
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    let source_path = cache_service
+        .persist_browser_tab_bundle_source(&bundle_capture, tab_meta.as_ref())
         .map_err(|err| bridge_error("browser_tab_cache_error", err))?;
     info!(
         job_id = %completed_job.job_id,
@@ -265,12 +270,14 @@ pub(crate) async fn source_refresh_browser_tab(
     path: String,
 ) -> Result<OpenSourceResult, BridgeError> {
     let source_path = resolve_source_path(&path)?;
-    let manifest = cache::load_browser_tab_manifest(&source_path).ok_or_else(|| {
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    let manifest = cache_service.load_browser_tab_manifest(&source_path).map_err(|err| {
         bridge_error(
             "invalid_input",
             format!(
-                "Source is not a browser-tab manifest: {}",
-                source_path.display()
+                "Source is not a browser-tab manifest: {} ({})",
+                source_path.display(),
+                err
             ),
         )
     })?;
@@ -293,7 +300,8 @@ pub(crate) async fn source_refresh_browser_tab(
         .snapshot_tab(manifest.tab_id)
         .await
         .map_err(|err| bridge_error("browsr_snapshot_failed", err.to_string()))?;
-    let refreshed_source_path = cache::persist_browser_tab_source(&snapshot, tab_meta.as_ref())
+    let refreshed_source_path = cache_service
+        .persist_browser_tab_source(&snapshot, tab_meta.as_ref())
         .map_err(|err| bridge_error("browser_tab_cache_error", err))?;
     info!(
         tab_id = manifest.tab_id,
@@ -313,12 +321,14 @@ pub(crate) async fn recent_close_browser_tab(
     path: String,
 ) -> Result<(), BridgeError> {
     let source_path = resolve_source_path(&path)?;
-    let manifest = cache::load_browser_tab_manifest(&source_path).ok_or_else(|| {
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    let manifest = cache_service.load_browser_tab_manifest(&source_path).map_err(|err| {
         bridge_error(
             "invalid_input",
             format!(
-                "Source is not a browser-tab manifest: {}",
-                source_path.display()
+                "Source is not a browser-tab manifest: {} ({})",
+                source_path.display(),
+                err
             ),
         )
     })?;

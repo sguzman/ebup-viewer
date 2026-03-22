@@ -1,4 +1,5 @@
 use super::*;
+use lanternleaf_core::cache_service::CacheService;
 
 #[tauri::command]
 pub(crate) fn session_get_bootstrap(
@@ -146,7 +147,10 @@ pub(crate) fn recent_delete(path: String) -> Result<(), BridgeError> {
     if source.as_os_str().is_empty() {
         return Err(bridge_error("invalid_input", "Path cannot be empty"));
     }
-    cache::delete_recent_source_and_cache(&source).map_err(|err| bridge_error("io_error", err))
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    cache_service
+        .delete_recent_source_and_cache(&source)
+        .map_err(|err| bridge_error("io_error", err))
 }
 
 #[tauri::command]

@@ -10,7 +10,9 @@ use lanternleaf_app::pipeline::{
     AppEvent, EffectOwner, OperationScope, PanelToggle, PersistenceTrigger, PlannedEffect,
     RuntimeEffect,
 };
-use lanternleaf_core::{browser_tabs, cache, cache_service, calibre, config, normalizer, session};
+use lanternleaf_core::{
+    browser_tabs, cache, cache_service, calibre, config, config_service, normalizer, session,
+};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::helpers::bootstrap_config_from_app_config;
@@ -29,6 +31,8 @@ pub struct EffectContext {
         lanternleaf_app::persistence::FilesystemPersistenceService,
     >>,
     pub cache_service: Arc<dyn cache_service::CacheService>,
+    pub config_path: PathBuf,
+    pub config_service: Arc<dyn config_service::ConfigService>,
 }
 
 impl EffectContext {
@@ -38,10 +42,20 @@ impl EffectContext {
         persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle<
             lanternleaf_app::persistence::FilesystemPersistenceService,
         >>,
+        config_path: PathBuf,
     ) -> Self {
         let cache_service: Arc<dyn cache_service::CacheService> =
             Arc::new(cache_service::FilesystemCacheService);
-        Self::with_services(config, normalizer, persistence, cache_service)
+        let config_service: Arc<dyn config_service::ConfigService> =
+            Arc::new(config_service::FilesystemConfigService);
+        Self::with_services(
+            config,
+            normalizer,
+            persistence,
+            cache_service,
+            config_path,
+            config_service,
+        )
     }
 
     pub fn with_services(
@@ -51,6 +65,8 @@ impl EffectContext {
             lanternleaf_app::persistence::FilesystemPersistenceService,
         >>,
         cache_service: Arc<dyn cache_service::CacheService>,
+        config_path: PathBuf,
+        config_service: Arc<dyn config_service::ConfigService>,
     ) -> Self {
         Self {
             config: Arc::new(Mutex::new(config)),
@@ -60,6 +76,8 @@ impl EffectContext {
             panels: Arc::new(Mutex::new(session::PanelState::default())),
             persistence,
             cache_service,
+            config_path,
+            config_service,
         }
     }
 }
@@ -653,10 +671,31 @@ fn handle_set_log_level(
         .lock()
         .map_err(|_| bridge_error("lock_poisoned", "Config lock poisoned"))?;
     cfg.log_level = parse_log_level(level)?;
-    Ok(vec![AppEvent::LogLevelUpdated(LogLevelEvent {
+    let updated_config = cfg.clone();
+    drop(cfg);
+    let mut events = vec![AppEvent::LogLevelUpdated(LogLevelEvent {
         request_id,
         level: level.to_string(),
-    })])
+    })];
+    if let Err(err) = context
+        .config_service
+        .save_base_config(&context.config_path, &updated_config)
+    {
+        warn!(
+            request_id,
+            error = %err,
+            "Failed to persist base config after log level update"
+        );
+        events.push(AppEvent::CommandFailed {
+            request_id,
+            scope: Some(OperationScope::RuntimeConfig),
+            error: BridgeError {
+                code: "config_persist_failed".to_string(),
+                message: err,
+            },
+        });
+    }
+    Ok(events)
 }
 
 fn handle_persistence_flush(
@@ -664,6 +703,17 @@ fn handle_persistence_flush(
     request_id: u64,
     trigger: PersistenceTrigger,
 ) -> Result<Vec<AppEvent>, BridgeError> {
+    if trigger == PersistenceTrigger::RuntimeConfigChange {
+        let cfg = context
+            .config
+            .lock()
+            .map_err(|_| bridge_error("lock_poisoned", "Config lock poisoned"))?
+            .clone();
+        context
+            .config_service
+            .save_base_config(&context.config_path, &cfg)
+            .map_err(|err| bridge_error("config_persist_failed", err))?;
+    }
     let panels = {
         let guard = context
             .panels
@@ -677,6 +727,14 @@ fn handle_persistence_flush(
             .lock()
             .map_err(|_| bridge_error("lock_poisoned", "Reader session lock poisoned"))?;
         let Some(session) = guard.as_mut() else {
+            if trigger == PersistenceTrigger::RuntimeConfigChange {
+                debug!(
+                    request_id,
+                    trigger = ?trigger,
+                    "Persisted runtime config without active reader session"
+                );
+                return Ok(Vec::new());
+            }
             debug!(
                 request_id,
                 trigger = ?trigger,
@@ -989,6 +1047,8 @@ fn emit_failure_progress(effect: &RuntimeEffect, request_id: u64, tx: &mpsc::Sen
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::path::Path;
     use std::time::Duration;
 
     #[test]
@@ -996,10 +1056,12 @@ mod tests {
         let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
             lanternleaf_app::persistence::FilesystemPersistenceService::default(),
         ));
+        let config_path = std::env::temp_dir().join("lanternleaf-egui-config.toml");
         let context = EffectContext::new(
             config::AppConfig::default(),
             normalizer::TextNormalizer::default(),
             persistence,
+            config_path,
         );
         let (started_tx, started_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
@@ -1019,5 +1081,43 @@ mod tests {
             .expect("worker thread started");
         assert_ne!(worker_id, thread::current().id());
         let _ = release_tx.send(());
+    }
+
+    struct TestConfigService {
+        called: Arc<AtomicBool>,
+    }
+
+    impl config_service::ConfigService for TestConfigService {
+        fn save_base_config(&self, _path: &Path, _config: &config::AppConfig) -> Result<(), String> {
+            self.called.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn runtime_config_flush_persists_base_config_without_session() {
+        let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
+            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+        ));
+        let cache_service: Arc<dyn cache_service::CacheService> =
+            Arc::new(cache_service::FilesystemCacheService);
+        let called = Arc::new(AtomicBool::new(false));
+        let config_service: Arc<dyn config_service::ConfigService> = Arc::new(TestConfigService {
+            called: Arc::clone(&called),
+        });
+        let config_path = std::env::temp_dir().join("lanternleaf-egui-config-test.toml");
+        let context = EffectContext::with_services(
+            config::AppConfig::default(),
+            normalizer::TextNormalizer::default(),
+            persistence,
+            cache_service,
+            config_path,
+            config_service,
+        );
+
+        handle_persistence_flush(&context, 1, PersistenceTrigger::RuntimeConfigChange)
+            .expect("flush should succeed");
+
+        assert!(called.load(Ordering::SeqCst));
     }
 }

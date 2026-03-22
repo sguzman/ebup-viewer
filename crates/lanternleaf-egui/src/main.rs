@@ -283,8 +283,13 @@ impl LanternLeafApp {
         let persistence = Arc::new(PersistenceLifecycle::new(
             FilesystemPersistenceService::default(),
         ));
-        let effect_context =
-            EffectContext::new(app_config.clone(), normalizer.clone(), Arc::clone(&persistence));
+        let config_path = app_config_path();
+        let effect_context = EffectContext::new(
+            app_config.clone(),
+            normalizer.clone(),
+            Arc::clone(&persistence),
+            config_path,
+        );
         let mut app = Self {
             runtime,
             _tracing_guard: tracing_guard,

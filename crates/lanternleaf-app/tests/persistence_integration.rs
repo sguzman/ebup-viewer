@@ -125,6 +125,7 @@ fn sample_snapshot(path: &Path) -> session::ReaderSnapshot {
 fn persistence_roundtrip_and_delete() {
     let source = unique_source_path("epub");
     write_source(&source);
+    cache::remember_source_path(&source);
     let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService::default());
     let snapshot = sample_snapshot(&source);
     let config = config::AppConfig::default();
@@ -150,6 +151,7 @@ fn persistence_roundtrip_and_delete() {
 fn persistence_rebuilds_after_corruption() {
     let source = unique_source_path("epub");
     write_source(&source);
+    cache::remember_source_path(&source);
 
     let bookmark_path = cache::hash_dir(&source).join("bookmark.toml");
     if let Some(parent) = bookmark_path.parent() {

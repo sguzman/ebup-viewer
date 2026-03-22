@@ -10,6 +10,8 @@ pub mod calibre;
 pub mod cancellation;
 #[path = "../../../src/config/mod.rs"]
 pub mod config;
+#[path = "../../../src/config_service.rs"]
+pub mod config_service;
 #[path = "../../../src/epub_loader.rs"]
 pub mod epub_loader;
 #[path = "../../../src/normalizer.rs"]

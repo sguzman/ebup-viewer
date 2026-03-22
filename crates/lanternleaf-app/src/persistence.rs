@@ -212,6 +212,7 @@ impl PersistenceService for FilesystemPersistenceService {
             pdf_sentence_text_hash: None,
             pdf_token_lineage: Vec::new(),
         };
+        self.cache_service.remember_source_path(source_path);
         self.cache_service.save_bookmark(source_path, &bookmark);
         self.cache_service
             .save_epub_config(source_path, housekeeping.config);
@@ -531,6 +532,8 @@ mod tests {
             Ok(())
         }
 
+        fn remember_source_path(&self, _source_path: &Path) {}
+
         fn persist_clipboard_text_source(&self, _text: &str) -> Result<std::path::PathBuf, String> {
             Err("not_used".to_string())
         }
@@ -556,6 +559,20 @@ mod tests {
             _source_path: &Path,
         ) -> Result<cache::BrowserTabSourceManifest, String> {
             Err("not_used".to_string())
+        }
+
+        fn persist_pdf_sentence_map(
+            &self,
+            _source_path: &Path,
+            _locations: &[cache::PdfSentenceLocation],
+        ) {
+        }
+
+        fn persist_pdf_render_precomputed_state(
+            &self,
+            _source_path: &Path,
+            _artifact: &cache::PdfRenderPrecomputedState,
+        ) {
         }
     }
 

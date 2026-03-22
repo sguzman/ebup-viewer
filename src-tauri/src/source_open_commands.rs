@@ -1,4 +1,5 @@
 use super::*;
+use lanternleaf_core::cache_service::CacheService;
 
 #[tauri::command]
 pub(crate) async fn source_open_path(
@@ -20,7 +21,9 @@ pub(crate) async fn source_open_clipboard_text(
     if trimmed.is_empty() {
         return Err(bridge_error("invalid_input", "clipboard text is empty"));
     }
-    let path = cache::persist_clipboard_text_source(&trimmed)
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    let path = cache_service
+        .persist_clipboard_text_source(&trimmed)
         .map_err(|err| bridge_error("invalid_input", err))?;
     open_resolved_source(&app, &state, path).await
 }
@@ -48,7 +51,9 @@ pub(crate) async fn source_open_clipboard(
         warn!("Clipboard read succeeded but text was empty");
         return Err(bridge_error("invalid_input", "clipboard text is empty"));
     }
-    let path = cache::persist_clipboard_text_source(&trimmed)
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    let path = cache_service
+        .persist_clipboard_text_source(&trimmed)
         .map_err(|err| bridge_error("invalid_input", err))?;
     open_resolved_source(&app, &state, path).await
 }

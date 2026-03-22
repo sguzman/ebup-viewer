@@ -1,4 +1,5 @@
 use super::*;
+use lanternleaf_core::cache_service::CacheService;
 use crate::quack_check::engine::python::PythonEngine;
 use tracing::{debug, warn};
 
@@ -79,7 +80,8 @@ fn build_pdf_render_precomputed_state(
         sentence_page_hints,
         source: "rust_backend_native_text".to_string(),
     };
-    cache::persist_pdf_render_precomputed_state(source_path, &artifact);
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    cache_service.persist_pdf_render_precomputed_state(source_path, &artifact);
     debug!(
         path = %source_path.display(),
         page_count = artifact.page_texts.len(),
@@ -118,7 +120,8 @@ pub(crate) fn reader_persist_pdf_sync_map(
         count = locations.len(),
         "Persisting PDF sentence sync map from native PDF renderer"
     );
-    cache::persist_pdf_sentence_map(&source_path, &locations);
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    cache_service.persist_pdf_sentence_map(&source_path, &locations);
     Ok(())
 }
 

@@ -57,6 +57,7 @@ pub use lanternleaf_core::{
     browser_tabs, cache, calibre, config, epub_loader, normalizer, pagination, quack_check,
     text_utils, tts,
 };
+use lanternleaf_core::cache_service::CacheService;
 use lanternleaf_core::{cancellation, session};
 
 const MAX_RECENT_LIMIT: usize = 512;
@@ -1017,7 +1018,8 @@ async fn open_resolved_source(
         );
     }
 
-    cache::remember_source_path(&source_path);
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    cache_service.remember_source_path(&source_path);
 
     let (base_config, normalizer) = {
         let guard = state
@@ -1213,7 +1215,8 @@ async fn maybe_refresh_legacy_browser_tab_source(
     if !cache::is_browser_tab_manifest(source_path) {
         return source_path.to_path_buf();
     }
-    let Some(manifest) = cache::load_browser_tab_manifest(source_path) else {
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    let Ok(manifest) = cache_service.load_browser_tab_manifest(source_path) else {
         return source_path.to_path_buf();
     };
     if manifest.raw_html_path.is_some() {
@@ -1250,7 +1253,7 @@ async fn maybe_refresh_legacy_browser_tab_source(
             return source_path.to_path_buf();
         }
     };
-    match cache::persist_browser_tab_source(&snapshot, tab_meta.as_ref()) {
+    match cache_service.persist_browser_tab_source(&snapshot, tab_meta.as_ref()) {
         Ok(refreshed_path) => {
             info!(
                 path = %refreshed_path.display(),

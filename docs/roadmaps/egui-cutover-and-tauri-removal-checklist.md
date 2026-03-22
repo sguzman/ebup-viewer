@@ -79,7 +79,7 @@
 - [x] Final removal must also verify no obsolete docs/scripts reference Tauri or TS production paths.
 
 ## Acceptance Criteria
-- [ ] The checklist is sufficient to execute final cutover without reopening sequencing decisions.
-- [ ] Removal order is explicit and safe.
-- [ ] Documentation and CI cleanup are part of cutover, not deferred cleanup work.
-- [ ] Final end state is unambiguously a pure Rust egui desktop app.
+- [x] The checklist is sufficient to execute final cutover without reopening sequencing decisions.
+- [x] Removal order is explicit and safe.
+- [x] Documentation and CI cleanup are part of cutover, not deferred cleanup work.
+- [x] Final end state is unambiguously a pure Rust egui desktop app.

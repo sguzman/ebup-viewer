@@ -2882,10 +2882,49 @@ mod tests {
         );
         assert!(
             summary
+            .trace_notes
+            .iter()
+            .any(|value| value == "terminal_punctuation_repaired_when_confident")
+        );
+    }
+
+    #[test]
+    fn normalize_pdf_text_for_reader_tracks_table_cells_and_hyphen_recovery() {
+        let raw = "ColA\tColB\n\nAlpha-\nbeta text\n";
+
+        let (normalized, summary) = normalize_pdf_text_for_reader_with_summary(raw, None);
+
+        assert!(normalized.contains("ColA | ColB"));
+        assert!(normalized.contains("Alphabeta text."));
+        assert!(summary.table_cell_normalization_count >= 1);
+        assert!(summary.hyphen_recovery_count >= 1);
+        assert!(
+            summary
                 .trace_notes
                 .iter()
-                .any(|value| value == "terminal_punctuation_repaired_when_confident")
+                .any(|value| value == "table_cell_tab_normalization")
         );
+        assert!(
+            summary
+                .trace_notes
+                .iter()
+                .any(|value| value == "hyphenated_word_recovery_applied")
+        );
+    }
+
+    #[test]
+    fn classification_confidence_marks_empty_transcripts_as_image_only() {
+        let report = sample_report();
+
+        let classification = classify_pdf_runtime(Some(&report), "", "")
+            .expect("classification should exist");
+
+        assert_eq!(classification.document_class, PdfDocumentClass::ImageOnlyNoText);
+        assert!((classification.confidence - 0.98).abs() < f32::EPSILON);
+        assert!(classification
+            .reasons
+            .iter()
+            .any(|reason| reason == "transcript_text_empty"));
     }
 
     #[test]

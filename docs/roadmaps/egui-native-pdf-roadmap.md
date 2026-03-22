@@ -149,11 +149,11 @@
 - OCR-heavy PDFs can dominate schedule if mixed into the base rendering work instead of treated as an explicit track.
 
 ## Test / Parity Requirements
-- [ ] Rust tests for sync artifact normalization and confidence scoring.
+- [x] Rust tests for sync artifact normalization and confidence scoring.
 - [x] Rust integration tests for viewport scheduling, zoom, and overlay lifecycle.
 - [ ] Representative manual QA on structured, multi-column, OCR-heavy, rotated, and header/footer-heavy PDFs.
 - [ ] Explicit parity gate against current PDF reader checklist.
-- [ ] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
+- [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
 - [ ] A Rust-native PDF rendering/sync strategy is fully specified without WebView fallback.

@@ -992,6 +992,7 @@ fn tts_sync_policy(command: &session::SessionCommand) -> TtsSyncPolicy {
 mod tests {
     use super::*;
     use crate::contracts::BootstrapConfig;
+    use crate::contracts::ReaderPlaybackState;
     use lanternleaf_core::{config, session};
 
     fn make_reader_snapshot() -> session::ReaderSnapshot {
@@ -1264,5 +1265,161 @@ mod tests {
                 .map(|value| value.app_name.as_str()),
             Some("LanternLeaf")
         );
+    }
+
+    #[test]
+    fn close_session_plans_reader_command_scope() {
+        let plan = plan_command(&AppState::default(), 55, AppCommand::CloseReaderSession);
+
+        assert_eq!(plan.action, "reader_close_session");
+        assert!(matches!(
+            plan.local_events.as_slice(),
+            [AppEvent::OperationChanged {
+                scope: OperationScope::ReaderCommand,
+                active: true
+            }]
+        ));
+        assert!(matches!(
+            plan.effects.as_slice(),
+            [PlannedEffect {
+                effect: RuntimeEffect::CloseReaderSession,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn return_to_starter_plans_reader_command_scope() {
+        let plan = plan_command(&AppState::default(), 56, AppCommand::ReturnToStarter);
+
+        assert_eq!(plan.action, "session_return_to_starter");
+        assert!(matches!(
+            plan.effects.as_slice(),
+            [PlannedEffect {
+                effect: RuntimeEffect::ReturnToStarter,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn search_navigation_plans_reader_command_effect() {
+        let plan = plan_command(
+            &AppState::default(),
+            57,
+            AppCommand::Reader(ReaderCommand::Session(session::SessionCommand::SearchNext)),
+        );
+
+        match &plan.effects[0].effect {
+            RuntimeEffect::ApplyReaderCommand { command, sync_tts } => {
+                assert_eq!(command.action(), "reader_search_next");
+                assert_eq!(*sync_tts, TtsSyncPolicy::SyncAfterCommand);
+            }
+            effect => panic!("unexpected effect: {effect:?}"),
+        }
+    }
+
+    #[test]
+    fn flush_persistence_plans_runtime_config_scope() {
+        let plan = plan_command(
+            &AppState::default(),
+            58,
+            AppCommand::FlushPersistence {
+                trigger: PersistenceTrigger::RuntimeConfigChange,
+            },
+        );
+
+        assert!(matches!(
+            plan.local_events.as_slice(),
+            [AppEvent::OperationChanged {
+                scope: OperationScope::RuntimeConfig,
+                active: true
+            }]
+        ));
+        assert!(matches!(
+            plan.effects.as_slice(),
+            [PlannedEffect {
+                effect: RuntimeEffect::FlushPersistence { .. },
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn pdf_transcription_terminal_events_clear_reader_command_scope() {
+        let mut state = AppState::default();
+        state.app_shell.operations.reader_command = true;
+
+        apply_event(
+            &mut state,
+            AppEvent::PdfTranscriptionProgress(PdfTranscriptionEvent {
+                request_id: 90,
+                phase: "complete".to_string(),
+                source_path: "/tmp/book.pdf".to_string(),
+                message: None,
+            }),
+        );
+
+        assert!(!state.app_shell.operations.reader_command);
+    }
+
+    #[test]
+    fn reader_playback_updates_keep_latest_event() {
+        let mut state = AppState::default();
+        let playback = ReaderPlaybackState {
+            source_path: "/tmp/book.epub".to_string(),
+            current_page: 2,
+            highlighted_sentence_idx: Some(1),
+            tts: session::ReaderTtsView {
+                state: session::TtsPlaybackState::Playing,
+                current_sentence_idx: Some(1),
+                sentence_count: 4,
+                can_seek_prev: true,
+                can_seek_next: true,
+                progress_pct: 0.5,
+            },
+            stats: make_reader_snapshot().stats,
+        };
+        apply_event(
+            &mut state,
+            AppEvent::ReaderPlaybackUpdated(ReaderPlaybackStateEvent {
+                request_id: 81,
+                action: "reader_tts_play".to_string(),
+                playback: playback.clone(),
+            }),
+        );
+
+        assert_eq!(
+            state
+                .reader_playback
+                .playback_event
+                .as_ref()
+                .map(|event| event.request_id),
+            Some(81)
+        );
+        assert_eq!(
+            state
+                .reader_playback
+                .playback
+                .as_ref()
+                .map(|state| state.current_page),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn runtime_effects_define_ownership() {
+        let effect = RuntimeEffect::OpenSourcePath {
+            path: "/tmp/book.epub".to_string(),
+        };
+        assert_eq!(effect.owner(), EffectOwner::SourceOpen);
+        let effect = RuntimeEffect::LoadPdfBytes {
+            path: "/tmp/book.pdf".to_string(),
+        };
+        assert_eq!(effect.owner(), EffectOwner::PdfArtifacts);
+        let effect = RuntimeEffect::FlushPersistence {
+            trigger: PersistenceTrigger::SafeQuit,
+        };
+        assert_eq!(effect.owner(), EffectOwner::Persistence);
     }
 }

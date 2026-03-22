@@ -85,7 +85,7 @@
 - [ ] PDF/OCR work
 
 ## Phase 1: Rust Interface Inventory
-- [ ] Inventory every command/event crossing the current Tauri boundary.
+- [x] Inventory every command/event crossing the current Tauri boundary.
 - [x] Group them into future Rust service traits/modules:
 - [x] source opening
 - [x] reader commands
@@ -96,11 +96,43 @@
 - [x] PDF artifact loading and rebuild
 - [x] Define typed request/response/event models in Rust.
 - Phase exit:
-- [ ] all current bridge interactions have future in-process Rust owners.
+- [x] all current bridge interactions have future in-process Rust owners.
 
 ### Interface Inventory Notes
 - Service boundaries live in `crates/lanternleaf-app/src/services.rs` and replace Tauri invoke calls.
 - Typed commands/effects/events live in `crates/lanternleaf-app/src/pipeline.rs`.
+- Command inventory (Tauri -> Rust services / AppCommand):
+  - App shell: `session_get_bootstrap`, `session_get_state`, `session_return_to_starter`,
+    `session_toggle_theme`, `panel_toggle_settings`, `panel_toggle_stats`, `panel_toggle_tts`,
+    `app_safe_quit` -> `AppShellService` / `AppCommand::{Bootstrap,ReturnToStarter,ToggleTheme,Toggle*Panel,SafeQuit}`.
+  - Recents: `recent_list`, `recent_delete`, `recent_close_browser_tab`
+    -> `RecentBooksService` / `AppCommand::{RefreshRecents,DeleteRecent,CloseRecentBrowserTab}`.
+  - Source open: `source_open_path`, `source_open_clipboard`, `source_open_clipboard_text`
+    -> `SourceOpenService` / `AppCommand::{OpenSourcePath,OpenClipboard,OpenClipboardText}`.
+  - Browser tabs: `browser_tabs_health`, `browser_tabs_list_windows`, `browser_tabs_list_tabs`,
+    `source_open_browser_tab`, `source_open_browser_tab_bundle`, `source_refresh_browser_tab`
+    -> `BrowserTabsService` / `AppCommand::{LoadBrowserTabsHealth,ListBrowserTabWindows,ListBrowserTabs,OpenBrowserTab,OpenBrowserTabBundle,RefreshBrowserTab}`.
+  - Reader session: `reader_get_snapshot`, `reader_next_page`, `reader_prev_page`, `reader_set_page`,
+    `reader_sentence_click`, `reader_next_sentence`, `reader_prev_sentence`, `reader_toggle_text_only`,
+    `reader_apply_settings`, `reader_search_set_query`, `reader_search_next`, `reader_search_prev`,
+    `reader_tts_*`, `reader_tts_precompute_page`, `reader_close_session`
+    -> `ReaderSessionService` / `AppCommand::Reader(...)`, `AppCommand::CloseReaderSession`.
+  - PDF artifacts: `reader_load_pdf_bytes`, `reader_load_pdf_sync_map`,
+    `reader_persist_pdf_sync_map`, `reader_load_pdf_render_precomputed`
+    -> `PdfArtifactsService` / `ReaderCommand::{LoadPdfBytes,LoadPdfSyncMap,PersistPdfSyncMap,LoadPdfRenderPrecomputed}`.
+  - Logging: `logging_set_level` -> `LoggingService` / `AppCommand::SetRuntimeLogLevel`.
+  - Calibre: `calibre_load_cached_books`, `calibre_load_books`, `calibre_open_book`,
+    `calibre_ensure_thumbnail` -> `CalibreService` / `AppCommand::{LoadCalibreBooks,OpenCalibreBook,EnsureCalibreThumbnail}`.
+- Event inventory (Tauri event name -> Rust AppEvent):
+  - `session-state` -> `SessionStateEvent` -> `AppEvent::SessionUpdated`.
+  - `reader-state` -> `ReaderStateEvent` -> `AppEvent::ReaderUpdated`.
+  - `reader-playback-state` -> `ReaderPlaybackStateEvent` -> `AppEvent::ReaderPlaybackUpdated`.
+  - `tts-state` -> `TtsStateEvent` -> `AppEvent::TtsStateUpdated`.
+  - `source-open` -> `SourceOpenEvent` -> `AppEvent::SourceOpenProgress` (plus `AppEvent::SourceOpened` for command results).
+  - `pdf-transcription` -> `PdfTranscriptionEvent` -> `AppEvent::PdfTranscriptionProgress`.
+  - `calibre-load` -> `CalibreLoadEvent` -> `AppEvent::CalibreLoadProgress`.
+  - `log-level` -> `LogLevelEvent` -> `AppEvent::LogLevelUpdated`.
+- Typed request/response/event models are defined in `crates/lanternleaf-app/src/contracts.rs`.
 
 ## Phase 2: State Model Extraction
 - [x] Introduce explicit Rust-native state structs that mirror the intended domain split.
@@ -114,14 +146,14 @@
 
 ## Phase 3: Command / Effect / Event Pipeline
 - [x] Define typed commands emitted by widgets.
-- [ ] Define effect execution ownership in Rust runtime services.
+- [x] Define effect execution ownership in Rust runtime services.
 - [x] Define event ingestion back into app state after background work completes.
 - [ ] Preserve explicit transition semantics for:
-- [ ] source open/close
-- [ ] playback actions
-- [ ] search navigation
-- [ ] persistence flush
-- [ ] import/transcription jobs
+- [x] source open/close
+- [x] playback actions
+- [x] search navigation
+- [x] persistence flush
+- [x] import/transcription jobs
 - Phase exit:
 - [ ] runtime orchestration is explicit and detached from Tauri invoke/listen patterns.
 
@@ -152,9 +184,9 @@
 - [ ] state changes and persistence responsibilities are fully native and deterministic.
 
 ## Phase 6: Logging And Tracing Strategy
-- [ ] Port current Tauri logging/tracing bootstrap to the egui app crate and capture the existing `tracing` config, level filters, and field set.
+- [x] Port current Tauri logging/tracing bootstrap to the egui app crate and capture the existing `tracing` config, level filters, and field set.
 - [x] Define an instrumentation plan that records transitions for every major state slice, command dispatch path, runtime effect, and service invocation.
-- [ ] Keep logs structured enough for migration-side parity debugging and eventual telemetry ingestion.
+- [x] Keep logs structured enough for migration-side parity debugging and eventual telemetry ingestion.
 
 ### Current Tracing Footing
 - The Tauri app currently initializes `tracing` via the Rust command runtime and mirrors native logs through Tauri’s `tauri::Builder::plugin(TracingPlugin)` entry points.
@@ -175,8 +207,8 @@
 3. **Validation and drift detection**: write a lightweight smoke test that exercises the runtime and ensures spans are emitted (via log capture) for the key command/effect pairs.
 
 ### Phase Exit
-- [ ] All major runtime surfaces have tracing requirements spelled out.
-- [ ] The future egui runtime crate can wire tracing macros without guessing what needs instrumentation.
+- [x] All major runtime surfaces have tracing requirements spelled out.
+- [x] The future egui runtime crate can wire tracing macros without guessing what needs instrumentation.
 
 ### Risks / Failure Modes (specific to Phase 6)
 - Missing the current Tauri tracing init would cause startup logs to disappear in the egui build.

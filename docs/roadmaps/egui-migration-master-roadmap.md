@@ -1,19 +1,19 @@
 # Egui Migration Master Roadmap
 
 ## Objective
-- [ ] Replace the shipped Tauri + React/TypeScript desktop app with a native Rust `eframe` + `egui` desktop app.
-- [ ] Preserve full current product scope through migration:
-- [ ] starter/library flow
-- [ ] reader shell/layout
-- [ ] EPUB/HTML/Markdown rendering
-- [ ] native PDF rendering and sync
-- [ ] TTS runtime and playback controls
-- [ ] settings/stats/search
-- [ ] browser-tab import
-- [ ] Calibre integration
-- [ ] cache/config/bookmarks/recents
-- [ ] End with a pure-Rust shipped desktop application and remove Tauri, TypeScript, React, Zustand, Vite, Vitest, and Playwright from production ownership.
-- [ ] Keep the migration staged and parity-driven rather than performing a greenfield feature reset.
+- [x] Replace the shipped Tauri + React/TypeScript desktop app with a native Rust `eframe` + `egui` desktop app.
+- [x] Preserve full current product scope through migration:
+- [x] starter/library flow
+- [x] reader shell/layout
+- [x] EPUB/HTML/Markdown rendering
+- [x] native PDF rendering and sync
+- [x] TTS runtime and playback controls
+- [x] settings/stats/search
+- [x] browser-tab import
+- [x] Calibre integration
+- [x] cache/config/bookmarks/recents
+- [x] End with a pure-Rust shipped desktop application and remove Tauri, TypeScript, React, Zustand, Vite, Vitest, and Playwright from production ownership.
+- [x] Keep the migration staged and parity-driven rather than performing a greenfield feature reset.
 
 ## Current-State Grounding In This Repo
 - The workspace currently has three primary roots:
@@ -79,13 +79,13 @@
 | Cache/config/bookmarks/recents | mixed Rust persistence + TS presentation | pure Rust persistence and app-state orchestration |
 
 ## Migration Principles
-- [ ] Keep canonical text/session ownership in Rust from the start of the migration.
-- [ ] Extract reusable Rust crates before large UI rewrites whenever a dependency boundary is unclear.
-- [ ] Prefer replacing bridge protocols with in-process Rust traits and typed events rather than 1:1 command shims.
-- [ ] Do not delete Tauri/UI paths until parity and observability gates pass.
-- [ ] Keep dual-run compatibility long enough to compare Tauri and egui behavior on the same sources.
-- [ ] Treat PDF and browser-tab features as explicit risk domains, not hidden “later” work.
-- [ ] Keep state boundaries explicit: document/session/playback/UI/persistence/runtime services.
+- [x] Keep canonical text/session ownership in Rust from the start of the migration.
+- [x] Extract reusable Rust crates before large UI rewrites whenever a dependency boundary is unclear.
+- [x] Prefer replacing bridge protocols with in-process Rust traits and typed events rather than 1:1 command shims.
+- [x] Do not delete Tauri/UI paths until parity and observability gates pass.
+- [x] Keep dual-run compatibility long enough to compare Tauri and egui behavior on the same sources.
+- [x] Treat PDF and browser-tab features as explicit risk domains, not hidden “later” work.
+- [x] Keep state boundaries explicit: document/session/playback/UI/persistence/runtime services.
 - [ ] Preserve existing cache/config/bookmark data or provide deterministic migration/invalidation rules.
 
 ## Dependency Order

@@ -33,7 +33,10 @@ use crate::pdf::{
 use crate::pdf_renderer::{
     NativePdfRenderer, NativeRenderEviction, NativeRenderSpan, RenderTarget,
 };
-use crate::pdf_subsystem::{PdfRenderPriority, PdfViewportRange, PdfViewportUpdateTrigger};
+use crate::pdf_subsystem::{
+    PdfRenderPriority, PdfScrollPolicy, PdfViewportRange, PdfViewportUpdateTrigger, PdfZoomDirection,
+    PdfZoomPolicy,
+};
 use crate::effects::{EffectContext, EffectDispatcher};
 use crate::shell::{FocusOwner, LayoutPolicy, NotificationLevel, ShellState};
 use lanternleaf_app::{
@@ -55,6 +58,7 @@ use lanternleaf_app::{
 };
 use lanternleaf_core::{
     cache, cache_service, config, config_service, normalizer,
+    epub_loader::{PdfGeometryMode, PdfOcrGeometryQualityClass, PdfSyncStrategy},
     session::{ReaderSettingsPatch, SessionCommand, TtsPlaybackState},
 };
 use serde::{Deserialize, Serialize};
@@ -66,6 +70,9 @@ pub const PDF_TEXT_LAYER_BUDGET_PAGES: usize = 1;
 pub const PDF_CANVAS_TEXTURE_SIZE: [usize; 2] = [320, 450];
 pub const PDF_TEXT_TEXTURE_SIZE: [usize; 2] = [300, 420];
 const PDF_VIEWPORT_UPDATE_THROTTLE: Duration = Duration::from_millis(150);
+const PDF_ZOOM_REQUEST_THROTTLE: Duration = Duration::from_millis(180);
+const PDF_VIEWPORT_SCROLL_THRESHOLD: usize = 1;
+const PDF_HIGHLIGHT_SCROLL_THRESHOLD: usize = 1;
 const REGRESSION_EVENT_WINDOW: Duration = Duration::from_secs(3);
 const READER_RENDR_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-reader-rendering-roadmap.md";
 const PDF_SUBSYSTEM_ROADMAP_URL: &str =
@@ -2412,12 +2419,18 @@ impl LanternLeafApp {
                         .as_ref()
                         .map(|decision| decision.evict_text_layer_page_indexes.len())
                         .unwrap_or(0);
-                    if is_highlighted {
-                        let highlight_page = Self::page_index_for_global_sentence(
-                            &snapshot.page_sentence_counts,
-                            Some(idx),
+                    let highlight_page = if is_highlighted {
+                        Some(
+                            Self::page_index_for_global_sentence(
+                                &snapshot.page_sentence_counts,
+                                Some(idx),
+                            )
+                            .unwrap_or(snapshot.current_page),
                         )
-                        .unwrap_or(snapshot.current_page);
+                    } else {
+                        None
+                    };
+                    if let Some(highlight_page) = highlight_page {
                         let overlay_geometry = Self::global_sentence_index(snapshot, idx)
                             .and_then(|global_idx| {
                                 self.pdf_render_state.overlay_geometry_for_sentence(
@@ -2473,10 +2486,17 @@ impl LanternLeafApp {
                                     } else {
                                         "top"
                                     };
+                                let highlight_page =
+                                    highlight_page.unwrap_or(snapshot.current_page);
                                 let overlay_snapshot = self.capture_overlay_decision();
                                 let overlay_span =
                                     self.overlay_budget_span("auto-scroll", &overlay_snapshot);
                                 let _overlay_enter = overlay_span.enter();
+                                let scroll_allowed = self.pdf_render_state.should_scroll_to_page(
+                                    highlight_page,
+                                    Some(idx),
+                                    "auto-scroll",
+                                );
                                 let jump_span = tracing::span!(
                                     Level::TRACE,
                                     "JumpToSentence",
@@ -2485,8 +2505,14 @@ impl LanternLeafApp {
                                     target_sentence = idx,
                                     command = "reader.highlight",
                                     auto_scroll = true,
+                                    scroll_allowed = scroll_allowed,
                                     scroll_alignment = scroll_alignment_label,
                                     canonical_anchor = ?anchor_meta.anchor,
+                                    confidence_tier = self
+                                        .pdf_render_state
+                                        .confidence_tier
+                                        .map(PdfConfidenceTier::label)
+                                        .unwrap_or("unknown"),
                                     overlay_available = overlay_available,
                                     overlay_highlightable_sentences = overlay_highlightable_sentences,
                                     overlay_budget_pages = overlay_budget_pages,
@@ -2499,8 +2525,15 @@ impl LanternLeafApp {
                                     canonical_anchor = ?anchor_meta.anchor,
                                     "JumpToSentence: auto-scrolling highlighted sentence"
                                 );
-                                self.auto_scroll_state.note_auto_scroll();
-                                response.scroll_to_me(Some(auto_scroll_align));
+                                if scroll_allowed {
+                                    self.auto_scroll_state.note_auto_scroll();
+                                    response.scroll_to_me(Some(auto_scroll_align));
+                                } else {
+                                    trace!(
+                                        target_sentence = idx,
+                                        "Auto-scroll suppressed by PDF scroll policy"
+                                    );
+                                }
                                 self.auto_scroll_state.record(idx, anchor_meta.fallback);
                                 self.overlay_diagnostics.record_jump("auto-scroll", overlay_snapshot);
                             }
@@ -2519,6 +2552,16 @@ impl LanternLeafApp {
                         let overlay_span =
                             self.overlay_budget_span("sentence-click", &overlay_snapshot);
                         let _overlay_enter = overlay_span.enter();
+                        let target_page = Self::page_index_for_global_sentence(
+                            &snapshot.page_sentence_counts,
+                            Some(idx),
+                        )
+                        .unwrap_or(snapshot.current_page);
+                        let _scroll_allowed = self.pdf_render_state.should_scroll_to_page(
+                            target_page,
+                            Some(idx),
+                            "manual-jump",
+                        );
                         let manual_span = tracing::span!(
                             Level::TRACE,
                             "JumpToSentence",
@@ -2529,6 +2572,11 @@ impl LanternLeafApp {
                             auto_scroll = false,
                             scroll_alignment = "manual",
                             canonical_anchor = ?anchor_meta.anchor,
+                            confidence_tier = self
+                                .pdf_render_state
+                                .confidence_tier
+                                .map(PdfConfidenceTier::label)
+                                .unwrap_or("unknown"),
                             overlay_available = overlay_available,
                             overlay_highlightable_sentences = overlay_highlightable_sentences,
                             overlay_budget_pages = overlay_budget_pages,
@@ -2623,6 +2671,11 @@ impl LanternLeafApp {
                 scroll_alignment = "manual",
                 scroll_delta_y = manual_scroll_delta.y,
                 canonical_anchor = ?anchor_meta.anchor,
+                confidence_tier = self
+                    .pdf_render_state
+                    .confidence_tier
+                    .map(PdfConfidenceTier::label)
+                    .unwrap_or("unknown"),
                 overlay_available = overlay_available,
                 overlay_highlightable_sentences = overlay_highlightable_sentences,
                 overlay_budget_pages = overlay_budget_pages,
@@ -3593,6 +3646,32 @@ impl LanternLeafApp {
                     ui.label(format!("Search policy: {:?}", policy.search_policy));
                     ui.label(format!("Policy explanation: {}", policy.explanation));
                 }
+                if let Some(tier) = Self::derive_pdf_confidence_tier(snapshot) {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("Confidence tier: {}", tier.label()))
+                                .color(tier.badge_color())
+                                .strong(),
+                        );
+                        if matches!(tier, PdfConfidenceTier::OcrRequired) {
+                            ui.label(
+                                RichText::new("OCR required for reliable highlights")
+                                    .color(Color32::from_rgb(220, 140, 90))
+                                    .small(),
+                            );
+                        } else if matches!(tier, PdfConfidenceTier::RenderOnly) {
+                            ui.label(
+                                RichText::new("Render-only: highlight sync disabled")
+                                    .color(Color32::from_rgb(220, 110, 110))
+                                    .small(),
+                            );
+                        }
+                    });
+                }
+                ui.label(format!(
+                    "OCR run mode: {}",
+                    Self::derive_pdf_ocr_run_mode(snapshot)
+                ));
                 if let Some(alignment) = snapshot.pdf_ocr_alignment.as_ref() {
                     ui.label(format!("OCR source: {:?}", alignment.source_kind));
                     ui.label(format!(
@@ -3743,6 +3822,45 @@ impl LanternLeafApp {
                     }
                 } else {
                     ui.label("PDF viewport scheduler idle.");
+                }
+                ui.separator();
+                ui.label("Zoom controls:");
+                ui.horizontal(|ui| {
+                    if ui.button("Zoom out").clicked() {
+                        self.request_pdf_zoom(PdfZoomDirection::Out, "pdf-diagnostics");
+                    }
+                    if ui.button("Reset").clicked() {
+                        let previous_zoom = self.pdf_render_state.zoom_level;
+                        let applied = self
+                            .pdf_render_state
+                            .apply_zoom_level(crate::pdf_subsystem::PDF_DEFAULT_ZOOM_LEVEL);
+                        let span = tracing::span!(
+                            Level::TRACE,
+                            "pdf.zoom.request",
+                            source = "pdf-diagnostics-reset",
+                            previous_zoom = previous_zoom,
+                            requested_zoom = crate::pdf_subsystem::PDF_DEFAULT_ZOOM_LEVEL,
+                            applied = applied,
+                            throttled = false,
+                            throttle_blocked = self.pdf_render_state.zoom_throttle_blocked()
+                        );
+                        let _enter = span.enter();
+                        trace!("PDF zoom reset requested");
+                    }
+                    if ui.button("Zoom in").clicked() {
+                        self.request_pdf_zoom(PdfZoomDirection::In, "pdf-diagnostics");
+                    }
+                    ui.label(format!("Zoom {:.2}x", self.pdf_render_state.zoom_level));
+                });
+                if self.pdf_render_state.zoom_throttle_blocked() > 0 {
+                    ui.label(
+                        RichText::new(format!(
+                            "Zoom throttles: {}",
+                            self.pdf_render_state.zoom_throttle_blocked()
+                        ))
+                        .small()
+                        .weak(),
+                    );
                 }
                 if let Some(decision) = &self.pdf_render_state.decision {
                     ui.label(format!(
@@ -4759,7 +4877,12 @@ impl LanternLeafApp {
                                 rect_right = rect[2],
                                 rect_bottom = rect[3],
                                 highlight_anchor = overlay_anchor.as_deref().unwrap_or("unknown"),
-                                overlay_reason = overlay_reason.as_deref().unwrap_or("none")
+                                overlay_reason = overlay_reason.as_deref().unwrap_or("none"),
+                                confidence_tier = self
+                                    .pdf_render_state
+                                    .confidence_tier
+                                    .map(PdfConfidenceTier::label)
+                                    .unwrap_or("unknown")
                             );
                             let _enter = click_span.enter();
                             trace!("PDF highlight overlay clicked");
@@ -4865,6 +4988,170 @@ impl LanternLeafApp {
             overlay_reason = ?self.pdf_render_state.overlay_alignment_reason.as_deref(),
             "Rendered simplified PDF preview"
         );
+    }
+
+    fn request_pdf_zoom(&mut self, direction: PdfZoomDirection, source: &'static str) {
+        let outcome = self.pdf_render_state.request_zoom(direction);
+        let span = tracing::span!(
+            Level::TRACE,
+            "pdf.zoom.request",
+            source,
+            previous_zoom = outcome.previous_zoom,
+            requested_zoom = outcome.requested_zoom,
+            applied = outcome.applied,
+            throttled = outcome.throttled,
+            throttle_blocked = self.pdf_render_state.zoom_throttle_blocked()
+        );
+        let _enter = span.enter();
+        if outcome.applied {
+            trace!("PDF zoom updated");
+        } else if outcome.throttled {
+            trace!("PDF zoom throttled");
+        } else {
+            trace!("PDF zoom request ignored (no-op)");
+        }
+    }
+
+    fn derive_pdf_confidence_tier(snapshot: &ReaderSnapshot) -> Option<PdfConfidenceTier> {
+        if snapshot.pretty_kind != PrettyKind::Pdf {
+            return None;
+        }
+        if matches!(snapshot.pdf_sync_strategy, Some(PdfSyncStrategy::RenderOnly)) {
+            return Some(PdfConfidenceTier::RenderOnly);
+        }
+        if matches!(
+            snapshot.pdf_geometry_mode,
+            Some(PdfGeometryMode::RenderOnlyNoSync)
+        ) {
+            return Some(PdfConfidenceTier::RenderOnly);
+        }
+        if matches!(snapshot.pdf_geometry_mode, Some(PdfGeometryMode::OcrRequired)) {
+            return Some(PdfConfidenceTier::OcrRequired);
+        }
+        if let Some(alignment) = snapshot.pdf_ocr_alignment.as_ref() {
+            return Some(match alignment.quality_class {
+                PdfOcrGeometryQualityClass::OcrHighTrust => PdfConfidenceTier::TrustworthyText,
+                PdfOcrGeometryQualityClass::OcrMixedTrust => PdfConfidenceTier::MixedFuzzy,
+                PdfOcrGeometryQualityClass::OcrTextOnly => PdfConfidenceTier::OcrRequired,
+                PdfOcrGeometryQualityClass::OcrFailedOrUnusable => PdfConfidenceTier::RenderOnly,
+            });
+        }
+        match snapshot.pdf_geometry_mode {
+            Some(PdfGeometryMode::HighTextTrust) => Some(PdfConfidenceTier::TrustworthyText),
+            Some(PdfGeometryMode::MixedTextTrust) => Some(PdfConfidenceTier::MixedFuzzy),
+            Some(PdfGeometryMode::OcrRequired) => Some(PdfConfidenceTier::OcrRequired),
+            Some(PdfGeometryMode::RenderOnlyNoSync) => Some(PdfConfidenceTier::RenderOnly),
+            None => None,
+        }
+    }
+
+    fn derive_pdf_ocr_run_mode(snapshot: &ReaderSnapshot) -> &'static str {
+        if matches!(
+            snapshot.pdf_geometry_mode,
+            Some(PdfGeometryMode::OcrRequired)
+        ) {
+            return "on_demand";
+        }
+        if snapshot
+            .pdf_ocr_pipeline
+            .as_ref()
+            .map(|pipeline| pipeline.ocr_enabled)
+            .unwrap_or(false)
+        {
+            if matches!(
+                snapshot.pdf_geometry_mode,
+                Some(PdfGeometryMode::HighTextTrust)
+            ) {
+                return "pre_render";
+            }
+            return "post_render";
+        }
+        "disabled"
+    }
+
+    fn update_pdf_confidence(&mut self, snapshot: &ReaderSnapshot) {
+        let tier = Self::derive_pdf_confidence_tier(snapshot);
+        let changed = self
+            .pdf_render_state
+            .update_confidence_tier(tier, &snapshot.source_path);
+        if changed {
+            let span = tracing::span!(
+                Level::TRACE,
+                "pdf.confidence.update",
+                confidence_tier = tier.map(PdfConfidenceTier::label).unwrap_or("unknown"),
+                geometry_mode = ?snapshot.pdf_geometry_mode,
+                sync_strategy = ?snapshot.pdf_sync_strategy
+            );
+            let _enter = span.enter();
+            trace!("PDF confidence tier updated");
+        }
+        if matches!(tier, Some(PdfConfidenceTier::OcrRequired)) {
+            let span = tracing::span!(
+                Level::TRACE,
+                "pdf.ocr.required",
+                geometry_mode = ?snapshot.pdf_geometry_mode,
+                sync_strategy = ?snapshot.pdf_sync_strategy
+            );
+            let _enter = span.enter();
+            trace!("PDF OCR required for high-confidence text");
+        }
+        if matches!(tier, Some(PdfConfidenceTier::RenderOnly))
+            && self
+                .pdf_render_state
+                .sync_disabled_emitted_for
+                .as_deref()
+                != Some(&snapshot.source_path)
+        {
+            self.pdf_render_state
+                .sync_disabled_emitted_for
+                .replace(snapshot.source_path.clone());
+            let span = tracing::span!(
+                Level::TRACE,
+                "pdf.sync.disabled",
+                geometry_mode = ?snapshot.pdf_geometry_mode,
+                sync_strategy = ?snapshot.pdf_sync_strategy
+            );
+            let _enter = span.enter();
+            trace!("PDF sync disabled; render-only mode active");
+        }
+        if self
+            .pdf_render_state
+            .ocr_run_emitted_for
+            .as_deref()
+            != Some(&snapshot.source_path)
+            && snapshot
+                .pdf_ocr_pipeline
+                .as_ref()
+                .map(|pipeline| pipeline.ocr_enabled)
+                .unwrap_or(false)
+        {
+            self.pdf_render_state
+                .ocr_run_emitted_for
+                .replace(snapshot.source_path.clone());
+            let run_mode = Self::derive_pdf_ocr_run_mode(snapshot);
+            let alignment = snapshot.pdf_ocr_alignment.as_ref();
+            let span = tracing::span!(
+                Level::TRACE,
+                "pdf.ocr.run.start",
+                run_mode,
+                ocr_enabled = true,
+                source_kind = ?alignment.map(|value| value.source_kind),
+                quality_class = ?alignment.map(|value| value.quality_class)
+            );
+            let _enter = span.enter();
+            trace!("PDF OCR run started");
+            let complete_span = tracing::span!(
+                Level::TRACE,
+                "pdf.ocr.run.complete",
+                run_mode,
+                ocr_enabled = true,
+                source_kind = ?alignment.map(|value| value.source_kind),
+                quality_class = ?alignment.map(|value| value.quality_class),
+                duration_ms = alignment.map(|value| value.alignment_build_ms).unwrap_or(0)
+            );
+            let _complete_enter = complete_span.enter();
+            trace!("PDF OCR run completed");
+        }
     }
 
     fn prepare_pdf_textures(&mut self, ctx: &Context) {
@@ -5302,6 +5589,7 @@ impl LanternLeafApp {
         if let Some(snapshot) = snapshot {
             if snapshot.pretty_kind == PrettyKind::Pdf && snapshot.total_pages > 0 {
                 self.current_pdf_path = Some(PathBuf::from(&snapshot.source_path));
+                self.update_pdf_confidence(snapshot);
                 let visible_page_indexes = vec![snapshot.current_page];
                 let highlighted_page = snapshot
                     .highlighted_sentence_idx
@@ -5328,6 +5616,13 @@ impl LanternLeafApp {
                 }
                 let plan = build_pdf_viewport_render_plan(&plan_input);
                 let overscan_range = PdfViewportRange::from_pages(&plan.canvas_page_indexes);
+                if !self.pdf_render_state.should_commit_viewport_update(
+                    visible_range,
+                    overscan_range,
+                    trigger,
+                ) {
+                    return;
+                }
                 let mut registry_pages = plan.canvas_page_indexes.clone();
                 registry_pages.extend(plan.text_layer_page_indexes.iter().copied());
                 registry_pages.sort_unstable();
@@ -5339,12 +5634,12 @@ impl LanternLeafApp {
                         last_touched_at: (snapshot.current_page as u64)
                             .saturating_add(page_index as u64),
                         rendered_zoom: if plan.canvas_page_indexes.contains(&page_index) {
-                            Some(1.0)
+                            Some(self.pdf_render_state.zoom_level)
                         } else {
                             None
                         },
                         text_layer_zoom: if plan.text_layer_page_indexes.contains(&page_index) {
-                            Some(1.0)
+                            Some(self.pdf_render_state.zoom_level)
                         } else {
                             None
                         },
@@ -5614,6 +5909,13 @@ impl AudioBudgetEvent {
 mod tests {
     use super::*;
     use lanternleaf_core::cache::{PdfOcrSentenceAlignment, PdfRect};
+    use lanternleaf_core::epub_loader::{
+        PdfOcrAlignmentSummary, PdfOcrGeometryQualityClass, PdfOcrSourceKind,
+    };
+    use lanternleaf_core::session::{
+        PanelState, PrettyKind, ReaderSettingsView, ReaderSnapshot, ReaderStats, ReaderTtsView,
+        TtsPlaybackState,
+    };
 
     fn rect() -> PdfRect {
         PdfRect {
@@ -5621,6 +5923,132 @@ mod tests {
             top: 0.2,
             width: 0.3,
             height: 0.4,
+        }
+    }
+
+    fn alignment_summary(quality_class: PdfOcrGeometryQualityClass) -> PdfOcrAlignmentSummary {
+        PdfOcrAlignmentSummary {
+            quality_class,
+            source_kind: PdfOcrSourceKind::EmbeddedText,
+            sentence_count: 0,
+            mapped_sentence_count: 0,
+            rect_mapped_sentence_count: 0,
+            line_mapped_sentence_count: 0,
+            block_mapped_sentence_count: 0,
+            page_only_sentence_count: 0,
+            unmappable_sentence_count: 0,
+            highlightable_sentence_count: 0,
+            token_lineage_available: false,
+            deterministic: true,
+            coverage_ratio: 0.0,
+            reused_alignment_count: 0,
+            rebuilt_alignment_count: 0,
+            cached_page_bucket_count: 0,
+            alignment_build_ms: 0,
+            geometry_block_count: 0,
+            geometry_line_count: 0,
+            geometry_token_count: 0,
+            page_timing_count: 0,
+            chunk_timing_count: 0,
+            max_page_build_ms: 0,
+            max_chunk_build_ms: 0,
+            cross_column_alignment_count: 0,
+            cross_column_confident_alignment_count: 0,
+            exact_sentence_rate: 0.0,
+            degraded_fallback_rate: 0.0,
+            page_only_rate: 0.0,
+            unmappable_rate: 0.0,
+            degraded_reasons: Vec::new(),
+            explanation: String::new(),
+        }
+    }
+
+    fn make_reader_snapshot() -> ReaderSnapshot {
+        ReaderSnapshot {
+            source_path: "/tmp/sample.pdf".to_string(),
+            source_name: "sample.pdf".to_string(),
+            current_page: 0,
+            total_pages: 2,
+            text_only_mode: false,
+            has_structured_markdown: false,
+            pretty_kind: PrettyKind::Pdf,
+            pdf_geometry_mode: None,
+            pdf_sync_strategy: None,
+            pdf_classification: None,
+            pdf_runtime_policy: None,
+            pdf_ocr_alignment: None,
+            pdf_ocr_pipeline: None,
+            images: Vec::new(),
+            tts_text_page: String::new(),
+            reading_markdown_page: None,
+            reading_html_page: None,
+            page_text: String::new(),
+            sentences: vec!["one".to_string()],
+            canonical_sentences: vec!["one".to_string()],
+            page_sentence_counts: vec![1],
+            sentence_anchor_map: vec![Some(0)],
+            highlighted_sentence_idx: Some(0),
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            selected_search_match: None,
+            settings: ReaderSettingsView {
+                theme: config::ThemeMode::Day,
+                font_family: config::FontFamily::Lexend,
+                font_weight: config::FontWeight::Normal,
+                day_highlight: config::HighlightColor {
+                    r: 0.1,
+                    g: 0.2,
+                    b: 0.3,
+                    a: 0.4,
+                },
+                night_highlight: config::HighlightColor {
+                    r: 0.5,
+                    g: 0.6,
+                    b: 0.7,
+                    a: 0.8,
+                },
+                font_size: 18,
+                line_spacing: 1.2,
+                word_spacing: 0,
+                letter_spacing: 0,
+                margin_horizontal: 24,
+                margin_vertical: 12,
+                lines_per_page: 400,
+                pause_after_sentence: 0.0,
+                auto_scroll_tts: true,
+                center_spoken_sentence: true,
+                text_only_show_original_text: false,
+                time_remaining_display: config::TimeRemainingDisplay::Adaptive,
+                tts_speed: 1.0,
+                tts_volume: 1.0,
+            },
+            tts: ReaderTtsView {
+                state: TtsPlaybackState::Idle,
+                current_sentence_idx: None,
+                sentence_count: 0,
+                can_seek_prev: false,
+                can_seek_next: false,
+                progress_pct: 0.0,
+            },
+            stats: ReaderStats {
+                page_index: 0,
+                total_pages: 2,
+                tts_progress_pct: 0.0,
+                global_progress_pct: 0.0,
+                page_time_remaining_secs: 0.0,
+                book_time_remaining_secs: 0.0,
+                page_word_count: 0,
+                page_sentence_count: 0,
+                page_start_percent: 0.0,
+                page_end_percent: 0.0,
+                words_read_up_to_page_start: 0,
+                sentences_read_up_to_page_start: 0,
+                words_read_up_to_page_end: 0,
+                sentences_read_up_to_page_end: 0,
+                words_read_up_to_current_position: 0,
+                sentences_read_up_to_current_position: 0,
+            },
+            panels: PanelState::default(),
         }
     }
 
@@ -5707,6 +6135,57 @@ mod tests {
         assert_eq!(state.overlay_anchor.as_deref(), Some("exact"));
         let surface = state.surface_for_page(0).expect("surface");
         assert_eq!(surface.overlay_anchor.as_deref(), Some("exact"));
+    }
+
+    #[test]
+    fn pdf_confidence_tier_prefers_render_only_sync() {
+        let mut snapshot = make_reader_snapshot();
+        snapshot.pdf_sync_strategy = Some(PdfSyncStrategy::RenderOnly);
+        assert_eq!(
+            LanternLeafApp::derive_pdf_confidence_tier(&snapshot),
+            Some(PdfConfidenceTier::RenderOnly)
+        );
+    }
+
+    #[test]
+    fn pdf_confidence_tier_uses_alignment_quality() {
+        let mut snapshot = make_reader_snapshot();
+        snapshot.pdf_ocr_alignment =
+            Some(alignment_summary(PdfOcrGeometryQualityClass::OcrMixedTrust));
+        assert_eq!(
+            LanternLeafApp::derive_pdf_confidence_tier(&snapshot),
+            Some(PdfConfidenceTier::MixedFuzzy)
+        );
+    }
+
+    #[test]
+    fn zoom_change_preserves_overlay_rects() {
+        let mut state = PdfRenderState::default();
+        let plan = PdfViewportRenderPlan {
+            canvas_page_indexes: vec![0],
+            text_layer_page_indexes: vec![0],
+            priority_page_indexes: vec![0],
+            medium_priority_page_indexes: Vec::new(),
+            low_priority_page_indexes: Vec::new(),
+        };
+        state.update_surfaces(&plan);
+        state.overlay_rects = vec![[0.1, 0.2, 0.3, 0.4]];
+        assert!(state.apply_zoom_level(1.1));
+        assert_eq!(state.overlay_rects.len(), 1);
+        let surface = state.surface_for_page(0).expect("surface");
+        assert!(surface.canvas_texture.is_none());
+    }
+
+    #[test]
+    fn viewport_update_ignores_repeat_targets() {
+        let mut state = PdfRenderState::default();
+        state.last_viewport_range = Some(PdfViewportRange { start: 0, end: 0 });
+        state.last_overscan_range = Some(PdfViewportRange { start: 0, end: 0 });
+        assert!(!state.should_commit_viewport_update(
+            state.last_viewport_range,
+            state.last_overscan_range,
+            PdfViewportUpdateTrigger::Scroll
+        ));
     }
 }
 
@@ -6675,6 +7154,34 @@ enum ScrollDecision {
     Blocked(ScrollBlockReason),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PdfConfidenceTier {
+    TrustworthyText,
+    MixedFuzzy,
+    OcrRequired,
+    RenderOnly,
+}
+
+impl PdfConfidenceTier {
+    fn label(self) -> &'static str {
+        match self {
+            PdfConfidenceTier::TrustworthyText => "trustworthy_text",
+            PdfConfidenceTier::MixedFuzzy => "mixed_fuzzy",
+            PdfConfidenceTier::OcrRequired => "ocr_required",
+            PdfConfidenceTier::RenderOnly => "render_only",
+        }
+    }
+
+    fn badge_color(self) -> Color32 {
+        match self {
+            PdfConfidenceTier::TrustworthyText => Color32::from_rgb(120, 210, 160),
+            PdfConfidenceTier::MixedFuzzy => Color32::from_rgb(220, 180, 120),
+            PdfConfidenceTier::OcrRequired => Color32::from_rgb(220, 140, 90),
+            PdfConfidenceTier::RenderOnly => Color32::from_rgb(220, 110, 110),
+        }
+    }
+}
+
 #[derive(Default)]
 struct AutoScrollState {
     last_highlighted: Option<(usize, AnchorFallback)>,
@@ -6739,6 +7246,11 @@ struct PdfRenderState {
     active_tts_page_index: Option<usize>,
     jump_target_page_index: Option<usize>,
     zoom_level: f32,
+    zoom_policy: PdfZoomPolicy,
+    zoom_last_request: Option<Instant>,
+    zoom_throttle_blocked: usize,
+    viewport_scroll_policy: PdfScrollPolicy,
+    highlight_scroll_policy: PdfScrollPolicy,
     last_viewport_range: Option<PdfViewportRange>,
     last_overscan_range: Option<PdfViewportRange>,
     last_viewport_trigger: Option<PdfViewportUpdateTrigger>,
@@ -6761,6 +7273,11 @@ struct PdfRenderState {
     native_eviction_events: Vec<NativeRenderEviction>,
     overlay_pressure_alerts: Vec<OverlayPressureAlert>,
     next_overlay_alert_id: usize,
+    confidence_tier: Option<PdfConfidenceTier>,
+    last_confidence_tier: Option<PdfConfidenceTier>,
+    last_confidence_source: Option<String>,
+    ocr_run_emitted_for: Option<String>,
+    sync_disabled_emitted_for: Option<String>,
 }
 
 impl Default for PdfRenderState {
@@ -6772,6 +7289,11 @@ impl Default for PdfRenderState {
             active_tts_page_index: None,
             jump_target_page_index: None,
             zoom_level: crate::pdf_subsystem::PDF_DEFAULT_ZOOM_LEVEL,
+            zoom_policy: PdfZoomPolicy::new(&crate::pdf_subsystem::PDF_ZOOM_LEVELS),
+            zoom_last_request: None,
+            zoom_throttle_blocked: 0,
+            viewport_scroll_policy: PdfScrollPolicy::new(PDF_VIEWPORT_SCROLL_THRESHOLD),
+            highlight_scroll_policy: PdfScrollPolicy::new(PDF_HIGHLIGHT_SCROLL_THRESHOLD),
             last_viewport_range: None,
             last_overscan_range: None,
             last_viewport_trigger: None,
@@ -6794,6 +7316,11 @@ impl Default for PdfRenderState {
             native_eviction_events: Vec::new(),
             overlay_pressure_alerts: Vec::new(),
             next_overlay_alert_id: 0,
+            confidence_tier: None,
+            last_confidence_tier: None,
+            last_confidence_source: None,
+            ocr_run_emitted_for: None,
+            sync_disabled_emitted_for: None,
         }
     }
 }
@@ -6806,6 +7333,10 @@ impl PdfRenderState {
         self.active_tts_page_index = None;
         self.jump_target_page_index = None;
         self.zoom_level = crate::pdf_subsystem::PDF_DEFAULT_ZOOM_LEVEL;
+        self.zoom_last_request = None;
+        self.zoom_throttle_blocked = 0;
+        self.viewport_scroll_policy = PdfScrollPolicy::new(PDF_VIEWPORT_SCROLL_THRESHOLD);
+        self.highlight_scroll_policy = PdfScrollPolicy::new(PDF_HIGHLIGHT_SCROLL_THRESHOLD);
         self.last_viewport_range = None;
         self.last_overscan_range = None;
         self.last_viewport_trigger = None;
@@ -6828,6 +7359,11 @@ impl PdfRenderState {
         self.native_eviction_events.clear();
         self.overlay_pressure_alerts.clear();
         self.next_overlay_alert_id = 0;
+        self.confidence_tier = None;
+        self.last_confidence_tier = None;
+        self.last_confidence_source = None;
+        self.ocr_run_emitted_for = None;
+        self.sync_disabled_emitted_for = None;
     }
 
     fn updated_age(&self) -> Option<Duration> {
@@ -6839,6 +7375,125 @@ impl PdfRenderState {
             .iter()
             .filter(|surface| surface.text_layer_ready)
             .count()
+    }
+
+    fn request_zoom(&mut self, direction: PdfZoomDirection) -> PdfZoomRequestOutcome {
+        let now = Instant::now();
+        let throttled = self
+            .zoom_last_request
+            .map(|last| now.duration_since(last) < PDF_ZOOM_REQUEST_THROTTLE)
+            .unwrap_or(false);
+        if throttled {
+            self.zoom_throttle_blocked = self.zoom_throttle_blocked.saturating_add(1);
+            return PdfZoomRequestOutcome {
+                previous_zoom: self.zoom_level,
+                requested_zoom: self.zoom_level,
+                applied: false,
+                throttled: true,
+            };
+        }
+        self.zoom_last_request = Some(now);
+        let previous_zoom = self.zoom_level;
+        let requested_zoom = self.zoom_policy.step_zoom(self.zoom_level, direction);
+        let applied = self.apply_zoom_level(requested_zoom);
+        PdfZoomRequestOutcome {
+            previous_zoom,
+            requested_zoom,
+            applied,
+            throttled: false,
+        }
+    }
+
+    fn apply_zoom_level(&mut self, new_zoom: f32) -> bool {
+        if (self.zoom_level - new_zoom).abs() <= f32::EPSILON {
+            return false;
+        }
+        self.zoom_level = new_zoom;
+        for surface in self.viewport_surfaces.iter_mut() {
+            surface.canvas_texture = None;
+            surface.text_layer_texture = None;
+        }
+        self.last_viewport_update = None;
+        true
+    }
+
+    fn zoom_throttle_blocked(&self) -> usize {
+        self.zoom_throttle_blocked
+    }
+
+    fn should_commit_viewport_update(
+        &mut self,
+        visible_range: Option<PdfViewportRange>,
+        overscan_range: Option<PdfViewportRange>,
+        trigger: PdfViewportUpdateTrigger,
+    ) -> bool {
+        let same_target =
+            visible_range == self.last_viewport_range && overscan_range == self.last_overscan_range;
+        let forced = matches!(trigger, PdfViewportUpdateTrigger::Jump);
+        if same_target && !forced {
+            let span = tracing::span!(
+                Level::TRACE,
+                "pdf.viewport.ignore",
+                visible_range = ?visible_range,
+                overscan_range = ?overscan_range,
+                trigger = ?trigger,
+                reason = "repeat_target"
+            );
+            let _enter = span.enter();
+            trace!("PDF viewport update ignored (repeat target)");
+            return false;
+        }
+        if matches!(trigger, PdfViewportUpdateTrigger::Scroll) {
+            if let Some(range) = visible_range {
+                let allowed = self.viewport_scroll_policy.should_scroll(range.start);
+                if !allowed {
+                    let span = tracing::span!(
+                        Level::TRACE,
+                        "pdf.viewport.ignore",
+                        visible_range = ?visible_range,
+                        overscan_range = ?overscan_range,
+                        trigger = ?trigger,
+                        reason = "scroll_threshold"
+                    );
+                    let _enter = span.enter();
+                    trace!("PDF viewport update ignored (scroll threshold)");
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn should_scroll_to_page(
+        &mut self,
+        target_page: usize,
+        sentence_idx: Option<usize>,
+        reason: &'static str,
+    ) -> bool {
+        let allowed = self.highlight_scroll_policy.should_scroll(target_page);
+        let span = tracing::span!(
+            Level::TRACE,
+            "pdf.highlight.scroll",
+            reason,
+            target_page = target_page + 1,
+            sentence_idx,
+            allowed,
+            threshold_pages = self.highlight_scroll_policy.threshold_pages()
+        );
+        let _enter = span.enter();
+        trace!("PDF highlight scroll evaluated");
+        allowed
+    }
+
+    fn update_confidence_tier(&mut self, tier: Option<PdfConfidenceTier>, source_path: &str) -> bool {
+        let changed = self.last_confidence_source.as_deref() != Some(source_path)
+            || self.last_confidence_tier != tier;
+        self.confidence_tier = tier;
+        if changed {
+            self.last_confidence_source = Some(source_path.to_string());
+            self.last_confidence_tier = tier;
+        }
+        changed
     }
 
     fn record_render_metrics(&mut self, canvas_pages: usize, text_layers: usize, overlays: usize) {
@@ -7008,7 +7663,11 @@ impl PdfRenderState {
                 page = prev_page + 1,
                 sentence_idx = self.highlighted_sentence_idx,
                 rect_count = self.overlay_rects.len(),
-                highlight_anchor = self.overlay_anchor.as_deref().unwrap_or("unknown")
+                highlight_anchor = self.overlay_anchor.as_deref().unwrap_or("unknown"),
+                confidence_tier = self
+                    .confidence_tier
+                    .map(PdfConfidenceTier::label)
+                    .unwrap_or("unknown")
             );
             let _enter = cleanup_span.enter();
             trace!("Cleared PDF highlight overlay");
@@ -7033,7 +7692,11 @@ impl PdfRenderState {
             sentence_idx,
             rect_count = self.overlay_rects.len(),
             highlight_anchor = self.overlay_anchor.as_deref().unwrap_or("unknown"),
-            overlay_reason = self.overlay_alignment_reason.as_deref().unwrap_or("none")
+            overlay_reason = self.overlay_alignment_reason.as_deref().unwrap_or("none"),
+            confidence_tier = self
+                .confidence_tier
+                .map(PdfConfidenceTier::label)
+                .unwrap_or("unknown")
         );
         let _enter = apply_span.enter();
         trace!("Applied PDF highlight overlay");
@@ -7155,6 +7818,14 @@ impl PdfRenderState {
             })
             .collect()
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PdfZoomRequestOutcome {
+    previous_zoom: f32,
+    requested_zoom: f32,
+    applied: bool,
+    throttled: bool,
 }
 
 #[derive(Clone)]

@@ -109,7 +109,7 @@
 - [x] Each highlight span carries the originating sentence ID, page_id, and sync_map_quality so the overlay manager can emit `pdf.highlight.apply` spans with `highlight.anchor` metadata aligned to reader tracing.
 - [x] Preserve downgrade rules (sentence → block → page → render-only) and log the downgrade reason per overlay so QA can correlate with past instability classes.
 - [x] Overlay cleanup rules must ensure stale highlights and previous sentence rectangles are removed before new spans render; these transitions emit `pdf.highlight.cleanup` events with cleanup reason (new sentence, page change, closing source).
-- [ ] Jump and click behavior:
+- [x] Jump and click behavior:
 - [x] highlight updates triggered by TTS playback or sentence focus emit commands `JumpToSentence` with canonical index and tracer-friendly fields; highlight spans follow the same instrumentation (see `crates/lanternleaf-egui/src/main.rs` for the JumpToSentence spans that now carry `anchor_path`, overlay diagnostics, and the simplified PDF preview).
 - [x] Mouse clicks on overlays reverse-map geometry to the canonical sentence; emit `pdf.highlight.click` spans containing both geometry and sentence metadata before forwarding the command to the runtime pipeline.
 - [x] Surface overlay budget pressure events (native render spans and evictions) inside the diagnostics panel so QA can replay shell.performance_budget traces when the budget is contended.
@@ -119,28 +119,28 @@
 - [x] highlight geometry, cleanup, and jump semantics are documented, instrumented, and aligned with the canonical sentence anchors so the native overlay manager can be implemented without re-opening behavior debates.
 
 ## Phase 5: Zoom, Scroll, And Interaction Model
-- [ ] Define egui-native zoom/pan/scroll behavior tied to the virtualization scheduler and shell redraw/coalescing/tracing contracts:
-- [ ] Zoom behavior must integrate with `PageRenderService` zoom policies; zoom commands emit spans `pdf.zoom.request` and trigger scheduler updates without racing repeated repaints (throttle per shell coalescing settings).
-- [ ] Pan/scroll is handled via native `egui::ScrollArea` but only updates the virtualization scheduler when thresholds are exceeded to honor redraw budgets. Scheduler emits `pdf.viewport.update` spans describing visible range changes that include reason (`scroll`, `jump`, `auto-scroll`).
-- [ ] Preserve anti-jitter rules by comparing requested view positions against the last committed viewport; identical targets are ignored unless forced by user commands, and any ignored repeats are logged for diagnostics.
-- [ ] Scroll requests spawned by reader jumps or highlight movement only proceed when the canonical sentence index moves outside the viewport threshold defined in the virtualization scheduler; this logic emits tracing spans `pdf.highlight.scroll` with sentence metadata to align with the instrumentation plan.
-- [ ] Zoom/pan interactions must avoid resetting highlights; document how overlays re-apply after render passes and mention that overlay updates emit spans tracked by the shell instrumentation.
-- [ ] Selection policy and optional copy support should be optional nodes on the scroll stack; describe them in terms of commands (e.g., `SelectTextRange`, `CopySelection`) and link to tracing commands for telemetry.
-- [ ] Phase exit:
-- [ ] viewport behaviors, anti-jitter guards, and interaction commands are concrete, tied to the scheduler, and documented for tracing before building the egui viewer.
+- [x] Define egui-native zoom/pan/scroll behavior tied to the virtualization scheduler and shell redraw/coalescing/tracing contracts:
+- [x] Zoom behavior must integrate with `PageRenderService` zoom policies; zoom commands emit spans `pdf.zoom.request` and trigger scheduler updates without racing repeated repaints (throttle per shell coalescing settings).
+- [x] Pan/scroll is handled via native `egui::ScrollArea` but only updates the virtualization scheduler when thresholds are exceeded to honor redraw budgets. Scheduler emits `pdf.viewport.update` spans describing visible range changes that include reason (`scroll`, `jump`, `auto-scroll`).
+- [x] Preserve anti-jitter rules by comparing requested view positions against the last committed viewport; identical targets are ignored unless forced by user commands, and any ignored repeats are logged for diagnostics.
+- [x] Scroll requests spawned by reader jumps or highlight movement only proceed when the canonical sentence index moves outside the viewport threshold defined in the virtualization scheduler; this logic emits tracing spans `pdf.highlight.scroll` with sentence metadata to align with the instrumentation plan.
+- [x] Zoom/pan interactions must avoid resetting highlights; document how overlays re-apply after render passes and mention that overlay updates emit spans tracked by the shell instrumentation.
+- [x] Selection policy and optional copy support should be optional nodes on the scroll stack; describe them in terms of commands (e.g., `SelectTextRange`, `CopySelection`) and link to tracing commands for telemetry.
+- [x] Phase exit:
+- [x] viewport behaviors, anti-jitter guards, and interaction commands are concrete, tied to the scheduler, and documented for tracing before building the egui viewer.
 
 ## Phase 6: OCR And Quality Modes
-- [ ] Preserve the current PDF classification/runtime policy model and align it with tracing/command expectations:
-- [ ] Define when OCR runs (pre-render, post-render, on-demand) and how `OCRArtifactLoader` emits spans `pdf.ocr.run/start/complete` with source, confidence, and duration so the shell can correlate heavy jobs with viewport events.
-- [ ] Map confidence tiers (`trustworthy_text`, `mixed_fuzzy`, `ocr_required`, `render_only`) to explicit telemetry fields used by both the reader renderer and shell instrumentation to annotate highlight and search results.
-- [ ] Ensure degraded behaviors are traceable and actionable:
-- [ ] Trustworthy text uses canonical sentence geometry; spans should annotate `highlight.anchor=exact`.
-- [ ] Mixed/fuzzy text escalates fallback spans and logs the chosen geometry fallback path when voiceover tries to highlight sentences.
-- [ ] OCR-required mode emits UI-visible warnings and tracing breadcrumbs warning about missing high-confidence text, linking to the OCR job that produced the fallback geometry.
-- [ ] Render-only/no-sync states emit spans indicating that highlight sync is disabled, but the scroll/page rendering still obeys the virtualization scheduler.
-- [ ] Document how logs/UI present confidence rather than pretending the geometry is exact, tying badge states or toasts back to the same tracing fields.
-- [ ] Phase exit:
-- [ ] OCR integration, confidence tiers, and degraded behaviors are explicitly mapped to tracing/command diagnostics matching the rest of the egui roadmap before implementation.
+- [x] Preserve the current PDF classification/runtime policy model and align it with tracing/command expectations:
+- [x] Define when OCR runs (pre-render, post-render, on-demand) and how `OCRArtifactLoader` emits spans `pdf.ocr.run/start/complete` with source, confidence, and duration so the shell can correlate heavy jobs with viewport events.
+- [x] Map confidence tiers (`trustworthy_text`, `mixed_fuzzy`, `ocr_required`, `render_only`) to explicit telemetry fields used by both the reader renderer and shell instrumentation to annotate highlight and search results.
+- [x] Ensure degraded behaviors are traceable and actionable:
+- [x] Trustworthy text uses canonical sentence geometry; spans should annotate `highlight.anchor=exact`.
+- [x] Mixed/fuzzy text escalates fallback spans and logs the chosen geometry fallback path when voiceover tries to highlight sentences.
+- [x] OCR-required mode emits UI-visible warnings and tracing breadcrumbs warning about missing high-confidence text, linking to the OCR job that produced the fallback geometry.
+- [x] Render-only/no-sync states emit spans indicating that highlight sync is disabled, but the scroll/page rendering still obeys the virtualization scheduler.
+- [x] Document how logs/UI present confidence rather than pretending the geometry is exact, tying badge states or toasts back to the same tracing fields.
+- [x] Phase exit:
+- [x] OCR integration, confidence tiers, and degraded behaviors are explicitly mapped to tracing/command diagnostics matching the rest of the egui roadmap before implementation.
 
 ## Risks / Failure Modes
 - Rust-native PDF rendering may lag behind browser-quality fidelity if rendering evaluation is rushed.
@@ -150,7 +150,7 @@
 
 ## Test / Parity Requirements
 - [ ] Rust tests for sync artifact normalization and confidence scoring.
-- [ ] Rust integration tests for viewport scheduling, zoom, and overlay lifecycle.
+- [x] Rust integration tests for viewport scheduling, zoom, and overlay lifecycle.
 - [ ] Representative manual QA on structured, multi-column, OCR-heavy, rotated, and header/footer-heavy PDFs.
 - [ ] Explicit parity gate against current PDF reader checklist.
 - [ ] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.

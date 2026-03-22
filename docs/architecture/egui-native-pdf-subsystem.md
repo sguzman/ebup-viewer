@@ -43,3 +43,8 @@ This document defines the Rust-native PDF subsystem boundaries, instrumentation,
 - Overlay cleanup is mandatory on sentence/page changes and emits `pdf.highlight.cleanup` spans.
 - Overlay layering order: page textures → text layer → highlight overlays → modal overlays. Tracing must record the highlight layer as the highest-priority PDF overlay span.
 - Render-only fallback is used only when no geometry exists; highlight anchors must be labeled `render_only` so the shell can reduce expectations.
+
+## OCR quality and confidence tiers
+- OCR runs are tracked with `pdf.ocr.run.start`/`pdf.ocr.run.complete` spans that record `run_mode`, `source_kind`, `quality_class`, and `duration_ms`.
+- Confidence tiers are normalized to `trustworthy_text`, `mixed_fuzzy`, `ocr_required`, and `render_only`; the tier is attached to highlight and jump spans (`confidence_tier` field).
+- OCR-required and render-only modes must surface user-visible warnings and emit `pdf.ocr.required` / `pdf.sync.disabled` spans so degraded behaviors remain traceable.

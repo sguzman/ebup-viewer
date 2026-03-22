@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing_appender::{non_blocking, non_blocking::WorkerGuard};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -25,9 +26,14 @@ pub fn init_tracing(default_level: impl AsRef<str>) -> WorkerGuard {
         EnvFilter::try_new(&default_directive).unwrap_or_else(|_| EnvFilter::new("info"))
     };
 
-    let logs_dir = "logs";
-    if let Err(err) = fs::create_dir_all(logs_dir) {
-        eprintln!("failed to create tracing logs dir {logs_dir}: {err}");
+    let logs_dir = std::env::var_os("LANTERNLEAF_LOG_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join("logs"));
+    if let Err(err) = fs::create_dir_all(&logs_dir) {
+        eprintln!(
+            "failed to create tracing logs dir {}: {err}",
+            logs_dir.display()
+        );
     }
     let log_name = format!("lanternleaf-egui-{}.log", timestamp_slug());
     let file_appender = tracing_appender::rolling::never(logs_dir, log_name);

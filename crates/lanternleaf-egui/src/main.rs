@@ -1347,7 +1347,26 @@ impl LanternLeafApp {
                     }
                 };
                 let settings = &snapshot.settings;
-                ui.label(format!("Theme: {:?}", settings.theme));
+                ui.horizontal(|ui| {
+                    ui.label(format!("Theme: {:?}", settings.theme));
+                    let next_theme = match settings.theme {
+                        config::ThemeMode::Day => config::ThemeMode::Night,
+                        config::ThemeMode::Night => config::ThemeMode::Day,
+                    };
+                    let label = match next_theme {
+                        config::ThemeMode::Day => "Switch to Day",
+                        config::ThemeMode::Night => "Switch to Night",
+                    };
+                    if ui.button(label).clicked() {
+                        self.apply_reader_settings_patch(
+                            ReaderSettingsPatch {
+                                theme: Some(next_theme),
+                                ..Default::default()
+                            },
+                            "theme_toggle",
+                        );
+                    }
+                });
                 ui.horizontal(|ui| {
                     let mut auto_scroll = settings.auto_scroll_tts;
                     if ui
@@ -5818,7 +5837,11 @@ impl eframe::App for LanternLeafApp {
         self.tts_runtime.set_panels(panels);
         self.refresh_anchor_diagnostics(reader_snapshot);
         self.update_pdf_render_state(reader_snapshot);
-        ctx.set_visuals(Visuals::dark());
+        let visuals = match reader_snapshot.map(|snapshot| snapshot.settings.theme) {
+            Some(config::ThemeMode::Day) => Visuals::light(),
+            Some(config::ThemeMode::Night) | None => Visuals::dark(),
+        };
+        ctx.set_visuals(visuals);
         self.handle_shortcuts(ctx, &snapshot);
         self.render_top_bar(ctx, &snapshot);
         self.render_navigation_row(ctx, &snapshot);

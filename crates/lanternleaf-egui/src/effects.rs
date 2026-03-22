@@ -36,6 +36,7 @@ pub struct EffectContext {
 }
 
 impl EffectContext {
+    #[cfg(test)]
     pub fn new(
         config: config::AppConfig,
         normalizer: normalizer::TextNormalizer,
@@ -247,12 +248,14 @@ fn handle_load_bootstrap(
 }
 
 fn handle_list_recents(
-    _context: &EffectContext,
+    context: &EffectContext,
     request_id: u64,
     limit: Option<usize>,
 ) -> Result<Vec<AppEvent>, BridgeError> {
     let limit = normalize_recent_limit(limit);
-    let recents: Vec<RecentBook> = cache::list_recent_books(limit)
+    let recents: Vec<RecentBook> = context
+        .cache_service
+        .list_recent_books(limit)
         .into_iter()
         .map(map_recent_book)
         .collect();
@@ -273,13 +276,16 @@ fn handle_delete_recent(
         .cache_service
         .delete_recent_source_and_cache(&path)
         .map_err(|err| bridge_error("io_error", err))?;
-    let recents = cache::list_recent_books(normalize_recent_limit(None))
+    let recents: Vec<RecentBook> = context
+        .cache_service
+        .list_recent_books(normalize_recent_limit(None))
         .into_iter()
         .map(map_recent_book)
         .collect();
     info!(
         request_id,
         source_path = %path.display(),
+        count = recents.len(),
         "Deleted recent source"
     );
     Ok(vec![AppEvent::RecentsLoaded {
@@ -1047,8 +1053,8 @@ fn emit_failure_progress(effect: &RuntimeEffect, request_id: u64, tx: &mpsc::Sen
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::path::Path;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::Duration;
 
     #[test]
@@ -1119,5 +1125,76 @@ mod tests {
             .expect("flush should succeed");
 
         assert!(called.load(Ordering::SeqCst));
+    }
+
+    struct CountingConfigService {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl config_service::ConfigService for CountingConfigService {
+        fn save_base_config(&self, _path: &Path, _config: &config::AppConfig) -> Result<(), String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    struct FailingConfigService;
+
+    impl config_service::ConfigService for FailingConfigService {
+        fn save_base_config(&self, _path: &Path, _config: &config::AppConfig) -> Result<(), String> {
+            Err("persist_failed".to_string())
+        }
+    }
+
+    #[test]
+    fn set_log_level_persists_config() {
+        let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
+            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+        ));
+        let cache_service: Arc<dyn cache_service::CacheService> =
+            Arc::new(cache_service::FilesystemCacheService);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let config_service: Arc<dyn config_service::ConfigService> =
+            Arc::new(CountingConfigService {
+                calls: Arc::clone(&calls),
+            });
+        let config_path = std::env::temp_dir().join("lanternleaf-egui-config-test.toml");
+        let context = EffectContext::with_services(
+            config::AppConfig::default(),
+            normalizer::TextNormalizer::default(),
+            persistence,
+            cache_service,
+            config_path,
+            config_service,
+        );
+
+        let events = handle_set_log_level(&context, 17, "info").expect("log level update");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(matches!(events[0], AppEvent::LogLevelUpdated(_)));
+        let cfg = context.config.lock().expect("config lock");
+        assert!(matches!(cfg.log_level, config::LogLevel::Info));
+    }
+
+    #[test]
+    fn set_log_level_reports_persist_failure() {
+        let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
+            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+        ));
+        let cache_service: Arc<dyn cache_service::CacheService> =
+            Arc::new(cache_service::FilesystemCacheService);
+        let config_service: Arc<dyn config_service::ConfigService> =
+            Arc::new(FailingConfigService);
+        let config_path = std::env::temp_dir().join("lanternleaf-egui-config-test.toml");
+        let context = EffectContext::with_services(
+            config::AppConfig::default(),
+            normalizer::TextNormalizer::default(),
+            persistence,
+            cache_service,
+            config_path,
+            config_service,
+        );
+
+        let events = handle_set_log_level(&context, 33, "warn").expect("log level update");
+        assert!(events.iter().any(|event| matches!(event, AppEvent::CommandFailed { .. })));
     }
 }

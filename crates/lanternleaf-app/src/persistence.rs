@@ -324,6 +324,12 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
         housekeeping: Option<ReaderHousekeeping<'_>>,
         trigger: PersistenceTrigger,
     ) {
+        let has_housekeeping = housekeeping.is_some();
+        debug!(
+            trigger = ?trigger,
+            has_housekeeping,
+            "Persistence flush requested"
+        );
         match (housekeeping, trigger) {
             (Some(housekeeping), PersistenceTrigger::ReaderCommand)
             | (Some(housekeeping), PersistenceTrigger::RuntimeConfigChange) => {
@@ -554,11 +560,22 @@ mod tests {
             Err("not_used".to_string())
         }
 
+        fn list_recent_books(&self, _limit: usize) -> Vec<cache::RecentBook> {
+            Vec::new()
+        }
+
         fn load_browser_tab_manifest(
             &self,
             _source_path: &Path,
         ) -> Result<cache::BrowserTabSourceManifest, String> {
             Err("not_used".to_string())
+        }
+
+        fn load_pdf_ocr_alignment_artifact(
+            &self,
+            _source_path: &Path,
+        ) -> Option<cache::PdfOcrAlignmentArtifact> {
+            None
         }
 
         fn persist_pdf_sentence_map(
@@ -653,5 +670,111 @@ mod tests {
         let guard = saved_config.lock().expect("config lock");
         let saved = guard.as_ref().expect("config saved");
         assert!((saved.tts_speed - 3.5).abs() < f32::EPSILON);
+    }
+
+    struct RecordingCacheService {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    impl RecordingCacheService {
+        fn new() -> (Self, Arc<Mutex<Vec<&'static str>>>) {
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            (Self { calls: Arc::clone(&calls) }, calls)
+        }
+
+        fn record(&self, name: &'static str) {
+            self.calls.lock().expect("calls lock").push(name);
+        }
+    }
+
+    impl CacheService for RecordingCacheService {
+        fn save_bookmark(&self, _source_path: &Path, _bookmark: &cache::Bookmark) {
+            self.record("save_bookmark");
+        }
+
+        fn save_epub_config(&self, _source_path: &Path, _config: &config::AppConfig) {
+            self.record("save_epub_config");
+        }
+
+        fn delete_recent_source_and_cache(&self, _source_path: &Path) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn remember_source_path(&self, _source_path: &Path) {
+            self.record("remember_source_path");
+        }
+
+        fn persist_clipboard_text_source(&self, _text: &str) -> Result<std::path::PathBuf, String> {
+            Err("not_used".to_string())
+        }
+
+        fn persist_browser_tab_source(
+            &self,
+            _snapshot: &lanternleaf_core::browser_tabs::BrowserTabSnapshot,
+            _tab_meta: Option<&lanternleaf_core::browser_tabs::BrowserTab>,
+        ) -> Result<std::path::PathBuf, String> {
+            Err("not_used".to_string())
+        }
+
+        fn persist_browser_tab_bundle_source(
+            &self,
+            _capture: &lanternleaf_core::browser_tabs::BrowserTabBundleCapture,
+            _tab_meta: Option<&lanternleaf_core::browser_tabs::BrowserTab>,
+        ) -> Result<std::path::PathBuf, String> {
+            Err("not_used".to_string())
+        }
+
+        fn list_recent_books(&self, _limit: usize) -> Vec<cache::RecentBook> {
+            Vec::new()
+        }
+
+        fn load_browser_tab_manifest(
+            &self,
+            _source_path: &Path,
+        ) -> Result<cache::BrowserTabSourceManifest, String> {
+            Err("not_used".to_string())
+        }
+
+        fn load_pdf_ocr_alignment_artifact(
+            &self,
+            _source_path: &Path,
+        ) -> Option<cache::PdfOcrAlignmentArtifact> {
+            None
+        }
+
+        fn persist_pdf_sentence_map(
+            &self,
+            _source_path: &Path,
+            _locations: &[cache::PdfSentenceLocation],
+        ) {
+        }
+
+        fn persist_pdf_render_precomputed_state(
+            &self,
+            _source_path: &Path,
+            _artifact: &cache::PdfRenderPrecomputedState,
+        ) {
+        }
+    }
+
+    #[test]
+    fn filesystem_persistence_remembers_source_before_saving() {
+        let (cache_service, calls) = RecordingCacheService::new();
+        let service = FilesystemPersistenceService::new(Arc::new(cache_service));
+        let snapshot = make_reader_snapshot();
+        let config = config::AppConfig::default();
+
+        service
+            .persist_reader_housekeeping(ReaderHousekeeping {
+                snapshot: &snapshot,
+                config: &config,
+            })
+            .expect("persist should succeed");
+
+        let recorded = calls.lock().expect("calls lock").clone();
+        assert_eq!(
+            recorded,
+            vec!["remember_source_path", "save_bookmark", "save_epub_config"]
+        );
     }
 }

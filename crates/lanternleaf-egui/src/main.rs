@@ -52,7 +52,7 @@ use lanternleaf_app::{
     tts_runtime::{TtsCommand, TtsRuntime, TtsRuntimeEvent, TtsRuntimeEventKind},
 };
 use lanternleaf_core::{
-    cache, config, normalizer,
+    cache, cache_service, config, config_service, normalizer,
     session::{ReaderSettingsPatch, SessionCommand, TtsPlaybackState},
 };
 use serde::{Deserialize, Serialize};
@@ -179,6 +179,7 @@ struct LanternLeafApp {
     tts_runtime: TtsRuntime,
     last_tts_runtime_event: Option<TtsRuntimeEvent>,
     persistence: Arc<PersistenceLifecycle<FilesystemPersistenceService>>,
+    cache_service: Arc<dyn cache_service::CacheService>,
     persistence_logged: bool,
     last_reader_source: Option<String>,
     last_reader_snapshot: Option<ReaderSnapshot>,
@@ -283,12 +284,18 @@ impl LanternLeafApp {
         let persistence = Arc::new(PersistenceLifecycle::new(
             FilesystemPersistenceService::default(),
         ));
+        let cache_service: Arc<dyn cache_service::CacheService> =
+            Arc::new(cache_service::FilesystemCacheService);
+        let config_service: Arc<dyn config_service::ConfigService> =
+            Arc::new(config_service::FilesystemConfigService);
         let config_path = app_config_path();
-        let effect_context = EffectContext::new(
+        let effect_context = EffectContext::with_services(
             app_config.clone(),
             normalizer.clone(),
             Arc::clone(&persistence),
+            Arc::clone(&cache_service),
             config_path,
+            Arc::clone(&config_service),
         );
         let mut app = Self {
             runtime,
@@ -305,6 +312,7 @@ impl LanternLeafApp {
             tts_runtime: TtsRuntime::new(normalizer.clone()),
             last_tts_runtime_event: None,
             persistence,
+            cache_service,
             persistence_logged: false,
             last_reader_source: None,
             last_reader_snapshot: None,
@@ -2409,8 +2417,11 @@ impl LanternLeafApp {
                         .unwrap_or(snapshot.current_page);
                         let overlay_geometry = Self::global_sentence_index(snapshot, idx)
                             .and_then(|global_idx| {
-                                self.pdf_render_state
-                                    .overlay_geometry_for_sentence(&snapshot.source_path, global_idx)
+                                self.pdf_render_state.overlay_geometry_for_sentence(
+                                    self.cache_service.as_ref(),
+                                    &snapshot.source_path,
+                                    global_idx,
+                                )
                             });
                         let overlay_rects = overlay_geometry
                             .as_ref()
@@ -6686,21 +6697,26 @@ impl PdfRenderState {
 
     fn overlay_geometry_for_sentence(
         &mut self,
+        cache_service: &dyn cache_service::CacheService,
         source_path: &str,
         sentence_idx: usize,
     ) -> Option<OverlayGeometryEntry> {
-        self.ensure_alignment_cache(source_path);
+        self.ensure_alignment_cache(cache_service, source_path);
         self.overlay_alignment_rects.get(&sentence_idx).cloned()
     }
 
-    fn ensure_alignment_cache(&mut self, source_path: &str) {
+    fn ensure_alignment_cache(
+        &mut self,
+        cache_service: &dyn cache_service::CacheService,
+        source_path: &str,
+    ) {
         if self.overlay_alignment_source.as_deref() == Some(source_path) {
             return;
         }
         self.overlay_alignment_source = Some(source_path.to_string());
         self.overlay_alignment_rects.clear();
         let path = Path::new(source_path);
-        if let Some(artifact) = cache::load_pdf_ocr_alignment_artifact(path) {
+        if let Some(artifact) = cache_service.load_pdf_ocr_alignment_artifact(path) {
             for alignment in artifact.alignments.iter() {
                 if alignment.page_idx.is_none() {
                     continue;

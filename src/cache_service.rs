@@ -19,10 +19,15 @@ pub trait CacheService: Send + Sync {
         capture: &browser_tabs::BrowserTabBundleCapture,
         tab_meta: Option<&browser_tabs::BrowserTab>,
     ) -> Result<PathBuf, String>;
+    fn list_recent_books(&self, limit: usize) -> Vec<cache::RecentBook>;
     fn load_browser_tab_manifest(
         &self,
         source_path: &Path,
     ) -> Result<cache::BrowserTabSourceManifest, String>;
+    fn load_pdf_ocr_alignment_artifact(
+        &self,
+        source_path: &Path,
+    ) -> Option<cache::PdfOcrAlignmentArtifact>;
     fn persist_pdf_sentence_map(
         &self,
         source_path: &Path,
@@ -158,6 +163,31 @@ impl CacheService for FilesystemCacheService {
                 Err("browser_tab_manifest_missing".to_string())
             }
         }
+    }
+
+    fn list_recent_books(&self, limit: usize) -> Vec<cache::RecentBook> {
+        let recents = cache::list_recent_books(limit);
+        debug!(count = recents.len(), "Loaded recent books");
+        recents
+    }
+
+    fn load_pdf_ocr_alignment_artifact(
+        &self,
+        source_path: &Path,
+    ) -> Option<cache::PdfOcrAlignmentArtifact> {
+        let artifact = cache::load_pdf_ocr_alignment_artifact(source_path);
+        if artifact.is_some() {
+            debug!(
+                source_path = %source_path.display(),
+                "Loaded PDF OCR alignment artifact"
+            );
+        } else {
+            debug!(
+                source_path = %source_path.display(),
+                "PDF OCR alignment artifact missing"
+            );
+        }
+        artifact
     }
 
     fn persist_pdf_sentence_map(

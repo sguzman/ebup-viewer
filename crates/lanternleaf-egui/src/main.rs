@@ -4535,40 +4535,45 @@ impl LanternLeafApp {
             current_x += page_width + gap;
             let is_highlight_page = Some(page) == highlight_page;
             let is_priority = plan.priority_page_indexes.contains(&page);
-            let (
-                canvas_allowed,
-                text_allowed,
-                canvas_texture,
-                text_texture,
-                overlays_source,
-                overlay_reason,
-            ) = {
-                let surface = self.pdf_render_state.surface_for_page(page);
-                let canvas_allowed = surface.map(|surface| surface.canvas_ready).unwrap_or(false);
-                let text_allowed = surface
-                    .map(|surface| surface.text_layer_ready)
-                    .unwrap_or(false);
-                let canvas_texture = surface
-                    .and_then(|surface| surface.canvas_texture.as_ref())
-                    .map(|texture| texture.id());
-                let text_texture = surface
-                    .and_then(|surface| surface.text_layer_texture.as_ref())
-                    .map(|texture| texture.id());
-                let overlays_source = surface
-                    .map(|surface| surface.overlay_rects.clone())
-                    .unwrap_or_else(|| self.pdf_render_state.overlay_rects.clone());
-                let overlay_reason = surface
-                    .and_then(|surface| surface.overlay_reason.clone())
-                    .or_else(|| self.pdf_render_state.overlay_alignment_reason.clone());
-                (
+                let (
                     canvas_allowed,
                     text_allowed,
                     canvas_texture,
                     text_texture,
                     overlays_source,
                     overlay_reason,
-                )
-            };
+                    overlay_anchor,
+                ) = {
+                    let surface = self.pdf_render_state.surface_for_page(page);
+                    let canvas_allowed = surface.map(|surface| surface.canvas_ready).unwrap_or(false);
+                    let text_allowed = surface
+                        .map(|surface| surface.text_layer_ready)
+                        .unwrap_or(false);
+                    let canvas_texture = surface
+                        .and_then(|surface| surface.canvas_texture.as_ref())
+                        .map(|texture| texture.id());
+                    let text_texture = surface
+                        .and_then(|surface| surface.text_layer_texture.as_ref())
+                        .map(|texture| texture.id());
+                    let overlays_source = surface
+                        .map(|surface| surface.overlay_rects.clone())
+                        .unwrap_or_else(|| self.pdf_render_state.overlay_rects.clone());
+                    let overlay_reason = surface
+                        .and_then(|surface| surface.overlay_reason.clone())
+                        .or_else(|| self.pdf_render_state.overlay_alignment_reason.clone());
+                    let overlay_anchor = surface
+                        .and_then(|surface| surface.overlay_anchor.clone())
+                        .or_else(|| self.pdf_render_state.overlay_anchor.clone());
+                    (
+                        canvas_allowed,
+                        text_allowed,
+                        canvas_texture,
+                        text_texture,
+                        overlays_source,
+                        overlay_reason,
+                        overlay_anchor,
+                    )
+                };
             let has_canvas_intent = plan.canvas_page_indexes.contains(&page);
             let has_text_intent = plan.text_layer_page_indexes.contains(&page);
             let uv_rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
@@ -4733,6 +4738,37 @@ impl LanternLeafApp {
                             2.0,
                             Color32::from_rgba_unmultiplied(255, 190, 80, 160),
                         );
+                        let response = ui.interact(
+                            overlay,
+                            Id::new(format!("pdf-overlay-{}-{}", page, idx)),
+                            Sense::click(),
+                        );
+                        if response.clicked() {
+                            let target_sentence = snapshot.highlighted_sentence_idx;
+                            let global_sentence = target_sentence
+                                .and_then(|local| Self::global_sentence_index(snapshot, local));
+                            let click_span = tracing::span!(
+                                Level::TRACE,
+                                "pdf.highlight.click",
+                                page = page + 1,
+                                sentence_idx = target_sentence,
+                                global_sentence_idx = global_sentence,
+                                rect_index = idx,
+                                rect_left = rect[0],
+                                rect_top = rect[1],
+                                rect_right = rect[2],
+                                rect_bottom = rect[3],
+                                highlight_anchor = overlay_anchor.as_deref().unwrap_or("unknown"),
+                                overlay_reason = overlay_reason.as_deref().unwrap_or("none")
+                            );
+                            let _enter = click_span.enter();
+                            trace!("PDF highlight overlay clicked");
+                            if let Some(sentence_idx) = target_sentence {
+                                self.execute_reader_command(ReaderCommand::Session(
+                                    SessionCommand::SentenceClick { sentence_idx },
+                                ));
+                            }
+                        }
                     }
                 }
                 if page_overlay_drawn > 0 {
@@ -4745,6 +4781,7 @@ impl LanternLeafApp {
                         overlays_drawn = page_overlay_drawn,
                         overlay_budget_pages = overlay_budget,
                         overlay_alignment_reason = ?overlay_reason.as_deref(),
+                        highlight_anchor = ?overlay_anchor.as_deref(),
                     );
                     let _overlay_enter = overlay_span.enter();
                     trace!(
@@ -5647,6 +5684,29 @@ mod tests {
         let alignment = alignment_with(vec![rect()], Vec::new(), Vec::new(), Some(0));
         let entry = OverlayGeometryEntry::from_alignment(&alignment).expect("entry");
         assert_eq!(entry.anchor_label, "exact");
+    }
+
+    #[test]
+    fn set_highlighted_page_tracks_overlay_anchor_on_surface() {
+        let mut state = PdfRenderState::default();
+        let plan = PdfViewportRenderPlan {
+            canvas_page_indexes: vec![0],
+            text_layer_page_indexes: vec![0],
+            priority_page_indexes: vec![0],
+            medium_priority_page_indexes: Vec::new(),
+            low_priority_page_indexes: Vec::new(),
+        };
+        state.update_surfaces(&plan);
+        state.set_highlighted_page(
+            0,
+            Some(1),
+            vec![[0.1, 0.2, 0.3, 0.4]],
+            Some("test".to_string()),
+            Some("exact".to_string()),
+        );
+        assert_eq!(state.overlay_anchor.as_deref(), Some("exact"));
+        let surface = state.surface_for_page(0).expect("surface");
+        assert_eq!(surface.overlay_anchor.as_deref(), Some("exact"));
     }
 }
 
@@ -7010,7 +7070,20 @@ impl PdfRenderState {
         sentence_idx: usize,
     ) -> Option<OverlayGeometryEntry> {
         self.ensure_alignment_cache(cache_service, source_path);
-        self.overlay_alignment_rects.get(&sentence_idx).cloned()
+        let entry = self.overlay_alignment_rects.get(&sentence_idx).cloned();
+        let fallback_path = entry
+            .as_ref()
+            .map(|value| value.anchor_label.as_str())
+            .unwrap_or("render_only");
+        let span = tracing::span!(
+            Level::TRACE,
+            "pdf.text.sync",
+            sentence_idx,
+            fallback_path
+        );
+        let _enter = span.enter();
+        trace!("PDF text sync evaluated");
+        entry
     }
 
     fn ensure_alignment_cache(

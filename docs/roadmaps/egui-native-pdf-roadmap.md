@@ -63,7 +63,7 @@
 - [x] Align PDF rendering instrumentation with the egui shell performance and tracing contracts (shell roadmap Phase 6):
 - [x] page render requests must respect the same coalescing/back-pressure rules as panel state updates to avoid frame drops.
 - [x] highlight overlay updates must emit tracing spans (command, sentence, anchor) so the shell instrumentation sees the same state transitions as it does for text and reader interactions.
-- [ ] Text sync/resync cycles should log the fallback path taken (exact/mixed/block/page) in the shared tracing schema so QA can correlate highlight jumps with PDF metrics.
+- [x] Text sync/resync cycles should log the fallback path taken (exact/mixed/block/page) in the shared tracing schema so QA can correlate highlight jumps with PDF metrics.
 
 ## Phase 1: PDF Subsystem Boundaries
 - [x] Define the Rust-native services and instrumentation contracts for:
@@ -92,31 +92,31 @@
 - [x] the egui PDF viewer has a virtualization lifecycle contract, with rendering and viewport scheduling tightly instrumented and obeying the shell redraw/coalescing constraints.
 
 ## Phase 3: Text Extraction And Sync Artifact Strategy
-- [ ] Define Rust-native page text extraction ownership, normalization, cache persistence, and tracing invariants:
-- [ ] `TextExtractionService` emits spans `pdf.text.extract` with page_id, extraction_mode (exact/mixed/block), and extraction duration so QA can trace quality tiers.
-- [ ] Text caches (per page and per highlight) log hits/misses and emit structured logs so the shell can correlate cache usage with redraw/coalescing events.
-- [ ] Sentence-page hints are captured with canonical sentence IDs; missing hints trigger fallback spans (`pdf.text.fallback`) with the fallback reason (`ocr`, `block`, `page`).
-- [ ] OCR alignment artifacts are treated as augmentation only when text extraction reports low confidence; their ingestion emits spans `pdf.ocr.load` with confidence metadata.
-- [ ] Sentence sync maps carry the confidence tier and geometry fallback path; transitions between tiers are logged so highlight jumps can explain themselves.
-- [ ] Normalization parity rules (ligatures, hyphenation, duplicate glyph suppression, repeated headers/footers) are documented, and each normalization step logs whether it changed the canonical sentence string.
-- [ ] Define fallback hierarchy explicitly (exact sentence geometry > fuzzy sentence geometry > block fallback > page-level location > render-only/no-sync) and document how each transition is recorded in tracing fields so the runtime can observe when geometry quality degrades.
-- [ ] Define how serialization/persistence of text caches/sync maps flushes during shell lifecycle events (open, close, quit) and what metrics/logs are emitted to verify persistence success.
+- [x] Define Rust-native page text extraction ownership, normalization, cache persistence, and tracing invariants:
+- [x] `TextExtractionService` emits spans `pdf.text.extract` with page_id, extraction_mode (exact/mixed/block), and extraction duration so QA can trace quality tiers.
+- [x] Text caches (per page and per highlight) log hits/misses and emit structured logs so the shell can correlate cache usage with redraw/coalescing events.
+- [x] Sentence-page hints are captured with canonical sentence IDs; missing hints trigger fallback spans (`pdf.text.fallback`) with the fallback reason (`ocr`, `block`, `page`).
+- [x] OCR alignment artifacts are treated as augmentation only when text extraction reports low confidence; their ingestion emits spans `pdf.ocr.load` with confidence metadata.
+- [x] Sentence sync maps carry the confidence tier and geometry fallback path; transitions between tiers are logged so highlight jumps can explain themselves.
+- [x] Normalization parity rules (ligatures, hyphenation, duplicate glyph suppression, repeated headers/footers) are documented, and each normalization step logs whether it changed the canonical sentence string.
+- [x] Define fallback hierarchy explicitly (exact sentence geometry > fuzzy sentence geometry > block fallback > page-level location > render-only/no-sync) and document how each transition is recorded in tracing fields so the runtime can observe when geometry quality degrades.
+- [x] Define how serialization/persistence of text caches/sync maps flushes during shell lifecycle events (open, close, quit) and what metrics/logs are emitted to verify persistence success.
 - Phase exit:
-- [ ] text extraction, normalization, caches, and sync maps are explicit, traced, and ready for native implementation.
+- [x] text extraction, normalization, caches, and sync maps are explicit, traced, and ready for native implementation.
 
 ## Phase 4: Highlight, Overlay, And Jump Semantics
 - [x] Define page-relative overlay geometry for highlights as the stable rendering primitive tied to canonical sentence anchors and the tracing schema:
-- [ ] Each highlight span carries the originating sentence ID, page_id, and sync_map_quality so the overlay manager can emit `pdf.highlight.apply` spans with `highlight.anchor` metadata aligned to reader tracing.
-- [ ] Preserve downgrade rules (sentence → block → page → render-only) and log the downgrade reason per overlay so QA can correlate with past instability classes.
-- [ ] Overlay cleanup rules must ensure stale highlights and previous sentence rectangles are removed before new spans render; these transitions emit `pdf.highlight.cleanup` events with cleanup reason (new sentence, page change, closing source).
+- [x] Each highlight span carries the originating sentence ID, page_id, and sync_map_quality so the overlay manager can emit `pdf.highlight.apply` spans with `highlight.anchor` metadata aligned to reader tracing.
+- [x] Preserve downgrade rules (sentence → block → page → render-only) and log the downgrade reason per overlay so QA can correlate with past instability classes.
+- [x] Overlay cleanup rules must ensure stale highlights and previous sentence rectangles are removed before new spans render; these transitions emit `pdf.highlight.cleanup` events with cleanup reason (new sentence, page change, closing source).
 - [ ] Jump and click behavior:
 - [x] highlight updates triggered by TTS playback or sentence focus emit commands `JumpToSentence` with canonical index and tracer-friendly fields; highlight spans follow the same instrumentation (see `crates/lanternleaf-egui/src/main.rs` for the JumpToSentence spans that now carry `anchor_path`, overlay diagnostics, and the simplified PDF preview).
-- [ ] Mouse clicks on overlays reverse-map geometry to the canonical sentence; emit `pdf.highlight.click` spans containing both geometry and sentence metadata before forwarding the command to the runtime pipeline.
+- [x] Mouse clicks on overlays reverse-map geometry to the canonical sentence; emit `pdf.highlight.click` spans containing both geometry and sentence metadata before forwarding the command to the runtime pipeline.
 - [x] Surface overlay budget pressure events (native render spans and evictions) inside the diagnostics panel so QA can replay shell.performance_budget traces when the budget is contended.
-- [ ] Avoid reusing random full-page fallbacks unless no better geometry is present; document how the overlay manager detects “render-only” state and reports it via tracing/diagnostics so the shell reduces expectation.
-- [ ] Define overlay layering rules so the reader and shell stay in sync (e.g., highlight overlays render above page textures but below modal overlays), and the tracer records which layer produced the highest priority spans.
-- [ ] Phase exit:
-- [ ] highlight geometry, cleanup, and jump semantics are documented, instrumented, and aligned with the canonical sentence anchors so the native overlay manager can be implemented without re-opening behavior debates.
+- [x] Avoid reusing random full-page fallbacks unless no better geometry is present; document how the overlay manager detects “render-only” state and reports it via tracing/diagnostics so the shell reduces expectation.
+- [x] Define overlay layering rules so the reader and shell stay in sync (e.g., highlight overlays render above page textures but below modal overlays), and the tracer records which layer produced the highest priority spans.
+- [x] Phase exit:
+- [x] highlight geometry, cleanup, and jump semantics are documented, instrumented, and aligned with the canonical sentence anchors so the native overlay manager can be implemented without re-opening behavior debates.
 
 ## Phase 5: Zoom, Scroll, And Interaction Model
 - [ ] Define egui-native zoom/pan/scroll behavior tied to the virtualization scheduler and shell redraw/coalescing/tracing contracts:

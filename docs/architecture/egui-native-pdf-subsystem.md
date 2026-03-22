@@ -41,3 +41,5 @@ This document defines the Rust-native PDF subsystem boundaries, instrumentation,
 ## Overlay geometry and highlight semantics
 - Highlights are page-relative rectangles tied to canonical sentence IDs and logged with `highlight.anchor` and `sync_map_quality`.
 - Overlay cleanup is mandatory on sentence/page changes and emits `pdf.highlight.cleanup` spans.
+- Overlay layering order: page textures → text layer → highlight overlays → modal overlays. Tracing must record the highlight layer as the highest-priority PDF overlay span.
+- Render-only fallback is used only when no geometry exists; highlight anchors must be labeled `render_only` so the shell can reduce expectations.

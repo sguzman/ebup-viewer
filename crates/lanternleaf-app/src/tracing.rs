@@ -15,9 +15,15 @@ fn timestamp_slug() -> String {
 /// background writer alive.
 pub fn init_tracing(default_level: impl AsRef<str>) -> WorkerGuard {
     let default_directive = default_level.as_ref().to_string();
-    let env_filter = EnvFilter::try_from_default_env()
-        .or_else(|_| EnvFilter::try_new(&default_directive))
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = if std::env::var_os("RUST_LOG").is_some() {
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
+    } else if cfg!(debug_assertions) {
+        EnvFilter::new(
+            "info,lanternleaf=debug,lanternleaf_app=debug,lanternleaf_core=debug,lanternleaf_egui=debug",
+        )
+    } else {
+        EnvFilter::try_new(&default_directive).unwrap_or_else(|_| EnvFilter::new("info"))
+    };
 
     let logs_dir = "logs";
     if let Err(err) = fs::create_dir_all(logs_dir) {

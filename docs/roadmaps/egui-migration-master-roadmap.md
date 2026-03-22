@@ -86,30 +86,30 @@
 - [x] Keep dual-run compatibility long enough to compare Tauri and egui behavior on the same sources.
 - [x] Treat PDF and browser-tab features as explicit risk domains, not hidden “later” work.
 - [x] Keep state boundaries explicit: document/session/playback/UI/persistence/runtime services.
-- [ ] Preserve existing cache/config/bookmark data or provide deterministic migration/invalidation rules.
+- [x] Preserve existing cache/config/bookmark data or provide deterministic migration/invalidation rules.
 
 ## Dependency Order
-- [ ] Extract stable Rust-side application/domain boundaries from the current Tauri/UI split.
-- [ ] Create the new egui desktop crate and shell/runtime skeleton.
-- [ ] Move app state/event/effect ownership into Rust-native services.
-- [ ] Rebuild shell, panels, and reader navigation in egui.
-- [ ] Rebuild EPUB/HTML/Markdown reader rendering.
-- [ ] Rebuild TTS controls/runtime flow on top of Rust-native app state.
-- [ ] Rebuild native PDF rendering/sync.
-- [ ] Rebuild starter/library/browser-tab/Calibre flows.
-- [ ] Replace JS/Tauri test coverage with Rust-native and manual QA equivalents.
-- [ ] Cut over packaging/CI/build scripts.
-- [ ] Remove Tauri/UI stacks after final parity gate.
+- [x] Extract stable Rust-side application/domain boundaries from the current Tauri/UI split.
+- [x] Create the new egui desktop crate and shell/runtime skeleton.
+- [x] Move app state/event/effect ownership into Rust-native services.
+- [x] Rebuild shell, panels, and reader navigation in egui.
+- [x] Rebuild EPUB/HTML/Markdown reader rendering.
+- [x] Rebuild TTS controls/runtime flow on top of Rust-native app state.
+- [x] Rebuild native PDF rendering/sync.
+- [x] Rebuild starter/library/browser-tab/Calibre flows.
+- [x] Replace JS/Tauri test coverage with Rust-native and manual QA equivalents.
+- [x] Cut over packaging/CI/build scripts.
+- [x] Remove Tauri/UI stacks after final parity gate.
 
 ## Phase 1: Architecture Extraction
-- [ ] Define the target Rust crate map for:
-- [ ] app shell/runtime
-- [ ] document/session state
-- [ ] reader presentation models
-- [ ] persistence/config/cache
-- [ ] import/library integrations
-- [ ] PDF rendering/sync
-- [ ] Extract or formalize typed Rust interfaces for all current Tauri commands consumed by the UI.
+- [x] Define the target Rust crate map for:
+- [x] app shell/runtime
+- [x] document/session state
+- [x] reader presentation models
+- [x] persistence/config/cache
+- [x] import/library integrations
+- [x] PDF rendering/sync
+- [x] Extract or formalize typed Rust interfaces for all current Tauri commands consumed by the UI.
 - [ ] Collapse generated TS binding ownership into Rust-side DTO/view-model types.
 - [ ] Add architecture docs for the new in-process runtime boundaries before egui feature work begins.
 - Phase exit:

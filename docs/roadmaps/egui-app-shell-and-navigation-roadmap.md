@@ -46,10 +46,10 @@
 
 ## Runtime & Shortcut Integration
 - The future egui shell will own a single `AppRuntime` instance that:
-- [ ] plans commands via `plan_command` when toolbar buttons or panels dispatch actions.
-- [ ] applies events through `apply_event` when long-running effects complete or when modals close.
-- [ ] exposes `state_snapshot` so widgets can read `AppState` (AppShell, Reader, Playback, etc.) without serialization.
-- [ ] surfaces a `ShortcutRegistry` so the keyboard/shortcut layer can remain data-driven.
+- [x] plans commands via `plan_command` when toolbar buttons or panels dispatch actions.
+- [x] applies events through `apply_event` when long-running effects complete or when modals close.
+- [x] exposes `state_snapshot` so widgets can read `AppState` (AppShell, Reader, Playback, etc.) without serialization.
+- [x] surfaces a `ShortcutRegistry` so the keyboard/shortcut layer can remain data-driven.
 - The shell should document which `AppCommand`/`ReaderCommand` each UI action targets (open source, toggle panel, send shortcut) and track the effect owners so tracing spans correlate with `AppRuntime` commands.
 - Modal confirmations, navigation transitions, and panel switches should never mutate `AppState` directly; they should emit `AppCommand`s so the runtime enforces operation scopes and instrumentation.
 ## Module And Widget Mapping
@@ -60,17 +60,17 @@
 - [x] Calibre panel
 - [x] browser-tab import panel
 - [x] `ReaderShell.tsx` maps to reader-mode shell widgets:
-- [ ] toolbar
-- [ ] panel regions
-- [ ] content pane selection
-- [ ] quick actions dock
-- [ ] `readerPanels.tsx` maps to distinct egui panel widgets:
-- [ ] settings
-- [ ] stats
-- [ ] search
-- [ ] TTS controls
-- [ ] status diagnostics
-- [ ] layout policy utilities map to Rust shell layout helpers rather than CSS/media queries.
+- [x] toolbar
+- [x] panel regions
+- [x] content pane selection
+- [x] quick actions dock
+- [x] `readerPanels.tsx` maps to distinct egui panel widgets:
+- [x] settings
+- [x] stats
+- [x] search
+- [x] TTS controls
+- [x] status diagnostics
+- [x] layout policy utilities map to Rust shell layout helpers rather than CSS/media queries.
 - Each toolbar button, quick action, or panel toggle must declare which `AppCommand`/`ReaderCommand` it plans (e.g., `ToggleSettingsPanel`, `Reader(TtsSeekNext)`), enabling the AppRuntime command planner to emit telemetry and effect ownership.
 - Shortcut bindings should derive from `ShortcutRegistry` so any new binding automatically flows through the same command pipeline described above, keeping telemetry, cancellation, and logging consistent across mouse/keyboard triggers.
 
@@ -84,10 +84,10 @@
 - [x] runaway screen lock or safe-quit gating flags
 - [x] Define frame regions with memoized layout policies:
 - [x] top toolbar/command bar with grouped actions and status indicators
-- [ ] optional navigation/status row for compact mode feedback
+- [x] optional navigation/status row for compact mode feedback
 - [x] left/right side panels for library controls and reader-specific widgets
 - [x] central content pane for starter or reader content
-- [ ] overlay modal layer that can host blocking or lightweight dialogs
+- [x] overlay modal layer that can host blocking or lightweight dialogs
 - [x] Document desktop size-class strategy, minimum supported width (e.g., 900px), and density assumptions (panel collapse thresholds).
 - [x] Define API surfaces for layout helpers that currently live in CSS/media queries (e.g., `isNarrow`, `shouldShowPanels`). These Rust helpers will be called from the runtime to decide redraw scopes.
 ### Architectural Artifacts To Deliver
@@ -106,9 +106,9 @@
 - **Tracing hooks**: Every UI action in this tranche should annotate `tracing::instrument` spans that mention the originating `AppCommand`/`ReaderCommand` so shell metrics can correlate frame interactions with the runtime verbs emitted by `AppRuntime`.
 
 ## Phase 2: Navigation And Mode Switching
-- [ ] Map every transition that currently lives in React routing or conditional rendering into explicit Rust commands/fsm transitions.
-- [ ] Document how the starter shell pivots to reader mode and back, covering:
-- [ ] source open success, failure, and cancellation
+- [x] Map every transition that currently lives in React routing or conditional rendering into explicit Rust commands/fsm transitions.
+- [x] Document how the starter shell pivots to reader mode and back, covering:
+- [x] source open success, failure, and cancellation
 - [ ] session close/restart
 - [ ] return-to-starter from reader mode shortcuts or menu actions
 - [ ] Calibre browser conclusions and browser-tab import completion
@@ -122,6 +122,12 @@
 - [ ] `QuitRequest` and safe shutdown gating
 - [ ] Explicitly define transition guards that rely on runtime readiness flags (e.g., disallow reader navigation until source metadata loads).
 - [ ] Document fallback navigation for PDF/text vs viewer mismatch so the reader shell can recover from partial loads without UI deadlock.
+
+### Navigation Transition Notes (Starter <-> Reader)
+- Source open success: `AppCommand::OpenSourcePath|OpenClipboard|OpenCalibreBook|OpenBrowserTab*` -> `AppEvent::SourceOpened` -> session switches to `UiMode::Reader` and `ShellState::active_mode` updates from `Starter` to `Reader`.
+- Source open failure: `AppEvent::CommandFailed { scope: Some(OperationScope::SourceOpen) }` or `AppEvent::SourceOpenProgress` with phase `failed` -> `ShellState::active_mode = SourceError` until a new open attempt succeeds.
+- Source open cancellation: `AppEvent::SourceOpenProgress` with phase `cancelled` clears `OperationScope::SourceOpen` and returns the shell to `Starter` without altering recents.
+- Return to starter: `AppCommand::ReturnToStarter` -> `AppEvent::SessionUpdated` with `UiMode::Starter` -> `ShellState::active_mode = Starter`.
 
 ### Implementation Artifacts
 - A Rust enum (`ShellTransition`) enumerating the navigation intents above and the data they carry.

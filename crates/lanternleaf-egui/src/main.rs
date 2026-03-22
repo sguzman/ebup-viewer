@@ -15,8 +15,8 @@ use eframe::{
     NativeOptions,
     egui::{
         self, Align, Align2, Button, CentralPanel, CollapsingHeader, Color32, ColorImage, Context,
-        ComboBox, FontFamily, FontId, Pos2, Rect, RichText, ScrollArea, Sense, SidePanel, Slider,
-        Stroke, TextureHandle, TextureOptions, TopBottomPanel, Ui, Vec2, Visuals,
+        ComboBox, FontFamily, FontId, Id, Order, Pos2, Rect, RichText, ScrollArea, Sense, SidePanel,
+        Slider, Stroke, TextureHandle, TextureOptions, TopBottomPanel, Ui, Vec2, Visuals,
     },
 };
 use helpers::{
@@ -565,6 +565,29 @@ impl LanternLeafApp {
         });
     }
 
+    fn render_navigation_row(&mut self, ctx: &Context, state: &AppState) {
+        if !self.layout_policy.show_status_row || !self.layout_policy.is_narrow() {
+            return;
+        }
+        TopBottomPanel::top("nav_status_row").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(format!("Mode: {:?}", self.shell_state.active_mode));
+                if state.app_shell.busy {
+                    ui.label("Busy");
+                }
+                if state.app_shell.operations.source_open {
+                    ui.label("Opening source");
+                }
+                if state.app_shell.operations.calibre_load {
+                    ui.label("Loading Calibre");
+                }
+                if state.app_shell.operations.browser_tab_refresh {
+                    ui.label("Refreshing browser tabs");
+                }
+            });
+        });
+    }
+
     fn execute_shortcut_action(&mut self, action: &ShortcutAction) {
         match action {
             ShortcutAction::Command(command) => self.execute_command(command.clone()),
@@ -701,6 +724,15 @@ impl LanternLeafApp {
         state: &AppState,
         reader_snapshot: Option<&ReaderSnapshot>,
     ) {
+        let panels = state
+            .session
+            .session
+            .as_ref()
+            .map(|session| session.panels)
+            .unwrap_or_default();
+        let show_search_panel = self.pending_search_focus
+            || !state.reader_ui.search_query.trim().is_empty()
+            || !state.reader_ui.search_matches.is_empty();
         SidePanel::left("panel_toggle").show(ctx, |ui| {
             ui.heading("Panels");
             if ui
@@ -721,13 +753,38 @@ impl LanternLeafApp {
             {
                 self.execute_command(AppCommand::ToggleTtsPanel);
             }
-            if let Some(panels) = state.reader_ui.panels.as_ref() {
-                ui.label(format!("Settings: {}", panels.show_settings));
-                ui.label(format!("Stats: {}", panels.show_stats));
-                ui.label(format!("TTS: {}", panels.show_tts));
+            ui.label(format!("Settings: {}", panels.show_settings));
+            ui.label(format!("Stats: {}", panels.show_stats));
+            ui.label(format!("TTS: {}", panels.show_tts));
+            ui.label(format!("Search: {}", show_search_panel));
+            if panels.show_settings {
+                ui.separator();
+                ui.heading("Settings");
+                self.render_settings_sidebar(ui, reader_snapshot);
             }
+            if panels.show_stats {
+                ui.separator();
+                ui.heading("Stats");
+                self.render_stats_panel(ui, reader_snapshot);
+            }
+            if show_search_panel {
+                ui.separator();
+                ui.heading("Search");
+                self.render_search_panel(ui, state);
+            }
+            if panels.show_tts {
+                ui.separator();
+                ui.heading("TTS");
+                if let Some(snapshot) = reader_snapshot {
+                    self.render_tts_widget(ui, snapshot);
+                } else {
+                    ui.label("No reader session.");
+                }
+            }
+            ui.separator();
+            ui.heading("Status diagnostics");
+            self.render_status_diagnostics_panel(ui, state);
             self.render_anchor_diagnostics(ui, reader_snapshot);
-            self.render_settings_sidebar(ui, reader_snapshot);
         });
         SidePanel::right("shortcuts").show(ctx, |ui| {
             ui.heading("Shortcut registry");
@@ -1884,6 +1941,7 @@ impl LanternLeafApp {
                 "rendering reader shell content"
             );
             ui.heading("Reader shell");
+            self.render_quick_actions_dock(ui);
             self.render_tts_widget(ui, snapshot);
             ui.separator();
             self.render_reader_summary(ui, snapshot);
@@ -1905,6 +1963,34 @@ impl LanternLeafApp {
             ui.heading("Reader shell");
             ui.label("No reader session currently active.");
         }
+    }
+
+    fn render_quick_actions_dock(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.label("Quick actions");
+            ui.horizontal(|ui| {
+                if ui.button("Play/Pause").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsTogglePlayPause,
+                    ));
+                }
+                if ui.button("Prev").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsSeekPrev,
+                    ));
+                }
+                if ui.button("Next").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsSeekNext,
+                    ));
+                }
+                if ui.button("Repeat").clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::TtsRepeatSentence,
+                    ));
+                }
+            });
+        });
     }
 
     fn render_tts_widget(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
@@ -2008,6 +2094,68 @@ impl LanternLeafApp {
                 ui.label("Last TTS event: none");
             }
         });
+    }
+
+    fn render_stats_panel(&mut self, ui: &mut Ui, snapshot: Option<&ReaderSnapshot>) {
+        let Some(snapshot) = snapshot else {
+            ui.label("No reader session.");
+            return;
+        };
+        ui.label(format!(
+            "Page {} / {}",
+            snapshot.stats.page_index + 1,
+            snapshot.stats.total_pages
+        ));
+        ui.label(format!(
+            "Page progress: {:.1}%",
+            snapshot.stats.page_end_percent * 100.0
+        ));
+        ui.label(format!(
+            "Book progress: {:.1}%",
+            snapshot.stats.global_progress_pct * 100.0
+        ));
+        ui.label(format!(
+            "Page ETA: {}",
+            format_duration_secs(snapshot.stats.page_time_remaining_secs)
+        ));
+        ui.label(format!(
+            "Book ETA: {}",
+            format_duration_secs(snapshot.stats.book_time_remaining_secs)
+        ));
+    }
+
+    fn render_search_panel(&mut self, ui: &mut Ui, state: &AppState) {
+        ui.label(format!(
+            "Query: {}",
+            if state.reader_ui.search_query.is_empty() {
+                "none"
+            } else {
+                &state.reader_ui.search_query
+            }
+        ));
+        ui.label(format!(
+            "Matches: {}",
+            state.reader_ui.search_matches.len()
+        ));
+        if ui.button("Focus search").clicked() {
+            self.pending_search_focus = true;
+            self.push_status("Search focus requested".to_string());
+        }
+    }
+
+    fn render_status_diagnostics_panel(&mut self, ui: &mut Ui, state: &AppState) {
+        ui.label(format!("Active mode: {:?}", self.shell_state.active_mode));
+        ui.label(format!(
+            "Layout: {:?}",
+            self.layout_policy.size_class
+        ));
+        ui.label(format!("Busy: {}", state.app_shell.busy));
+        ui.label(format!(
+            "Operations: source_open={}, calibre_load={}, browser_tabs={}",
+            state.app_shell.operations.source_open,
+            state.app_shell.operations.calibre_load,
+            state.app_shell.operations.browser_tab_refresh
+        ));
     }
 
     fn render_reader_summary(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
@@ -4809,6 +4957,18 @@ impl LanternLeafApp {
         let mut return_confirmed = false;
         let mut close_safe_quit_modal = false;
         let mut close_reader_confirm_modal = false;
+        let any_modal_open = show_safe_quit_modal || show_reader_confirm_modal;
+
+        if any_modal_open {
+            let screen = ctx.screen_rect();
+            let layer_id = egui::LayerId::new(Order::Middle, Id::new("modal_overlay"));
+            let painter = ctx.layer_painter(layer_id);
+            painter.rect_filled(
+                screen,
+                0.0,
+                Color32::from_rgba_unmultiplied(10, 10, 10, 160),
+            );
+        }
 
         egui::Window::new("Safe quit confirmation")
             .open(&mut show_safe_quit_modal)
@@ -5012,6 +5172,7 @@ impl eframe::App for LanternLeafApp {
         ctx.set_visuals(Visuals::dark());
         self.handle_shortcuts(ctx, &snapshot);
         self.render_top_bar(ctx, &snapshot);
+        self.render_navigation_row(ctx, &snapshot);
         self.render_panels(ctx, &snapshot, reader_snapshot);
         self.render_center(ctx, &snapshot);
         self.render_modals(ctx, reader_snapshot);

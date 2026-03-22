@@ -276,30 +276,45 @@
 - [x] implementers have a single modal/notification contract for the egui shell that keeps the command layer consistent while replacing Web-style dialogs.
 
 ## Phase 6: Performance And Responsiveness Constraints
-- [ ] Define redraw policy for shell-level state so panel interactions and status updates do not force full reader recomposition.
-- [ ] Panel toggles must only touch the panel regions they own and rely on derived layout helpers (Phase 1) so heavy reader renders remain cached.
-- [ ] Passive status updates (notifications, runtime chips) should update minimal widgets instead of repainting the central pane.
-- [ ] Repeated runtime events (progress ticks, TTS heartbeats) must be coalesced at the command surface and throttled before they reach the egui frame pipeline.
-- [ ] Capture coalescing rules for:
-- [ ] playback progress updates
-- [ ] import/transcription status ticks
-- [ ] browser-tab health pings
-- [ ] panel diagnostics refreshes
-- [ ] Add tracing/metrics hooks for:
-- [ ] redraw frequency per frame (per region if possible)
-- [ ] toolbar/panel command latency from click/shortcut to effect spawn
-- [ ] layout recalculation hotspots when the window resizes
-- [ ] modal stacking depth and notification bursts
-- [ ] Document how these metrics plug into the tracing model described in the runtime roadmap so the egui shell and runtime share observability.
-- [ ] Define a “redraw budget” contract: specify the maximum allowed frame budget for each panel update and the fallback behavior (e.g., delay heavy status updates until the reader is idle).
+- [x] Define redraw policy for shell-level state so panel interactions and status updates do not force full reader recomposition.
+- [x] Panel toggles must only touch the panel regions they own and rely on derived layout helpers (Phase 1) so heavy reader renders remain cached.
+- [x] Passive status updates (notifications, runtime chips) should update minimal widgets instead of repainting the central pane.
+- [x] Repeated runtime events (progress ticks, TTS heartbeats) must be coalesced at the command surface and throttled before they reach the egui frame pipeline.
+- [x] Capture coalescing rules for:
+- [x] playback progress updates
+- [x] import/transcription status ticks
+- [x] browser-tab health pings
+- [x] panel diagnostics refreshes
+- [x] Add tracing/metrics hooks for:
+- [x] redraw frequency per frame (per region if possible)
+- [x] toolbar/panel command latency from click/shortcut to effect spawn
+- [x] layout recalculation hotspots when the window resizes
+- [x] modal stacking depth and notification bursts
+- [x] Document how these metrics plug into the tracing model described in the runtime roadmap so the egui shell and runtime share observability.
+- [x] Define a “redraw budget” contract: specify the maximum allowed frame budget for each panel update and the fallback behavior (e.g., delay heavy status updates until the reader is idle).
 
 ### Implementation Artifacts
 - A redraw policy doc linking shell state changes from Phases 1–5 to the expected invalidation scopes so implementers know when it is okay to use `ctx.request_repaint` or rely on `egui`’s auto-invalidation.
 - A throttling/coalescing matrix that maps event sources (e.g., playback heartbeat) to their destination UI widgets, including the suggested merge interval.
 - A tracing/metrics plan referencing the runtime tracing spans so the shell instrumentation can be aligned with the runtime event model.
 
+### Redraw Policy And Coalescing Matrix
+- Redraw scope: top bar + status row update on operation/notification changes; central reader content should not repaint on passive status changes.
+- Panel toggles: repaint only panel regions (left/right panels) using layout helpers (`LayoutPolicy`); avoid invalidating the central reader unless layout changes.
+- Coalescing rules:
+- Playback progress: batch to 4–8 Hz; skip frames when the reader is idle.
+- Import/transcription status: batch to 1–2 Hz; render only the status row/toast.
+- Browser-tab health pings: batch to 0.5–1 Hz; update status diagnostics only.
+- Panel diagnostics: update on demand or with explicit user interaction.
+- Tracing hooks:
+- Track frame redraw count per second; annotate with active mode and panel visibility.
+- Track command latency from UI action to `RuntimeEffect` spawn via `app_command` span timings.
+- Track layout recalculation events on window resize.
+- Track modal stack depth + toast bursts to flag UI overload.
+- Redraw budget: keep panel updates under 16ms; defer heavy diagnostics updates until `OperationScope::SourceOpen` is false.
+
 ### Phase Exit
-- [ ] shell performance expectations are concrete enough to review during implementation and the tracing hooks are documented so the runtime team can instrument the same metrics.
+- [x] shell performance expectations are concrete enough to review during implementation and the tracing hooks are documented so the runtime team can instrument the same metrics.
 
 ## Risks / Failure Modes
 - Porting the current shell 1:1 without explicit layout contracts may produce unstable egui panel behavior.

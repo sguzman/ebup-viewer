@@ -692,6 +692,27 @@ impl LanternLeafApp {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.heading("LanternLeaf (egui)");
+                    if let Some(snapshot) = state.reader_document.snapshot.as_ref() {
+                        let next_theme = match snapshot.settings.theme {
+                            config::ThemeMode::Day => config::ThemeMode::Night,
+                            config::ThemeMode::Night => config::ThemeMode::Day,
+                        };
+                        let label = match next_theme {
+                            config::ThemeMode::Day => "Day",
+                            config::ThemeMode::Night => "Night",
+                        };
+                        if ui.button(label).clicked() {
+                            self.apply_reader_settings_patch(
+                                ReaderSettingsPatch {
+                                    theme: Some(next_theme),
+                                    ..Default::default()
+                                },
+                                "theme_toggle",
+                            );
+                        }
+                    } else {
+                        ui.add_enabled(false, Button::new("Day/Night"));
+                    }
                     ui.separator();
                     let allow_recents = !state.app_shell.operations.source_open;
                     if ui

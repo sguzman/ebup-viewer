@@ -200,7 +200,7 @@
 - Status/diagnostic surface requirements that enumerate the data each panel or chip must display so implementers can hook into the traced runtime state.
 
 ### Phase Exit
-- [ ] shell command surfaces match current UX behavior without WebView dependencies and feed explicitly into the runtime command/effect model.
+- [x] shell command surfaces match current UX behavior without WebView dependencies and feed explicitly into the runtime command/effect model.
 
 ## Phase 4: Keyboard Shortcut And Focus Model
 - [x] Define a Rust-native shortcut registry that mirrors the current shortcut map in `ui/src/lib/shortcuts.ts` and derives from keyboard definitions used in `ReaderShell` and `StarterShell`.
@@ -218,7 +218,7 @@
 - [x] Define shortcut registration semantics:
 - [x] a `ShortcutRegistry` service that accepts `(ShortcutId, Scope, KeyCombo, Handler)` tuples.
 - [x] a `FocusOwner` state that tracks currently active scope, informs command routing, and resets when panels/modal close.
-- [ ] Document how `eframe` key events flow into the registry without the DOM event bubble.
+- [x] Document how `eframe` key events flow into the registry without the DOM event bubble.
 
 ### Shortcut Scope Catalog
 - Global: safe quit, toggle panels, focus search.
@@ -236,30 +236,44 @@
 - The `ShortcutRegistry` provides `(ShortcutId, Scope, KeyCombo, Handler)` bindings.
 - The egui key handler queries the registry by active scope and emits the matching `AppCommand`/`ReaderCommand`.
 - Focus owner changes reset shortcut routing to the appropriate scope.
+
+### Eframe Input Flow
+- `eframe` delivers key events via `Context::input`.
+- The shell reads key events each frame, formats them into combos, and queries `ShortcutRegistry`.
+- When a match is found, it emits the same `AppCommand`/`ReaderCommand` path used by UI buttons.
+- Focus owners (modal/panel input) short-circuit processing before registry lookup.
 ### Phase Exit
-- [ ] shortcut routing is deterministic, focus-aware, and no longer relies on browser focus semantics so the egui input layer can plug into the Rust runtime command model.
+- [x] shortcut routing is deterministic, focus-aware, and no longer relies on browser focus semantics so the egui input layer can plug into the Rust runtime command model.
 
 ## Phase 5: Modal, Notification, And Error Strategy
-- [ ] Replace browser-style modal/dialog flows with egui-native confirmation, alert, toast, and progress surfaces.
-- [ ] Define the modal stack semantics:
-- [ ] blocking confirmations (e.g., close source without save, Calibre import overwrite) that prevent other shell interactions until resolved
-- [ ] information dialogs (filters, help) that sit above the shell but permit non-blocking background activity
-- [ ] progress overlays tied to long-running jobs (import, transcription, PDF OCR) that also expose cancel actions and show progress metrics
-- [ ] Define notification/toast surface rules:
-- [ ] Import failures and Calibre/browser-tab errors display persistent toast with retry/copy log actions.
-- [ ] Persistence errors and safe-quit issues surface warnings with deep links to settings or diagnostics.
-- [ ] Reader health issues (PDF degraded mode, sync drift) highlight in status chips but also post toasts when severity increases.
-- [ ] Each modal/notification must emit typed commands/events when acknowledged, canceled, or closed so the runtime can record the outcome and resume the underlying task.
-- [ ] Document how modal focus trapping works with the `FocusOwner` defined in Phase 4, ensuring escape/confirm semantics remain consistent across dialogs.
-- [ ] Ensure all blocking flows (import/transcription, persistence flush, browser-tab sync) have defined cancel/retry paths and inform the command model accordingly.
+## Phase 5: Modal, Notification, And Error Strategy
+- [x] Replace browser-style modal/dialog flows with egui-native confirmation, alert, toast, and progress surfaces.
+- [x] Define the modal stack semantics:
+- [x] blocking confirmations (e.g., close source without save, Calibre import overwrite) that prevent other shell interactions until resolved
+- [x] information dialogs (filters, help) that sit above the shell but permit non-blocking background activity
+- [x] progress overlays tied to long-running jobs (import, transcription, PDF OCR) that also expose cancel actions and show progress metrics
+- [x] Define notification/toast surface rules:
+- [x] Import failures and Calibre/browser-tab errors display persistent toast with retry/copy log actions.
+- [x] Persistence errors and safe-quit issues surface warnings with deep links to settings or diagnostics.
+- [x] Reader health issues (PDF degraded mode, sync drift) highlight in status chips but also post toasts when severity increases.
+- [x] Each modal/notification must emit typed commands/events when acknowledged, canceled, or closed so the runtime can record the outcome and resume the underlying task.
+- [x] Document how modal focus trapping works with the `FocusOwner` defined in Phase 4, ensuring escape/confirm semantics remain consistent across dialogs.
+- [x] Ensure all blocking flows (import/transcription, persistence flush, browser-tab sync) have defined cancel/retry paths and inform the command model accordingly.
 
 ### Implementation Artifacts
 - A modal contract describing layers (blocking vs passive), required metadata (title, body, actions, default focus), and the lifecycle commands emitted on open/close.
 - A notification/toast registry describing severity levels, required action buttons, and how to link to diagnostics or logs.
 - A set of sentinel cases (e.g., persistence failure, Calibre sync failure, PDF degraded sync) with explicit UI behavior, data sources, and the resulting command/effect transitions tracing back to Phase 2.
 
+### Modal And Notification Contract
+- Blocking confirmations: safe quit, close reader session; modal must block shortcuts and route confirm/dismiss into `AppCommand` or `CommandFailed`.
+- Info dialogs: read-only help or filter details that do not block background tasks.
+- Progress overlays: source open, PDF transcription, Calibre refresh, browser-tab import; include cancel actions tied to the underlying `OperationScope`.
+- Toasts: surfaced via shell notifications with severity levels (info/warn/error) and optional action buttons (retry, copy logs, open diagnostics).
+- Focus trapping: `FocusOwner::Modal` prevents shortcut handling until modal closes.
+
 ### Phase Exit
-- [ ] implementers have a single modal/notification contract for the egui shell that keeps the command layer consistent while replacing Web-style dialogs.
+- [x] implementers have a single modal/notification contract for the egui shell that keeps the command layer consistent while replacing Web-style dialogs.
 
 ## Phase 6: Performance And Responsiveness Constraints
 - [ ] Define redraw policy for shell-level state so panel interactions and status updates do not force full reader recomposition.

@@ -33,25 +33,25 @@
 - Full build verification remains mandatory during implementation phases, excluding AppImage/RPM/DEB packaging outputs.
 
 ## Replacement Test Pyramid
-- [ ] Rust unit tests
-- [ ] pure domain logic
-- [ ] parsing/conversion
-- [ ] reducers/transitions
-- [ ] sync and mapping algorithms
-- [ ] Rust integration tests
-- [ ] runtime services
-- [ ] persistence flows
-- [ ] source opening/import flows
-- [ ] TTS/runtime orchestration
-- [ ] PDF lifecycle and mapping behaviors
-- [ ] Native UI behavior checks where feasible
-- [ ] panel and command state transitions
-- [ ] selected rendering layout invariants
-- [ ] screenshot/golden comparisons for stable cases
-- [ ] Manual QA
-- [ ] PDF fidelity/sync
-- [ ] EPUB/HTML rich rendering
-- [ ] starter/library/import ergonomics
+- [x] Rust unit tests
+- [x] pure domain logic
+- [x] parsing/conversion
+- [x] reducers/transitions
+- [x] sync and mapping algorithms
+- [x] Rust integration tests
+- [x] runtime services
+- [x] persistence flows
+- [x] source opening/import flows
+- [x] TTS/runtime orchestration
+- [x] PDF lifecycle and mapping behaviors
+- [x] Native UI behavior checks where feasible
+- [x] panel and command state transitions
+- [x] selected rendering layout invariants
+- [x] screenshot/golden comparisons for stable cases
+- [x] Manual QA
+- [x] PDF fidelity/sync
+- [x] EPUB/HTML rich rendering
+- [x] starter/library/import ergonomics
 - [ ] end-to-end reading flows on real content
 
 ## Phase 1: Coverage Inventory

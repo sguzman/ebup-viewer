@@ -217,6 +217,10 @@ struct LanternLeafApp {
     starter_calibre_query: String,
     starter_calibre_force_refresh: bool,
     starter_calibre_sort: CalibreSort,
+    starter_calibre_view: Vec<usize>,
+    starter_calibre_last_query: String,
+    starter_calibre_last_sort: CalibreSort,
+    starter_calibre_last_count: usize,
     starter_browser_tab_query: String,
     starter_browser_tabs_force_refresh: bool,
     starter_browser_tab_id_input: String,
@@ -350,6 +354,10 @@ impl LanternLeafApp {
             starter_calibre_query: String::new(),
             starter_calibre_force_refresh: false,
             starter_calibre_sort: CalibreSort::Title,
+            starter_calibre_view: Vec::new(),
+            starter_calibre_last_query: String::new(),
+            starter_calibre_last_sort: CalibreSort::Title,
+            starter_calibre_last_count: 0,
             starter_browser_tab_query: String::new(),
             starter_browser_tabs_force_refresh: false,
             starter_browser_tab_id_input: String::new(),
@@ -1740,52 +1748,95 @@ impl LanternLeafApp {
                 return;
             }
             let query = self.starter_calibre_query.trim().to_lowercase();
-            let mut books: Vec<CalibreBookDto> = model.calibre_books.to_vec();
-            if !query.is_empty() {
-                books.retain(|book| {
-                    book.title.to_lowercase().contains(&query)
-                        || book.authors.to_lowercase().contains(&query)
+            let should_rebuild = self.starter_calibre_last_query != query
+                || self.starter_calibre_last_sort != self.starter_calibre_sort
+                || self.starter_calibre_last_count != model.calibre_books.len();
+            if should_rebuild {
+                #[derive(Clone)]
+                struct CalibreViewEntry {
+                    idx: usize,
+                    title_lower: String,
+                    authors_lower: String,
+                    year: Option<i32>,
+                }
+
+                self.starter_calibre_last_query = query.clone();
+                self.starter_calibre_last_sort = self.starter_calibre_sort;
+                self.starter_calibre_last_count = model.calibre_books.len();
+
+                let mut entries: Vec<CalibreViewEntry> = model
+                    .calibre_books
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, book)| CalibreViewEntry {
+                        idx,
+                        title_lower: book.title.to_lowercase(),
+                        authors_lower: book.authors.to_lowercase(),
+                        year: book.year,
+                    })
+                    .collect();
+                if !query.is_empty() {
+                    entries.retain(|entry| {
+                        entry.title_lower.contains(&query)
+                            || entry.authors_lower.contains(&query)
+                    });
+                }
+                match self.starter_calibre_sort {
+                    CalibreSort::Title => entries.sort_by(|a, b| a.title_lower.cmp(&b.title_lower)),
+                    CalibreSort::Author => {
+                        entries.sort_by(|a, b| a.authors_lower.cmp(&b.authors_lower))
+                    }
+                    CalibreSort::Year => entries.sort_by(|a, b| {
+                        b.year.cmp(&a.year).then_with(|| a.title_lower.cmp(&b.title_lower))
+                    }),
+                }
+                self.starter_calibre_view = entries.into_iter().map(|entry| entry.idx).collect();
+                trace!(
+                    total = model.calibre_books.len(),
+                    visible = self.starter_calibre_view.len(),
+                    "Rebuilt calibre list view"
+                );
+            }
+
+            let row_height = 88.0;
+            let total_rows = self.starter_calibre_view.len();
+            ScrollArea::vertical()
+                .max_height(240.0)
+                .show_rows(ui, row_height, total_rows, |ui, range| {
+                    for row in range {
+                        let book = &model.calibre_books[self.starter_calibre_view[row]];
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            ui.label(&book.title);
+                            if let Some(year) = book.year {
+                                ui.label(format!("({year})"));
+                            }
+                        });
+                        ui.label(&book.authors);
+                        ui.horizontal(|ui| {
+                            ui.label(format!(
+                                "{} • {}",
+                                book.extension,
+                                format_bytes(book.file_size_bytes)
+                            ));
+                            if book.cover_thumbnail.is_some() {
+                                ui.label("Thumbnail cached");
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            if ui.button("Open").clicked() {
+                                trace!(id = book.id, "Starter open Calibre book");
+                                self.execute_command(AppCommand::OpenCalibreBook { id: book.id });
+                            }
+                            if ui.button("Ensure thumbnail").clicked() {
+                                trace!(id = book.id, "Starter ensure Calibre thumbnail");
+                                self.execute_command(AppCommand::EnsureCalibreThumbnail {
+                                    id: book.id,
+                                });
+                            }
+                        });
+                    }
                 });
-            }
-            match self.starter_calibre_sort {
-                CalibreSort::Title => {
-                    books.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-                }
-                CalibreSort::Author => {
-                    books.sort_by(|a, b| a.authors.to_lowercase().cmp(&b.authors.to_lowercase()))
-                }
-                CalibreSort::Year => {
-                    books.sort_by(|a, b| b.year.cmp(&a.year).then_with(|| a.title.cmp(&b.title)))
-                }
-            }
-            ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
-                for book in books {
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.label(&book.title);
-                        if let Some(year) = book.year {
-                            ui.label(format!("({year})"));
-                        }
-                    });
-                    ui.label(&book.authors);
-                    ui.horizontal(|ui| {
-                        ui.label(format!("{} • {}", book.extension, format_bytes(book.file_size_bytes)));
-                        if book.cover_thumbnail.is_some() {
-                            ui.label("Thumbnail cached");
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.button("Open").clicked() {
-                            trace!(id = book.id, "Starter open Calibre book");
-                            self.execute_command(AppCommand::OpenCalibreBook { id: book.id });
-                        }
-                        if ui.button("Ensure thumbnail").clicked() {
-                            trace!(id = book.id, "Starter ensure Calibre thumbnail");
-                            self.execute_command(AppCommand::EnsureCalibreThumbnail { id: book.id });
-                        }
-                    });
-                }
-            });
         });
     }
 

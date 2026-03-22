@@ -405,6 +405,14 @@ pub enum AppEvent {
     TtsStateUpdated(TtsStateEvent),
     PdfTranscriptionProgress(PdfTranscriptionEvent),
     LogLevelUpdated(LogLevelEvent),
+    NotificationRaised {
+        request_id: u64,
+        notification: crate::state::Notification,
+    },
+    NotificationDismissed {
+        request_id: u64,
+        notification_id: u64,
+    },
     PersistenceFlushed {
         request_id: u64,
         trigger: PersistenceTrigger,
@@ -712,6 +720,7 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
             bootstrap,
         } => {
             debug!(request_id, "Bootstrap loaded");
+            state.set_bootstrap_config(bootstrap.config.clone());
             state.set_bootstrap(Some(bootstrap));
             state.set_loading_bootstrap(false);
             clear_scope(state, OperationScope::RuntimeConfig);
@@ -728,6 +737,7 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
             let request_id = event.request_id;
             let mode = event.session.mode;
             state.set_session(Some(event.session));
+            state.set_startup_mode(mode);
             state.apply_runtime_job_patch(RuntimeJobPatch {
                 last_session_event_request_id: Some(request_id),
                 ..RuntimeJobPatch::default()
@@ -854,6 +864,7 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
                 extension_connected = health.extension_connected,
                 "Browser tabs health loaded"
             );
+            state.set_service_health(&health);
             state.set_starter_browser_tabs_health(Some(health));
             state.set_loading_browser_tabs(false);
             clear_scope(state, OperationScope::BrowserTabRefresh);
@@ -881,6 +892,14 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
             }
             let request_id = event.request_id;
             let terminal = matches!(event.phase.as_str(), "failed" | "cancelled" | "loaded");
+            let calibre_available = match event.phase.as_str() {
+                "failed" | "cancelled" => Some(false),
+                "loaded" => Some(true),
+                _ => None,
+            };
+            if let Some(available) = calibre_available {
+                state.set_calibre_available(Some(available));
+            }
             state.apply_runtime_job_patch(RuntimeJobPatch {
                 calibre_load_event: Some(event),
                 last_calibre_event_request_id: Some(request_id),
@@ -944,6 +963,20 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
                 ..RuntimeJobPatch::default()
             });
             clear_scope(state, OperationScope::RuntimeConfig);
+        }
+        AppEvent::NotificationRaised {
+            request_id,
+            notification,
+        } => {
+            debug!(request_id, "Notification raised");
+            state.push_notification(notification);
+        }
+        AppEvent::NotificationDismissed {
+            request_id,
+            notification_id,
+        } => {
+            debug!(request_id, notification_id, "Notification dismissed");
+            state.dismiss_notification(notification_id);
         }
         AppEvent::PersistenceFlushed {
             request_id,
@@ -1473,5 +1506,189 @@ mod tests {
         );
         assert_eq!(state.app_shell.persistence_status.last_request_id, 42);
         assert!(!state.app_shell.operations.runtime_config);
+    }
+
+    #[test]
+    fn bootstrap_sets_config_snapshot_and_service_flags() {
+        let mut state = AppState::default();
+        let bootstrap = BootstrapState {
+            app_name: "LanternLeaf".to_string(),
+            mode: "egui".to_string(),
+            config: BootstrapConfig {
+                theme: config::ThemeMode::Day,
+                font_family: config::FontFamily::Lexend,
+                font_weight: config::FontWeight::Normal,
+                day_highlight: config::HighlightColor {
+                    r: 0.1,
+                    g: 0.2,
+                    b: 0.3,
+                    a: 0.4,
+                },
+                night_highlight: config::HighlightColor {
+                    r: 0.2,
+                    g: 0.3,
+                    b: 0.4,
+                    a: 0.5,
+                },
+                log_level: "info".to_string(),
+                default_font_size: 16,
+                default_lines_per_page: 300,
+                default_tts_speed: 1.0,
+                default_pause_after_sentence: 0.0,
+                key_toggle_play_pause: "space".to_string(),
+                key_next_sentence: "n".to_string(),
+                key_prev_sentence: "p".to_string(),
+                key_repeat_sentence: "r".to_string(),
+                key_toggle_search: "/".to_string(),
+                key_safe_quit: "q".to_string(),
+                key_toggle_settings: "s".to_string(),
+                key_toggle_stats: "t".to_string(),
+                key_toggle_tts: "y".to_string(),
+                browser_tabs_enabled: true,
+                close_browser_tab_on_recent_delete: false,
+            },
+        };
+
+        apply_event(
+            &mut state,
+            AppEvent::BootstrapLoaded {
+                request_id: 1,
+                bootstrap: bootstrap.clone(),
+            },
+        );
+
+        assert_eq!(
+            state.app_shell.app_config_snapshot.as_ref().map(|cfg| cfg.log_level.as_str()),
+            Some("info")
+        );
+        assert!(state.app_shell.service_status.browser_tabs_enabled);
+    }
+
+    #[test]
+    fn session_updates_startup_mode_and_availability() {
+        let mut state = AppState::default();
+        apply_event(
+            &mut state,
+            AppEvent::SessionUpdated(SessionStateEvent {
+                request_id: 2,
+                action: "session_open".to_string(),
+                session: SessionState {
+                    mode: UiMode::Reader,
+                    active_source_path: Some("/tmp/book.epub".to_string()),
+                    open_in_flight: false,
+                    panels: session::PanelState::default(),
+                },
+            }),
+        );
+
+        assert_eq!(state.app_shell.startup_mode, Some(UiMode::Reader));
+        assert!(state.session.reader_mode_available);
+        assert_eq!(
+            state.session.current_source_path.as_deref(),
+            Some("/tmp/book.epub")
+        );
+    }
+
+    #[test]
+    fn service_status_updates_from_health_and_calibre_events() {
+        let mut state = AppState::default();
+        apply_event(
+            &mut state,
+            AppEvent::BrowserTabsHealthLoaded {
+                request_id: 3,
+                health: BrowserTabsHealth {
+                    ok: true,
+                    extension_connected: true,
+                    now: None,
+                },
+            },
+        );
+        assert_eq!(state.app_shell.service_status.browser_tabs_available, Some(true));
+
+        apply_event(
+            &mut state,
+            AppEvent::CalibreLoadProgress(CalibreLoadEvent {
+                request_id: 4,
+                phase: "failed".to_string(),
+                count: None,
+                message: None,
+            }),
+        );
+        assert_eq!(state.app_shell.service_status.calibre_available, Some(false));
+    }
+
+    #[test]
+    fn playback_updates_do_not_replace_reader_document() {
+        let mut state = AppState::default();
+        let snapshot = make_reader_snapshot();
+        apply_event(
+            &mut state,
+            AppEvent::ReaderUpdated(ReaderStateEvent {
+                request_id: 5,
+                action: "reader_snapshot".to_string(),
+                reader: snapshot.clone(),
+            }),
+        );
+        let original_source = state
+            .reader_document
+            .snapshot
+            .as_ref()
+            .map(|value| value.source_path.clone());
+
+        apply_event(
+            &mut state,
+            AppEvent::ReaderPlaybackUpdated(ReaderPlaybackStateEvent {
+                request_id: 6,
+                action: "reader_tts_play".to_string(),
+                playback: ReaderPlaybackState {
+                    source_path: "/tmp/book.epub".to_string(),
+                    current_page: 2,
+                    highlighted_sentence_idx: Some(1),
+                    tts: snapshot.tts.clone(),
+                    stats: snapshot.stats.clone(),
+                },
+            }),
+        );
+
+        assert_eq!(
+            state
+                .reader_document
+                .snapshot
+                .as_ref()
+                .map(|value| value.source_path.clone()),
+            original_source
+        );
+    }
+
+    #[test]
+    fn panel_toggle_session_update_does_not_clear_reader_document() {
+        let mut state = AppState::default();
+        let snapshot = make_reader_snapshot();
+        apply_event(
+            &mut state,
+            AppEvent::ReaderUpdated(ReaderStateEvent {
+                request_id: 7,
+                action: "reader_snapshot".to_string(),
+                reader: snapshot.clone(),
+            }),
+        );
+        apply_event(
+            &mut state,
+            AppEvent::SessionUpdated(SessionStateEvent {
+                request_id: 8,
+                action: "panel_toggle".to_string(),
+                session: SessionState {
+                    mode: UiMode::Reader,
+                    active_source_path: Some(snapshot.source_path.clone()),
+                    open_in_flight: false,
+                    panels: session::PanelState {
+                        show_settings: false,
+                        show_stats: true,
+                        show_tts: true,
+                    },
+                },
+            }),
+        );
+        assert!(state.reader_document.snapshot.is_some());
     }
 }

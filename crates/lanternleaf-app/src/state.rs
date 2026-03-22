@@ -1,10 +1,12 @@
 use crate::contracts::{
-    BootstrapState, BrowserTabsHealth, BrowserTabsTab, BrowserTabsWindow, CalibreBookDto,
-    CalibreLoadEvent, LogLevelEvent, PdfTranscriptionEvent, ReaderPlaybackState,
-    ReaderPlaybackStateEvent, ReaderSnapshot, RecentBook, SessionState, SourceOpenEvent,
-    TtsStateEvent,
+    BootstrapConfig, BootstrapState, BrowserTabsHealth, BrowserTabsTab, BrowserTabsWindow,
+    CalibreBookDto, CalibreLoadEvent, LogLevelEvent, PdfTranscriptionEvent, ReaderPlaybackState,
+    ReaderPlaybackStateEvent, ReaderSnapshot, RecentBook, SessionState, SourceOpenEvent, TtsStateEvent,
+    UiMode,
 };
 use crate::pipeline::{PersistenceOutcome, PersistenceTrigger};
+use lanternleaf_core::{epub_loader, session};
+use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OperationState {
@@ -39,6 +41,10 @@ pub struct AppShellState {
     pub loading_bootstrap: bool,
     pub busy: bool,
     pub persistence_status: PersistenceStatus,
+    pub startup_mode: Option<UiMode>,
+    pub notifications: Vec<Notification>,
+    pub app_config_snapshot: Option<BootstrapConfig>,
+    pub service_status: ServiceStatus,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -49,8 +55,34 @@ pub struct PersistenceStatus {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct ServiceStatus {
+    pub browser_tabs_enabled: bool,
+    pub close_browser_tab_on_recent_delete: bool,
+    pub browser_tabs_available: Option<bool>,
+    pub calibre_available: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationLevel {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub id: u64,
+    pub level: NotificationLevel,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct SessionDomainState {
     pub session: Option<SessionState>,
+    pub current_source_path: Option<String>,
+    pub reader_mode_available: bool,
+    pub session_started_at: Option<Instant>,
+    pub session_last_updated_at: Option<Instant>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -63,6 +95,21 @@ pub struct SourceMetadata {
 pub struct ReaderDocumentState {
     pub source: Option<SourceMetadata>,
     pub snapshot: Option<ReaderSnapshot>,
+    pub canonical_page_text: Option<String>,
+    pub pretty_kind: Option<session::PrettyKind>,
+    pub images: Vec<session::ReaderImageRef>,
+    pub sentence_anchor_map: Vec<Option<usize>>,
+    pub pdf_sync_metadata: Option<PdfSyncMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PdfSyncMetadata {
+    pub geometry_mode: Option<epub_loader::PdfGeometryMode>,
+    pub sync_strategy: Option<epub_loader::PdfSyncStrategy>,
+    pub classification: Option<epub_loader::PdfClassificationSummary>,
+    pub runtime_policy: Option<epub_loader::PdfRuntimePolicySummary>,
+    pub ocr_alignment: Option<epub_loader::PdfOcrAlignmentSummary>,
+    pub ocr_pipeline: Option<epub_loader::PdfOcrPipelineSummary>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -70,6 +117,9 @@ pub struct ReaderPlaybackDomainState {
     pub playback: Option<ReaderPlaybackState>,
     pub tts_state_event: Option<TtsStateEvent>,
     pub playback_event: Option<ReaderPlaybackStateEvent>,
+    pub highlighted_sentence_idx: Option<usize>,
+    pub tts_state: Option<session::ReaderTtsView>,
+    pub playback_stats: Option<session::ReaderStats>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -84,6 +134,13 @@ pub struct ReaderUiState {
     pub selected_search_match: Option<usize>,
     pub panels: Option<crate::contracts::PanelState>,
     pub settings: Option<crate::contracts::ReaderSettingsView>,
+    pub transient_controls: TransientControls,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TransientControls {
+    pub show_search_overlay: bool,
+    pub show_settings_preview: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -142,8 +199,20 @@ impl Default for AppState {
                 ..AppShellState::default()
             },
             session: SessionDomainState::default(),
-            reader_document: ReaderDocumentState::default(),
-            reader_playback: ReaderPlaybackDomainState::default(),
+            reader_document: ReaderDocumentState {
+                canonical_page_text: None,
+                pretty_kind: None,
+                images: Vec::new(),
+                sentence_anchor_map: Vec::new(),
+                pdf_sync_metadata: None,
+                ..ReaderDocumentState::default()
+            },
+            reader_playback: ReaderPlaybackDomainState {
+                highlighted_sentence_idx: None,
+                tts_state: None,
+                playback_stats: None,
+                ..ReaderPlaybackDomainState::default()
+            },
             reader_ui: ReaderUiState::default(),
             starter: StarterState::default(),
             runtime_jobs: RuntimeJobState::default(),
@@ -180,6 +249,35 @@ impl AppState {
         self.app_shell.runtime_log_level = level.into();
     }
 
+    pub fn set_startup_mode(&mut self, mode: UiMode) {
+        if self.app_shell.startup_mode.is_none() {
+            self.app_shell.startup_mode = Some(mode);
+        }
+    }
+
+    pub fn set_bootstrap_config(&mut self, config: BootstrapConfig) {
+        self.app_shell.service_status.browser_tabs_enabled = config.browser_tabs_enabled;
+        self.app_shell.service_status.close_browser_tab_on_recent_delete =
+            config.close_browser_tab_on_recent_delete;
+        self.app_shell.app_config_snapshot = Some(config);
+    }
+
+    pub fn set_service_health(&mut self, health: &BrowserTabsHealth) {
+        self.app_shell.service_status.browser_tabs_available = Some(health.ok);
+    }
+
+    pub fn set_calibre_available(&mut self, available: Option<bool>) {
+        self.app_shell.service_status.calibre_available = available;
+    }
+
+    pub fn push_notification(&mut self, notification: Notification) {
+        self.app_shell.notifications.push(notification);
+    }
+
+    pub fn dismiss_notification(&mut self, id: u64) {
+        self.app_shell.notifications.retain(|note| note.id != id);
+    }
+
     pub fn set_persistence_status(
         &mut self,
         trigger: PersistenceTrigger,
@@ -205,6 +303,18 @@ impl AppState {
     }
 
     pub fn set_session(&mut self, session: Option<SessionState>) {
+        let now = Instant::now();
+        if let Some(ref session_state) = session {
+            if self.session.session.is_none() {
+                self.session.session_started_at = Some(now);
+            }
+            self.session.session_last_updated_at = Some(now);
+            self.session.current_source_path = session_state.active_source_path.clone();
+            self.session.reader_mode_available = matches!(session_state.mode, UiMode::Reader);
+        } else {
+            self.session.current_source_path = None;
+            self.session.reader_mode_available = false;
+        }
         self.session.session = session;
     }
 
@@ -213,12 +323,41 @@ impl AppState {
             source_path: reader.source_path.clone(),
             source_name: reader.source_name.clone(),
         });
+        if let Some(ref reader) = snapshot {
+            self.reader_document.canonical_page_text = Some(reader.page_text.clone());
+            self.reader_document.pretty_kind = Some(reader.pretty_kind);
+            self.reader_document.images = reader.images.clone();
+            self.reader_document.sentence_anchor_map = reader.sentence_anchor_map.clone();
+            self.reader_document.pdf_sync_metadata = Some(PdfSyncMetadata {
+                geometry_mode: reader.pdf_geometry_mode,
+                sync_strategy: reader.pdf_sync_strategy,
+                classification: reader.pdf_classification.clone(),
+                runtime_policy: reader.pdf_runtime_policy.clone(),
+                ocr_alignment: reader.pdf_ocr_alignment.clone(),
+                ocr_pipeline: reader.pdf_ocr_pipeline.clone(),
+            });
+        } else {
+            self.reader_document.canonical_page_text = None;
+            self.reader_document.pretty_kind = None;
+            self.reader_document.images.clear();
+            self.reader_document.sentence_anchor_map.clear();
+            self.reader_document.pdf_sync_metadata = None;
+        }
         self.reader_document.snapshot = snapshot.clone();
         self.reader_ui = derive_reader_ui(snapshot.as_ref());
     }
 
     pub fn set_reader_playback(&mut self, playback: Option<ReaderPlaybackState>) {
         self.reader_playback.playback = playback;
+        if let Some(ref state) = self.reader_playback.playback {
+            self.reader_playback.highlighted_sentence_idx = state.highlighted_sentence_idx;
+            self.reader_playback.tts_state = Some(state.tts.clone());
+            self.reader_playback.playback_stats = Some(state.stats.clone());
+        } else {
+            self.reader_playback.highlighted_sentence_idx = None;
+            self.reader_playback.tts_state = None;
+            self.reader_playback.playback_stats = None;
+        }
     }
 
     pub fn set_tts_state_event(&mut self, event: Option<TtsStateEvent>) {
@@ -341,6 +480,7 @@ pub fn derive_reader_ui(reader: Option<&ReaderSnapshot>) -> ReaderUiState {
         selected_search_match: reader.and_then(|value| value.selected_search_match),
         panels: reader.map(|value| value.panels),
         settings: reader.map(|value| value.settings.clone()),
+        transient_controls: TransientControls::default(),
     }
 }
 

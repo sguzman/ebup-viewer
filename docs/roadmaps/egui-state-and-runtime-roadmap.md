@@ -1,9 +1,9 @@
 # Egui State And Runtime Roadmap
 
 ## Objective
-- [ ] Replace Zustand slices, frontend event ingestion, and Tauri bridge commands with Rust-native application state and runtime orchestration.
-- [ ] Preserve the existing domain ownership model while moving command, effect, and event flow entirely into Rust.
-- [ ] Establish a stable Rust-native state/runtime architecture that all egui UI surfaces can consume directly.
+- [x] Replace Zustand slices, frontend event ingestion, and Tauri bridge commands with Rust-native application state and runtime orchestration.
+- [x] Preserve the existing domain ownership model while moving command, effect, and event flow entirely into Rust.
+- [x] Establish a stable Rust-native state/runtime architecture that all egui UI surfaces can consume directly.
 
 ## Current-State Grounding In This Repo
 - Current UI state ownership is spread across:
@@ -51,38 +51,38 @@
 - Tracing remains first-class for runtime events, task spans, state transitions, and error paths.
 
 ## Target State Architecture
-- [ ] `AppState`
-- [ ] startup mode
-- [ ] global shell state
-- [ ] notifications
-- [ ] app config snapshot
-- [ ] service handles
-- [ ] `SessionState`
-- [ ] current source metadata
-- [ ] session lifecycle
-- [ ] reader-mode availability
-- [ ] persistence status
-- [ ] `ReaderDocumentState`
-- [ ] canonical page/document payload
-- [ ] pretty payload metadata
-- [ ] images/assets
-- [ ] sentence anchors / PDF sync metadata
-- [ ] `ReaderPlaybackState`
-- [ ] highlighted sentence
-- [ ] TTS state/progress
-- [ ] cursor movement
-- [ ] playback diagnostics
-- [ ] `ReaderUiState`
-- [ ] text-only vs pretty mode
-- [ ] panel toggles
-- [ ] search query and selection
-- [ ] transient local controls
-- [ ] `RuntimeJobState`
-- [ ] background tasks
-- [ ] import/transcription progress
-- [ ] Calibre loading
-- [ ] browser-tab health
-- [ ] PDF/OCR work
+- [x] `AppState`
+- [x] startup mode
+- [x] global shell state
+- [x] notifications
+- [x] app config snapshot
+- [x] service handles
+- [x] `SessionState`
+- [x] current source metadata
+- [x] session lifecycle
+- [x] reader-mode availability
+- [x] persistence status
+- [x] `ReaderDocumentState`
+- [x] canonical page/document payload
+- [x] pretty payload metadata
+- [x] images/assets
+- [x] sentence anchors / PDF sync metadata
+- [x] `ReaderPlaybackState`
+- [x] highlighted sentence
+- [x] TTS state/progress
+- [x] cursor movement
+- [x] playback diagnostics
+- [x] `ReaderUiState`
+- [x] text-only vs pretty mode
+- [x] panel toggles
+- [x] search query and selection
+- [x] transient local controls
+- [x] `RuntimeJobState`
+- [x] background tasks
+- [x] import/transcription progress
+- [x] Calibre loading
+- [x] browser-tab health
+- [x] PDF/OCR work
 
 ## Phase 1: Rust Interface Inventory
 - [x] Inventory every command/event crossing the current Tauri boundary.
@@ -136,26 +136,26 @@
 
 ## Phase 2: State Model Extraction
 - [x] Introduce explicit Rust-native state structs that mirror the intended domain split.
-- [ ] Remove dependence on “whole snapshot replacement” semantics inherited from frontend ingestion.
-- [ ] Document identity/update rules to prevent unnecessary egui redraws:
-- [ ] document changes should not invalidate playback-only widgets
-- [ ] panel toggles should not invalidate heavy reader content
-- [ ] runtime progress updates should be coalesced when safe
+- [x] Remove dependence on “whole snapshot replacement” semantics inherited from frontend ingestion.
+- [x] Document identity/update rules to prevent unnecessary egui redraws:
+- [x] document changes should not invalidate playback-only widgets
+- [x] panel toggles should not invalidate heavy reader content
+- [x] runtime progress updates should be coalesced when safe
 - Phase exit:
-- [ ] egui implementers can render against stable Rust state without guessing update ownership.
+- [x] egui implementers can render against stable Rust state without guessing update ownership.
 
 ## Phase 3: Command / Effect / Event Pipeline
 - [x] Define typed commands emitted by widgets.
 - [x] Define effect execution ownership in Rust runtime services.
 - [x] Define event ingestion back into app state after background work completes.
-- [ ] Preserve explicit transition semantics for:
+- [x] Preserve explicit transition semantics for:
 - [x] source open/close
 - [x] playback actions
 - [x] search navigation
 - [x] persistence flush
 - [x] import/transcription jobs
 - Phase exit:
-- [ ] runtime orchestration is explicit and detached from Tauri invoke/listen patterns.
+- [x] runtime orchestration is explicit and detached from Tauri invoke/listen patterns.
 
 ## Phase 4: Async Task And Channel Strategy
 - [x] Define task runtime approach for background work compatible with egui:
@@ -163,7 +163,7 @@
 - [x] channels/message queues
 - [x] cancellation semantics
 - [x] progress event batching
-- [ ] Ensure UI thread does not block on:
+- [x] Ensure UI thread does not block on:
 - [x] TTS work
 - [x] source ingestion
 - [x] PDF extraction/transcription/OCR
@@ -216,9 +216,9 @@
 - Losing correlation between commands and effects would make debugging async boundaries harder.
 
 ### Test / Parity Requirements (specific to Phase 6)
-- [ ] Confirm `cargo check` plus any existing unit tests still run with the new tracing bootstrapping.
-- [ ] Manual log inspection (or scripted smoke run) shows spans for each command/effect label described above.
-- [ ] Ensure the instrumentation plan documents the structured fields expected by the wider logging/obs team.
+- [x] Confirm `cargo check` plus any existing unit tests still run with the new tracing bootstrapping.
+- [x] Manual log inspection (or scripted smoke run) shows spans for each command/effect label described above.
+- [x] Ensure the instrumentation plan documents the structured fields expected by the wider logging/obs team.
 
 ## Risks / Failure Modes
 - Carrying over snapshot-shaped frontend assumptions can cause coarse invalidation and sluggish egui updates.
@@ -234,7 +234,7 @@
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
-- [ ] The egui app can be implemented against a Rust-native state model with no Tauri/TS bridge dependency.
-- [ ] Command, effect, and event responsibilities are explicit and typed.
-- [ ] The target runtime model preserves current ownership boundaries and tracing expectations.
-- [ ] No major runtime/state architecture question remains open for implementation.
+- [x] The egui app can be implemented against a Rust-native state model with no Tauri/TS bridge dependency.
+- [x] Command, effect, and event responsibilities are explicit and typed.
+- [x] The target runtime model preserves current ownership boundaries and tracing expectations.
+- [x] No major runtime/state architecture question remains open for implementation.

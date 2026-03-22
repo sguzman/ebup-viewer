@@ -318,6 +318,8 @@ fn event_name(event: &AppEvent) -> &'static str {
         AppEvent::TtsStateUpdated(_) => "TtsStateUpdated",
         AppEvent::PdfTranscriptionProgress(_) => "PdfTranscriptionProgress",
         AppEvent::LogLevelUpdated(_) => "LogLevelUpdated",
+        AppEvent::NotificationRaised { .. } => "NotificationRaised",
+        AppEvent::NotificationDismissed { .. } => "NotificationDismissed",
         AppEvent::PersistenceFlushed { .. } => "PersistenceFlushed",
         AppEvent::CommandFailed { .. } => "CommandFailed",
     }
@@ -340,6 +342,8 @@ fn event_request_id(event: &AppEvent) -> Option<u64> {
         AppEvent::TtsStateUpdated(event) => Some(event.request_id),
         AppEvent::PdfTranscriptionProgress(event) => Some(event.request_id),
         AppEvent::LogLevelUpdated(event) => Some(event.request_id),
+        AppEvent::NotificationRaised { request_id, .. } => Some(*request_id),
+        AppEvent::NotificationDismissed { request_id, .. } => Some(*request_id),
         AppEvent::PersistenceFlushed { request_id, .. } => Some(*request_id),
         AppEvent::CommandFailed { request_id, .. } => Some(*request_id),
         _ => None,

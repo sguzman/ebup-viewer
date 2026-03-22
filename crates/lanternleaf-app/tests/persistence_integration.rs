@@ -5,7 +5,10 @@ use lanternleaf_app::pipeline::PersistenceTrigger;
 use lanternleaf_core::{cache, config, session};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static CACHE_LOCK: Mutex<()> = Mutex::new(());
 
 fn unique_source_path(ext: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -15,6 +18,23 @@ fn unique_source_path(ext: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lanternleaf_persist_{nanos}.{ext}"))
 }
 
+fn unique_cache_root() -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!("lanternleaf_cache_{nanos}"))
+}
+
+fn with_cache_root<F: FnOnce()>(test_body: F) {
+    let _guard = CACHE_LOCK.lock().expect("cache lock");
+    let cache_root = unique_cache_root();
+    unsafe { std::env::set_var(cache::CACHE_DIR_ENV, &cache_root) };
+    let _ = fs::create_dir_all(&cache_root);
+    test_body();
+    unsafe { std::env::remove_var(cache::CACHE_DIR_ENV) };
+    let _ = fs::remove_dir_all(cache_root);
+}
 fn write_source(path: &Path) {
     fs::write(path, "test content").expect("write source");
 }
@@ -123,60 +143,64 @@ fn sample_snapshot(path: &Path) -> session::ReaderSnapshot {
 
 #[test]
 fn persistence_roundtrip_and_delete() {
-    let source = unique_source_path("epub");
-    write_source(&source);
-    cache::remember_source_path(&source);
-    let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService::default());
-    let snapshot = sample_snapshot(&source);
-    let config = config::AppConfig::default();
+    with_cache_root(|| {
+        let source = unique_source_path("epub");
+        write_source(&source);
+        cache::remember_source_path(&source);
+        let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService::default());
+        let snapshot = sample_snapshot(&source);
+        let config = config::AppConfig::default();
 
-    lifecycle.flush_trigger(
-        Some(ReaderHousekeeping {
-            snapshot: &snapshot,
-            config: &config,
-        }),
-        PersistenceTrigger::SourceOpen,
-    );
-    let loaded = cache::load_bookmark(&source);
-    assert!(loaded.is_some(), "bookmark should be persisted");
+        lifecycle.flush_trigger(
+            Some(ReaderHousekeeping {
+                snapshot: &snapshot,
+                config: &config,
+            }),
+            PersistenceTrigger::SourceOpen,
+        );
+        let loaded = cache::load_bookmark(&source);
+        assert!(loaded.is_some(), "bookmark should be persisted");
 
-    cache::delete_recent_source_and_cache(&source).expect("delete source and cache");
-    let loaded_after_delete = cache::load_bookmark(&source);
-    assert!(loaded_after_delete.is_none(), "bookmark should be deleted");
+        cache::delete_recent_source_and_cache(&source).expect("delete source and cache");
+        let loaded_after_delete = cache::load_bookmark(&source);
+        assert!(loaded_after_delete.is_none(), "bookmark should be deleted");
 
-    cleanup_source(&source);
+        cleanup_source(&source);
+    });
 }
 
 #[test]
 fn persistence_rebuilds_after_corruption() {
-    let source = unique_source_path("epub");
-    write_source(&source);
-    cache::remember_source_path(&source);
+    with_cache_root(|| {
+        let source = unique_source_path("epub");
+        write_source(&source);
+        cache::remember_source_path(&source);
 
-    let bookmark_path = cache::hash_dir(&source).join("bookmark.toml");
-    if let Some(parent) = bookmark_path.parent() {
-        fs::create_dir_all(parent).expect("create cache dir");
-    }
-    fs::write(&bookmark_path, "not = valid = toml")
-        .expect("write corrupt bookmark");
-    let loaded = cache::load_bookmark(&source);
-    assert!(loaded.is_none(), "corrupt bookmark should be ignored");
+        let bookmark_path = cache::hash_dir(&source).join("bookmark.toml");
+        if let Some(parent) = bookmark_path.parent() {
+            fs::create_dir_all(parent).expect("create cache dir");
+        }
+        fs::write(&bookmark_path, "not = valid = toml")
+            .expect("write corrupt bookmark");
+        let loaded = cache::load_bookmark(&source);
+        assert!(loaded.is_none(), "corrupt bookmark should be ignored");
 
-    let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService::default());
-    let snapshot = sample_snapshot(&source);
-    let config = config::AppConfig::default();
-    lifecycle.flush_trigger(
-        Some(ReaderHousekeeping {
-            snapshot: &snapshot,
-            config: &config,
-        }),
-        PersistenceTrigger::SourceOpen,
-    );
-    let rebuilt = fs::read_to_string(&bookmark_path).unwrap_or_default();
-    assert!(
-        rebuilt.contains("page"),
-        "bookmark file should be rebuilt with content"
-    );
+        let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService::default());
+        let snapshot = sample_snapshot(&source);
+        let config = config::AppConfig::default();
+        lifecycle.flush_trigger(
+            Some(ReaderHousekeeping {
+                snapshot: &snapshot,
+                config: &config,
+            }),
+            PersistenceTrigger::SourceOpen,
+        );
+        let rebuilt = fs::read_to_string(&bookmark_path).unwrap_or_default();
+        assert!(
+            rebuilt.contains("page"),
+            "bookmark file should be rebuilt with content"
+        );
 
-    cleanup_source(&source);
+        cleanup_source(&source);
+    });
 }

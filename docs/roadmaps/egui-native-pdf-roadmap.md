@@ -66,30 +66,30 @@
 - [ ] Text sync/resync cycles should log the fallback path taken (exact/mixed/block/page) in the shared tracing schema so QA can correlate highlight jumps with PDF metrics.
 
 ## Phase 1: PDF Subsystem Boundaries
-- [ ] Define the Rust-native services and instrumentation contracts for:
-- [ ] `PageRenderService`: page raster generation, zoom scaling, caching, and texture uploading; emits spans for render requests, cache hits/misses, and upload latency aligned with the shell performance tracing plan.
-- [ ] `TextExtractionService`: canonical page text extraction, normalization, and persistence/ cache updates; logs fallback decisions (exact vs fuzzy vs block) and surfaces text quality tiers to the instrumentation schema.
-- [ ] `SyncMapBuilder`: sentence-to-geometry and overlay metadata creation; keeps traceable references to the originating sentence ID for highlight sync in the overlay manager.
-- [ ] `OCRArtifactLoader`: optional OCR supplementation, artifact ingestion, and fallback labeling; reports confidence events to the shared tracing schema (match `highlight.anchor` tags).
-- [ ] `ViewportLifecycleManager`: page lifecycle, virtualization, eviction, and overscan scheduling; enforces the shell’s redraw budget by exposing APIs for requesting frames only when visibility warrants it.
-- [ ] `OverlayAndHighlightManager`: overlay geometry application, cleanup, and click/jump handling; emits spans tied to the shell command/effect model for diagnostics.
-- [ ] Define caching/persistence responsibilities (render images, text caches, sync maps) and how they flush during shell events (source open, close, safe quit) while emitting structured logs for QM.
-- [ ] Define how existing PDF artifacts from the current Rust side are reused or rebuilt in the egui app, including migration paths for cached sync maps and highlight geometry.
-- [ ] Document instrumentation expectations: each subsystem must raise telemetry for request start/completion, cache behavior, fallback reason, and error path so the tracing plan can correlate PDF behavior with shell performance.
+- [x] Define the Rust-native services and instrumentation contracts for:
+- [x] `PageRenderService`: page raster generation, zoom scaling, caching, and texture uploading; emits spans for render requests, cache hits/misses, and upload latency aligned with the shell performance tracing plan.
+- [x] `TextExtractionService`: canonical page text extraction, normalization, and persistence/ cache updates; logs fallback decisions (exact vs fuzzy vs block) and surfaces text quality tiers to the instrumentation schema.
+- [x] `SyncMapBuilder`: sentence-to-geometry and overlay metadata creation; keeps traceable references to the originating sentence ID for highlight sync in the overlay manager.
+- [x] `OCRArtifactLoader`: optional OCR supplementation, artifact ingestion, and fallback labeling; reports confidence events to the shared tracing schema (match `highlight.anchor` tags).
+- [x] `ViewportLifecycleManager`: page lifecycle, virtualization, eviction, and overscan scheduling; enforces the shell’s redraw budget by exposing APIs for requesting frames only when visibility warrants it.
+- [x] `OverlayAndHighlightManager`: overlay geometry application, cleanup, and click/jump handling; emits spans tied to the shell command/effect model for diagnostics.
+- [x] Define caching/persistence responsibilities (render images, text caches, sync maps) and how they flush during shell events (source open, close, safe quit) while emitting structured logs for QM.
+- [x] Define how existing PDF artifacts from the current Rust side are reused or rebuilt in the egui app, including migration paths for cached sync maps and highlight geometry.
+- [x] Document instrumentation expectations: each subsystem must raise telemetry for request start/completion, cache behavior, fallback reason, and error path so the tracing plan can correlate PDF behavior with shell performance.
 ### Phase Exit
-- [ ] implementers have an explicit subsystem map, service API definitions, and tracing requirements for each PDF component before implementation begins.
+- [x] implementers have an explicit subsystem map, service API definitions, and tracing requirements for each PDF component before implementation begins.
 
 ## Phase 2: Rendering And Viewport Model
-- [ ] Define page raster/render strategy with instrumentation that ties into the shell’s redraw and coalescing plan:
-- [ ] `PageRenderService` exposes `request_render(page_id, zoom_level, priority)` and emits spans `pdf.render.request`/`pdf.render.complete` containing zoom, priority, and cache_hit metadata so shell telemetry can gate frame requests.
-- [ ] Zoom scaling policy includes discrete zoom levels, smooth transitions, and inertial zoom damping; zoom change events must throttle repaint requests per the shell coalescing rules to prevent repeated reflows.
-- [ ] Texture upload/cache policy handles GPU/egui texture creation with async `UploadHandle` futures; cache hits/misses emit spans and inform the virtualization scheduler whether to reuse existing textures or re-render.
-- [ ] Visible-page and overscan scheduling rely on a virtualization scheduler service that tracks viewport extent and emits spans `pdf.viewport.update` with visible_range, overscan_range, and activation triggers (scroll, jump, navigation). Scheduler decisions must respect the shell redraw budget, only requesting renders if viewport changes exceed configurable deltas.
-- [ ] Eviction and reuse rules define when textures/textures are released or reused; eviction operations emit structured logs with reason (`viewport`, `memory_pressure`, `oob`) and coordinate with the tracing plan to prevent audit gaps.
-- [ ] Preserve current priority ordering (visible, active TTS sentence page, jump target, overscan) but also allow urgent commands (e.g., highlight jumps) to preempt the scheduler with documented guard rails.
-- [ ] Document how virtualization decisions feed back into the command/effect pipeline so page renders triggered by auto-scroll or reader navigation are traceable to the originating `ShellCommand`.
+- [x] Define page raster/render strategy with instrumentation that ties into the shell’s redraw and coalescing plan:
+- [x] `PageRenderService` exposes `request_render(page_id, zoom_level, priority)` and emits spans `pdf.render.request`/`pdf.render.complete` containing zoom, priority, and cache_hit metadata so shell telemetry can gate frame requests.
+- [x] Zoom scaling policy includes discrete zoom levels, smooth transitions, and inertial zoom damping; zoom change events must throttle repaint requests per the shell coalescing rules to prevent repeated reflows.
+- [x] Texture upload/cache policy handles GPU/egui texture creation with async `UploadHandle` futures; cache hits/misses emit spans and inform the virtualization scheduler whether to reuse existing textures or re-render.
+- [x] Visible-page and overscan scheduling rely on a virtualization scheduler service that tracks viewport extent and emits spans `pdf.viewport.update` with visible_range, overscan_range, and activation triggers (scroll, jump, navigation). Scheduler decisions must respect the shell redraw budget, only requesting renders if viewport changes exceed configurable deltas.
+- [x] Eviction and reuse rules define when textures/textures are released or reused; eviction operations emit structured logs with reason (`viewport`, `memory_pressure`, `oob`) and coordinate with the tracing plan to prevent audit gaps.
+- [x] Preserve current priority ordering (visible, active TTS sentence page, jump target, overscan) but also allow urgent commands (e.g., highlight jumps) to preempt the scheduler with documented guard rails.
+- [x] Document how virtualization decisions feed back into the command/effect pipeline so page renders triggered by auto-scroll or reader navigation are traceable to the originating `ShellCommand`.
 - Phase exit:
-- [ ] the egui PDF viewer has a virtualization lifecycle contract, with rendering and viewport scheduling tightly instrumented and obeying the shell redraw/coalescing constraints.
+- [x] the egui PDF viewer has a virtualization lifecycle contract, with rendering and viewport scheduling tightly instrumented and obeying the shell redraw/coalescing constraints.
 
 ## Phase 3: Text Extraction And Sync Artifact Strategy
 - [ ] Define Rust-native page text extraction ownership, normalization, cache persistence, and tracing invariants:
@@ -105,7 +105,7 @@
 - [ ] text extraction, normalization, caches, and sync maps are explicit, traced, and ready for native implementation.
 
 ## Phase 4: Highlight, Overlay, And Jump Semantics
-- [ ] Define page-relative overlay geometry for highlights as the stable rendering primitive tied to canonical sentence anchors and the tracing schema:
+- [x] Define page-relative overlay geometry for highlights as the stable rendering primitive tied to canonical sentence anchors and the tracing schema:
 - [ ] Each highlight span carries the originating sentence ID, page_id, and sync_map_quality so the overlay manager can emit `pdf.highlight.apply` spans with `highlight.anchor` metadata aligned to reader tracing.
 - [ ] Preserve downgrade rules (sentence → block → page → render-only) and log the downgrade reason per overlay so QA can correlate with past instability classes.
 - [ ] Overlay cleanup rules must ensure stale highlights and previous sentence rectangles are removed before new spans render; these transitions emit `pdf.highlight.cleanup` events with cleanup reason (new sentence, page change, closing source).

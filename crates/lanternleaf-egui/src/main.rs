@@ -1,6 +1,7 @@
 mod helpers;
 mod pdf;
 mod pdf_renderer;
+mod pdf_subsystem;
 mod shell;
 mod effects;
 
@@ -32,6 +33,7 @@ use crate::pdf::{
 use crate::pdf_renderer::{
     NativePdfRenderer, NativeRenderEviction, NativeRenderSpan, RenderTarget,
 };
+use crate::pdf_subsystem::{PdfRenderPriority, PdfViewportRange, PdfViewportUpdateTrigger};
 use crate::effects::{EffectContext, EffectDispatcher};
 use crate::shell::{FocusOwner, LayoutPolicy, NotificationLevel, ShellState};
 use lanternleaf_app::{
@@ -63,6 +65,7 @@ pub const PDF_CANVAS_BUDGET_PAGES: usize = 2;
 pub const PDF_TEXT_LAYER_BUDGET_PAGES: usize = 1;
 pub const PDF_CANVAS_TEXTURE_SIZE: [usize; 2] = [320, 450];
 pub const PDF_TEXT_TEXTURE_SIZE: [usize; 2] = [300, 420];
+const PDF_VIEWPORT_UPDATE_THROTTLE: Duration = Duration::from_millis(150);
 const REGRESSION_EVENT_WINDOW: Duration = Duration::from_secs(3);
 const READER_RENDR_ROADMAP_URL: &str = "https://github.com/sguzman/lantern-leaf/blob/main/docs/roadmaps/egui-reader-rendering-roadmap.md";
 const PDF_SUBSYSTEM_ROADMAP_URL: &str =
@@ -4838,9 +4841,24 @@ impl LanternLeafApp {
                 )
             };
             if canvas_ready && canvas_missing {
+                let priority = self.pdf_render_priority_for_page(page_index);
+                let zoom_level = self.pdf_render_state.zoom_level;
+                self.emit_pdf_render_request(page_index, RenderTarget::Canvas, priority, zoom_level);
                 let image = self
-                    .render_pdf_texture(page_index, RenderTarget::Canvas)
+                    .render_pdf_texture(page_index, RenderTarget::Canvas, priority, zoom_level)
                     .unwrap_or_else(|| Self::build_canvas_color_image(page_index));
+                let upload = crate::pdf_subsystem::PdfTextureUploadHandle {
+                    page_index,
+                    zoom_level,
+                    priority,
+                };
+                trace!(
+                    page = page_index + 1,
+                    target = ?RenderTarget::Canvas,
+                    priority = ?upload.priority,
+                    zoom_level = upload.zoom_level,
+                    "pdf.texture.upload"
+                );
                 let texture = ctx.load_texture(
                     format!("pdf-{}-{}", RenderTarget::Canvas.label(), page_index),
                     image,
@@ -4849,9 +4867,24 @@ impl LanternLeafApp {
                 self.pdf_render_state.viewport_surfaces[idx].canvas_texture = Some(texture);
             }
             if text_ready && text_missing {
+                let priority = self.pdf_render_priority_for_page(page_index);
+                let zoom_level = self.pdf_render_state.zoom_level;
+                self.emit_pdf_render_request(page_index, RenderTarget::TextLayer, priority, zoom_level);
                 let image = self
-                    .render_pdf_texture(page_index, RenderTarget::TextLayer)
+                    .render_pdf_texture(page_index, RenderTarget::TextLayer, priority, zoom_level)
                     .unwrap_or_else(|| Self::build_text_layer_color_image(page_index));
+                let upload = crate::pdf_subsystem::PdfTextureUploadHandle {
+                    page_index,
+                    zoom_level,
+                    priority,
+                };
+                trace!(
+                    page = page_index + 1,
+                    target = ?RenderTarget::TextLayer,
+                    priority = ?upload.priority,
+                    zoom_level = upload.zoom_level,
+                    "pdf.texture.upload"
+                );
                 let texture = ctx.load_texture(
                     format!("pdf-{}-{}", RenderTarget::TextLayer.label(), page_index),
                     image,
@@ -4860,6 +4893,38 @@ impl LanternLeafApp {
                 self.pdf_render_state.viewport_surfaces[idx].text_layer_texture = Some(texture);
             }
         }
+    }
+
+    fn pdf_render_priority_for_page(&self, page_index: usize) -> PdfRenderPriority {
+        let Some(plan) = self.pdf_render_state.plan.as_ref() else {
+            return PdfRenderPriority::Low;
+        };
+        if plan.priority_page_indexes.contains(&page_index) {
+            PdfRenderPriority::High
+        } else if plan.medium_priority_page_indexes.contains(&page_index) {
+            PdfRenderPriority::Medium
+        } else {
+            PdfRenderPriority::Low
+        }
+    }
+
+    fn emit_pdf_render_request(
+        &self,
+        page_index: usize,
+        target: RenderTarget,
+        priority: PdfRenderPriority,
+        zoom_level: f32,
+    ) {
+        let span = tracing::span!(
+            Level::TRACE,
+            "pdf.render.request",
+            page = page_index + 1,
+            target = ?target,
+            priority = ?priority,
+            zoom_level
+        );
+        let _enter = span.enter();
+        trace!("PDF render requested");
     }
 
     fn build_canvas_color_image(page_index: usize) -> ColorImage {
@@ -4910,6 +4975,8 @@ impl LanternLeafApp {
         &mut self,
         page_index: usize,
         target: RenderTarget,
+        priority: PdfRenderPriority,
+        zoom_level: f32,
     ) -> Option<ColorImage> {
         let source_path = self.current_pdf_path.as_deref()?;
         let render_result = {
@@ -4935,6 +5002,18 @@ impl LanternLeafApp {
         };
         match render_result {
             Ok((outcome, render_span, evictions)) => {
+                let complete_span = tracing::span!(
+                    Level::TRACE,
+                    "pdf.render.complete",
+                    page = page_index + 1,
+                    target = ?target,
+                    priority = ?priority,
+                    zoom_level,
+                    cache_hit = render_span.cache_hit,
+                    duration_ms = render_span.duration.as_secs_f32()
+                );
+                let _complete_enter = complete_span.enter();
+                trace!("PDF render completed");
                 let span = tracing::span!(
                     Level::TRACE,
                     "PdfNativeRender",
@@ -5139,6 +5218,44 @@ impl LanternLeafApp {
         });
     }
 
+    fn pdf_viewport_trigger(
+        &self,
+        snapshot: &ReaderSnapshot,
+        highlighted_page: usize,
+        visible_page_indexes: &[usize],
+    ) -> PdfViewportUpdateTrigger {
+        if self.pdf_render_state.last_viewport_update.is_none() {
+            return PdfViewportUpdateTrigger::Init;
+        }
+        let prev_visible = self
+            .pdf_render_state
+            .visible_page_indexes
+            .first()
+            .copied()
+            .unwrap_or(snapshot.current_page);
+        let next_visible = visible_page_indexes
+            .first()
+            .copied()
+            .unwrap_or(snapshot.current_page);
+        if prev_visible != next_visible {
+            return PdfViewportUpdateTrigger::Scroll;
+        }
+        if self.pdf_render_state.jump_target_page_index != Some(highlighted_page) {
+            return PdfViewportUpdateTrigger::Jump;
+        }
+        if self.pdf_render_state.active_tts_page_index != Some(snapshot.current_page) {
+            return PdfViewportUpdateTrigger::Tts;
+        }
+        PdfViewportUpdateTrigger::Refresh
+    }
+
+    fn should_throttle_pdf_viewport_update(&self) -> bool {
+        match self.pdf_render_state.last_viewport_update {
+            None => false,
+            Some(instant) => instant.elapsed() < PDF_VIEWPORT_UPDATE_THROTTLE,
+        }
+    }
+
     fn update_pdf_render_state(&mut self, snapshot: Option<&ReaderSnapshot>) {
         if let Some(snapshot) = snapshot {
             if snapshot.pretty_kind == PrettyKind::Pdf && snapshot.total_pages > 0 {
@@ -5161,6 +5278,9 @@ impl LanternLeafApp {
                     jump_target_page_index: Some(highlighted_page),
                 };
                 let plan = build_pdf_viewport_render_plan(&plan_input);
+                let visible_range = PdfViewportRange::from_pages(&visible_page_indexes);
+                let overscan_range = PdfViewportRange::from_pages(&plan.canvas_page_indexes);
+                let trigger = self.pdf_viewport_trigger(snapshot, highlighted_page, &visible_page_indexes);
                 let mut registry_pages = plan.canvas_page_indexes.clone();
                 registry_pages.extend(plan.text_layer_page_indexes.iter().copied());
                 registry_pages.sort_unstable();
@@ -5205,7 +5325,24 @@ impl LanternLeafApp {
                         evicted_canvas_pages: decision.evict_canvas_page_indexes.clone(),
                         evicted_text_layer_pages: decision.evict_text_layer_page_indexes.clone(),
                     });
+                    trace!(
+                        reason = "viewport",
+                        evicted_canvas_pages = ?decision.evict_canvas_page_indexes,
+                        evicted_text_layer_pages = ?decision.evict_text_layer_page_indexes,
+                        "PDF texture eviction decision"
+                    );
                 }
+                let throttled = self.should_throttle_pdf_viewport_update();
+                let viewport_span = tracing::span!(
+                    Level::TRACE,
+                    "pdf.viewport.update",
+                    visible_range = ?visible_range,
+                    overscan_range = ?overscan_range,
+                    trigger = ?trigger,
+                    zoom_level = self.pdf_render_state.zoom_level,
+                    throttled
+                );
+                let _viewport_enter = viewport_span.enter();
                 trace!(
                     pdf_plan = ?plan,
                     evicted_canvases = ?decision.evict_canvas_page_indexes,
@@ -5222,6 +5359,11 @@ impl LanternLeafApp {
                 self.pdf_render_state.visible_page_indexes = visible_page_indexes;
                 self.pdf_render_state.active_tts_page_index = plan_input.active_tts_page_index;
                 self.pdf_render_state.jump_target_page_index = plan_input.jump_target_page_index;
+                self.pdf_render_state.highlighted_sentence_idx = snapshot.highlighted_sentence_idx;
+                self.pdf_render_state.last_viewport_range = visible_range;
+                self.pdf_render_state.last_overscan_range = overscan_range;
+                self.pdf_render_state.last_viewport_trigger = Some(trigger);
+                self.pdf_render_state.last_viewport_update = Some(Instant::now());
                 self.pdf_render_state.last_updated = Some(Instant::now());
                 return;
             }
@@ -6444,13 +6586,17 @@ impl AutoScrollState {
     }
 }
 
-#[derive(Default)]
 struct PdfRenderState {
     plan: Option<PdfViewportRenderPlan>,
     decision: Option<PdfViewportBudgetDecision>,
     visible_page_indexes: Vec<usize>,
     active_tts_page_index: Option<usize>,
     jump_target_page_index: Option<usize>,
+    zoom_level: f32,
+    last_viewport_range: Option<PdfViewportRange>,
+    last_overscan_range: Option<PdfViewportRange>,
+    last_viewport_trigger: Option<PdfViewportUpdateTrigger>,
+    last_viewport_update: Option<Instant>,
     last_updated: Option<Instant>,
     rendered_canvas_pages: usize,
     rendered_text_layers: usize,
@@ -6470,6 +6616,40 @@ struct PdfRenderState {
     next_overlay_alert_id: usize,
 }
 
+impl Default for PdfRenderState {
+    fn default() -> Self {
+        Self {
+            plan: None,
+            decision: None,
+            visible_page_indexes: Vec::new(),
+            active_tts_page_index: None,
+            jump_target_page_index: None,
+            zoom_level: crate::pdf_subsystem::PDF_DEFAULT_ZOOM_LEVEL,
+            last_viewport_range: None,
+            last_overscan_range: None,
+            last_viewport_trigger: None,
+            last_viewport_update: None,
+            last_updated: None,
+            rendered_canvas_pages: 0,
+            rendered_text_layers: 0,
+            rendered_overlays: 0,
+            highlighted_page: None,
+            highlighted_sentence_idx: None,
+            overlay_rects: Vec::new(),
+            overlay_alignment_reason: None,
+            overlay_alignment_source: None,
+            overlay_alignment_rects: HashMap::new(),
+            render_events: Vec::new(),
+            viewport_surfaces: Vec::new(),
+            throttle_events: Vec::new(),
+            native_render_spans: Vec::new(),
+            native_eviction_events: Vec::new(),
+            overlay_pressure_alerts: Vec::new(),
+            next_overlay_alert_id: 0,
+        }
+    }
+}
+
 impl PdfRenderState {
     fn reset(&mut self) {
         self.plan = None;
@@ -6477,6 +6657,11 @@ impl PdfRenderState {
         self.visible_page_indexes.clear();
         self.active_tts_page_index = None;
         self.jump_target_page_index = None;
+        self.zoom_level = crate::pdf_subsystem::PDF_DEFAULT_ZOOM_LEVEL;
+        self.last_viewport_range = None;
+        self.last_overscan_range = None;
+        self.last_viewport_trigger = None;
+        self.last_viewport_update = None;
         self.last_updated = None;
         self.rendered_canvas_pages = 0;
         self.rendered_text_layers = 0;

@@ -238,3 +238,47 @@ fn eviction_priority(
     }
     entry.last_touched_at as i64
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_plan_prioritizes_jump_and_tts_pages() {
+        let input = PdfViewportPlanInput {
+            total_pages: 12,
+            visible_page_indexes: vec![5],
+            overscan: 1,
+            active_tts_page_index: Some(2),
+            jump_target_page_index: Some(9),
+        };
+        let plan = build_pdf_viewport_render_plan(&input);
+        assert!(plan.priority_page_indexes.contains(&5));
+        assert!(plan.priority_page_indexes.contains(&2));
+        assert!(plan.priority_page_indexes.contains(&9));
+        assert!(plan.canvas_page_indexes.contains(&4));
+        assert!(plan.canvas_page_indexes.contains(&6));
+    }
+
+    #[test]
+    fn viewport_eviction_preserves_keep_pages() {
+        let entries = (0..6)
+            .map(|page_index| PdfPageRegistryEntry {
+                page_index,
+                last_touched_at: page_index as u64,
+                rendered_zoom: Some(1.0),
+                text_layer_zoom: Some(1.0),
+            })
+            .collect::<Vec<_>>();
+        let decision = choose_pdf_viewport_evictions(&PdfViewportBudgetInput {
+            entries,
+            keep_canvas_page_indexes: vec![0, 1],
+            keep_text_layer_page_indexes: vec![0],
+            max_canvas_pages: 2,
+            max_text_layer_pages: 1,
+        });
+        assert!(!decision.evict_canvas_page_indexes.contains(&0));
+        assert!(!decision.evict_canvas_page_indexes.contains(&1));
+        assert!(!decision.evict_text_layer_page_indexes.contains(&0));
+    }
+}

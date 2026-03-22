@@ -30,7 +30,7 @@ use crate::pdf::{
 use crate::pdf_renderer::{
     NativePdfRenderer, NativeRenderEviction, NativeRenderSpan, RenderTarget,
 };
-use crate::shell::{LayoutPolicy, NotificationLevel, ShellState};
+use crate::shell::{FocusOwner, LayoutPolicy, NotificationLevel, ShellState};
 use lanternleaf_app::{
     AppRuntime,
     contracts::{
@@ -538,6 +538,13 @@ impl LanternLeafApp {
     }
 
     fn handle_shortcuts(&mut self, ctx: &Context, state: &AppState) {
+        match self.shell_state.focus_owner {
+            FocusOwner::Modal | FocusOwner::PanelInput => {
+                trace!(?self.shell_state.focus_owner, "Shortcuts suppressed by focus owner");
+                return;
+            }
+            _ => {}
+        }
         let mode_scope = match state.session.session.as_ref().map(|session| session.mode) {
             Some(UiMode::Reader) => ShortcutScope::Reader,
             _ => ShortcutScope::Global,
@@ -604,8 +611,12 @@ impl LanternLeafApp {
                 ui.horizontal(|ui| {
                     ui.heading("LanternLeaf (egui)");
                     ui.separator();
+                    let allow_recents = !state.app_shell.operations.source_open;
                     if ui
-                        .button("Refresh recents (AppCommand::RefreshRecents)")
+                        .add_enabled(
+                            allow_recents,
+                            egui::Button::new("Refresh recents (AppCommand::RefreshRecents)"),
+                        )
                         .clicked()
                     {
                         self.execute_command(AppCommand::RefreshRecents { limit: Some(10) });
@@ -2149,6 +2160,7 @@ impl LanternLeafApp {
             "Layout: {:?}",
             self.layout_policy.size_class
         ));
+        ui.label(format!("Focus owner: {:?}", self.shell_state.focus_owner));
         ui.label(format!("Busy: {}", state.app_shell.busy));
         ui.label(format!(
             "Operations: source_open={}, calibre_load={}, browser_tabs={}",

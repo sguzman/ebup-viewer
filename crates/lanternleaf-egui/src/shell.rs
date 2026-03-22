@@ -51,6 +51,7 @@ pub struct ShellState {
     pub active_mode: ActiveMode,
     pub panels: PanelVisibility,
     pub modal: ModalState,
+    pub focus_owner: FocusOwner,
     pub notifications: Vec<Notification>,
     pub safe_quit_pending: bool,
     pub screen_lock_active: bool,
@@ -62,11 +63,21 @@ impl Default for ShellState {
             active_mode: ActiveMode::Starter,
             panels: PanelVisibility::default(),
             modal: ModalState::None,
+            focus_owner: FocusOwner::Global,
             notifications: Vec::new(),
             safe_quit_pending: false,
             screen_lock_active: false,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusOwner {
+    Global,
+    Starter,
+    Reader,
+    PanelInput,
+    Modal,
 }
 
 impl ShellState {
@@ -120,6 +131,15 @@ impl ShellState {
             ModalState::None
         };
         self.safe_quit_pending = show_safe_quit;
+        self.focus_owner = if self.modal != ModalState::None {
+            FocusOwner::Modal
+        } else if pending_search {
+            FocusOwner::PanelInput
+        } else if matches!(self.active_mode, ActiveMode::Reader) {
+            FocusOwner::Reader
+        } else {
+            FocusOwner::Starter
+        };
 
         if previous_mode != self.active_mode {
             debug!(?previous_mode, ?self.active_mode, "Shell active mode updated");

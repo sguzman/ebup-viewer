@@ -160,12 +160,12 @@
 - [x] `Search` and `Quick Actions` panels can co-exist but share layout space; capture the expected width impact on the reader content pane.
 - [x] `TTS` controls live in a dock that must remain accessible while other panels open; describe how it responds to active playback state.
 - [x] Document button-to-command mapping for toolbar actions (open source, import, calibre toggle, search, stats, settings, reader quick actions) so each produces a typed command/event into the runtime.
-- [ ] Define the command dispatch path:
-- [ ] Canvas-level input (buttons, toggles) emits `ShellCommand` variants into the runtime.
-- [ ] Keyboard shortcuts and right-click items share the same command inputs.
-- [ ] Command handlers produce effects (e.g., `OpenSource` -> `SourceIngestionService`, `TogglePanel` -> state mutation) with tracing spans.
-- [ ] Provide overflow handling for disabled/hidden buttons when modes disallow actions (e.g., `OpenSource` disabled during source load).
-- [ ] Add status/diagnostic surfaces that display import/transcription/runtime conditions, capturing the current TTS status, sync health, and browser-tab health.
+- [x] Define the command dispatch path:
+- [x] Canvas-level input (buttons, toggles) emits `ShellCommand` variants into the runtime.
+- [x] Keyboard shortcuts and right-click items share the same command inputs.
+- [x] Command handlers produce effects (e.g., `OpenSource` -> `SourceIngestionService`, `TogglePanel` -> state mutation) with tracing spans.
+- [x] Provide overflow handling for disabled/hidden buttons when modes disallow actions (e.g., `OpenSource` disabled during source load).
+- [x] Add status/diagnostic surfaces that display import/transcription/runtime conditions, capturing the current TTS status, sync health, and browser-tab health.
 
 ### Toolbar Layout Contract
 - Primary left group: open/import actions (open file, clipboard, browser-tab import), visible in Starter and Reader.
@@ -186,6 +186,13 @@
 - Reader quick actions: `Reader(SessionCommand::TtsTogglePlayPause|TtsSeekPrev|TtsSeekNext|TtsRepeatSentence)`.
 - Safe quit: `SafeQuit` (modal confirmation required).
 
+### Command Dispatch Path
+- Canvas inputs (buttons, toggles) emit `AppCommand`/`ReaderCommand` via `AppRuntime::plan_command`.
+- Shortcut bindings route through `ShortcutRegistry` and reuse the same command path.
+- Commands generate `DispatchPlan` effects with tracing spans; effects resolve into `AppEvent` updates.
+- Disabled/hidden actions: use operation scopes (e.g., `OperationScope::SourceOpen`) to disable recents/opens while a source is opening.
+- Status/diagnostics: expose busy flags, source open, Calibre load, browser-tab refresh, and TTS state in the panel/status surfaces.
+
 ### Implementation Artifacts
 - A toolbar layout descriptor that defines action groups, icon priorities, and responsive breakpoint behavior.
 - A panel exclusivity matrix that guides panel toggling effects and ensures reader content width adjustments are predictable.
@@ -196,22 +203,39 @@
 - [ ] shell command surfaces match current UX behavior without WebView dependencies and feed explicitly into the runtime command/effect model.
 
 ## Phase 4: Keyboard Shortcut And Focus Model
-- [ ] Define a Rust-native shortcut registry that mirrors the current shortcut map in `ui/src/lib/shortcuts.ts` and derives from keyboard definitions used in `ReaderShell` and `StarterShell`.
-- [ ] Catalog the scopes for every shortcut:
-- [ ] Global (window-wide, always active unless blocked by modal)
-- [ ] Starter-only (allowed before a source opens)
-- [ ] Reader-only (playback, navigation, highlight)
-- [ ] Panel-only (search, stats, settings focus)
-- [ ] Define focus ownership rules:
-- [ ] Text entry fields (search, settings, modal inputs) capture keys and suppress reader shortcuts while focused.
-- [ ] Reader viewport captures navigation/playback shortcuts when it has focus, but yields to modals and panel inputs.
-- [ ] Modal dialogs and toast notifications trap escape/confirm behavior and block global shortcuts when active.
-- [ ] Define modal focus trapping and escape/confirm semantics explicitly so future egui modals can reuse a single focus manager.
-- [ ] Document fallback behavior for shortcut collisions (e.g., search entry pressing `Ctrl+F` vs reader playback keys) with priority rules.
-- [ ] Define shortcut registration semantics:
-- [ ] a `ShortcutRegistry` service that accepts `(ShortcutId, Scope, KeyCombo, Handler)` tuples.
-- [ ] a `FocusOwner` state that tracks currently active scope, informs command routing, and resets when panels/modal close.
+- [x] Define a Rust-native shortcut registry that mirrors the current shortcut map in `ui/src/lib/shortcuts.ts` and derives from keyboard definitions used in `ReaderShell` and `StarterShell`.
+- [x] Catalog the scopes for every shortcut:
+- [x] Global (window-wide, always active unless blocked by modal)
+- [x] Starter-only (allowed before a source opens)
+- [x] Reader-only (playback, navigation, highlight)
+- [x] Panel-only (search, stats, settings focus)
+- [x] Define focus ownership rules:
+- [x] Text entry fields (search, settings, modal inputs) capture keys and suppress reader shortcuts while focused.
+- [x] Reader viewport captures navigation/playback shortcuts when it has focus, but yields to modals and panel inputs.
+- [x] Modal dialogs and toast notifications trap escape/confirm behavior and block global shortcuts when active.
+- [x] Define modal focus trapping and escape/confirm semantics explicitly so future egui modals can reuse a single focus manager.
+- [x] Document fallback behavior for shortcut collisions (e.g., search entry pressing `Ctrl+F` vs reader playback keys) with priority rules.
+- [x] Define shortcut registration semantics:
+- [x] a `ShortcutRegistry` service that accepts `(ShortcutId, Scope, KeyCombo, Handler)` tuples.
+- [x] a `FocusOwner` state that tracks currently active scope, informs command routing, and resets when panels/modal close.
 - [ ] Document how `eframe` key events flow into the registry without the DOM event bubble.
+
+### Shortcut Scope Catalog
+- Global: safe quit, toggle panels, focus search.
+- Starter-only: open source, refresh recents, Calibre/browser-tab refresh.
+- Reader-only: playback controls, seek next/prev, repeat, jump to highlight.
+- Panel-only: search input navigation and settings field editing.
+
+### Focus Ownership Rules
+- `FocusOwner::PanelInput` suppresses reader/global shortcuts while text fields are active.
+- `FocusOwner::Modal` traps escape/confirm and blocks other shortcuts until modal closes.
+- `FocusOwner::Reader` routes playback/navigation shortcuts when reader is active.
+- `FocusOwner::Starter` allows global + starter shortcuts only.
+
+### Shortcut Registration Semantics
+- The `ShortcutRegistry` provides `(ShortcutId, Scope, KeyCombo, Handler)` bindings.
+- The egui key handler queries the registry by active scope and emits the matching `AppCommand`/`ReaderCommand`.
+- Focus owner changes reset shortcut routing to the appropriate scope.
 ### Phase Exit
 - [ ] shortcut routing is deterministic, focus-aware, and no longer relies on browser focus semantics so the egui input layer can plug into the Rust runtime command model.
 

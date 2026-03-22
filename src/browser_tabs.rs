@@ -241,6 +241,12 @@ pub struct BrowsrClient {
     base_url: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct BrowsrBlockingClient {
+    client: reqwest::blocking::Client,
+    base_url: String,
+}
+
 impl BrowsrClient {
     pub fn new(base_url: &str, timeout_ms: u64) -> Result<Self> {
         let normalized = base_url.trim().trim_end_matches('/').to_string();
@@ -509,6 +515,239 @@ impl BrowsrClient {
     }
 }
 
+impl BrowsrBlockingClient {
+    pub fn new(base_url: &str, timeout_ms: u64) -> Result<Self> {
+        let normalized = base_url.trim().trim_end_matches('/').to_string();
+        if normalized.is_empty() {
+            return Err(anyhow!("browsr base URL is empty"));
+        }
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(timeout_ms.max(250)))
+            .build()
+            .context("failed to build browsr blocking reqwest client")?;
+        Ok(Self {
+            client,
+            base_url: normalized,
+        })
+    }
+
+    pub fn health(&self) -> Result<BrowsrHealth> {
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .get(format!("{}/health", self.base_url))
+            .send()
+            .context("failed to request browsr health")?;
+        let health = parse_json_response_blocking::<BrowsrHealth>(response)?;
+        info!(
+            base_url = %self.base_url,
+            extension_connected = health.extension_connected,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr health check completed"
+        );
+        Ok(health)
+    }
+
+    pub fn list_windows(&self) -> Result<Vec<BrowserWindow>> {
+        #[derive(Deserialize)]
+        struct Response {
+            windows: Vec<BrowserWindow>,
+        }
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .get(format!("{}/v1/windows", self.base_url))
+            .send()
+            .context("failed to request browsr windows")?;
+        let payload = parse_json_response_blocking::<Response>(response)?;
+        info!(
+            base_url = %self.base_url,
+            count = payload.windows.len(),
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr windows fetch completed"
+        );
+        Ok(payload.windows)
+    }
+
+    pub fn list_tabs(
+        &self,
+        window_id: Option<u64>,
+        query: Option<&str>,
+        refresh: bool,
+    ) -> Result<Vec<BrowserTab>> {
+        #[derive(Deserialize)]
+        struct Response {
+            tabs: Vec<BrowserTab>,
+        }
+        let started = std::time::Instant::now();
+        let mut request = self.client.get(format!("{}/v1/tabs", self.base_url));
+        if let Some(window_id) = window_id {
+            request = request.query(&[("window_id", window_id.to_string())]);
+        }
+        if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
+            request = request.query(&[("q", query.trim())]);
+        }
+        if refresh {
+            request = request.query(&[("refresh", "true")]);
+        }
+        let response = request
+            .send()
+            .context("failed to request browsr tabs")?;
+        let payload = parse_json_response_blocking::<Response>(response)?;
+        info!(
+            base_url = %self.base_url,
+            count = payload.tabs.len(),
+            window_id,
+            refresh,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr tabs fetch completed"
+        );
+        Ok(payload.tabs)
+    }
+
+    pub fn snapshot_tab(&self, tab_id: u64) -> Result<BrowserTabSnapshot> {
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .post(format!("{}/v1/tabs/{tab_id}/snapshot", self.base_url))
+            .header(CONTENT_TYPE, "application/json")
+            .body(
+                serde_json::json!({
+                    "include_html": true,
+                    "include_text": true,
+                    "include_selection": true
+                })
+                .to_string(),
+            )
+            .send()
+            .with_context(|| format!("failed to request browsr snapshot for tab {tab_id}"))?;
+        let snapshot = parse_json_response_blocking::<BrowserTabSnapshot>(response)?;
+        info!(
+            base_url = %self.base_url,
+            tab_id,
+            html_chars = snapshot.html.as_ref().map(|value| value.len()).unwrap_or(0),
+            text_chars = snapshot.text.as_ref().map(|value| value.len()).unwrap_or(0),
+            html_truncated = snapshot.truncation.html.truncated,
+            text_truncated = snapshot.truncation.text.truncated,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr snapshot completed"
+        );
+        Ok(snapshot)
+    }
+
+    pub fn close_tab(&self, tab_id: u64) -> Result<()> {
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .post(format!("{}/v1/tabs/{tab_id}/close", self.base_url))
+            .send()
+            .with_context(|| format!("failed to request browsr close for tab {tab_id}"))?;
+        let _: Value = parse_json_response_blocking(response)?;
+        info!(
+            base_url = %self.base_url,
+            tab_id,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr close-tab completed"
+        );
+        Ok(())
+    }
+
+    pub fn start_import_bundle_and_wait(&self, tab_id: u64) -> Result<BrowsrImportBundleWaitResponse> {
+        const BUNDLE_SETTLE_TIMEOUT_MS: u64 = 90_000;
+        const BUNDLE_WAIT_TIMEOUT_MS: u64 = 180_000;
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .post(format!(
+                "{}/v1/tabs/{tab_id}/import-bundles/wait",
+                self.base_url
+            ))
+            .timeout(Duration::from_millis(BUNDLE_WAIT_TIMEOUT_MS + 10_000))
+            .header(CONTENT_TYPE, "application/json")
+            .body(
+                serde_json::json!({
+                    "reload": true,
+                    "capture_html": true,
+                    "capture_assets": true,
+                    "capture_text": true,
+                    "capture_selection": true,
+                    "capture_screenshot": false,
+                    "wait_for_network_idle_ms": 1500,
+                    "settle_timeout_ms": BUNDLE_SETTLE_TIMEOUT_MS,
+                    "max_asset_bytes": 5_000_000,
+                    "max_total_bytes": 75_000_000,
+                    "wait_timeout_ms": BUNDLE_WAIT_TIMEOUT_MS,
+                    "poll_interval_ms": 500,
+                    "include_manifest": true
+                })
+                .to_string(),
+            )
+            .send()
+            .with_context(|| {
+                format!("failed to start/wait browsr import bundle for tab {tab_id}")
+            })?;
+        let waited = parse_json_response_blocking::<BrowsrImportBundleWaitResponse>(response)?;
+        info!(
+            base_url = %self.base_url,
+            tab_id,
+            job_id = %waited.result.job.job_id,
+            status = %waited.result.job.status,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr import bundle start/wait completed"
+        );
+        Ok(waited)
+    }
+
+    pub fn get_import_bundle_asset(
+        &self,
+        job_id: &str,
+        asset_id: &str,
+    ) -> Result<BrowserTabBundleAssetPayload> {
+        let started = std::time::Instant::now();
+        let response = self
+            .client
+            .get(format!(
+                "{}/v1/import-bundles/{job_id}/assets/{asset_id}",
+                self.base_url
+            ))
+            .send()
+            .with_context(|| {
+                format!("failed to get browsr import bundle asset {asset_id} for {job_id}")
+            })?;
+        let payload = parse_json_response_blocking::<BrowsrImportBundleAssetResponse>(response)?;
+        let asset_ref = payload.asset.clone();
+        let url = asset_ref
+            .as_ref()
+            .map(|value| value.url.clone())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_default();
+        let mime_type = payload
+            .content_type
+            .clone()
+            .or_else(|| asset_ref.as_ref().and_then(|value| value.mime_type.clone()));
+        let resource_type = asset_ref
+            .as_ref()
+            .and_then(|value| value.resource_type.clone());
+        let body = decode_bundle_asset_body(&payload)?;
+        debug!(
+            base_url = %self.base_url,
+            job_id,
+            asset_id,
+            bytes = body.len(),
+            content_type = ?mime_type,
+            elapsed_ms = started.elapsed().as_millis(),
+            "Browsr import bundle asset fetched"
+        );
+        Ok(BrowserTabBundleAssetPayload {
+            asset_id: asset_id.to_string(),
+            url,
+            mime_type,
+            resource_type,
+            body,
+        })
+    }
+}
+
 fn decode_bundle_asset_body(payload: &BrowsrImportBundleAssetResponse) -> Result<Vec<u8>> {
     if payload.base64_encoded {
         return BASE64_STANDARD
@@ -525,6 +764,27 @@ async fn parse_json_response<T: for<'de> Deserialize<'de>>(
     let body = response
         .text()
         .await
+        .context("failed to read browsr response body")?;
+    if !status.is_success() {
+        let message = extract_error_message(&body).unwrap_or_else(|| body.trim().to_string());
+        warn!(status = %status, message = %message, "Browsr request failed");
+        return Err(anyhow!(message));
+    }
+    serde_json::from_str::<T>(&body).with_context(|| {
+        format!(
+            "failed to parse browsr response JSON (status {}): {}",
+            status,
+            truncate_body(&body)
+        )
+    })
+}
+
+fn parse_json_response_blocking<T: for<'de> Deserialize<'de>>(
+    response: reqwest::blocking::Response,
+) -> Result<T> {
+    let status = response.status();
+    let body = response
+        .text()
         .context("failed to read browsr response body")?;
     if !status.is_success() {
         let message = extract_error_message(&body).unwrap_or_else(|| body.trim().to_string());

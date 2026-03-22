@@ -2,6 +2,7 @@ mod helpers;
 mod pdf;
 mod pdf_renderer;
 mod shell;
+mod effects;
 
 use std::{
     cmp::Reverse,
@@ -30,6 +31,7 @@ use crate::pdf::{
 use crate::pdf_renderer::{
     NativePdfRenderer, NativeRenderEviction, NativeRenderSpan, RenderTarget,
 };
+use crate::effects::{EffectContext, EffectDispatcher};
 use crate::shell::{FocusOwner, LayoutPolicy, NotificationLevel, ShellState};
 use lanternleaf_app::{
     AppRuntime,
@@ -131,6 +133,7 @@ fn main() {
     let app_config = config::load_config(&config_path);
     let bootstrap_config = bootstrap_config_from_app_config(&app_config);
     let tracing_guard = init_tracing(&bootstrap_config.log_level);
+    let normalizer = normalizer::TextNormalizer::load_default();
 
     let runtime = AppRuntime::with_bootstrap_config(&bootstrap_config);
     let mut options = NativeOptions::default();
@@ -145,7 +148,13 @@ fn main() {
         "LanternLeaf",
         options,
         Box::new(move |cc| {
-            Box::new(LanternLeafApp::new(cc, runtime.clone(), tracing_guard))
+            Box::new(LanternLeafApp::new(
+                cc,
+                runtime.clone(),
+                tracing_guard,
+                app_config.clone(),
+                normalizer.clone(),
+            ))
                 as Box<dyn eframe::App>
         }),
     );
@@ -169,6 +178,7 @@ struct LanternLeafApp {
     persistence_logged: bool,
     last_reader_source: Option<String>,
     last_reader_snapshot: Option<ReaderSnapshot>,
+    effect_dispatcher: EffectDispatcher,
     shell_state: ShellState,
     layout_policy: LayoutPolicy,
     settings_trace_events: Vec<SettingsTraceEvent>,
@@ -256,6 +266,8 @@ impl LanternLeafApp {
         _cc: &eframe::CreationContext<'_>,
         runtime: AppRuntime,
         tracing_guard: tracing_appender::non_blocking::WorkerGuard,
+        app_config: config::AppConfig,
+        normalizer: normalizer::TextNormalizer,
     ) -> Self {
         let pdf_renderer = match NativePdfRenderer::new() {
             Ok(renderer) => Some(renderer),
@@ -264,6 +276,7 @@ impl LanternLeafApp {
                 None
             }
         };
+        let effect_context = EffectContext::new(app_config.clone(), normalizer.clone());
         let mut app = Self {
             runtime,
             _tracing_guard: tracing_guard,
@@ -276,12 +289,13 @@ impl LanternLeafApp {
             anchor_diagnostics: AnchorDiagnostics::default(),
             overlay_diagnostics: OverlayDiagnostics::default(),
             audio_diagnostics: AudioDiagnostics::default(),
-            tts_runtime: TtsRuntime::new(normalizer::TextNormalizer::load_default()),
+            tts_runtime: TtsRuntime::new(normalizer.clone()),
             last_tts_runtime_event: None,
             persistence: PersistenceLifecycle::new(FilesystemPersistenceService),
             persistence_logged: false,
             last_reader_source: None,
             last_reader_snapshot: None,
+            effect_dispatcher: EffectDispatcher::new(effect_context),
             shell_state: ShellState::default(),
             layout_policy: LayoutPolicy::default(),
             settings_trace_events: Vec::new(),
@@ -319,13 +333,29 @@ impl LanternLeafApp {
         self.maybe_record_audio_command(&command, reader_snapshot);
         self.apply_persistence_trigger(&command, reader_snapshot);
         let plan = self.runtime.plan_command(command.clone());
+        self.apply_local_events(&plan);
         self.log_plan(&plan);
         self.last_plan = Some(plan);
+        if let Some(plan) = &self.last_plan {
+            self.dispatch_effects(plan);
+        }
         self.apply_tts_command_if_needed(&command);
     }
 
     fn execute_reader_command(&mut self, command: ReaderCommand) {
         self.execute_command(AppCommand::Reader(command));
+    }
+
+    fn apply_local_events(&mut self, plan: &DispatchPlan) {
+        for event in &plan.local_events {
+            self.runtime.apply_event(event.clone());
+        }
+    }
+
+    fn dispatch_effects(&self, plan: &DispatchPlan) {
+        for effect in &plan.effects {
+            self.effect_dispatcher.dispatch(effect.clone());
+        }
     }
 
     fn apply_tts_command_if_needed(&mut self, command: &AppCommand) {
@@ -492,6 +522,13 @@ impl LanternLeafApp {
             }
 
             self.last_tts_runtime_event = Some(event);
+        }
+    }
+
+    fn handle_effect_events(&mut self) {
+        for event in self.effect_dispatcher.drain_events() {
+            trace!(event = ?event, "Applying effect event");
+            self.runtime.apply_event(event);
         }
     }
 
@@ -5168,6 +5205,7 @@ impl LanternLeafApp {
 impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         self.handle_tts_runtime_events();
+        self.handle_effect_events();
         let snapshot = self.runtime.state_snapshot();
         let reader_snapshot = snapshot.reader_document.snapshot.as_ref();
         self.update_persistence_lifecycle(reader_snapshot);

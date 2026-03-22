@@ -164,13 +164,13 @@
 - [x] cancellation semantics
 - [x] progress event batching
 - [ ] Ensure UI thread does not block on:
-- [ ] TTS work
-- [ ] source ingestion
-- [ ] PDF extraction/transcription/OCR
-- [ ] browser-tab imports
-- [ ] Calibre loading
+- [x] TTS work
+- [x] source ingestion
+- [x] PDF extraction/transcription/OCR
+- [x] browser-tab imports
+- [x] Calibre loading
 - Phase exit:
-- [ ] all long-running workflows have a native Rust async/task strategy.
+- [x] all long-running workflows have a native Rust async/task strategy.
 
 ## Phase 5: Persistence And Runtime Integration
 - [ ] Move config/bookmark/cache writes behind Rust service interfaces.

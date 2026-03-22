@@ -152,11 +152,11 @@
 - [x] Rust tests for sync artifact normalization and confidence scoring.
 - [x] Rust integration tests for viewport scheduling, zoom, and overlay lifecycle.
 - [ ] Representative manual QA on structured, multi-column, OCR-heavy, rotated, and header/footer-heavy PDFs.
-- [ ] Explicit parity gate against current PDF reader checklist.
+- [x] Explicit parity gate against current PDF reader checklist.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
-- [ ] A Rust-native PDF rendering/sync strategy is fully specified without WebView fallback.
-- [ ] Existing PDF quality contracts and degraded modes remain intact.
-- [ ] Page rastering, text extraction, overlay sync, and jump behavior all have explicit Rust-native owners.
-- [ ] The roadmap is decision-complete enough to start implementation and crate evaluation immediately.
+- [x] A Rust-native PDF rendering/sync strategy is fully specified without WebView fallback.
+- [x] Existing PDF quality contracts and degraded modes remain intact.
+- [x] Page rastering, text extraction, overlay sync, and jump behavior all have explicit Rust-native owners.
+- [x] The roadmap is decision-complete enough to start implementation and crate evaluation immediately.

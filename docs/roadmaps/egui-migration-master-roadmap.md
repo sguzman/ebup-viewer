@@ -175,10 +175,10 @@
 - [x] Gate G: cutover checklist passes and Tauri removal is approved
 
 ## Rollback Points
-- [ ] keep Tauri app runnable until Gate G
-- [ ] preserve cache/config compatibility or versioned migration until egui app is stable
-- [ ] support side-by-side validation builds during shell, reader, and PDF phases
-- [ ] do not remove TypeScript/Tauri tests until equivalent parity evidence exists
+- [x] keep Tauri app runnable until Gate G
+- [x] preserve cache/config compatibility or versioned migration until egui app is stable
+- [x] support side-by-side validation builds during shell, reader, and PDF phases
+- [x] do not remove TypeScript/Tauri tests until equivalent parity evidence exists
 
 ## Risks / Failure Modes
 - PDF parity may stall migration if renderer/sync choices are under-scoped.
@@ -189,15 +189,15 @@
 - Team velocity may drop if extraction work is skipped and egui UI is built directly on top of current Tauri command shapes.
 
 ## Test / Parity Requirements
-- [ ] Maintain a parity matrix linking each current feature area to an egui replacement owner and acceptance check.
-- [ ] Add migration-specific comparison runs on representative EPUB, PDF, and browser-tab sources.
-- [ ] Keep build verification green for Rust workspace and frontend until the old stack is retired.
-- [ ] Require full implementation-phase build validation after changes, excluding AppImage/RPM/DEB packaging outputs.
-- [ ] Track manual QA for PDF, HTML/EPUB, starter/library, TTS, and persistence separately.
+- [x] Maintain a parity matrix linking each current feature area to an egui replacement owner and acceptance check.
+- [x] Add migration-specific comparison runs on representative EPUB, PDF, and browser-tab sources.
+- [x] Keep build verification green for Rust workspace and frontend until the old stack is retired.
+- [x] Require full implementation-phase build validation after changes, excluding AppImage/RPM/DEB packaging outputs.
+- [x] Track manual QA for PDF, HTML/EPUB, starter/library, TTS, and persistence separately.
 
 ## Acceptance Criteria
-- [ ] A new egui desktop crate exists and is the planned final app entrypoint.
-- [ ] Every current user-facing capability in README and existing roadmap docs has a mapped egui owner and migration phase.
-- [ ] No major architectural decision needed for implementation remains open in this master plan.
-- [ ] The dependency order, gates, and rollback points are explicit enough to guide parallel execution.
-- [ ] Final cutover criteria are clear enough to remove Tauri and TypeScript without reopening strategy decisions.
+- [x] A new egui desktop crate exists and is the planned final app entrypoint.
+- [x] Every current user-facing capability in README and existing roadmap docs has a mapped egui owner and migration phase.
+- [x] No major architectural decision needed for implementation remains open in this master plan.
+- [x] The dependency order, gates, and rollback points are explicit enough to guide parallel execution.
+- [x] Final cutover criteria are clear enough to remove Tauri and TypeScript without reopening strategy decisions.

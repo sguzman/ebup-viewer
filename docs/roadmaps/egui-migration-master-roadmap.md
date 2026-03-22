@@ -110,34 +110,34 @@
 - [x] import/library integrations
 - [x] PDF rendering/sync
 - [x] Extract or formalize typed Rust interfaces for all current Tauri commands consumed by the UI.
-- [ ] Collapse generated TS binding ownership into Rust-side DTO/view-model types.
-- [ ] Add architecture docs for the new in-process runtime boundaries before egui feature work begins.
+- [x] Collapse generated TS binding ownership into Rust-side DTO/view-model types.
+- [x] Add architecture docs for the new in-process runtime boundaries before egui feature work begins.
 - Phase exit:
-- [ ] implementers can build new UI/runtime work without depending on Tauri command semantics.
-- [ ] each current Tauri/UI integration point has a future Rust-native owner.
+- [x] implementers can build new UI/runtime work without depending on Tauri command semantics.
+- [x] each current Tauri/UI integration point has a future Rust-native owner.
 
 ## Phase 2: Egui Shell Bootstrap
-- [ ] Add a new egui desktop crate to the workspace.
-- [ ] Stand up app window, panel layout, top toolbar, keyboard shortcut capture, modal strategy, and tracing bootstrap.
-- [ ] Wire the new shell to Rust-native mock or real domain state without feature parity yet.
-- [ ] Establish redraw/performance discipline and frame-budget telemetry.
+- [x] Add a new egui desktop crate to the workspace.
+- [x] Stand up app window, panel layout, top toolbar, keyboard shortcut capture, modal strategy, and tracing bootstrap.
+- [x] Wire the new shell to Rust-native mock or real domain state without feature parity yet.
+- [x] Establish redraw/performance discipline and frame-budget telemetry.
 - Phase exit:
-- [ ] the workspace can launch the egui shell independently.
-- [ ] shell, panel, and command plumbing no longer depends on the web stack.
+- [x] the workspace can launch the egui shell independently.
+- [x] shell, panel, and command plumbing no longer depends on the web stack.
 
 ## Phase 3: Reader And TTS Parity
-- [ ] Rebuild text-only and pretty-text reader flows for EPUB/TXT/Markdown/HTML in egui.
-- [ ] Restore sentence highlighting, click-to-play, jump-to-highlight, auto-scroll/center, search, stats, and settings.
-- [ ] Move playback/event ingestion fully into Rust-native app/runtime state.
-- [ ] Keep canonical sentence and playback ownership unchanged from the current Rust logic.
+- [x] Rebuild text-only and pretty-text reader flows for EPUB/TXT/Markdown/HTML in egui.
+- [x] Restore sentence highlighting, click-to-play, jump-to-highlight, auto-scroll/center, search, stats, and settings.
+- [x] Move playback/event ingestion fully into Rust-native app/runtime state.
+- [x] Keep canonical sentence and playback ownership unchanged from the current Rust logic.
 - Phase exit:
-- [ ] non-PDF reading and TTS flows reach parity with the Tauri app.
-- [ ] bookmark/config/session semantics remain deterministic.
+- [x] non-PDF reading and TTS flows reach parity with the Tauri app.
+- [x] bookmark/config/session semantics remain deterministic.
 
 ## Phase 4: Native PDF Parity
-- [ ] Implement Rust-native PDF rendering, viewport management, text mapping, and overlay/highlight behavior in egui.
-- [ ] Preserve the current PDF quality-class and degraded-mode contracts.
-- [ ] Reach parity for jump-to-highlight, search navigation, and playback sync.
+- [x] Implement Rust-native PDF rendering, viewport management, text mapping, and overlay/highlight behavior in egui.
+- [x] Preserve the current PDF quality-class and degraded-mode contracts.
+- [x] Reach parity for jump-to-highlight, search navigation, and playback sync.
 - Phase exit:
 - [ ] PDF flows satisfy the same manual QA and parity acceptance gates currently used for the Tauri reader.
 

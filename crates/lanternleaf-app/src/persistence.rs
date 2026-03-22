@@ -578,6 +578,20 @@ mod tests {
             None
         }
 
+        fn load_pdf_sentence_map(
+            &self,
+            _source_path: &Path,
+        ) -> Option<Vec<cache::PdfSentenceLocation>> {
+            None
+        }
+
+        fn load_pdf_render_precomputed_state(
+            &self,
+            _source_path: &Path,
+        ) -> Option<cache::PdfRenderPrecomputedState> {
+            None
+        }
+
         fn persist_pdf_sentence_map(
             &self,
             _source_path: &Path,
@@ -739,6 +753,20 @@ mod tests {
             &self,
             _source_path: &Path,
         ) -> Option<cache::PdfOcrAlignmentArtifact> {
+            None
+        }
+
+        fn load_pdf_sentence_map(
+            &self,
+            _source_path: &Path,
+        ) -> Option<Vec<cache::PdfSentenceLocation>> {
+            None
+        }
+
+        fn load_pdf_render_precomputed_state(
+            &self,
+            _source_path: &Path,
+        ) -> Option<cache::PdfRenderPrecomputedState> {
             None
         }
 

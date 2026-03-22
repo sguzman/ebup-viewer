@@ -11,7 +11,8 @@ fn build_pdf_sentence_page_hints(source_path: &Path) -> Vec<Option<usize>> {
     let mut highest_sentence_idx = 0usize;
     let mut hints: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
 
-    if let Some(locations) = cache::load_pdf_sentence_map(source_path) {
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    if let Some(locations) = cache_service.load_pdf_sentence_map(source_path) {
         for location in locations {
             highest_sentence_idx = highest_sentence_idx.max(location.sentence_idx);
             if let Some(page_idx) = location.page_idx {
@@ -20,7 +21,7 @@ fn build_pdf_sentence_page_hints(source_path: &Path) -> Vec<Option<usize>> {
         }
     }
 
-    if let Some(artifact) = cache::load_pdf_ocr_alignment_artifact(source_path) {
+    if let Some(artifact) = cache_service.load_pdf_ocr_alignment_artifact(source_path) {
         for alignment in artifact.alignments {
             highest_sentence_idx = highest_sentence_idx.max(alignment.sentence_idx);
             if let Some(page_idx) = alignment.page_idx {
@@ -45,13 +46,8 @@ fn build_pdf_sentence_page_hints(source_path: &Path) -> Vec<Option<usize>> {
 fn build_pdf_render_precomputed_state(
     source_path: &Path,
 ) -> Result<cache::PdfRenderPrecomputedState, BridgeError> {
-    if let Some(cached) = cache::load_pdf_render_precomputed_state(source_path) {
-        debug!(
-            path = %source_path.display(),
-            page_count = cached.page_texts.len(),
-            hint_count = cached.sentence_page_hints.len(),
-            "Loaded cached PDF render precompute artifact"
-        );
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    if let Some(cached) = cache_service.load_pdf_render_precomputed_state(source_path) {
         return Ok(cached);
     }
 
@@ -80,7 +76,6 @@ fn build_pdf_render_precomputed_state(
         sentence_page_hints,
         source: "rust_backend_native_text".to_string(),
     };
-    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
     cache_service.persist_pdf_render_precomputed_state(source_path, &artifact);
     debug!(
         path = %source_path.display(),
@@ -133,7 +128,10 @@ pub(crate) fn reader_load_pdf_sync_map(
     if source_path.as_os_str().is_empty() {
         return Err(bridge_error("invalid_input", "Path cannot be empty"));
     }
-    let locations = cache::load_pdf_sentence_map(&source_path).unwrap_or_default();
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    let locations = cache_service
+        .load_pdf_sentence_map(&source_path)
+        .unwrap_or_default();
     tracing::debug!(
         path = %source_path.display(),
         count = locations.len(),

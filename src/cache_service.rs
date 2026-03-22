@@ -28,6 +28,11 @@ pub trait CacheService: Send + Sync {
         &self,
         source_path: &Path,
     ) -> Option<cache::PdfOcrAlignmentArtifact>;
+    fn load_pdf_sentence_map(&self, source_path: &Path) -> Option<Vec<cache::PdfSentenceLocation>>;
+    fn load_pdf_render_precomputed_state(
+        &self,
+        source_path: &Path,
+    ) -> Option<cache::PdfRenderPrecomputedState>;
     fn persist_pdf_sentence_map(
         &self,
         source_path: &Path,
@@ -185,6 +190,44 @@ impl CacheService for FilesystemCacheService {
             debug!(
                 source_path = %source_path.display(),
                 "PDF OCR alignment artifact missing"
+            );
+        }
+        artifact
+    }
+
+    fn load_pdf_sentence_map(&self, source_path: &Path) -> Option<Vec<cache::PdfSentenceLocation>> {
+        let locations = cache::load_pdf_sentence_map(source_path);
+        if let Some(ref entries) = locations {
+            debug!(
+                source_path = %source_path.display(),
+                count = entries.len(),
+                "Loaded PDF sentence map"
+            );
+        } else {
+            debug!(
+                source_path = %source_path.display(),
+                "PDF sentence map missing"
+            );
+        }
+        locations
+    }
+
+    fn load_pdf_render_precomputed_state(
+        &self,
+        source_path: &Path,
+    ) -> Option<cache::PdfRenderPrecomputedState> {
+        let artifact = cache::load_pdf_render_precomputed_state(source_path);
+        if let Some(ref state) = artifact {
+            debug!(
+                source_path = %source_path.display(),
+                page_count = state.page_texts.len(),
+                hint_count = state.sentence_page_hints.len(),
+                "Loaded PDF render precomputed state"
+            );
+        } else {
+            debug!(
+                source_path = %source_path.display(),
+                "PDF render precomputed state missing"
             );
         }
         artifact

@@ -124,7 +124,9 @@ pub(crate) fn panel_toggle_tts(
 
 #[tauri::command]
 pub(crate) fn recent_list(limit: Option<usize>) -> Vec<RecentBook> {
-    cache::list_recent_books(normalize_recent_limit(limit))
+    let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+    cache_service
+        .list_recent_books(normalize_recent_limit(limit))
         .into_iter()
         .map(|recent| RecentBook {
             source_path: recent.source_path.to_string_lossy().to_string(),

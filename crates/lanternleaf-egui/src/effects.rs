@@ -1197,4 +1197,172 @@ mod tests {
         let events = handle_set_log_level(&context, 33, "warn").expect("log level update");
         assert!(events.iter().any(|event| matches!(event, AppEvent::CommandFailed { .. })));
     }
+
+    struct TestCacheService {
+        recents: Vec<cache::RecentBook>,
+        deleted: Arc<Mutex<Option<PathBuf>>>,
+    }
+
+    impl TestCacheService {
+        fn new(recents: Vec<cache::RecentBook>) -> (Self, Arc<Mutex<Option<PathBuf>>>) {
+            let deleted = Arc::new(Mutex::new(None));
+            (
+                Self {
+                    recents,
+                    deleted: Arc::clone(&deleted),
+                },
+                deleted,
+            )
+        }
+    }
+
+    impl cache_service::CacheService for TestCacheService {
+        fn save_bookmark(&self, _source_path: &Path, _bookmark: &cache::Bookmark) {}
+
+        fn save_epub_config(&self, _source_path: &Path, _config: &config::AppConfig) {}
+
+        fn delete_recent_source_and_cache(&self, source_path: &Path) -> Result<(), String> {
+            *self.deleted.lock().expect("deleted lock") = Some(source_path.to_path_buf());
+            Ok(())
+        }
+
+        fn remember_source_path(&self, _source_path: &Path) {}
+
+        fn persist_clipboard_text_source(&self, _text: &str) -> Result<PathBuf, String> {
+            Err("not_used".to_string())
+        }
+
+        fn persist_browser_tab_source(
+            &self,
+            _snapshot: &browser_tabs::BrowserTabSnapshot,
+            _tab_meta: Option<&browser_tabs::BrowserTab>,
+        ) -> Result<PathBuf, String> {
+            Err("not_used".to_string())
+        }
+
+        fn persist_browser_tab_bundle_source(
+            &self,
+            _capture: &browser_tabs::BrowserTabBundleCapture,
+            _tab_meta: Option<&browser_tabs::BrowserTab>,
+        ) -> Result<PathBuf, String> {
+            Err("not_used".to_string())
+        }
+
+        fn list_recent_books(&self, _limit: usize) -> Vec<cache::RecentBook> {
+            self.recents.clone()
+        }
+
+        fn load_browser_tab_manifest(
+            &self,
+            _source_path: &Path,
+        ) -> Result<cache::BrowserTabSourceManifest, String> {
+            Err("not_used".to_string())
+        }
+
+        fn load_pdf_ocr_alignment_artifact(
+            &self,
+            _source_path: &Path,
+        ) -> Option<cache::PdfOcrAlignmentArtifact> {
+            None
+        }
+
+        fn load_pdf_sentence_map(
+            &self,
+            _source_path: &Path,
+        ) -> Option<Vec<cache::PdfSentenceLocation>> {
+            None
+        }
+
+        fn load_pdf_render_precomputed_state(
+            &self,
+            _source_path: &Path,
+        ) -> Option<cache::PdfRenderPrecomputedState> {
+            None
+        }
+
+        fn persist_pdf_sentence_map(
+            &self,
+            _source_path: &Path,
+            _locations: &[cache::PdfSentenceLocation],
+        ) {
+        }
+
+        fn persist_pdf_render_precomputed_state(
+            &self,
+            _source_path: &Path,
+            _artifact: &cache::PdfRenderPrecomputedState,
+        ) {
+        }
+    }
+
+    #[test]
+    fn list_recents_uses_cache_service() {
+        let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
+            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+        ));
+        let recent = cache::RecentBook {
+            source_path: PathBuf::from("/tmp/recents.epub"),
+            display_title: "Recents".to_string(),
+            snippet: "snippet".to_string(),
+            thumbnail_path: None,
+            last_opened_unix_secs: 12,
+            browser_tab_id: None,
+            browser_window_id: None,
+        };
+        let (cache_service, _deleted) = TestCacheService::new(vec![recent.clone()]);
+        let cache_service: Arc<dyn cache_service::CacheService> = Arc::new(cache_service);
+        let config_service: Arc<dyn config_service::ConfigService> =
+            Arc::new(config_service::FilesystemConfigService);
+        let config_path = std::env::temp_dir().join("lanternleaf-egui-config-test.toml");
+        let context = EffectContext::with_services(
+            config::AppConfig::default(),
+            normalizer::TextNormalizer::default(),
+            persistence,
+            cache_service,
+            config_path,
+            config_service,
+        );
+
+        let events = handle_list_recents(&context, 9, Some(5)).expect("recents");
+        let AppEvent::RecentsLoaded { recents, .. } = &events[0] else {
+            panic!("expected recents event");
+        };
+        assert_eq!(recents.len(), 1);
+        assert_eq!(recents[0].display_title, recent.display_title);
+    }
+
+    #[test]
+    fn delete_recent_records_path_and_refreshes() {
+        let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
+            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+        ));
+        let recent = cache::RecentBook {
+            source_path: PathBuf::from("/tmp/recents.epub"),
+            display_title: "Recents".to_string(),
+            snippet: "snippet".to_string(),
+            thumbnail_path: None,
+            last_opened_unix_secs: 12,
+            browser_tab_id: None,
+            browser_window_id: None,
+        };
+        let (cache_service, deleted) = TestCacheService::new(vec![recent]);
+        let cache_service: Arc<dyn cache_service::CacheService> = Arc::new(cache_service);
+        let config_service: Arc<dyn config_service::ConfigService> =
+            Arc::new(config_service::FilesystemConfigService);
+        let config_path = std::env::temp_dir().join("lanternleaf-egui-config-test.toml");
+        let context = EffectContext::with_services(
+            config::AppConfig::default(),
+            normalizer::TextNormalizer::default(),
+            persistence,
+            cache_service,
+            config_path,
+            config_service,
+        );
+
+        let events = handle_delete_recent(&context, 10, "/tmp/recents.epub")
+            .expect("delete recent");
+        assert!(events.iter().any(|event| matches!(event, AppEvent::RecentsLoaded { .. })));
+        let deleted_path = deleted.lock().expect("deleted lock").clone();
+        assert_eq!(deleted_path, Some(PathBuf::from("/tmp/recents.epub")));
+    }
 }

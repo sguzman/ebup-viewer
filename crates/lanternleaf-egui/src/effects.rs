@@ -7,8 +7,8 @@ use lanternleaf_app::contracts::{
     ReaderStateEvent, RecentBook, SessionState, SessionStateEvent, SourceOpenEvent, UiMode,
 };
 use lanternleaf_app::pipeline::{
-    AppEvent, EffectOwner, OperationScope, PanelToggle, PersistenceTrigger, PlannedEffect,
-    RuntimeEffect,
+    AppEvent, EffectOwner, OperationScope, PanelToggle, PersistenceOutcome, PersistenceTrigger,
+    PlannedEffect, RuntimeEffect,
 };
 use lanternleaf_core::{
     browser_tabs, cache, cache_service, calibre, config, config_service, normalizer, session,
@@ -217,6 +217,13 @@ fn execute_effect(context: EffectContext, planned: PlannedEffect, event_tx: mpsc
                 "Runtime effect failed"
             );
             let scope = effect_scope(&failure_effect);
+            if let RuntimeEffect::FlushPersistence { trigger } = failure_effect {
+                let _ = event_tx.send(AppEvent::PersistenceFlushed {
+                    request_id,
+                    trigger,
+                    outcome: PersistenceOutcome::Failed,
+                });
+            }
             let _ = event_tx.send(AppEvent::CommandFailed {
                 request_id,
                 scope,
@@ -739,14 +746,22 @@ fn handle_persistence_flush(
                     trigger = ?trigger,
                     "Persisted runtime config without active reader session"
                 );
-                return Ok(Vec::new());
+                return Ok(vec![AppEvent::PersistenceFlushed {
+                    request_id,
+                    trigger,
+                    outcome: PersistenceOutcome::Completed,
+                }]);
             }
             debug!(
                 request_id,
                 trigger = ?trigger,
                 "Skipping persistence flush (no active reader session)"
             );
-            return Ok(Vec::new());
+            return Ok(vec![AppEvent::PersistenceFlushed {
+                request_id,
+                trigger,
+                outcome: PersistenceOutcome::SkippedNoSession,
+            }]);
         };
         let snapshot = session.snapshot(panels, &context.normalizer);
         let config = session.config.clone();
@@ -764,7 +779,11 @@ fn handle_persistence_flush(
         trigger = ?trigger,
         "Persistence flush completed"
     );
-    Ok(Vec::new())
+    Ok(vec![AppEvent::PersistenceFlushed {
+        request_id,
+        trigger,
+        outcome: PersistenceOutcome::Completed,
+    }])
 }
 
 fn handle_return_to_starter(
@@ -1121,10 +1140,18 @@ mod tests {
             config_service,
         );
 
-        handle_persistence_flush(&context, 1, PersistenceTrigger::RuntimeConfigChange)
-            .expect("flush should succeed");
+        let events =
+            handle_persistence_flush(&context, 1, PersistenceTrigger::RuntimeConfigChange)
+                .expect("flush should succeed");
 
         assert!(called.load(Ordering::SeqCst));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AppEvent::PersistenceFlushed {
+                outcome: PersistenceOutcome::Completed,
+                ..
+            }
+        )));
     }
 
     struct CountingConfigService {

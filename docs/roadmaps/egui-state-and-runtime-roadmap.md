@@ -181,7 +181,7 @@
 - [x] periodic bookmark/config persistence
 - [x] Preserve current safe-quit guarantees and runtime housekeeping.
 - Phase exit:
-- [ ] state changes and persistence responsibilities are fully native and deterministic.
+- [x] state changes and persistence responsibilities are fully native and deterministic.
 
 ## Phase 6: Logging And Tracing Strategy
 - [x] Port current Tauri logging/tracing bootstrap to the egui app crate and capture the existing `tracing` config, level filters, and field set.

@@ -195,6 +195,13 @@ pub enum PersistenceTrigger {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersistenceOutcome {
+    Completed,
+    SkippedNoSession,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectOwner {
     AppShell,
     RecentBooks,
@@ -398,6 +405,11 @@ pub enum AppEvent {
     TtsStateUpdated(TtsStateEvent),
     PdfTranscriptionProgress(PdfTranscriptionEvent),
     LogLevelUpdated(LogLevelEvent),
+    PersistenceFlushed {
+        request_id: u64,
+        trigger: PersistenceTrigger,
+        outcome: PersistenceOutcome,
+    },
     CommandFailed {
         request_id: u64,
         scope: Option<OperationScope>,
@@ -933,6 +945,14 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
             });
             clear_scope(state, OperationScope::RuntimeConfig);
         }
+        AppEvent::PersistenceFlushed {
+            request_id,
+            trigger,
+            outcome,
+        } => {
+            state.set_persistence_status(trigger, outcome, request_id);
+            clear_scope(state, OperationScope::RuntimeConfig);
+        }
         AppEvent::CommandFailed {
             request_id,
             scope,
@@ -1421,5 +1441,37 @@ mod tests {
             trigger: PersistenceTrigger::SafeQuit,
         };
         assert_eq!(effect.owner(), EffectOwner::Persistence);
+    }
+
+    #[test]
+    fn persistence_flush_updates_status_and_clears_scope() {
+        let mut state = AppState::default();
+        apply_event(
+            &mut state,
+            AppEvent::OperationChanged {
+                scope: OperationScope::RuntimeConfig,
+                active: true,
+            },
+        );
+
+        apply_event(
+            &mut state,
+            AppEvent::PersistenceFlushed {
+                request_id: 42,
+                trigger: PersistenceTrigger::SourceOpen,
+                outcome: PersistenceOutcome::Completed,
+            },
+        );
+
+        assert_eq!(
+            state.app_shell.persistence_status.last_trigger,
+            Some(PersistenceTrigger::SourceOpen)
+        );
+        assert_eq!(
+            state.app_shell.persistence_status.last_outcome,
+            Some(PersistenceOutcome::Completed)
+        );
+        assert_eq!(state.app_shell.persistence_status.last_request_id, 42);
+        assert!(!state.app_shell.operations.runtime_config);
     }
 }

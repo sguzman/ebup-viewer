@@ -4,6 +4,7 @@ use crate::contracts::{
     ReaderPlaybackStateEvent, ReaderSnapshot, RecentBook, SessionState, SourceOpenEvent,
     TtsStateEvent,
 };
+use crate::pipeline::{PersistenceOutcome, PersistenceTrigger};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OperationState {
@@ -37,6 +38,14 @@ pub struct AppShellState {
     pub operations: OperationState,
     pub loading_bootstrap: bool,
     pub busy: bool,
+    pub persistence_status: PersistenceStatus,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PersistenceStatus {
+    pub last_trigger: Option<PersistenceTrigger>,
+    pub last_outcome: Option<PersistenceOutcome>,
+    pub last_request_id: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -129,6 +138,7 @@ impl Default for AppState {
         Self {
             app_shell: AppShellState {
                 runtime_log_level: "info".to_string(),
+                persistence_status: PersistenceStatus::default(),
                 ..AppShellState::default()
             },
             session: SessionDomainState::default(),
@@ -168,6 +178,17 @@ pub struct RuntimeJobPatch {
 impl AppState {
     pub fn update_runtime_log_level(&mut self, level: impl Into<String>) {
         self.app_shell.runtime_log_level = level.into();
+    }
+
+    pub fn set_persistence_status(
+        &mut self,
+        trigger: PersistenceTrigger,
+        outcome: PersistenceOutcome,
+        request_id: u64,
+    ) {
+        self.app_shell.persistence_status.last_trigger = Some(trigger);
+        self.app_shell.persistence_status.last_outcome = Some(outcome);
+        self.app_shell.persistence_status.last_request_id = request_id;
     }
 
     pub fn set_operations(&mut self, operations: OperationState) {

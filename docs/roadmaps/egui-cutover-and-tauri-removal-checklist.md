@@ -43,30 +43,30 @@
 ## Package / Build Cleanup
 - [x] Update workspace manifests to add the egui app crate as the canonical desktop target.
 - [x] Remove Tauri packaging/build instructions from root docs and scripts.
-- [ ] Update developer setup instructions for Rust-only desktop development.
-- [ ] Update release/check/build scripts to target the egui app.
-- [ ] Confirm no leftover codegen path depends on TS or Tauri artifacts.
+- [x] Update developer setup instructions for Rust-only desktop development.
+- [x] Update release/check/build scripts to target the egui app.
+- [x] Confirm no leftover codegen path depends on TS or Tauri artifacts.
 
 ## Code / Directory Deletion Targets
-- [ ] delete `ui/` after test and doc replacement is complete
-- [ ] delete `src-tauri/` after shell/runtime responsibilities are replaced
-- [ ] remove root/package-manager artifacts no longer needed for the shipped product
-- [ ] remove old browser/Tauri-specific docs after equivalent egui docs are published
-- [ ] remove legacy migration shims and dual-run compatibility code once no longer needed
+- [x] delete `ui/` after test and doc replacement is complete
+- [x] delete `src-tauri/` after shell/runtime responsibilities are replaced
+- [x] remove root/package-manager artifacts no longer needed for the shipped product
+- [x] remove old browser/Tauri-specific docs after equivalent egui docs are published
+- [x] remove legacy migration shims and dual-run compatibility code once no longer needed
 
 ## Docs / CI / QA Updates
-- [ ] Update README and architecture docs for the egui app.
-- [ ] Replace Tauri-era QA checklists with egui-native checklists.
-- [ ] Update parity acceptance checklist to point at native test/QA gates.
-- [ ] Update CI to run Rust-native checks and native app build/test flows.
-- [ ] Archive or delete obsolete Tauri/WebView/browser-test documentation.
+- [x] Update README and architecture docs for the egui app.
+- [x] Replace Tauri-era QA checklists with egui-native checklists.
+- [x] Update parity acceptance checklist to point at native test/QA gates.
+- [x] Update CI to run Rust-native checks and native app build/test flows.
+- [x] Archive or delete obsolete Tauri/WebView/browser-test documentation.
 
 ## Final Acceptance Checklist
-- [ ] A clean checkout can build and run the egui desktop app without Node, pnpm, Vite, or Tauri tooling.
-- [ ] All user-facing features documented in README and roadmap docs are available in the egui app.
+- [x] A clean checkout can build and run the egui desktop app without Node, pnpm, Vite, or Tauri tooling.
+- [x] All user-facing features documented in README and roadmap docs are available in the egui app.
 - [ ] Manual QA and parity signoff are complete.
-- [ ] Legacy stacks are removed without leaving orphaned build/test/doc references.
-- [ ] The shipped product is a pure Rust desktop application.
+- [x] Legacy stacks are removed without leaving orphaned build/test/doc references.
+- [x] The shipped product is a pure Rust desktop application.
 
 ## Risks / Failure Modes
 - Removing old stacks too early can erase useful parity baselines.
@@ -74,9 +74,9 @@
 - Package cleanup can break contributor workflows if developer docs are not updated in lockstep.
 
 ## Test / Parity Requirements
-- [ ] Final cutover requires explicit parity evidence from subsystem roadmaps and updated QA checklists.
-- [ ] Final removal PRs must include full build verification excluding AppImage/RPM/DEB packaging outputs.
-- [ ] Final removal must also verify no obsolete docs/scripts reference Tauri or TS production paths.
+- [x] Final cutover requires explicit parity evidence from subsystem roadmaps and updated QA checklists.
+- [x] Final removal PRs must include full build verification excluding AppImage/RPM/DEB packaging outputs.
+- [x] Final removal must also verify no obsolete docs/scripts reference Tauri or TS production paths.
 
 ## Acceptance Criteria
 - [ ] The checklist is sufficient to execute final cutover without reopening sequencing decisions.

@@ -101,30 +101,30 @@
 - [x] the reader rendering plan articulates how it obeys the shell’s performance expectations before interactive widgets are implemented.
 
 ## Phase 3: Pretty Rendering For Markdown / HTML / EPUB
-- [ ] Build rendering widgets for the content-block model that emit the smallest necessary redraw scopes described in Phase 2.5.
-- [ ] Support:
-- [ ] paragraphs/headings with lazy layout so long documents do not force full recomposition.
-- [ ] inline emphasis with inline spans that only repaint their affected runs.
-- [ ] links and anchors that map to the canonical anchor map without immobilizing the main thread.
-- [ ] images/assets with placeholder sizing information and lazy load hooks tied to scroll visibility.
-- [ ] block spacing and margin controls derived from the layout helper policy so panel resizes have deterministic width adjustments.
-- [ ] footnote/caption-like secondary content rendered as detachable overlays or collapsible summaries to avoid repaint storms.
-- [ ] Define explicit degraded behavior for HTML/Markdown features that exceed the Rust content-block model (e.g., complex grids), documenting fallback spacing and diagnostics for QA.
-- [ ] Connect each content block to the shell tracing plan (Phase 6) so layout recalculation is traced, and highlight updates emit spans tied to the command/effect pipeline.
-- [ ] Document how the content-block conversion pipeline runs off the UI thread (Phase 4 runtime async plan) before handing data to egui so the render passes remain responsive.
-- [ ] Phase exit:
-- [ ] pretty reader behavior is specified without relying on browser DOM/CSS execution, and the content-block widgets understand the performance/coalescing expectations from the shell roadmap.
+- [x] Build rendering widgets for the content-block model that emit the smallest necessary redraw scopes described in Phase 2.5.
+- [x] Support:
+- [x] paragraphs/headings with lazy layout so long documents do not force full recomposition.
+- [x] inline emphasis with inline spans that only repaint their affected runs.
+- [x] links and anchors that map to the canonical anchor map without immobilizing the main thread.
+- [x] images/assets with placeholder sizing information and lazy load hooks tied to scroll visibility.
+- [x] block spacing and margin controls derived from the layout helper policy so panel resizes have deterministic width adjustments.
+- [x] footnote/caption-like secondary content rendered as detachable overlays or collapsible summaries to avoid repaint storms.
+- [x] Define explicit degraded behavior for HTML/Markdown features that exceed the Rust content-block model (e.g., complex grids), documenting fallback spacing and diagnostics for QA.
+- [x] Connect each content block to the shell tracing plan (Phase 6) so layout recalculation is traced, and highlight updates emit spans tied to the command/effect pipeline.
+- [x] Document how the content-block conversion pipeline runs off the UI thread (Phase 4 runtime async plan) before handing data to egui so the render passes remain responsive.
+- [x] Phase exit:
+- [x] pretty reader behavior is specified without relying on browser DOM/CSS execution, and the content-block widgets understand the performance/coalescing expectations from the shell roadmap.
 
 ## Phase 4: Anchor Mapping And Highlight Sync
-- [ ] Define the canonical sentence anchor ownership model, ensuring the runtime tracing plan can attribute highlight jumps to source artifacts and user commands.
-- [ ] Port HTML/Markdown sync semantics into Rust-native anchor lookup that populates `SentenceHighlight` data used by the reader renderer.
-- [ ] Preserve `sentence_anchor_map` as a hint surface; document how runtime mapping logic refines it using layout metadata before broadcasting highlight spans so shell invalidation budgets stay intact.
-- [ ] Define deterministic fallback order when exact anchors are unavailable and connect each fallback to shell diagnostics/tracing:
-- [ ] exact anchor (emit span `highlight.anchor=exact`)
-- [ ] nearest same-block anchor (span `highlight.anchor=same_block`)
-- [ ] nearest same-section anchor (span `highlight.anchor=same_section`)
-- [ ] visible-region fallback (span `highlight.anchor=visible`)
-- [ ] no-op with explicit diagnostics for out-of-sync states (span `highlight.anchor=missing`)
+- [x] Define the canonical sentence anchor ownership model, ensuring the runtime tracing plan can attribute highlight jumps to source artifacts and user commands.
+- [x] Port HTML/Markdown sync semantics into Rust-native anchor lookup that populates `SentenceHighlight` data used by the reader renderer.
+- [x] Preserve `sentence_anchor_map` as a hint surface; document how runtime mapping logic refines it using layout metadata before broadcasting highlight spans so shell invalidation budgets stay intact.
+- [x] Define deterministic fallback order when exact anchors are unavailable and connect each fallback to shell diagnostics/tracing:
+- [x] exact anchor (emit span `highlight.anchor=exact`)
+- [x] nearest same-block anchor (span `highlight.anchor=same_block`)
+- [x] nearest same-section anchor (span `highlight.anchor=same_section`)
+- [x] visible-region fallback (span `highlight.anchor=visible`)
+- [x] no-op with explicit diagnostics for out-of-sync states (span `highlight.anchor=missing`)
 - [ ] Define auto-scroll rules that honor the shell’s redraw budget and coalescing matrix:
 - [ ] only trigger scroll when highlight moves outside the current viewport threshold.
 - [x] throttle repeated scroll commands from rapid highlight change events per Phase 2.5’s coalescing plan.

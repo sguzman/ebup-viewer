@@ -1,9 +1,9 @@
 # Egui Testing And Parity Roadmap
 
 ## Objective
-- [ ] Replace the current browser/Tauri-heavy test stack with a Rust-native testing and parity strategy suitable for an egui desktop app.
-- [ ] Preserve explicit parity gating against current reader, PDF, TTS, starter, Calibre, and browser-tab behavior.
-- [ ] Define a durable post-migration quality model for a native Rust desktop product.
+- [x] Replace the current browser/Tauri-heavy test stack with a Rust-native testing and parity strategy suitable for an egui desktop app.
+- [x] Preserve explicit parity gating against current reader, PDF, TTS, starter, Calibre, and browser-tab behavior.
+- [x] Define a durable post-migration quality model for a native Rust desktop product.
 
 ## Current-State Grounding In This Repo
 - Current test ownership spans:
@@ -86,18 +86,18 @@
 - [x] parity is measurable across the migration, not just asserted qualitatively.
 
 ## Phase 4: Manual QA Strategy
-- [ ] Rewrite existing QA checklists for the egui app where needed.
-- [ ] Preserve representative source fixtures and document human validation scenarios.
-- [ ] Define when screenshot captures or log traces are required as evidence for parity signoff.
+- [x] Rewrite existing QA checklists for the egui app where needed.
+- [x] Preserve representative source fixtures and document human validation scenarios.
+- [x] Define when screenshot captures or log traces are required as evidence for parity signoff.
 - Phase exit:
-- [ ] manual QA is structured enough to support cutover decisions.
+- [x] manual QA is structured enough to support cutover decisions.
 
 ## Phase 5: Build And CI Strategy
-- [ ] Define implementation-phase validation commands for the new app.
-- [ ] Define when old JS/Tauri validation still runs during dual-stack migration.
-- [ ] Define the final post-cutover CI/build suite once old stacks are removed.
+- [x] Define implementation-phase validation commands for the new app.
+- [x] Define when old JS/Tauri validation still runs during dual-stack migration.
+- [x] Define the final post-cutover CI/build suite once old stacks are removed.
 - Phase exit:
-- [ ] testing/build gates are explicit for both migration and end state.
+- [x] testing/build gates are explicit for both migration and end state.
 
 ## Risks / Failure Modes
 - Rich reader and PDF coverage may weaken if browser tests are removed before native replacements exist.

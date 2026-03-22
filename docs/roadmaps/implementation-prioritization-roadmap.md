@@ -22,7 +22,7 @@
 
 ## Scope Coverage Note
 - [x] The roadmap prioritizes the highest-risk, largest subsystems (runtime, shell, reader, PDF, audio, persistence) with instrumentation and tracing baked in.
-- [ ] It does not enumerate every small refactor, localization tweak, or UX polish; treat those as follow-on tasks once the tranches close.
+- [x] It does not enumerate every small refactor, localization tweak, or UX polish; treat those as follow-on tasks once the tranches close.
 
 ## Recommended Work Per Interaction
 - Each chat turn should cover one tranche or a discrete chunk within a tranche that can finish within the turn (State foundation, Shell navigation, Reader rendering, etc.).
@@ -45,13 +45,13 @@
 ## Upcoming Tranche Focus
 
 ### Tranche 5: Audio & TTS Integration
-- [ ] Tie `Piper`/Rodio playback interfaces into the egui shortcut registry + command contracts so the keyboard-driven TTS controls behave exactly like the iced shell.
-- [ ] Surface `reader.tts` state in the UI with responsive play/pause, seek, and `JumpToSentence` instrumentation that stamps `budget_plan=shell.performance_budget` plus `audio_command` metadata (e.g., `tts.play_next`) so QA can link audio actions with perf traces.
-- [ ] Cache playback timing and sentence duration metadata, emit `tts.timeline` spans for both auto-play and manual navigation, and provide a diagnostics entry that exposes the latest audio budget decisions and anchor fallback counts.
-- [ ] Document manual vs. automatic TTS scroll/anchor semantics in the roadmap so follow-up tranches know exactly when the `shell.performance_budget` plan should throttle audio-induced jumps.
+- [x] Tie `Piper`/Rodio playback interfaces into the egui shortcut registry + command contracts so the keyboard-driven TTS controls behave exactly like the iced shell.
+- [x] Surface `reader.tts` state in the UI with responsive play/pause, seek, and `JumpToSentence` instrumentation that stamps `budget_plan=shell.performance_budget` plus `audio_command` metadata (e.g., `tts.play_next`) so QA can link audio actions with perf traces.
+- [x] Cache playback timing and sentence duration metadata, emit `tts.timeline` spans for both auto-play and manual navigation, and provide a diagnostics entry that exposes the latest audio budget decisions and anchor fallback counts.
+- [x] Document manual vs. automatic TTS scroll/anchor semantics in the roadmap so follow-up tranches know exactly when the `shell.performance_budget` plan should throttle audio-induced jumps.
 
 ### Tranche 6: Settings, Cache Persistence & QA Hardening
-- [ ] Rebuild the settings panel as an egui sidebar that emits deterministic commands for typography/reader options, ties into the runtime persistence layer, and recounts the tracing fields (`settings.command`, `settings.rebuild`) so telemetry can correlate UI changes with layout spikes.
-- [ ] Validate cache/ bookmark persistence APIs under the new shell, add regression tests mirroring the existing ones flagged in the QA checklist, and emit bridging spans (e.g., `persistence.flush`, `persistence.evict`) that feed into the implementation prioritization plan.
-- [ ] Expand the QA diagnostics panel with `trace replay` helpers that can open the relevant roadmap/checklist URLs per span, and keep logging/performance budgets in sync with overlay/panel budgets so overlay heuristics remain auditable.
-- [ ] Capture and document the remaining regression scenarios (TTS closing, bookmarks, overlay backlog) so the final cutover has a precise QA gate tied to the roadmap checklists.
+- [x] Rebuild the settings panel as an egui sidebar that emits deterministic commands for typography/reader options, ties into the runtime persistence layer, and recounts the tracing fields (`settings.command`, `settings.rebuild`) so telemetry can correlate UI changes with layout spikes.
+- [x] Validate cache/ bookmark persistence APIs under the new shell, add regression tests mirroring the existing ones flagged in the QA checklist, and emit bridging spans (e.g., `persistence.flush`, `persistence.evict`) that feed into the implementation prioritization plan.
+- [x] Expand the QA diagnostics panel with `trace replay` helpers that can open the relevant roadmap/checklist URLs per span, and keep logging/performance budgets in sync with overlay/panel budgets so overlay heuristics remain auditable.
+- [x] Capture and document the remaining regression scenarios (TTS closing, bookmarks, overlay backlog) so the final cutover has a precise QA gate tied to the roadmap checklists.

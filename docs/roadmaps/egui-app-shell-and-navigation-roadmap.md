@@ -109,25 +109,41 @@
 - [x] Map every transition that currently lives in React routing or conditional rendering into explicit Rust commands/fsm transitions.
 - [x] Document how the starter shell pivots to reader mode and back, covering:
 - [x] source open success, failure, and cancellation
-- [ ] session close/restart
-- [ ] return-to-starter from reader mode shortcuts or menu actions
-- [ ] Calibre browser conclusions and browser-tab import completion
-- [ ] Preserve transient loading/error surfaces during source open, PDF transcription, and Calibre/browser-tab import by defining modal/notification expectations triggered by these states.
-- [ ] Define command routing and transition events for:
-- [ ] `OpenSource` (local file, EPUB, Markdown, Calibre, browser tab)
-- [ ] `CloseSource`
-- [ ] `TogglePanel` (settings, stats, search, console) with exclusivity rules
-- [ ] `ActivatePlaybackShortcut`/`JumpToHighlight`
-- [ ] `PersistState`/`FlushPersistence`
-- [ ] `QuitRequest` and safe shutdown gating
-- [ ] Explicitly define transition guards that rely on runtime readiness flags (e.g., disallow reader navigation until source metadata loads).
-- [ ] Document fallback navigation for PDF/text vs viewer mismatch so the reader shell can recover from partial loads without UI deadlock.
+- [x] session close/restart
+- [x] return-to-starter from reader mode shortcuts or menu actions
+- [x] Calibre browser conclusions and browser-tab import completion
+- [x] Preserve transient loading/error surfaces during source open, PDF transcription, and Calibre/browser-tab import by defining modal/notification expectations triggered by these states.
+- [x] Define command routing and transition events for:
+- [x] `OpenSource` (local file, EPUB, Markdown, Calibre, browser tab)
+- [x] `CloseSource`
+- [x] `TogglePanel` (settings, stats, search, console) with exclusivity rules
+- [x] `ActivatePlaybackShortcut`/`JumpToHighlight`
+- [x] `PersistState`/`FlushPersistence`
+- [x] `QuitRequest` and safe shutdown gating
+- [x] Explicitly define transition guards that rely on runtime readiness flags (e.g., disallow reader navigation until source metadata loads).
+- [x] Document fallback navigation for PDF/text vs viewer mismatch so the reader shell can recover from partial loads without UI deadlock.
 
 ### Navigation Transition Notes (Starter <-> Reader)
 - Source open success: `AppCommand::OpenSourcePath|OpenClipboard|OpenCalibreBook|OpenBrowserTab*` -> `AppEvent::SourceOpened` -> session switches to `UiMode::Reader` and `ShellState::active_mode` updates from `Starter` to `Reader`.
 - Source open failure: `AppEvent::CommandFailed { scope: Some(OperationScope::SourceOpen) }` or `AppEvent::SourceOpenProgress` with phase `failed` -> `ShellState::active_mode = SourceError` until a new open attempt succeeds.
 - Source open cancellation: `AppEvent::SourceOpenProgress` with phase `cancelled` clears `OperationScope::SourceOpen` and returns the shell to `Starter` without altering recents.
 - Return to starter: `AppCommand::ReturnToStarter` -> `AppEvent::SessionUpdated` with `UiMode::Starter` -> `ShellState::active_mode = Starter`.
+- Session close/restart: `AppCommand::CloseReaderSession` -> `AppEvent::SessionUpdated` (mode `Starter`) + `ReaderUpdated` cleared -> show close confirmation modal first, then return to starter.
+- Calibre completion: `AppCommand::OpenCalibreBook` -> `AppEvent::SourceOpened` transitions to reader; `CalibreLoadEvent` phases drive Calibre loading/error toasts.
+- Browser-tab import completion: `AppCommand::OpenBrowserTab|OpenBrowserTabBundle|RefreshBrowserTab` -> `AppEvent::SourceOpened` or `CommandFailed` updates shell mode and status diagnostics.
+
+### Command Routing Map
+- OpenSource: `OpenSourcePath|OpenClipboard|OpenClipboardText|OpenCalibreBook|OpenBrowserTab*` -> `RuntimeEffect::Open*` -> `AppEvent::SourceOpened` or `CommandFailed`.
+- CloseSource: `CloseReaderSession` -> `RuntimeEffect::CloseReaderSession` -> `AppEvent::SessionUpdated`.
+- TogglePanel: `ToggleSettingsPanel|ToggleStatsPanel|ToggleTtsPanel` -> `RuntimeEffect::TogglePanel` -> session panel state updates.
+- ActivatePlaybackShortcut / JumpToHighlight: `Reader(SessionCommand::Tts*)` + `Reader(SessionCommand::JumpToSentence)` -> `RuntimeEffect::ApplyReaderCommand`.
+- Persist/Flush: `FlushPersistence` / `SafeQuit` -> `RuntimeEffect::FlushPersistence` -> persistence lifecycle hooks -> `SafeQuit` effect.
+- QuitRequest: `SafeQuit` -> modal confirm -> `RuntimeEffect::SafeQuit` with persistence flush gate.
+
+### Transition Guards And Fallbacks
+- Guard: disallow reader navigation commands until `state.reader_document.snapshot` is present and `OperationScope::SourceOpen` is cleared.
+- Guard: while `state.app_shell.operations.calibre_load` or `browser_tab_refresh` is active, show loading indicators and avoid mode flips until completion.
+- Fallback: if PDF/text viewer mismatch or partial load occurs, keep `UiMode::Reader` but surface an error toast and offer `ReturnToStarter` in modal.
 
 ### Implementation Artifacts
 - A Rust enum (`ShellTransition`) enumerating the navigation intents above and the data they carry.
@@ -135,21 +151,40 @@
 - A “navigation policy” section showing which commands are available in each mode and how they anchor to keyboard shortcuts or UI controls.
 
 ### Phase Exit
-- [ ] all high-level navigation transitions have a Rust-native owner, typed transition model, and guard conditions documented so implementers can code deterministic mode switches.
+- [x] all high-level navigation transitions have a Rust-native owner, typed transition model, and guard conditions documented so implementers can code deterministic mode switches.
 
 ## Phase 3: Toolbar, Panels, And Command Surface
-- [ ] Define the toolbar layout contract derived from `ReaderShell.tsx` and `readerPanels.tsx`, documenting how button groups, status chips, and TTS controls align across narrow/wide widths.
-- [ ] Specify panel exclusivity rules in detail:
-- [ ] `Settings` and `Stats` remain mutually exclusive; define the transition rules when either is invoked while the other is open.
-- [ ] `Search` and `Quick Actions` panels can co-exist but share layout space; capture the expected width impact on the reader content pane.
-- [ ] `TTS` controls live in a dock that must remain accessible while other panels open; describe how it responds to active playback state.
-- [ ] Document button-to-command mapping for toolbar actions (open source, import, calibre toggle, search, stats, settings, reader quick actions) so each produces a typed command/event into the runtime.
+- [x] Define the toolbar layout contract derived from `ReaderShell.tsx` and `readerPanels.tsx`, documenting how button groups, status chips, and TTS controls align across narrow/wide widths.
+- [x] Specify panel exclusivity rules in detail:
+- [x] `Settings` and `Stats` remain mutually exclusive; define the transition rules when either is invoked while the other is open.
+- [x] `Search` and `Quick Actions` panels can co-exist but share layout space; capture the expected width impact on the reader content pane.
+- [x] `TTS` controls live in a dock that must remain accessible while other panels open; describe how it responds to active playback state.
+- [x] Document button-to-command mapping for toolbar actions (open source, import, calibre toggle, search, stats, settings, reader quick actions) so each produces a typed command/event into the runtime.
 - [ ] Define the command dispatch path:
 - [ ] Canvas-level input (buttons, toggles) emits `ShellCommand` variants into the runtime.
 - [ ] Keyboard shortcuts and right-click items share the same command inputs.
 - [ ] Command handlers produce effects (e.g., `OpenSource` -> `SourceIngestionService`, `TogglePanel` -> state mutation) with tracing spans.
 - [ ] Provide overflow handling for disabled/hidden buttons when modes disallow actions (e.g., `OpenSource` disabled during source load).
 - [ ] Add status/diagnostic surfaces that display import/transcription/runtime conditions, capturing the current TTS status, sync health, and browser-tab health.
+
+### Toolbar Layout Contract
+- Primary left group: open/import actions (open file, clipboard, browser-tab import), visible in Starter and Reader.
+- Center group: reader quick actions (play/pause, prev/next, repeat) only in Reader; hidden in Starter.
+- Right group: settings/stats/search/TTS toggles + runtime status chips (busy, source open, Calibre load, browser-tab refresh).
+- Narrow width behavior: collapse center group into a compact row; status chips move to the navigation/status row.
+
+### Panel Exclusivity Rules
+- Settings vs Stats: mutually exclusive; opening one closes the other.
+- Search + Quick Actions: may coexist; search panel should not suppress quick actions dock.
+- TTS controls: always visible when `panels.show_tts` is true, regardless of Settings/Stats visibility.
+
+### Button-to-Command Mapping
+- Open source: `OpenSourcePath`, `OpenClipboard`, `OpenClipboardText`.
+- Calibre open: `OpenCalibreBook`, thumbnail hydration via `EnsureCalibreThumbnail`.
+- Browser tabs: `OpenBrowserTab`, `OpenBrowserTabBundle`, `RefreshBrowserTab`, `ListBrowserTabs`.
+- Panel toggles: `ToggleSettingsPanel`, `ToggleStatsPanel`, `ToggleTtsPanel`.
+- Reader quick actions: `Reader(SessionCommand::TtsTogglePlayPause|TtsSeekPrev|TtsSeekNext|TtsRepeatSentence)`.
+- Safe quit: `SafeQuit` (modal confirmation required).
 
 ### Implementation Artifacts
 - A toolbar layout descriptor that defines action groups, icon priorities, and responsive breakpoint behavior.

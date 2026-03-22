@@ -269,7 +269,11 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
                 "Live persistence failed"
             );
         } else {
-            debug!(trigger = ?trigger, "Reader housekeeping persisted");
+            debug!(
+                trigger = ?trigger,
+                path = %housekeeping.snapshot.source_path,
+                "Reader housekeeping persisted"
+            );
         }
     }
 

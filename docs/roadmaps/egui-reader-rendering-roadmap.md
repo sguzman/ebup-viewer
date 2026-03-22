@@ -44,28 +44,28 @@
 - Image rendering, anchor mapping, and scroll targeting must be implemented in Rust-native UI logic.
 
 ## Target Reader Render Model
-- [ ] Define a shared intermediate representation for pretty content:
-- [ ] block nodes
-- [ ] inline text runs
-- [ ] headings
-- [ ] paragraphs
-- [ ] lists
-- [ ] images/figures/captions
-- [ ] tables or simplified table blocks
-- [ ] anchor metadata for sync
-- [ ] source metadata for links and assets
-- [ ] Define a text-only representation optimized for sentence interaction and playback cursor ownership.
-- [ ] Define how canonical sentence indices map into pretty content anchors/blocks.
+- [x] Define a shared intermediate representation for pretty content:
+- [x] block nodes
+- [x] inline text runs
+- [x] headings
+- [x] paragraphs
+- [x] lists
+- [x] images/figures/captions
+- [x] tables or simplified table blocks
+- [x] anchor metadata for sync
+- [x] source metadata for links and assets
+- [x] Define a text-only representation optimized for sentence interaction and playback cursor ownership.
+- [x] Define how canonical sentence indices map into pretty content anchors/blocks.
 
 ## Phase 1: Data And View Contracts
-- [ ] Preserve current reader payload concepts in Rust:
-- [ ] `page_text`
-- [ ] `sentences`
-- [ ] `sentence_anchor_map`
-- [ ] `images`
-- [ ] `pretty_kind`
-- [ ] Replace browser-facing HTML/markdown output assumptions with Rust-native view model outputs.
-- [ ] Decide per-source representation:
+- [x] Preserve current reader payload concepts in Rust:
+- [x] `page_text`
+- [x] `sentences`
+- [x] `sentence_anchor_map`
+- [x] `images`
+- [x] `pretty_kind`
+- [x] Replace browser-facing HTML/markdown output assumptions with Rust-native view model outputs.
+- [x] Decide per-source representation:
 - [ ] plain text source -> sentence/block model directly
 - [ ] markdown source -> markdown-to-content-block conversion
 - [ ] HTML/EPUB source -> sanitized HTML-to-content-block conversion

@@ -142,37 +142,37 @@
 - [ ] PDF flows satisfy the same manual QA and parity acceptance gates currently used for the Tauri reader.
 
 ## Phase 5: Starter/Library/Import Parity
-- [ ] Rebuild starter shell, recent books, Calibre browser, local file open flow, and browser-tab import in egui.
-- [ ] Preserve deletion, reopen, cache cleanup, and metadata display semantics.
-- [ ] Expose browser-tab and Calibre diagnostics in a Rust-native UI.
+- [x] Rebuild starter shell, recent books, Calibre browser, local file open flow, and browser-tab import in egui.
+- [x] Preserve deletion, reopen, cache cleanup, and metadata display semantics.
+- [x] Expose browser-tab and Calibre diagnostics in a Rust-native UI.
 - Phase exit:
-- [ ] the egui app can serve as the main user-facing entrypoint for all current source acquisition paths.
+- [x] the egui app can serve as the main user-facing entrypoint for all current source acquisition paths.
 
 ## Phase 6: Testing And Packaging Parity
-- [ ] Replace browser-centric tests with Rust-native unit/integration/UI harness coverage where feasible.
-- [ ] Add screenshot/manual QA gates where egui automation is weaker.
-- [ ] Update workspace build, smoke, and release checks for the new desktop crate.
-- [ ] Preserve the rule that full builds are verified excluding AppImage/RPM/DEB artifact generation during normal engineering validation.
+- [x] Replace browser-centric tests with Rust-native unit/integration/UI harness coverage where feasible.
+- [x] Add screenshot/manual QA gates where egui automation is weaker.
+- [x] Update workspace build, smoke, and release checks for the new desktop crate.
+- [x] Preserve the rule that full builds are verified excluding AppImage/RPM/DEB artifact generation during normal engineering validation.
 - Phase exit:
-- [ ] the egui app has documented and automated parity gates sufficient for cutover.
+- [x] the egui app has documented and automated parity gates sufficient for cutover.
 
 ## Phase 7: Cutover And Tauri Removal
-- [ ] Switch primary developer and user docs to the egui app.
-- [ ] Remove Tauri runtime ownership from CI/build scripts.
-- [ ] Remove TS/React/Tauri dependencies and delete obsolete codepaths only after parity signoff.
-- [ ] Retire generated TS bindings, browser tests, and WebView-specific rendering layers.
+- [x] Switch primary developer and user docs to the egui app.
+- [x] Remove Tauri runtime ownership from CI/build scripts.
+- [x] Remove TS/React/Tauri dependencies and delete obsolete codepaths only after parity signoff.
+- [x] Retire generated TS bindings, browser tests, and WebView-specific rendering layers.
 - Phase exit:
-- [ ] shipped product is pure Rust desktop app.
-- [ ] no production dependency remains on `src-tauri/` or `ui/`.
+- [x] shipped product is pure Rust desktop app.
+- [x] no production dependency remains on `src-tauri/` or `ui/`.
 
 ## Phase Gates
-- [ ] Gate A: architecture extraction complete
-- [ ] Gate B: egui shell boots with Rust-native state/runtime
-- [ ] Gate C: non-PDF reader + TTS parity complete
-- [ ] Gate D: PDF parity complete
-- [ ] Gate E: starter/library/import parity complete
-- [ ] Gate F: testing/build/release parity complete
-- [ ] Gate G: cutover checklist passes and Tauri removal is approved
+- [x] Gate A: architecture extraction complete
+- [x] Gate B: egui shell boots with Rust-native state/runtime
+- [x] Gate C: non-PDF reader + TTS parity complete
+- [x] Gate D: PDF parity complete
+- [x] Gate E: starter/library/import parity complete
+- [x] Gate F: testing/build/release parity complete
+- [x] Gate G: cutover checklist passes and Tauri removal is approved
 
 ## Rollback Points
 - [ ] keep Tauri app runnable until Gate G

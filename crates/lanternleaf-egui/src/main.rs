@@ -9,6 +9,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -41,7 +42,10 @@ use lanternleaf_app::{
         ReaderStateEvent, RecentBook, SourceOpenEvent, TtsStateEvent, UiMode,
     },
     persistence::{FilesystemPersistenceService, PersistenceLifecycle},
-    pipeline::{AppCommand, AppEvent, DispatchPlan, OperationScope, PersistenceTrigger, ReaderCommand},
+    pipeline::{
+        AppCommand, AppEvent, DispatchPlan, OperationScope, PersistenceTrigger, PlannedEffect,
+        ReaderCommand, RuntimeEffect,
+    },
     shortcuts::{ShortcutAction, ShortcutScope, UiShortcutAction},
     state::{AppState, OperationState},
     tracing::init_tracing,
@@ -174,7 +178,7 @@ struct LanternLeafApp {
     audio_diagnostics: AudioDiagnostics,
     tts_runtime: TtsRuntime,
     last_tts_runtime_event: Option<TtsRuntimeEvent>,
-    persistence: PersistenceLifecycle<FilesystemPersistenceService>,
+    persistence: Arc<PersistenceLifecycle<FilesystemPersistenceService>>,
     persistence_logged: bool,
     last_reader_source: Option<String>,
     last_reader_snapshot: Option<ReaderSnapshot>,
@@ -276,7 +280,11 @@ impl LanternLeafApp {
                 None
             }
         };
-        let effect_context = EffectContext::new(app_config.clone(), normalizer.clone());
+        let persistence = Arc::new(PersistenceLifecycle::new(
+            FilesystemPersistenceService::default(),
+        ));
+        let effect_context =
+            EffectContext::new(app_config.clone(), normalizer.clone(), Arc::clone(&persistence));
         let mut app = Self {
             runtime,
             _tracing_guard: tracing_guard,
@@ -291,7 +299,7 @@ impl LanternLeafApp {
             audio_diagnostics: AudioDiagnostics::default(),
             tts_runtime: TtsRuntime::new(normalizer.clone()),
             last_tts_runtime_event: None,
-            persistence: PersistenceLifecycle::new(FilesystemPersistenceService),
+            persistence,
             persistence_logged: false,
             last_reader_source: None,
             last_reader_snapshot: None,
@@ -373,28 +381,33 @@ impl LanternLeafApp {
         let _ = self.tts_runtime.apply_command(tts_command);
     }
 
-    fn apply_persistence_trigger(
-        &mut self,
-        command: &AppCommand,
-        snapshot: Option<&ReaderSnapshot>,
-    ) {
-        match command {
-            AppCommand::Reader(_) => {
-                self.persistence
-                    .flush_trigger(snapshot, PersistenceTrigger::ReaderCommand);
-            }
+    fn apply_persistence_trigger(&mut self, command: &AppCommand, _snapshot: Option<&ReaderSnapshot>) {
+        let (trigger, description) = match command {
+            AppCommand::Reader(_) => (Some(PersistenceTrigger::ReaderCommand), "reader_command"),
             AppCommand::SetRuntimeLogLevel { .. } => {
-                self.persistence
-                    .flush_trigger(snapshot, PersistenceTrigger::RuntimeConfigChange);
+                (Some(PersistenceTrigger::RuntimeConfigChange), "runtime_config")
             }
-            AppCommand::SafeQuit => {
-                if let Some(snapshot) = snapshot {
-                    self.persistence.on_safe_quit(snapshot);
-                    self.record_persistence_status("safe_quit", &snapshot.source_path);
-                }
-            }
-            _ => {}
-        }
+            AppCommand::SafeQuit | AppCommand::FlushPersistence { .. } => (None, ""),
+            _ => (None, ""),
+        };
+        let Some(trigger) = trigger else {
+            return;
+        };
+        self.record_persistence_event(trigger, description);
+        self.queue_persistence_flush(trigger);
+    }
+
+    fn queue_persistence_flush(&self, trigger: PersistenceTrigger) {
+        let request_id = self.runtime.next_request_id();
+        trace!(
+            request_id,
+            trigger = ?trigger,
+            "Queued persistence flush effect"
+        );
+        self.effect_dispatcher.dispatch(PlannedEffect {
+            request_id,
+            effect: RuntimeEffect::FlushPersistence { trigger },
+        });
     }
 
     fn update_persistence_lifecycle(&mut self, snapshot: Option<&ReaderSnapshot>) {
@@ -412,16 +425,16 @@ impl LanternLeafApp {
                     .map(|path| path != snapshot.source_path)
                     .unwrap_or(true)
                 {
-                    self.persistence.on_source_open(snapshot);
                     self.record_persistence_status("source_open", &snapshot.source_path);
+                    self.queue_persistence_flush(PersistenceTrigger::SourceOpen);
                     self.last_reader_source = Some(snapshot.source_path.clone());
                 }
                 self.last_reader_snapshot = Some(snapshot.clone());
             }
             None => {
                 if let Some(last_snapshot) = self.last_reader_snapshot.take() {
-                    self.persistence.on_session_close(&last_snapshot);
                     self.record_persistence_status("session_close", &last_snapshot.source_path);
+                    self.queue_persistence_flush(PersistenceTrigger::SessionClose);
                 }
                 self.last_reader_source = None;
             }

@@ -1,4 +1,6 @@
-use lanternleaf_app::persistence::{FilesystemPersistenceService, PersistenceLifecycle};
+use lanternleaf_app::persistence::{
+    FilesystemPersistenceService, PersistenceLifecycle, ReaderHousekeeping,
+};
 use lanternleaf_app::pipeline::PersistenceTrigger;
 use lanternleaf_core::{cache, config, session};
 use std::fs;
@@ -123,10 +125,17 @@ fn sample_snapshot(path: &Path) -> session::ReaderSnapshot {
 fn persistence_roundtrip_and_delete() {
     let source = unique_source_path("epub");
     write_source(&source);
-    let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService);
+    let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService::default());
     let snapshot = sample_snapshot(&source);
+    let config = config::AppConfig::default();
 
-    lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SourceOpen);
+    lifecycle.flush_trigger(
+        Some(ReaderHousekeeping {
+            snapshot: &snapshot,
+            config: &config,
+        }),
+        PersistenceTrigger::SourceOpen,
+    );
     let loaded = cache::load_bookmark(&source);
     assert!(loaded.is_some(), "bookmark should be persisted");
 
@@ -151,9 +160,16 @@ fn persistence_rebuilds_after_corruption() {
     let loaded = cache::load_bookmark(&source);
     assert!(loaded.is_none(), "corrupt bookmark should be ignored");
 
-    let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService);
+    let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService::default());
     let snapshot = sample_snapshot(&source);
-    lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SourceOpen);
+    let config = config::AppConfig::default();
+    lifecycle.flush_trigger(
+        Some(ReaderHousekeeping {
+            snapshot: &snapshot,
+            config: &config,
+        }),
+        PersistenceTrigger::SourceOpen,
+    );
     let rebuilt = fs::read_to_string(&bookmark_path).unwrap_or_default();
     assert!(
         rebuilt.contains("page"),

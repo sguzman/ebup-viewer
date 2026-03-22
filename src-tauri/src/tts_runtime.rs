@@ -1,4 +1,5 @@
 use super::*;
+use lanternleaf_core::cache_service::CacheService;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TtsRequestRuntime {
@@ -97,7 +98,8 @@ fn persist_reader_progress(guard: &mut BackendState, reason: &'static str) {
         "Persisting active reader progress"
     );
     tauri::async_runtime::spawn_blocking(move || {
-        cache::save_bookmark(Path::new(&source_path), &bookmark);
+        let cache_service = lanternleaf_core::cache_service::FilesystemCacheService;
+        cache_service.save_bookmark(Path::new(&source_path), &bookmark);
     });
 }
 

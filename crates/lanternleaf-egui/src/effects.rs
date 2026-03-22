@@ -10,7 +10,7 @@ use lanternleaf_app::pipeline::{
     AppEvent, EffectOwner, OperationScope, PanelToggle, PersistenceTrigger, PlannedEffect,
     RuntimeEffect,
 };
-use lanternleaf_core::{browser_tabs, cache, calibre, config, normalizer, session};
+use lanternleaf_core::{browser_tabs, cache, cache_service, calibre, config, normalizer, session};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::helpers::bootstrap_config_from_app_config;
@@ -25,16 +25,41 @@ pub struct EffectContext {
     pub calibre_config: Arc<calibre::CalibreConfig>,
     pub session: Arc<Mutex<Option<session::ReaderSession>>>,
     pub panels: Arc<Mutex<session::PanelState>>,
+    pub persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle<
+        lanternleaf_app::persistence::FilesystemPersistenceService,
+    >>,
+    pub cache_service: Arc<dyn cache_service::CacheService>,
 }
 
 impl EffectContext {
-    pub fn new(config: config::AppConfig, normalizer: normalizer::TextNormalizer) -> Self {
+    pub fn new(
+        config: config::AppConfig,
+        normalizer: normalizer::TextNormalizer,
+        persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle<
+            lanternleaf_app::persistence::FilesystemPersistenceService,
+        >>,
+    ) -> Self {
+        let cache_service: Arc<dyn cache_service::CacheService> =
+            Arc::new(cache_service::FilesystemCacheService);
+        Self::with_services(config, normalizer, persistence, cache_service)
+    }
+
+    pub fn with_services(
+        config: config::AppConfig,
+        normalizer: normalizer::TextNormalizer,
+        persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle<
+            lanternleaf_app::persistence::FilesystemPersistenceService,
+        >>,
+        cache_service: Arc<dyn cache_service::CacheService>,
+    ) -> Self {
         Self {
             config: Arc::new(Mutex::new(config)),
             normalizer: Arc::new(normalizer),
             calibre_config: Arc::new(calibre::CalibreConfig::load_default()),
             session: Arc::new(Mutex::new(None)),
             panels: Arc::new(Mutex::new(session::PanelState::default())),
+            persistence,
+            cache_service,
         }
     }
 }
@@ -142,7 +167,7 @@ fn execute_effect(context: EffectContext, planned: PlannedEffect, event_tx: mpsc
             handle_set_log_level(&context, request_id, &level)
         }
         RuntimeEffect::FlushPersistence { trigger } => {
-            handle_persistence_flush(request_id, trigger)
+            handle_persistence_flush(&context, request_id, trigger)
         }
         RuntimeEffect::ReturnToStarter => handle_return_to_starter(&context, request_id),
         RuntimeEffect::CloseReaderSession => handle_close_reader_session(&context, request_id),
@@ -221,12 +246,14 @@ fn handle_list_recents(
 }
 
 fn handle_delete_recent(
-    _context: &EffectContext,
+    context: &EffectContext,
     request_id: u64,
     source_path: &str,
 ) -> Result<Vec<AppEvent>, BridgeError> {
     let path = normalize_source_path(source_path)?;
-    cache::delete_recent_source_and_cache(&path)
+    context
+        .cache_service
+        .delete_recent_source_and_cache(&path)
         .map_err(|err| bridge_error("io_error", err))?;
     let recents = cache::list_recent_books(normalize_recent_limit(None))
         .into_iter()
@@ -249,10 +276,14 @@ fn handle_close_recent_browser_tab(
     source_path: &str,
 ) -> Result<Vec<AppEvent>, BridgeError> {
     let path = normalize_source_path(source_path)?;
-    let manifest = cache::load_browser_tab_manifest(&path).ok_or_else(|| {
+    let manifest = context.cache_service.load_browser_tab_manifest(&path).map_err(|err| {
         bridge_error(
             "invalid_input",
-            format!("Source is not a browser-tab manifest: {}", path.display()),
+            format!(
+                "Source is not a browser-tab manifest: {} ({})",
+                path.display(),
+                err
+            ),
         )
     })?;
     let cfg = load_config(context)?;
@@ -288,7 +319,9 @@ fn handle_open_clipboard_text(
     if trimmed.is_empty() {
         return Err(bridge_error("invalid_input", "clipboard text is empty"));
     }
-    let path = cache::persist_clipboard_text_source(trimmed)
+    let path = context
+        .cache_service
+        .persist_clipboard_text_source(trimmed)
         .map_err(|err| bridge_error("clipboard_error", err))?;
     open_source_from_path(context, request_id, path)
 }
@@ -436,13 +469,17 @@ fn handle_open_browser_tab(
             selection: document.selection.clone(),
             assets,
         };
-        cache::persist_browser_tab_bundle_source(&bundle_capture, tab_meta.as_ref())
+        context
+            .cache_service
+            .persist_browser_tab_bundle_source(&bundle_capture, tab_meta.as_ref())
             .map_err(|err| bridge_error("browser_tab_cache_error", err))?
     } else {
         let snapshot = client
             .snapshot_tab(tab_id)
             .map_err(|err| bridge_error("browsr_snapshot_failed", err.to_string()))?;
-        cache::persist_browser_tab_source(&snapshot, tab_meta.as_ref())
+        context
+            .cache_service
+            .persist_browser_tab_source(&snapshot, tab_meta.as_ref())
             .map_err(|err| bridge_error("browser_tab_cache_error", err))?
     };
     info!(
@@ -623,10 +660,46 @@ fn handle_set_log_level(
 }
 
 fn handle_persistence_flush(
+    context: &EffectContext,
     request_id: u64,
     trigger: PersistenceTrigger,
 ) -> Result<Vec<AppEvent>, BridgeError> {
-    debug!(request_id, trigger = ?trigger, "Persistence flush requested");
+    let panels = {
+        let guard = context
+            .panels
+            .lock()
+            .map_err(|_| bridge_error("lock_poisoned", "Panel state lock poisoned"))?;
+        *guard
+    };
+    let (snapshot, config) = {
+        let mut guard = context
+            .session
+            .lock()
+            .map_err(|_| bridge_error("lock_poisoned", "Reader session lock poisoned"))?;
+        let Some(session) = guard.as_mut() else {
+            debug!(
+                request_id,
+                trigger = ?trigger,
+                "Skipping persistence flush (no active reader session)"
+            );
+            return Ok(Vec::new());
+        };
+        let snapshot = session.snapshot(panels, &context.normalizer);
+        let config = session.config.clone();
+        (snapshot, config)
+    };
+    context.persistence.flush_trigger(
+        Some(lanternleaf_app::persistence::ReaderHousekeeping {
+            snapshot: &snapshot,
+            config: &config,
+        }),
+        trigger,
+    );
+    debug!(
+        request_id,
+        trigger = ?trigger,
+        "Persistence flush completed"
+    );
     Ok(Vec::new())
 }
 
@@ -920,9 +993,13 @@ mod tests {
 
     #[test]
     fn dispatcher_runs_effects_off_thread() {
+        let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
+            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+        ));
         let context = EffectContext::new(
             config::AppConfig::default(),
             normalizer::TextNormalizer::default(),
+            persistence,
         );
         let (started_tx, started_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();

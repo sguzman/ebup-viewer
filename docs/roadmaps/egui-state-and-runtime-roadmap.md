@@ -173,13 +173,13 @@
 - [x] all long-running workflows have a native Rust async/task strategy.
 
 ## Phase 5: Persistence And Runtime Integration
-- [ ] Move config/bookmark/cache writes behind Rust service interfaces.
+- [x] Move config/bookmark/cache writes behind Rust service interfaces.
 - [x] Define save/load lifecycle during:
 - [x] source open
 - [x] session close
 - [x] application quit
 - [x] periodic bookmark/config persistence
-- [ ] Preserve current safe-quit guarantees and runtime housekeeping.
+- [x] Preserve current safe-quit guarantees and runtime housekeeping.
 - Phase exit:
 - [ ] state changes and persistence responsibilities are fully native and deterministic.
 

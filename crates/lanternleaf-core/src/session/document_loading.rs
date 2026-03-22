@@ -244,8 +244,16 @@ pub fn load_session_for_source_with_cancel(
     Ok(session)
 }
 
-pub fn persist_session_housekeeping(session: &ReaderSession) {
+pub fn persist_session_housekeeping_with_cache(
+    session: &ReaderSession,
+    cache_service: &dyn crate::cache_service::CacheService,
+) {
     let bookmark = session.to_bookmark();
-    crate::cache::save_bookmark(Path::new(&session.source_path), &bookmark);
-    crate::cache::save_epub_config(Path::new(&session.source_path), &session.config);
+    cache_service.save_bookmark(Path::new(&session.source_path), &bookmark);
+    cache_service.save_epub_config(Path::new(&session.source_path), &session.config);
+}
+
+pub fn persist_session_housekeeping(session: &ReaderSession) {
+    let cache_service = crate::cache_service::FilesystemCacheService;
+    persist_session_housekeeping_with_cache(session, &cache_service);
 }

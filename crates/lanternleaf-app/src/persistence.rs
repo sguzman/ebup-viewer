@@ -1,8 +1,9 @@
 use crate::contracts::BridgeError;
 use crate::contracts::ReaderSnapshot;
 use crate::pipeline::PersistenceTrigger;
-use lanternleaf_core::{cache, config};
+use lanternleaf_core::{cache, cache_service, config};
 use std::path::Path;
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone)]
@@ -153,25 +154,52 @@ impl PersistencePolicy {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ReaderHousekeeping<'a> {
+    pub snapshot: &'a ReaderSnapshot,
+    pub config: &'a config::AppConfig,
+}
+
 pub trait PersistenceService: Send + Sync {
-    fn persist_reader_housekeeping(&self, snapshot: &ReaderSnapshot) -> Result<(), BridgeError>;
+    fn persist_reader_housekeeping<'a>(
+        &self,
+        housekeeping: ReaderHousekeeping<'a>,
+    ) -> Result<(), BridgeError>;
 
     fn load_bookmark(&self, source_path: &Path) -> Option<cache::Bookmark>;
 
     fn load_epub_config(&self, source_path: &Path) -> Option<config::AppConfig>;
 }
 
-pub struct FilesystemPersistenceService;
+pub struct FilesystemPersistenceService {
+    cache_service: Arc<dyn cache_service::CacheService>,
+}
+
+impl FilesystemPersistenceService {
+    pub fn new(cache_service: Arc<dyn cache_service::CacheService>) -> Self {
+        Self { cache_service }
+    }
+}
+
+impl Default for FilesystemPersistenceService {
+    fn default() -> Self {
+        Self::new(Arc::new(cache_service::FilesystemCacheService))
+    }
+}
 
 impl PersistenceService for FilesystemPersistenceService {
-    fn persist_reader_housekeeping(&self, snapshot: &ReaderSnapshot) -> Result<(), BridgeError> {
-        let source_path = Path::new(&snapshot.source_path);
-        let sentence_text = snapshot
+    fn persist_reader_housekeeping<'a>(
+        &self,
+        housekeeping: ReaderHousekeeping<'a>,
+    ) -> Result<(), BridgeError> {
+        let source_path = Path::new(&housekeeping.snapshot.source_path);
+        let sentence_text = housekeeping
+            .snapshot
             .highlighted_sentence_idx
-            .and_then(|idx| snapshot.sentences.get(idx).cloned());
+            .and_then(|idx| housekeeping.snapshot.sentences.get(idx).cloned());
         let bookmark = cache::Bookmark {
-            page: snapshot.current_page,
-            sentence_idx: snapshot.highlighted_sentence_idx,
+            page: housekeeping.snapshot.current_page,
+            sentence_idx: housekeeping.snapshot.highlighted_sentence_idx,
             sentence_text,
             scroll_y: 0.0,
             pdf_page_idx: None,
@@ -184,8 +212,9 @@ impl PersistenceService for FilesystemPersistenceService {
             pdf_sentence_text_hash: None,
             pdf_token_lineage: Vec::new(),
         };
-        cache::save_bookmark(source_path, &bookmark);
-        cache::save_epub_config(source_path, &config::AppConfig::default());
+        self.cache_service.save_bookmark(source_path, &bookmark);
+        self.cache_service
+            .save_epub_config(source_path, housekeeping.config);
         Ok(())
     }
 
@@ -231,8 +260,8 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
         self.policy.log();
     }
 
-    pub fn on_live_update(&self, snapshot: &ReaderSnapshot, trigger: PersistenceTrigger) {
-        if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
+    pub fn on_live_update(&self, housekeeping: ReaderHousekeeping<'_>, trigger: PersistenceTrigger) {
+        if let Err(error) = self.service.persist_reader_housekeeping(housekeeping) {
             warn!(
                 trigger = ?trigger,
                 error = %error.message,
@@ -243,27 +272,36 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
         }
     }
 
-    pub fn on_source_open(&self, snapshot: &ReaderSnapshot) {
-        info!(path = %snapshot.source_path, "Persistence lifecycle: source open");
-        if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
+    pub fn on_source_open(&self, housekeeping: ReaderHousekeeping<'_>) {
+        info!(
+            path = %housekeeping.snapshot.source_path,
+            "Persistence lifecycle: source open"
+        );
+        if let Err(error) = self.service.persist_reader_housekeeping(housekeeping) {
             warn!(error = %error.message, "Source-open persistence failed");
         } else {
             debug!("Reader housekeeping persisted on source open");
         }
     }
 
-    pub fn on_session_close(&self, snapshot: &ReaderSnapshot) {
-        info!(path = %snapshot.source_path, "Persistence lifecycle: session close");
-        if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
+    pub fn on_session_close(&self, housekeeping: ReaderHousekeeping<'_>) {
+        info!(
+            path = %housekeeping.snapshot.source_path,
+            "Persistence lifecycle: session close"
+        );
+        if let Err(error) = self.service.persist_reader_housekeeping(housekeeping) {
             warn!(error = %error.message, "Session close persistence failed");
         } else {
             debug!("Reader housekeeping persisted on session close");
         }
     }
 
-    pub fn on_safe_quit(&self, snapshot: &ReaderSnapshot) {
-        info!(path = %snapshot.source_path, "Persistence lifecycle: safe quit");
-        if let Err(error) = self.service.persist_reader_housekeeping(snapshot) {
+    pub fn on_safe_quit(&self, housekeeping: ReaderHousekeeping<'_>) {
+        info!(
+            path = %housekeeping.snapshot.source_path,
+            "Persistence lifecycle: safe quit"
+        );
+        if let Err(error) = self.service.persist_reader_housekeeping(housekeeping) {
             warn!(error = %error.message, "Safe quit persistence failed");
         } else {
             debug!("Reader housekeeping persisted on safe quit");
@@ -280,15 +318,23 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
         )
     }
 
-    pub fn flush_trigger(&self, snapshot: Option<&ReaderSnapshot>, trigger: PersistenceTrigger) {
-        match (snapshot, trigger) {
-            (Some(snapshot), PersistenceTrigger::ReaderCommand)
-            | (Some(snapshot), PersistenceTrigger::RuntimeConfigChange) => {
-                self.on_live_update(snapshot, trigger);
+    pub fn flush_trigger(
+        &self,
+        housekeeping: Option<ReaderHousekeeping<'_>>,
+        trigger: PersistenceTrigger,
+    ) {
+        match (housekeeping, trigger) {
+            (Some(housekeeping), PersistenceTrigger::ReaderCommand)
+            | (Some(housekeeping), PersistenceTrigger::RuntimeConfigChange) => {
+                self.on_live_update(housekeeping, trigger);
             }
-            (Some(snapshot), PersistenceTrigger::SourceOpen) => self.on_source_open(snapshot),
-            (Some(snapshot), PersistenceTrigger::SessionClose) => self.on_session_close(snapshot),
-            (Some(snapshot), PersistenceTrigger::SafeQuit) => self.on_safe_quit(snapshot),
+            (Some(housekeeping), PersistenceTrigger::SourceOpen) => {
+                self.on_source_open(housekeeping)
+            }
+            (Some(housekeeping), PersistenceTrigger::SessionClose) => {
+                self.on_session_close(housekeeping)
+            }
+            (Some(housekeeping), PersistenceTrigger::SafeQuit) => self.on_safe_quit(housekeeping),
             _ => {
                 warn!(trigger = ?trigger, "No reader snapshot available for persistence trigger");
             }
@@ -301,10 +347,10 @@ mod tests {
     use super::*;
     use crate::contracts::ReaderSnapshot;
     use crate::pipeline::PersistenceTrigger;
-    use lanternleaf_core::{cache, config, session};
+    use lanternleaf_core::{cache, cache_service::CacheService, config, session};
     use std::path::Path;
     use std::sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     };
 
@@ -416,7 +462,10 @@ mod tests {
     }
 
     impl PersistenceService for StubService {
-        fn persist_reader_housekeeping(&self, _: &ReaderSnapshot) -> Result<(), BridgeError> {
+        fn persist_reader_housekeeping<'a>(
+            &self,
+            _: ReaderHousekeeping<'a>,
+        ) -> Result<(), BridgeError> {
             self.persisted.store(true, Ordering::SeqCst);
             Ok(())
         }
@@ -448,12 +497,81 @@ mod tests {
         }
     }
 
+    struct TestCacheService {
+        saved_bookmark: Arc<AtomicBool>,
+        saved_config: Arc<Mutex<Option<config::AppConfig>>>,
+    }
+
+    impl TestCacheService {
+        fn new() -> (Self, Arc<AtomicBool>, Arc<Mutex<Option<config::AppConfig>>>) {
+            let saved_bookmark = Arc::new(AtomicBool::new(false));
+            let saved_config = Arc::new(Mutex::new(None));
+            (
+                Self {
+                    saved_bookmark: Arc::clone(&saved_bookmark),
+                    saved_config: Arc::clone(&saved_config),
+                },
+                saved_bookmark,
+                saved_config,
+            )
+        }
+    }
+
+    impl CacheService for TestCacheService {
+        fn save_bookmark(&self, _source_path: &Path, _bookmark: &cache::Bookmark) {
+            self.saved_bookmark.store(true, Ordering::SeqCst);
+        }
+
+        fn save_epub_config(&self, _source_path: &Path, config: &config::AppConfig) {
+            let mut guard = self.saved_config.lock().expect("config lock");
+            *guard = Some(config.clone());
+        }
+
+        fn delete_recent_source_and_cache(&self, _source_path: &Path) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn persist_clipboard_text_source(&self, _text: &str) -> Result<std::path::PathBuf, String> {
+            Err("not_used".to_string())
+        }
+
+        fn persist_browser_tab_source(
+            &self,
+            _snapshot: &lanternleaf_core::browser_tabs::BrowserTabSnapshot,
+            _tab_meta: Option<&lanternleaf_core::browser_tabs::BrowserTab>,
+        ) -> Result<std::path::PathBuf, String> {
+            Err("not_used".to_string())
+        }
+
+        fn persist_browser_tab_bundle_source(
+            &self,
+            _capture: &lanternleaf_core::browser_tabs::BrowserTabBundleCapture,
+            _tab_meta: Option<&lanternleaf_core::browser_tabs::BrowserTab>,
+        ) -> Result<std::path::PathBuf, String> {
+            Err("not_used".to_string())
+        }
+
+        fn load_browser_tab_manifest(
+            &self,
+            _source_path: &Path,
+        ) -> Result<cache::BrowserTabSourceManifest, String> {
+            Err("not_used".to_string())
+        }
+    }
+
     #[test]
     fn lifecycle_flush_calls_service() {
         let service = StubService::new(None);
         let lifecycle = PersistenceLifecycle::new(service);
         let snapshot = make_reader_snapshot();
-        lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SourceOpen);
+        let config = config::AppConfig::default();
+        lifecycle.flush_trigger(
+            Some(ReaderHousekeeping {
+                snapshot: &snapshot,
+                config: &config,
+            }),
+            PersistenceTrigger::SourceOpen,
+        );
         assert!(lifecycle.service().persisted.load(Ordering::SeqCst));
     }
 
@@ -462,7 +580,14 @@ mod tests {
         let service = StubService::new(None);
         let lifecycle = PersistenceLifecycle::new(service);
         let snapshot = make_reader_snapshot();
-        lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SessionClose);
+        let config = config::AppConfig::default();
+        lifecycle.flush_trigger(
+            Some(ReaderHousekeeping {
+                snapshot: &snapshot,
+                config: &config,
+            }),
+            PersistenceTrigger::SessionClose,
+        );
         assert!(lifecycle.service().persisted.load(Ordering::SeqCst));
     }
 
@@ -471,7 +596,14 @@ mod tests {
         let service = StubService::new(None);
         let lifecycle = PersistenceLifecycle::new(service);
         let snapshot = make_reader_snapshot();
-        lifecycle.flush_trigger(Some(&snapshot), PersistenceTrigger::SafeQuit);
+        let config = config::AppConfig::default();
+        lifecycle.flush_trigger(
+            Some(ReaderHousekeeping {
+                snapshot: &snapshot,
+                config: &config,
+            }),
+            PersistenceTrigger::SafeQuit,
+        );
         assert!(lifecycle.service().persisted.load(Ordering::SeqCst));
     }
 
@@ -485,5 +617,24 @@ mod tests {
         let loaded = loaded_bookmark.expect("bookmark should be loaded");
         assert_eq!(loaded.page, bookmark.page);
         assert!(loaded_config.is_none());
+    }
+
+    #[test]
+    fn filesystem_persistence_uses_cache_service_config() {
+        let (cache_service, saved_bookmark, saved_config) = TestCacheService::new();
+        let service = FilesystemPersistenceService::new(Arc::new(cache_service));
+        let snapshot = make_reader_snapshot();
+        let mut cfg = config::AppConfig::default();
+        cfg.tts_speed = 3.5;
+        service
+            .persist_reader_housekeeping(ReaderHousekeeping {
+                snapshot: &snapshot,
+                config: &cfg,
+            })
+            .expect("persist should succeed");
+        assert!(saved_bookmark.load(Ordering::SeqCst));
+        let guard = saved_config.lock().expect("config lock");
+        let saved = guard.as_ref().expect("config saved");
+        assert!((saved.tts_speed - 3.5).abs() < f32::EPSILON);
     }
 }

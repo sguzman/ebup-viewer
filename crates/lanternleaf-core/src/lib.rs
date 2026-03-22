@@ -2,6 +2,8 @@
 pub mod browser_tabs;
 #[path = "../../../src/cache.rs"]
 pub mod cache;
+#[path = "../../../src/cache_service.rs"]
+pub mod cache_service;
 #[path = "../../../src/calibre.rs"]
 pub mod calibre;
 #[path = "../../../src/cancellation.rs"]

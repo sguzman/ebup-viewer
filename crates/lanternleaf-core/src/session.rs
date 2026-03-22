@@ -1599,6 +1599,211 @@ fn count_html_anchors(html: &str) -> usize {
         .sum()
 }
 
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContentBlockKind {
+    Heading,
+    Paragraph,
+    ListItem,
+    Image,
+    Link,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ContentBlock {
+    kind: ContentBlockKind,
+    text: String,
+}
+
+#[cfg(test)]
+fn markdown_to_content_blocks(markdown: &str) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+    let mut paragraph = Vec::new();
+
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            continue;
+        }
+
+        if let Some(stripped) = trimmed.strip_prefix('#') {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            let heading = stripped.trim_start_matches('#').trim();
+            if !heading.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Heading,
+                    text: heading.to_string(),
+                });
+            }
+            continue;
+        }
+
+        if let Some(item) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            blocks.push(ContentBlock {
+                kind: ContentBlockKind::ListItem,
+                text: item.trim().to_string(),
+            });
+            continue;
+        }
+
+        if trimmed.starts_with("![") {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            let alt = trimmed
+                .trim_start_matches("![")
+                .split(']')
+                .next()
+                .unwrap_or_default()
+                .trim();
+            blocks.push(ContentBlock {
+                kind: ContentBlockKind::Image,
+                text: alt.to_string(),
+            });
+            continue;
+        }
+
+        if trimmed.starts_with('[') && trimmed.contains("](") && trimmed.ends_with(')') {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            let text = trimmed
+                .trim_start_matches('[')
+                .split("](")
+                .next()
+                .unwrap_or_default()
+                .trim();
+            blocks.push(ContentBlock {
+                kind: ContentBlockKind::Link,
+                text: text.to_string(),
+            });
+            continue;
+        }
+
+        paragraph.push(trimmed.to_string());
+    }
+
+    if !paragraph.is_empty() {
+        blocks.push(ContentBlock {
+            kind: ContentBlockKind::Paragraph,
+            text: paragraph.join(" "),
+        });
+    }
+
+    tracing::debug!(
+        blocks = blocks.len(),
+        headings = blocks.iter().filter(|b| b.kind == ContentBlockKind::Heading).count(),
+        paragraphs = blocks.iter().filter(|b| b.kind == ContentBlockKind::Paragraph).count(),
+        "Converted markdown to content blocks"
+    );
+    blocks
+}
+
+#[cfg(test)]
+fn html_to_content_blocks(html: &str) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+
+    for tag in ["h1", "h2", "h3", "h4", "h5", "h6"] {
+        blocks.extend(extract_tag_blocks(html, tag, ContentBlockKind::Heading));
+    }
+    blocks.extend(extract_tag_blocks(html, "p", ContentBlockKind::Paragraph));
+    blocks.extend(extract_tag_blocks(html, "li", ContentBlockKind::ListItem));
+    blocks.extend(extract_tag_blocks(html, "a", ContentBlockKind::Link));
+    blocks.extend(extract_img_blocks(html));
+
+    tracing::debug!(
+        blocks = blocks.len(),
+        headings = blocks.iter().filter(|b| b.kind == ContentBlockKind::Heading).count(),
+        paragraphs = blocks.iter().filter(|b| b.kind == ContentBlockKind::Paragraph).count(),
+        "Converted html to content blocks"
+    );
+    blocks
+}
+
+#[cfg(test)]
+fn extract_tag_blocks(html: &str, tag: &str, kind: ContentBlockKind) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+    let mut remainder = html;
+    let open_tag = format!("<{}", tag);
+    let close_tag = format!("</{}>", tag);
+
+    while let Some(start) = remainder.find(&open_tag) {
+        let after_open = &remainder[start..];
+        let Some(end_open) = after_open.find('>') else {
+            break;
+        };
+        let after = &after_open[end_open + 1..];
+        let Some(end_close) = after.find(&close_tag) else {
+            break;
+        };
+        let inner = after[..end_close].trim();
+        if !inner.is_empty() {
+            blocks.push(ContentBlock {
+                kind,
+                text: inner.to_string(),
+            });
+        }
+        remainder = &after[end_close + close_tag.len()..];
+    }
+
+    blocks
+}
+
+#[cfg(test)]
+fn extract_img_blocks(html: &str) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+    let mut remainder = html;
+
+    while let Some(start) = remainder.find("<img") {
+        let after = &remainder[start + 4..];
+        let Some(end) = after.find('>') else {
+            break;
+        };
+        let tag = &after[..end];
+        let alt = tag
+            .split("alt=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .unwrap_or("");
+        blocks.push(ContentBlock {
+            kind: ContentBlockKind::Image,
+            text: alt.trim().to_string(),
+        });
+        remainder = &after[end + 1..];
+    }
+
+    blocks
+}
+
 fn proportional_anchor_map(sentence_count: usize, anchor_count: usize) -> Vec<Option<usize>> {
     if sentence_count == 0 {
         return Vec::new();
@@ -2143,9 +2348,38 @@ mod tests {
     }
 
     #[test]
+    fn markdown_to_content_blocks_tracks_basic_kinds() {
+        let markdown = "# Title\n\nParagraph one.\n\n- Item one\n\n![Alt text](img.png)\n\n[Link](https://example.com)";
+        let blocks = markdown_to_content_blocks(markdown);
+        let kinds: Vec<ContentBlockKind> = blocks.iter().map(|b| b.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ContentBlockKind::Heading,
+                ContentBlockKind::Paragraph,
+                ContentBlockKind::ListItem,
+                ContentBlockKind::Image,
+                ContentBlockKind::Link
+            ]
+        );
+    }
+
+    #[test]
     fn html_anchor_count_detects_structural_elements() {
         let html = "<section><h1>A</h1><p>One</p><ul><li>x</li><li>y</li></ul><img src=\"a.png\"/></section>";
         assert_eq!(count_html_anchors(html), 6);
+    }
+
+    #[test]
+    fn html_to_content_blocks_extracts_expected_kinds() {
+        let html = "<h1>Title</h1><p>Body</p><ul><li>A</li></ul><a href=\"/a\">Link</a><img alt=\"Cover\" src=\"c.png\"/>";
+        let blocks = html_to_content_blocks(html);
+        let has_kind = |kind| blocks.iter().any(|b| b.kind == kind);
+        assert!(has_kind(ContentBlockKind::Heading));
+        assert!(has_kind(ContentBlockKind::Paragraph));
+        assert!(has_kind(ContentBlockKind::ListItem));
+        assert!(has_kind(ContentBlockKind::Link));
+        assert!(has_kind(ContentBlockKind::Image));
     }
 
     #[test]

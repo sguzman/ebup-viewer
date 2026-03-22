@@ -1,9 +1,9 @@
 # Egui Reader Rendering Roadmap
 
 ## Objective
-- [ ] Rebuild EPUB/TXT/Markdown/HTML reading in egui while preserving current text ownership, sentence highlighting, click-to-play, and reading controls.
-- [ ] Replace DOM/CSS/browser rendering assumptions with a Rust-native render model suitable for immediate-mode UI.
-- [ ] Keep canonical sentence/TTS ownership entirely in Rust domain state.
+- [x] Rebuild EPUB/TXT/Markdown/HTML reading in egui while preserving current text ownership, sentence highlighting, click-to-play, and reading controls.
+- [x] Replace DOM/CSS/browser rendering assumptions with a Rust-native render model suitable for immediate-mode UI.
+- [x] Keep canonical sentence/TTS ownership entirely in Rust domain state.
 
 ## Current-State Grounding In This Repo
 - Current non-PDF reader rendering is spread across:
@@ -97,7 +97,7 @@
 - [x] Define the interplay between the reader’s scroll/jump logic and the shell’s performance throttles so auto-scrolls never trigger runaway repaints.
 - [x] Surface an anchor diagnostics panel that reports fallback reason counts, JumpToSentence throttle telemetry, and shell-budget tracing markers for the reader viewport.
 - [x] Expand the diagnostics surface so overlay budget pressure badges now report native render/eviction spans and point QA toward replaying those spans in context.
-- [ ] Phase exit:
+- [x] Phase exit:
 - [x] the reader rendering plan articulates how it obeys the shell’s performance expectations before interactive widgets are implemented.
 
 ## Phase 3: Pretty Rendering For Markdown / HTML / EPUB
@@ -153,14 +153,14 @@
 ## Phase 6: Typography And Reader Settings
 - [x] Port reader settings into `egui` with controls that obey the redraw budgets and coalescing rules from the shell performance roadmap (Phase 6 of the app shell).
 - [x] Typography controls must include:
-- [ ] font family/weight selection with preview spans so changes avoid full reflow by resting only on affected text blocks.
-- [ ] font size slider that triggers throttled requests to the renderer, emitting spans that record the prior/next size without forcing extra repaints.
-- [ ] line spacing, letter spacing, and word spacing knobs that update only relevant layout metadata and signal the shell when a rebuild of cached layout is safe.
-- [ ] Horizontal/vertical margin controls impacting the reader padding must call into Phase 1 layout helpers to recompute widths without hitting panel redraw scopes.
-- [ ] Highlight color modes (light, dark, custom) must update rendering state incrementally and produce tracing fields linking to the runtime command/effect model—any highlight change should be tracked by the tracing plan from the runtime roadmap.
-- [ ] Document acceptable degradation when egui cannot mimic CSS-level shaping (e.g., advanced ligatures) and specify how telemetry/QA should note these differences.
-- [ ] Phase exit:
-- [ ] reader settings behavior is explicit, instrumented, and implementable without reopening layout/performance questions, keeping the ui responsive and traceable.
+- [x] font family/weight selection with preview spans so changes avoid full reflow by resting only on affected text blocks.
+- [x] font size slider that triggers throttled requests to the renderer, emitting spans that record the prior/next size without forcing extra repaints.
+- [x] line spacing, letter spacing, and word spacing knobs that update only relevant layout metadata and signal the shell when a rebuild of cached layout is safe.
+- [x] Horizontal/vertical margin controls impacting the reader padding must call into Phase 1 layout helpers to recompute widths without hitting panel redraw scopes.
+- [x] Highlight color modes (light, dark, custom) must update rendering state incrementally and produce tracing fields linking to the runtime command/effect model—any highlight change should be tracked by the tracing plan from the runtime roadmap.
+- [x] Document acceptable degradation when egui cannot mimic CSS-level shaping (e.g., advanced ligatures) and specify how telemetry/QA should note these differences.
+- [x] Phase exit:
+- [x] reader settings behavior is explicit, instrumented, and implementable without reopening layout/performance questions, keeping the ui responsive and traceable.
 
 ## Risks / Failure Modes
 - HTML fidelity can regress sharply if the intermediate content model is under-specified.
@@ -169,14 +169,14 @@
 - Table-rich or footnote-heavy content can become unreadable if the content-block model is too simplistic.
 
 ## Test / Parity Requirements
-- [ ] Rust tests for markdown/HTML-to-content-block conversion.
-- [ ] Rust tests for sentence-to-anchor mapping and fallback logic.
+- [x] Rust tests for markdown/HTML-to-content-block conversion.
+- [x] Rust tests for sentence-to-anchor mapping and fallback logic.
 - [ ] Manual QA on EPUB/HTML-heavy books with images, headings, footnotes, and internal links.
 - [ ] Parity checks for click-to-play, search navigation, highlight sync, and settings behavior.
-- [ ] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
+- [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
-- [ ] Text-only and pretty-text reader modes are fully specified for a Rust-native egui implementation.
-- [ ] Canonical sentence/TTS ownership is preserved and explicit.
-- [ ] HTML/markdown rendering no longer depends on DOM/WebView ownership in the target plan.
-- [ ] Scroll, jump, and highlight semantics are concrete enough for implementation without reopening design questions.
+- [x] Text-only and pretty-text reader modes are fully specified for a Rust-native egui implementation.
+- [x] Canonical sentence/TTS ownership is preserved and explicit.
+- [x] HTML/markdown rendering no longer depends on DOM/WebView ownership in the target plan.
+- [x] Scroll, jump, and highlight semantics are concrete enough for implementation without reopening design questions.

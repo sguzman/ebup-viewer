@@ -6216,6 +6216,24 @@ mod tests {
             PdfViewportUpdateTrigger::Scroll
         ));
     }
+
+    #[test]
+    fn resolve_sentence_anchor_prefers_exact_match() {
+        let mut snapshot = make_reader_snapshot();
+        snapshot.sentence_anchor_map = vec![Some(7), None];
+        let (anchor, fallback) = LanternLeafApp::resolve_sentence_anchor(&snapshot, 0);
+        assert_eq!(anchor, Some(7));
+        assert_eq!(fallback, AnchorFallback::Exact);
+    }
+
+    #[test]
+    fn resolve_sentence_anchor_falls_back_to_nearest() {
+        let mut snapshot = make_reader_snapshot();
+        snapshot.sentence_anchor_map = vec![None, Some(4), None, None];
+        let (anchor, fallback) = LanternLeafApp::resolve_sentence_anchor(&snapshot, 0);
+        assert_eq!(anchor, Some(4));
+        assert_eq!(fallback, AnchorFallback::Nearest);
+    }
 }
 
 #[derive(Default)]

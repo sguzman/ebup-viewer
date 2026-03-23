@@ -154,6 +154,7 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
             Some(SingleInstanceLock { path, _file: file })
         }
         Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+            trace!(path = %path.display(), "Found existing LanternLeaf egui lock");
             if let Some(pid) = read_lock_pid(&path) {
                 if is_pid_running(pid) {
                     warn!(
@@ -163,39 +164,39 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
                     );
                     return None;
                 }
-                trace!(pid, path = %path.display(), "Removing stale LanternLeaf lock");
-                if let Err(remove_err) = fs::remove_file(&path) {
-                    warn!(
-                        error = %remove_err,
-                        path = %path.display(),
-                        "Failed to remove stale single-instance lock"
-                    );
-                    return None;
-                }
-                match try_create_lock(&path) {
-                    Ok(file) => {
-                        trace!(
-                            path = %path.display(),
-                            pid = %std::process::id(),
-                            "Reacquired LanternLeaf egui lock after clearing stale file"
-                        );
-                        Some(SingleInstanceLock { path, _file: file })
-                    }
-                    Err(final_err) => {
-                        warn!(
-                            error = %final_err,
-                            path = %path.display(),
-                            "Failed to recreate LanternLeaf egui lock"
-                        );
-                        None
-                    }
-                }
+                trace!(pid, path = %path.display(), "Existing lock PID is not running");
             } else {
-                warn!(
+                trace!(
                     path = %path.display(),
-                    "Existing LanternLeaf egui lock contains no PID metadata"
+                    "Existing LanternLeaf lock has no PID metadata, treating it as stale"
                 );
-                None
+            }
+
+            if let Err(remove_err) = fs::remove_file(&path) {
+                warn!(
+                    error = %remove_err,
+                    path = %path.display(),
+                    "Failed to remove stale single-instance lock"
+                );
+                return None;
+            }
+            match try_create_lock(&path) {
+                Ok(file) => {
+                    trace!(
+                        path = %path.display(),
+                        pid = %std::process::id(),
+                        "Reacquired LanternLeaf egui lock after clearing stale file"
+                    );
+                    Some(SingleInstanceLock { path, _file: file })
+                }
+                Err(final_err) => {
+                    warn!(
+                        error = %final_err,
+                        path = %path.display(),
+                        "Failed to recreate LanternLeaf egui lock"
+                    );
+                    None
+                }
             }
         }
         Err(err) => {

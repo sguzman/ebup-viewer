@@ -1,4 +1,4 @@
-use eframe::egui::{Label, RichText, ScrollArea, Slider, Ui};
+use eframe::egui::{Align, Label, RichText, ScrollArea, Slider, Ui};
 use lanternleaf_app::contracts::{PrettyKind, ReaderSnapshot};
 use lanternleaf_app::pipeline::{AppCommand, ReaderCommand};
 use lanternleaf_app::state::AppState;
@@ -27,7 +27,7 @@ impl LanternLeafApp {
                     self.show_reader_confirm_modal = true;
                 }
             });
-            self.render_quick_actions_dock(ui);
+            self.render_quick_actions_dock(ui, snapshot);
             ui.separator();
             self.render_reader_summary(ui, snapshot);
             ui.add_space(6.0);
@@ -38,6 +38,7 @@ impl LanternLeafApp {
                 ui.add_space(6.0);
                 self.render_canonical_preview(ui, snapshot);
             }
+            self.render_spoken_sentence_banner(ui, snapshot);
             ui.add_space(6.0);
             self.render_pdf_diagnostics(ui, snapshot);
         } else {
@@ -53,6 +54,12 @@ impl LanternLeafApp {
     }
 
     fn render_pretty_page(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+        if snapshot.pretty_kind == PrettyKind::Html {
+            if let Some(html) = snapshot.reading_html_page.as_deref() {
+                self.render_native_html(ui, html);
+                return;
+            }
+        }
         self.refresh_pretty_cache(snapshot);
         ui.group(|ui| {
             ui.label("Pretty page");
@@ -121,14 +128,28 @@ impl LanternLeafApp {
                 ui.label("No sentence data available.");
                 return;
             }
-            ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+            let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
+            let target_idx = snapshot.highlighted_sentence_idx;
+            ScrollArea::vertical()
+                .id_source("sentence_list")
+                .max_height(240.0)
+                .show(ui, |ui| {
                 for (idx, sentence) in snapshot.sentences.iter().enumerate() {
                     let selected = snapshot.highlighted_sentence_idx == Some(idx);
                     let label = format!("{:03} {}", idx + 1, sentence);
-                    if ui.selectable_label(selected, label).clicked() {
+                    let response = ui.selectable_label(selected, label);
+                    if response.clicked() {
                         self.execute_reader_command(ReaderCommand::Session(
                             SessionCommand::SentenceClick { sentence_idx: idx },
                         ));
+                    }
+                    if auto_scroll_requested && target_idx == Some(idx) {
+                        let (_anchor, fallback) =
+                            LanternLeafApp::resolve_sentence_anchor(snapshot, idx);
+                        if matches!(self.auto_scroll_state.decide_scroll(idx, fallback), crate::app::ScrollDecision::Scroll) {
+                            response.scroll_to_me(Some(Align::Center));
+                            self.auto_scroll_state.record(idx, fallback);
+                        }
                     }
                 }
             });
@@ -282,32 +303,116 @@ impl LanternLeafApp {
     }
 
     fn html_to_blocks(&self, html: &str) -> Vec<PrettyBlock> {
-        let plain = self.html_to_plain(html);
         let mut blocks = Vec::new();
-        for chunk in plain.split("\n\n") {
-            let trimmed = chunk.trim();
+        let mut buffer = String::new();
+        let mut current_kind = PrettyBlockKind::Paragraph;
+        let mut in_tag = false;
+        let mut tag = String::new();
+
+        let push_block = |blocks: &mut Vec<PrettyBlock>, kind: PrettyBlockKind, text: &str| {
+            let trimmed = text.trim();
             if trimmed.is_empty() {
+                return;
+            }
+            blocks.push(PrettyBlock {
+                kind,
+                text: trimmed.to_string(),
+            });
+        };
+
+        let flush = |blocks: &mut Vec<PrettyBlock>,
+                     buffer: &mut String,
+                     kind: PrettyBlockKind| {
+            let decoded = LanternLeafApp::decode_html_entities(buffer);
+            push_block(blocks, kind, &decoded);
+            buffer.clear();
+        };
+
+        for ch in html.chars() {
+            if in_tag {
+                if ch == '>' {
+                    in_tag = false;
+                    let raw = tag.trim();
+                    let is_end = raw.starts_with('/');
+                    let name = raw
+                        .trim_start_matches('/')
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_ascii_lowercase();
+                    match name.as_str() {
+                        "p" | "div" | "section" | "article" | "blockquote" => {
+                            if !is_end {
+                                flush(&mut blocks, &mut buffer, current_kind);
+                                current_kind = PrettyBlockKind::Paragraph;
+                            } else {
+                                flush(&mut blocks, &mut buffer, current_kind);
+                            }
+                        }
+                        "br" => {
+                            buffer.push('\n');
+                        }
+                        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                            if !is_end {
+                                flush(&mut blocks, &mut buffer, current_kind);
+                                current_kind = PrettyBlockKind::Heading;
+                            } else {
+                                flush(&mut blocks, &mut buffer, current_kind);
+                                current_kind = PrettyBlockKind::Paragraph;
+                            }
+                        }
+                        "li" => {
+                            if !is_end {
+                                flush(&mut blocks, &mut buffer, current_kind);
+                                current_kind = PrettyBlockKind::ListItem;
+                            } else {
+                                flush(&mut blocks, &mut buffer, current_kind);
+                                current_kind = PrettyBlockKind::Paragraph;
+                            }
+                        }
+                        "img" => {
+                            flush(&mut blocks, &mut buffer, current_kind);
+                            let alt = raw
+                                .split_whitespace()
+                                .find_map(|part| part.strip_prefix("alt="))
+                                .map(|value| value.trim_matches(&['"', '\''][..]));
+                            let label = alt
+                                .filter(|value| !value.is_empty())
+                                .map(|value| format!("[Image: {value}]"))
+                                .unwrap_or_else(|| "[Image]".to_string());
+                            blocks.push(PrettyBlock {
+                                kind: PrettyBlockKind::Paragraph,
+                                text: label,
+                            });
+                        }
+                        _ => {}
+                    }
+                    tag.clear();
+                } else {
+                    tag.push(ch);
+                }
                 continue;
             }
-            for line in trimmed.lines() {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                if let Some(item) = line.strip_prefix("• ") {
-                    blocks.push(PrettyBlock {
-                        kind: PrettyBlockKind::ListItem,
-                        text: item.trim().to_string(),
-                    });
-                } else {
-                    blocks.push(PrettyBlock {
-                        kind: PrettyBlockKind::Paragraph,
-                        text: line.to_string(),
-                    });
-                }
+
+            if ch == '<' {
+                in_tag = true;
+                continue;
             }
+            buffer.push(ch);
         }
+
+        flush(&mut blocks, &mut buffer, current_kind);
         blocks
+    }
+
+    fn decode_html_entities(input: &str) -> String {
+        input
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
     }
 
     fn html_to_plain(&self, html: &str) -> String {
@@ -351,13 +456,7 @@ impl LanternLeafApp {
             out.push(ch);
         }
 
-        let decoded = out
-            .replace("&nbsp;", " ")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&#39;", "'");
+        let decoded = Self::decode_html_entities(&out);
         let mut normalized = String::new();
         let mut last_was_blank = false;
         for line in decoded.lines() {
@@ -377,10 +476,20 @@ impl LanternLeafApp {
         normalized
     }
 
-    fn render_quick_actions_dock(&mut self, ui: &mut Ui) {
+    fn render_quick_actions_dock(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
         ui.group(|ui| {
             ui.label("Quick actions");
             ui.horizontal(|ui| {
+                let text_only_label = if snapshot.text_only_mode {
+                    "Switch to pretty"
+                } else {
+                    "Switch to text-only"
+                };
+                if ui.button(text_only_label).clicked() {
+                    self.execute_reader_command(ReaderCommand::Session(
+                        SessionCommand::ToggleTextOnly,
+                    ));
+                }
                 if ui.button("Play/Pause").clicked() {
                     self.execute_reader_command(ReaderCommand::Session(
                         SessionCommand::TtsTogglePlayPause,
@@ -400,6 +509,9 @@ impl LanternLeafApp {
                     self.execute_reader_command(ReaderCommand::Session(
                         SessionCommand::TtsRepeatSentence,
                     ));
+                }
+                if ui.button("Jump to highlight").clicked() {
+                    self.auto_scroll_state.note_auto_scroll();
                 }
             });
         });
@@ -508,6 +620,35 @@ impl LanternLeafApp {
         });
     }
 
+    fn render_spoken_sentence_banner(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+        let Some(idx) = snapshot.highlighted_sentence_idx else {
+            return;
+        };
+        let sentence = snapshot
+            .sentences
+            .get(idx)
+            .map(|text| text.as_str())
+            .unwrap_or("Unknown sentence");
+        let theme = self.resolve_theme(
+            &self.runtime.state_snapshot(),
+            Some(snapshot),
+        );
+        let highlight = match theme {
+            lanternleaf_core::config::ThemeMode::Day => snapshot.settings.day_highlight,
+            lanternleaf_core::config::ThemeMode::Night => snapshot.settings.night_highlight,
+        };
+        let background = eframe::egui::Color32::from_rgba_unmultiplied(
+            (highlight.r * 255.0) as u8,
+            (highlight.g * 255.0) as u8,
+            (highlight.b * 255.0) as u8,
+            (highlight.a * 255.0) as u8,
+        );
+        ui.group(|ui| {
+            ui.label("Spoken sentence");
+            ui.label(RichText::new(sentence).background_color(background));
+        });
+    }
+
     pub(crate) fn render_stats_panel(&mut self, ui: &mut Ui, snapshot: Option<&ReaderSnapshot>) {
         let Some(snapshot) = snapshot else {
             ui.label("No reader session.");
@@ -553,5 +694,38 @@ impl LanternLeafApp {
             self.pending_search_focus = true;
             self.push_status("Search focus requested".to_string());
         }
+    }
+
+    fn render_native_html(&mut self, ui: &mut Ui, html: &str) {
+        let blocks = self.html_to_blocks(html);
+        ui.group(|ui| {
+            ui.label("Pretty HTML");
+            ScrollArea::vertical().show(ui, |ui| {
+                for block in &blocks {
+                    match block.kind {
+                        PrettyBlockKind::Heading => {
+                            ui.add(
+                                Label::new(
+                                    RichText::new(&block.text)
+                                        .strong()
+                                        .size(20.0),
+                                )
+                                .wrap(true),
+                            );
+                        }
+                        PrettyBlockKind::Paragraph => {
+                            ui.add(Label::new(&block.text).wrap(true));
+                        }
+                        PrettyBlockKind::ListItem => {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label("•");
+                                ui.add(Label::new(&block.text).wrap(true));
+                            });
+                        }
+                    }
+                    ui.add_space(6.0);
+                }
+            });
+        });
     }
 }

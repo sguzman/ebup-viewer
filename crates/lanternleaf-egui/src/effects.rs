@@ -191,8 +191,8 @@ fn execute_effect(context: EffectContext, planned: PlannedEffect, event_tx: mpsc
         RuntimeEffect::ReturnToStarter => handle_return_to_starter(&context, request_id),
         RuntimeEffect::CloseReaderSession => handle_close_reader_session(&context, request_id),
         RuntimeEffect::SafeQuit => handle_safe_quit(request_id),
-        RuntimeEffect::ToggleTheme
-        | RuntimeEffect::PrecomputeTtsPage
+        RuntimeEffect::ToggleTheme => handle_toggle_theme(&context, request_id),
+        RuntimeEffect::PrecomputeTtsPage
         | RuntimeEffect::LoadPdfBytes { .. }
         | RuntimeEffect::LoadPdfSyncMap { .. }
         | RuntimeEffect::PersistPdfSyncMap { .. }
@@ -709,6 +709,41 @@ fn handle_set_log_level(
         });
     }
     Ok(events)
+}
+
+fn handle_toggle_theme(
+    context: &EffectContext,
+    request_id: u64,
+) -> Result<Vec<AppEvent>, BridgeError> {
+    let mut cfg = context
+        .config
+        .lock()
+        .map_err(|_| bridge_error("lock_poisoned", "Config lock poisoned"))?;
+    cfg.theme = match cfg.theme {
+        config::ThemeMode::Day => config::ThemeMode::Night,
+        config::ThemeMode::Night => config::ThemeMode::Day,
+    };
+    let updated_config = cfg.clone();
+    drop(cfg);
+    if let Err(err) = context
+        .config_service
+        .save_base_config(&context.config_path, &updated_config)
+    {
+        warn!(
+            request_id,
+            error = %err,
+            "Failed to persist base config after theme toggle"
+        );
+    }
+    let bootstrap = BootstrapState {
+        app_name: "LanternLeaf".to_string(),
+        mode: "egui".to_string(),
+        config: bootstrap_config_from_app_config(&updated_config),
+    };
+    Ok(vec![AppEvent::BootstrapLoaded {
+        request_id,
+        bootstrap,
+    }])
 }
 
 fn handle_persistence_flush(

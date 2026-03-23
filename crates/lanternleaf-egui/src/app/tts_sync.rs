@@ -74,6 +74,16 @@ impl LanternLeafApp {
                         "TTS cursor updated"
                     );
                 }
+                if snapshot.settings.auto_scroll_tts
+                    && matches!(
+                        event.kind,
+                        lanternleaf_app::tts_runtime::TtsRuntimeEventKind::Progress
+                            | lanternleaf_app::tts_runtime::TtsRuntimeEventKind::StateChanged
+                    )
+                    && snapshot.highlighted_sentence_idx.is_some()
+                {
+                    self.auto_scroll_state.note_auto_scroll();
+                }
                 self.runtime.apply_event(AppEvent::ReaderUpdated(ReaderStateEvent {
                     request_id,
                     action: event.action.clone(),

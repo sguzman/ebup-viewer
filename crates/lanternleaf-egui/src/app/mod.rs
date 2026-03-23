@@ -1703,7 +1703,7 @@ struct PrettyPageCacheKey {
     text_only: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum PrettyBlockKind {
     Heading,
     Paragraph,

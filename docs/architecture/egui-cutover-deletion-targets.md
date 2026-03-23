@@ -1,10 +1,9 @@
 # Egui Cutover Deletion Targets
 
-This document lists deletion targets for the final cutover.
+This document lists deletion targets for the final cutover (now complete).
 
 ## Deletion targets
-- Delete `ui/` after test and doc replacement is complete.
-- Delete `src-tauri/` after shell/runtime responsibilities are replaced.
-- Remove root/package-manager artifacts no longer needed for the shipped product.
-- Remove old browser/Tauri-specific docs after equivalent egui docs are published.
-- Remove legacy migration shims and dual-run compatibility code once no longer needed.
+- Deleted the legacy React/Tauri UI stack after test and doc replacement.
+- Removed package-manager artifacts no longer needed for the shipped product.
+- Removed browser/Tauri-specific docs once egui docs were published.
+- Removed legacy migration shims and dual-run compatibility code.

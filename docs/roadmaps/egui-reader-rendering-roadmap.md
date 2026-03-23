@@ -6,15 +6,10 @@
 - [x] Keep canonical sentence/TTS ownership entirely in Rust domain state.
 
 ## Current-State Grounding In This Repo
-- Current non-PDF reader rendering is spread across:
-- `ui/src/components/contentRender.ts`
-- `prettyHtml.ts`
-- `markdownRender.ts`
-- `readerContentPanes.tsx`
-- `readerDom.ts`
-- `readerHtmlSync.ts`
-- `useReaderHighlightSync.ts`
-- `useHtmlSentenceAnchorMap.ts`
+- Current non-PDF reader rendering is handled in:
+- `crates/lanternleaf-egui/src/app/ui/reader.rs`
+- `crates/lanternleaf-egui/src/app/reader_html.rs`
+- `crates/lanternleaf-core/src/html_render.rs`
 - The existing architecture already defines:
 - `tts_text` as canonical
 - `pretty_kind` as presentation selector

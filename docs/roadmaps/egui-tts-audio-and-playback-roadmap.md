@@ -9,12 +9,11 @@
 - Current TTS/runtime ownership is split across:
 - `src/tts.rs`
 - `src/tts_worker.rs`
-- `src-tauri/src/tts_runtime.rs`
+- `crates/lanternleaf-app/src/tts_runtime.rs`
 - `crates/lanternleaf-core/src/session/playback.rs`
-- React/Zustand playback UI currently lives in:
-- `ui/src/components/TtsPlayerWidget.tsx`
-- reader quick actions
-- store playback slices/selectors
+- Playback UI currently lives in:
+- `crates/lanternleaf-egui/src/app/ui/tts.rs`
+- `crates/lanternleaf-egui/src/app/ui/reader.rs`
 - Current product behavior that must survive:
 - play/pause/toggle
 - play-from-page / play-from-highlight

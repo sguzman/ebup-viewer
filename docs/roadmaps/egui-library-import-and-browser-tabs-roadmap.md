@@ -7,15 +7,14 @@
 
 ## Current-State Grounding In This Repo
 - Current starter/library/import UI ownership lives in:
-- `ui/src/components/StarterShell.tsx`
-- `starterPanels.tsx`
-- `calibreList.ts`
-- `useBrowserTabs.ts`
-- browser-tab state/store slices
+- `crates/lanternleaf-egui/src/app/ui/starter.rs`
+- `crates/lanternleaf-egui/src/app/ui/browser_tabs.rs`
+- `crates/lanternleaf-egui/src/app/ui/calibre.rs`
+- browser-tab state/services in `crates/lanternleaf-app/src/services/`
 - Runtime/service ownership already exists in Rust for:
 - local source opening
 - Calibre catalog/cache/thumbnails
-- browser-tab cache/artifacts and Tauri command integration
+- browser-tab cache/artifacts and Rust service integration
 - Current import surfaces include:
 - local file open
 - clipboard/open-text flows where supported

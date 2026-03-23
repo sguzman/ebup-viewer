@@ -7,14 +7,9 @@
 
 ## Current-State Grounding In This Repo
 - Current PDF behavior is defined across:
-- `ui/src/components/ReaderPrettyPdfPane.tsx`
-- `pdfTextSync.ts`
-- `pdfTextLayer.ts`
-- `pdfOverlayGeometry.ts`
-- `pdfOverlayDom.ts`
-- `pdfHighlightController.ts`
-- `pdfViewportScheduler.ts`
-- `src-tauri/src/reader_commands.rs`
+- `crates/lanternleaf-egui/src/pdf.rs`
+- `crates/lanternleaf-egui/src/pdf_renderer.rs`
+- `crates/lanternleaf-app/src/reader/`
 - Existing docs already define the core contracts:
 - `docs/architecture/pdf-renderer-contract.md`
 - `docs/roadmaps/native-pdf-rendering-and-text-sync-roadmap.md`

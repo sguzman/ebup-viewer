@@ -6,12 +6,12 @@
 - [x] Preserve existing interaction semantics while moving all UI ownership into egui widgets and Rust-native app state.
 
 ## Current-State Grounding In This Repo
-- Current top-level shell ownership lives in `ui/src/App.tsx`, `ui/src/components/StarterShell.tsx`, `ui/src/components/ReaderShell.tsx`, and `ui/src/components/readerPanels.tsx`.
+- Current top-level shell ownership lives in `crates/lanternleaf-egui/src/app/ui/mod.rs`, `crates/lanternleaf-egui/src/app/ui/starter.rs`, and `crates/lanternleaf-egui/src/app/ui/reader.rs`.
 - The frontend currently relies on:
 - route-like shell switching between starter and reader views
 - Zustand slices for UI/session state
 - MUI component composition for toolbars, panels, and modal-like surfaces
-- Tauri window/runtime integration rather than in-process native app ownership
+- native window/runtime integration via egui/eframe
 - Existing shell behavior that must survive migration:
 - starter vs reader mode transitions
 - panel exclusivity and quick actions
@@ -203,7 +203,7 @@
 - [x] shell command surfaces match current UX behavior without WebView dependencies and feed explicitly into the runtime command/effect model.
 
 ## Phase 4: Keyboard Shortcut And Focus Model
-- [x] Define a Rust-native shortcut registry that mirrors the current shortcut map in `ui/src/lib/shortcuts.ts` and derives from keyboard definitions used in `ReaderShell` and `StarterShell`.
+- [x] Define a Rust-native shortcut registry that mirrors the current shortcut map in `crates/lanternleaf-app/src/shortcuts.rs` and derives from keyboard definitions used in egui reader/starter widgets.
 - [x] Catalog the scopes for every shortcut:
 - [x] Global (window-wide, always active unless blocked by modal)
 - [x] Starter-only (allowed before a source opens)

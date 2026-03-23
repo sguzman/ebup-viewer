@@ -6,15 +6,13 @@
 - [x] Establish a stable Rust-native state/runtime architecture that all egui UI surfaces can consume directly.
 
 ## Current-State Grounding In This Repo
-- Current UI state ownership is spread across:
-- `ui/src/store/appStore.ts`
-- `ui/src/store/slices/*`
-- `ui/src/store/selectors.ts`
-- `ui/src/store/slices/eventIngestion.ts`
-- The frontend currently consumes runtime behavior through:
-- `ui/src/api/tauri.ts`
-- generated TS types from Rust bindings
-- Tauri command invocations and Tauri event listeners
+- Current UI state ownership is in Rust:
+- `crates/lanternleaf-app/src/state.rs`
+- `crates/lanternleaf-app/src/pipeline.rs`
+- `crates/lanternleaf-egui/src/app/`
+- The UI consumes runtime behavior through:
+- native Rust commands/effects in `lanternleaf-app`
+- in-process event channels and typed DTOs
 - Existing architectural docs already point toward the correct domain split:
 - document state
 - playback state
@@ -22,8 +20,8 @@
 - session/runtime state
 - Rust already owns meaningful runtime logic in:
 - `crates/lanternleaf-core/`
-- `src-tauri/src/tts_runtime.rs`
-- `src-tauri/src/*_commands.rs`
+- `crates/lanternleaf-app/`
+- `crates/lanternleaf-egui/`
 - ingestion, config, cache, and source loading code under `src/`
 
 ## Target End State Under Egui
@@ -85,7 +83,7 @@
 - [x] PDF/OCR work
 
 ## Phase 1: Rust Interface Inventory
-- [x] Inventory every command/event crossing the current Tauri boundary.
+- [x] Inventory every command/event crossing the legacy UI boundary.
 - [x] Group them into future Rust service traits/modules:
 - [x] source opening
 - [x] reader commands
@@ -99,9 +97,9 @@
 - [x] all current bridge interactions have future in-process Rust owners.
 
 ### Interface Inventory Notes
-- Service boundaries live in `crates/lanternleaf-app/src/services.rs` and replace Tauri invoke calls.
+- Service boundaries live in `crates/lanternleaf-app/src/services.rs` and replace legacy invoke calls.
 - Typed commands/effects/events live in `crates/lanternleaf-app/src/pipeline.rs`.
-- Command inventory (Tauri -> Rust services / AppCommand):
+- Command inventory (legacy bridge -> Rust services / AppCommand):
   - App shell: `session_get_bootstrap`, `session_get_state`, `session_return_to_starter`,
     `session_toggle_theme`, `panel_toggle_settings`, `panel_toggle_stats`, `panel_toggle_tts`,
     `app_safe_quit` -> `AppShellService` / `AppCommand::{Bootstrap,ReturnToStarter,ToggleTheme,Toggle*Panel,SafeQuit}`.
@@ -123,7 +121,7 @@
   - Logging: `logging_set_level` -> `LoggingService` / `AppCommand::SetRuntimeLogLevel`.
   - Calibre: `calibre_load_cached_books`, `calibre_load_books`, `calibre_open_book`,
     `calibre_ensure_thumbnail` -> `CalibreService` / `AppCommand::{LoadCalibreBooks,OpenCalibreBook,EnsureCalibreThumbnail}`.
-- Event inventory (Tauri event name -> Rust AppEvent):
+- Event inventory (legacy event name -> Rust AppEvent):
   - `session-state` -> `SessionStateEvent` -> `AppEvent::SessionUpdated`.
   - `reader-state` -> `ReaderStateEvent` -> `AppEvent::ReaderUpdated`.
   - `reader-playback-state` -> `ReaderPlaybackStateEvent` -> `AppEvent::ReaderPlaybackUpdated`.
@@ -155,7 +153,7 @@
 - [x] persistence flush
 - [x] import/transcription jobs
 - Phase exit:
-- [x] runtime orchestration is explicit and detached from Tauri invoke/listen patterns.
+- [x] runtime orchestration is explicit and detached from legacy invoke/listen patterns.
 
 ## Phase 4: Async Task And Channel Strategy
 - [x] Define task runtime approach for background work compatible with egui:
@@ -184,14 +182,14 @@
 - [x] state changes and persistence responsibilities are fully native and deterministic.
 
 ## Phase 6: Logging And Tracing Strategy
-- [x] Port current Tauri logging/tracing bootstrap to the egui app crate and capture the existing `tracing` config, level filters, and field set.
+- [x] Port logging/tracing bootstrap to the egui app crate and capture the existing `tracing` config, level filters, and field set.
 - [x] Define an instrumentation plan that records transitions for every major state slice, command dispatch path, runtime effect, and service invocation.
 - [x] Keep logs structured enough for migration-side parity debugging and eventual telemetry ingestion.
 
 ### Current Tracing Footing
-- The Tauri app currently initializes `tracing` via the Rust command runtime and mirrors native logs through Tauri’s `tauri::Builder::plugin(TracingPlugin)` entry points.
-- Helper macros in `src-tauri/src/*_commands.rs` and `crates/lanternleaf-core/` emit spans that reference Tauri command names, but the UI is only passively observing them.
-- There is no centralized tracing policy for state transitions or UI-facing events yet.
+- The egui app initializes `tracing` directly in `lanternleaf-egui`, with spans emitted by the Rust runtime and command layers.
+- Helper macros in `crates/lanternleaf-app/` and `crates/lanternleaf-core/` emit spans that reference Rust command names.
+- There is now a centralized tracing policy for state transitions and UI-facing events.
 
 ### Target Instrumentation Model
 - **Bootstrap continuity**: reuse the existing event level configuration so early startup and config loading remain readable in the new egui entry point.
@@ -211,7 +209,7 @@
 - [x] The future egui runtime crate can wire tracing macros without guessing what needs instrumentation.
 
 ### Risks / Failure Modes (specific to Phase 6)
-- Missing the current Tauri tracing init would cause startup logs to disappear in the egui build.
+- Missing the current tracing init would cause startup logs to disappear in the egui build.
 - Over-instrumenting high-frequency slices could bloat logs and make the parity tests fail.
 - Losing correlation between commands and effects would make debugging async boundaries harder.
 

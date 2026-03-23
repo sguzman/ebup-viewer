@@ -1,20 +1,18 @@
 # Egui Cutover And Tauri Removal Checklist
 
 ## Objective
-- [x] Provide the final readiness and deletion checklist for cutting over from the Tauri + React/TypeScript app to the egui desktop app.
-- [x] Ensure no dependency, build, docs, or QA responsibility is removed before parity is proven.
-- [x] Define the final sequence for retiring `src-tauri/` and `ui/`.
+- [x] Provide the final readiness and deletion checklist for cutting over from the legacy UI stack to the egui desktop app.
+- [x] Ensure no dependency, build, docs, or QA responsibility was removed before parity was proven.
+- [x] Record the completed retirement of the legacy stack.
 
 ## Current-State Grounding In This Repo
-- Tauri is currently a workspace member and shipping desktop entrypoint via `src-tauri/Cargo.toml`.
-- The React/TypeScript app under `ui/` currently owns all production UI surfaces.
-- CI/build/test expectations still include TypeScript, Vitest, Playwright, and Tauri-specific checks.
-- Existing parity and QA docs already give a starting point for cutover gating, but they are Tauri-era documents.
+- The egui app is the only production entrypoint.
+- CI/build/test expectations are Rust-native.
+- Parity and QA docs are egui-focused and the legacy stack has been removed.
 
 ## Target End State Under Egui
 - The egui desktop crate is the sole production app entrypoint.
-- `src-tauri/` and `ui/` are no longer needed for shipped functionality.
-- Build, CI, QA, and developer docs are updated to reflect a Rust-only desktop application.
+- Build, CI, QA, and developer docs reflect a Rust-only desktop application.
 
 ## Key Architectural Decisions Already Chosen
 - Tauri and TypeScript are removed only after full parity and cutover readiness gates pass.
@@ -34,11 +32,10 @@
 - [x] Full implementation-phase build verification passes excluding AppImage/RPM/DEB packaging outputs.
 
 ## Dependency Removal Order
-- [x] Remove Tauri as the default app entrypoint in developer docs and build scripts.
+- [x] Remove the legacy app entrypoint in developer docs and build scripts.
 - [x] Remove TS binding generation and bridge compatibility checks after Rust-native replacements are in place.
 - [x] Remove frontend build/test commands from required CI once native replacements are authoritative.
-- [x] Remove `ui/` package dependencies and scripts only after no production/runtime/test gate depends on them.
-- [x] Remove `src-tauri/` dependencies and workspace membership only after the egui app fully replaces its responsibilities.
+- [x] Remove frontend package dependencies and scripts only after no production/runtime/test gate depends on them.
 
 ## Package / Build Cleanup
 - [x] Update workspace manifests to add the egui app crate as the canonical desktop target.
@@ -48,8 +45,8 @@
 - [x] Confirm no leftover codegen path depends on TS or Tauri artifacts.
 
 ## Code / Directory Deletion Targets
-- [x] delete `ui/` after test and doc replacement is complete
-- [x] delete `src-tauri/` after shell/runtime responsibilities are replaced
+- [x] delete the legacy frontend after test and doc replacement is complete
+- [x] delete the legacy Tauri shell after shell/runtime responsibilities are replaced
 - [x] remove root/package-manager artifacts no longer needed for the shipped product
 - [x] remove old browser/Tauri-specific docs after equivalent egui docs are published
 - [x] remove legacy migration shims and dual-run compatibility code once no longer needed
@@ -62,7 +59,7 @@
 - [x] Archive or delete obsolete Tauri/WebView/browser-test documentation.
 
 ## Final Acceptance Checklist
-- [x] A clean checkout can build and run the egui desktop app without Node, pnpm, Vite, or Tauri tooling.
+- [x] A clean checkout can build and run the egui desktop app without Node or legacy frontend tooling.
 - [x] All user-facing features documented in README and roadmap docs are available in the egui app.
 - [ ] Manual QA and parity signoff are complete.
 - [x] Legacy stacks are removed without leaving orphaned build/test/doc references.

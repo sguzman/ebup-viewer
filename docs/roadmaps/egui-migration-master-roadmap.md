@@ -16,14 +16,14 @@
 - [x] Keep the migration staged and parity-driven rather than performing a greenfield feature reset.
 
 ## Current-State Grounding In This Repo
-- The workspace currently has three primary roots:
-- `src-tauri/` owns the Tauri runtime, bridge commands, logging integration, and desktop shell entrypoint.
-- `ui/` owns the React/TypeScript app, Zustand store, PDF/HTML rendering logic, and browser-driven tests.
-- `crates/lanternleaf-core/` already contains reusable Rust session/domain logic and is the correct seed for further extraction.
-- The current frontend/backend contract is shaped around:
-- generated TS bindings from Rust (`src-tauri/src/bin/export_ts_bindings.rs`)
-- a Tauri command layer (`src-tauri/src/*_commands.rs`)
-- UI-facing state/event ingestion in `ui/src/store/` and `ui/src/api/tauri.ts`
+## Current-State Grounding In This Repo
+- The workspace is Rust-only:
+- `crates/lanternleaf-core/` contains reusable Rust session/domain logic.
+- `crates/lanternleaf-app/` owns runtime orchestration, state, and services.
+- `crates/lanternleaf-egui/` owns the desktop shell and UI widgets.
+- The current frontend/backend contract is defined in Rust:
+- typed DTOs in `crates/lanternleaf-app/src/contracts.rs`
+- commands/effects in `crates/lanternleaf-app/src/pipeline.rs`
 - The current architecture already distinguishes canonical text ownership from presentation ownership:
 - `tts_text` and sentence indices are canonical
 - pretty HTML/PDF are presentation layers
@@ -46,8 +46,7 @@
 - `crates/lanternleaf-core/` for stable document/session domain state
 - additional Rust crates extracted as needed for rendering/runtime/persistence boundaries
 - a new egui application crate as the only desktop app entry point
-- `src-tauri/` retired after cutover
-- `ui/` retired after cutover
+- legacy Tauri/React stack retired after cutover
 - The end-state ownership model is:
 - Rust domain/session state remains canonical
 - egui widgets render native Rust view models
@@ -69,7 +68,7 @@
 | Current surface | Current owner | Future egui owner |
 | --- | --- | --- |
 | Starter shell, open flow, quick actions | React app + Tauri shell | egui app shell and command widgets |
-| Reader shell/layout, top bars, side panels | `ui/src/components/ReaderShell.tsx`, `readerPanels.tsx` | egui shell crate/widgets |
+| Reader shell/layout, top bars, side panels | legacy React shell (retired) | egui shell crate/widgets |
 | EPUB/HTML/Markdown pretty rendering | React renderers + DOM/HTML pipeline | Rust-native reader rendering/view-model pipeline |
 | PDF render/sync/highlight | `ReaderPrettyPdfPane.tsx` + Tauri PDF artifacts | Rust-native PDF subsystem integrated into egui |
 | TTS controls/runtime coordination | Zustand + Tauri events + Rust runtime | Rust app runtime + egui playback widgets |
@@ -163,7 +162,7 @@
 - [x] Retire generated TS bindings, browser tests, and WebView-specific rendering layers.
 - Phase exit:
 - [x] shipped product is pure Rust desktop app.
-- [x] no production dependency remains on `src-tauri/` or `ui/`.
+- [x] no production dependency remains on the legacy Tauri/React stack.
 
 ## Phase Gates
 - [x] Gate A: architecture extraction complete

@@ -24,12 +24,12 @@ The workspace is structured to move all state and runtime orchestration into nat
 
 ## Typed Interfaces
 
-Previously, the application relied heavily on Tauri commands living in `src-tauri`. Going forward:
+Previously, the application relied on a Tauri command layer. That layer is now removed:
 
-- Tauri command endpoints are being entirely replaced by the formal Rust traits defined in `lanternleaf-app::bridge`.
+- Rust command endpoints are defined by the formal traits in `lanternleaf-app::bridge`.
 - The `Bridge` trait specifies the exact request-response contracts for all async operations (source opening, TTS control, PDF generation, etc.).
 
 ## DTO Ownership
 
-- The generated TypeScript bindings (formerly built via `export_ts_bindings` in `src-tauri`) are obsolete in the new architecture. 
-- Ownership is transitioning purely to Rust-side view-models within `lanternleaf-app::contracts`. Egui will consume these native generic structs directly without stringifying boundaries.
+- The generated TypeScript bindings are removed as part of the cutover. 
+- Ownership lives in Rust-side view-models within `lanternleaf-app::contracts`. Egui consumes these native structs directly without stringified boundaries.

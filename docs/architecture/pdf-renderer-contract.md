@@ -5,7 +5,7 @@
 - Pretty Text PDF rendering is a separate visual projection of the source PDF and must never redefine sentence ownership.
 
 ## Renderer
-- The native PDF renderer is `pdf.js`, owned by [ReaderPrettyPdfPane.tsx](/win/linux/Code/projects/lantern-leaf/ui/src/components/ReaderPrettyPdfPane.tsx).
+- The native PDF renderer is the egui PDF pipeline owned by `crates/lanternleaf-egui/src/pdf_renderer.rs`.
 - The rendered canvas layer owns visual fidelity for page paint, images, figures, and page geometry.
 - The `pdf.js` text layer is treated as a quality-classified hint surface for sync and reverse navigation. It is not assumed to be exact for every PDF.
 

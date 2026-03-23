@@ -1,39 +1,9 @@
 use eframe::egui::{Key, Modifiers};
 use lanternleaf_app::contracts::BootstrapConfig;
 use lanternleaf_core::config;
-use std::path::{Path, PathBuf};
-use tracing::trace;
+use std::path::PathBuf;
 
-pub fn workspace_root_from_cwd() -> Option<PathBuf> {
-    let cwd = std::env::current_dir().ok()?;
-    if let Some(root) = find_workspace_root(&cwd) {
-        trace!(cwd = ?cwd, root = ?root, "Resolved workspace root from current directory");
-        return Some(root);
-    }
-    if cwd.file_name().and_then(|name| name.to_str()) == Some("crates") {
-        let parent = cwd.parent().map(PathBuf::from);
-        trace!(cwd = ?cwd, root = ?parent, "Falling back to crates/ parent as workspace root");
-        parent
-    } else {
-        trace!(cwd = ?cwd, root = ?cwd, "Using current directory as workspace root");
-        Some(cwd)
-    }
-}
-
-fn find_workspace_root(start: &Path) -> Option<PathBuf> {
-    let mut current = Some(start);
-    while let Some(dir) = current {
-        if is_workspace_root_marker(dir) {
-            return Some(dir.to_path_buf());
-        }
-        current = dir.parent();
-    }
-    None
-}
-
-fn is_workspace_root_marker(dir: &Path) -> bool {
-    dir.join("Cargo.lock").is_file() || dir.join(".git").is_dir()
-}
+pub use lanternleaf_core::workspace::workspace_root_from_cwd;
 
 pub fn app_config_path() -> PathBuf {
     if let Some(value) = std::env::var_os("LANTERNLEAF_CONFIG_PATH") {

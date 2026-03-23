@@ -13,7 +13,7 @@ mod browser_tab_cache;
 #[path = "cache/content_artifacts.rs"]
 mod content_artifacts;
 
-use crate::config::AppConfig;
+use crate::{config::AppConfig, workspace::workspace_root_from_cwd};
 use epub::doc::EpubDoc;
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 pub const CACHE_DIR: &str = ".cache";
 const CACHE_APP_SUBDIR: &str = "lantern-leaf";
@@ -81,13 +81,35 @@ pub struct RecentBook {
 }
 
 pub fn cache_root() -> PathBuf {
-    let configured_root = std::env::var_os(CACHE_DIR_ENV)
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| PathBuf::from(CACHE_DIR));
+    let workspace_root = workspace_root_from_cwd();
+    let configured_root = resolve_configured_cache_root(workspace_root.as_deref());
     let app_root = app_cache_root(&configured_root);
     ensure_cache_layout(&configured_root, &app_root);
+    trace!(
+        cache_root = %app_root.display(),
+        cache_config_root = %configured_root.display(),
+        workspace = ?workspace_root,
+        "Resolved LanternLeaf cache directory"
+    );
     app_root
+}
+
+fn resolve_configured_cache_root(workspace_root: Option<&Path>) -> PathBuf {
+    if let Some(value) = std::env::var_os(CACHE_DIR_ENV).map(PathBuf::from) {
+        if value.is_absolute() {
+            return value;
+        }
+        if let Some(root) = workspace_root {
+            return root.join(value);
+        }
+        return value;
+    }
+
+    if let Some(root) = workspace_root {
+        root.join(CACHE_DIR)
+    } else {
+        PathBuf::from(CACHE_DIR)
+    }
 }
 
 fn app_cache_root(configured_root: &Path) -> PathBuf {

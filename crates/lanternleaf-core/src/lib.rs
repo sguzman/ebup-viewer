@@ -25,3 +25,5 @@ pub mod session;
 pub mod text_utils;
 #[path = "../../../src/tts.rs"]
 pub mod tts;
+#[path = "../../../src/workspace.rs"]
+pub mod workspace;

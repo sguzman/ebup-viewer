@@ -11,6 +11,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     fs::OpenOptions,
+    io::{ErrorKind, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, mpsc},
     thread,
@@ -62,6 +63,15 @@ use lanternleaf_core::{
 };
 use serde::{Deserialize, Serialize};
 use tracing::{Level, info, trace, warn};
+
+#[cfg(unix)]
+use libc;
+
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::CloseHandle;
+
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
 use crate::app::webview::{FrameHandleSnapshot, WebViewRenderer};
 
@@ -124,16 +134,126 @@ impl Drop for SingleInstanceLock {
 fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
     let root = workspace_root_from_cwd().unwrap_or_else(|| PathBuf::from("."));
     let logs_dir = root.join("logs");
-    let _ = fs::create_dir_all(&logs_dir);
+    if let Err(err) = fs::create_dir_all(&logs_dir) {
+        warn!(
+            error = %err,
+            path = %logs_dir.display(),
+            "Failed to prepare logs directory for single-instance lock"
+        );
+        return None;
+    }
+
     let path = logs_dir.join("lanternleaf-egui.lock");
-    match OpenOptions::new().write(true).create_new(true).open(&path) {
-        Ok(file) => Some(SingleInstanceLock { path, _file: file }),
-        Err(err) => {
-            if err.kind() != std::io::ErrorKind::AlreadyExists {
-                warn!(error = %err, "Failed to create single-instance lock");
+    match try_create_lock(&path) {
+        Ok(file) => {
+            trace!(
+                path = %path.display(),
+                pid = %std::process::id(),
+                "Acquired LanternLeaf egui single-instance lock"
+            );
+            Some(SingleInstanceLock { path, _file: file })
+        }
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+            if let Some(pid) = read_lock_pid(&path) {
+                if is_pid_running(pid) {
+                    warn!(
+                        pid,
+                        path = %path.display(),
+                        "Another LanternLeaf egui instance is already running"
+                    );
+                    return None;
+                }
+                trace!(pid, path = %path.display(), "Removing stale LanternLeaf lock");
+                if let Err(remove_err) = fs::remove_file(&path) {
+                    warn!(
+                        error = %remove_err,
+                        path = %path.display(),
+                        "Failed to remove stale single-instance lock"
+                    );
+                    return None;
+                }
+                match try_create_lock(&path) {
+                    Ok(file) => {
+                        trace!(
+                            path = %path.display(),
+                            pid = %std::process::id(),
+                            "Reacquired LanternLeaf egui lock after clearing stale file"
+                        );
+                        Some(SingleInstanceLock { path, _file: file })
+                    }
+                    Err(final_err) => {
+                        warn!(
+                            error = %final_err,
+                            path = %path.display(),
+                            "Failed to recreate LanternLeaf egui lock"
+                        );
+                        None
+                    }
+                }
+            } else {
+                warn!(
+                    path = %path.display(),
+                    "Existing LanternLeaf egui lock contains no PID metadata"
+                );
+                None
             }
+        }
+        Err(err) => {
+            warn!(
+                error = %err,
+                path = %path.display(),
+                "Failed to create LanternLeaf egui lock"
+            );
             None
         }
+    }
+}
+
+fn try_create_lock(path: &Path) -> std::io::Result<fs::File> {
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    writeln!(file, "{}", std::process::id())?;
+    file.sync_all()?;
+    Ok(file)
+}
+
+fn read_lock_pid(path: &Path) -> Option<u32> {
+    let contents = fs::read_to_string(path).ok()?;
+    let trimmed = contents.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    trimmed.parse().ok()
+}
+
+fn is_pid_running(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        if result == 0 {
+            true
+        } else if let Some(errno) = std::io::Error::last_os_error().raw_os_error() {
+            errno != libc::ESRCH
+        } else {
+            false
+        }
+    }
+    #[cfg(windows)]
+    {
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle == 0 {
+                return false;
+            }
+            CloseHandle(handle);
+            true
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        true
     }
 }
 

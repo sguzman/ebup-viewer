@@ -3033,6 +3033,7 @@ dependencies = [
  "image 0.25.10",
  "lanternleaf-app",
  "lanternleaf-core",
+ "libc",
  "lol_html",
  "pdfium-auto",
  "pdfium-render",
@@ -3043,6 +3044,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-appender",
+ "windows-sys 0.61.2",
  "wry",
 ]
 

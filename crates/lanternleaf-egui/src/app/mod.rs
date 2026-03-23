@@ -9,6 +9,7 @@ use std::{
     cmp::Reverse,
     collections::HashMap,
     fs,
+    fs::OpenOptions,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -67,6 +68,13 @@ pub(crate) fn run() {
     let app_config = config::load_config(&config_path);
     let bootstrap_config = bootstrap_config_from_app_config(&app_config);
     let tracing_guard = init_tracing(&bootstrap_config.log_level);
+    let _instance_lock = match acquire_single_instance_lock() {
+        Some(lock) => lock,
+        None => {
+            warn!("Another LanternLeaf egui instance is already running");
+            return;
+        }
+    };
     let normalizer = normalizer::TextNormalizer::load_default();
 
     let runtime = AppRuntime::with_bootstrap_config(&bootstrap_config);
@@ -99,6 +107,33 @@ pub(crate) fn run() {
                 as Box<dyn eframe::App>
         }),
     );
+}
+
+struct SingleInstanceLock {
+    path: PathBuf,
+    _file: fs::File,
+}
+
+impl Drop for SingleInstanceLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
+    let root = workspace_root_from_cwd().unwrap_or_else(|| PathBuf::from("."));
+    let logs_dir = root.join("logs");
+    let _ = fs::create_dir_all(&logs_dir);
+    let path = logs_dir.join("lanternleaf-egui.lock");
+    match OpenOptions::new().write(true).create_new(true).open(&path) {
+        Ok(file) => Some(SingleInstanceLock { path, _file: file }),
+        Err(err) => {
+            if err.kind() != std::io::ErrorKind::AlreadyExists {
+                warn!(error = %err, "Failed to create single-instance lock");
+            }
+            None
+        }
+    }
 }
 
 struct LanternLeafApp {

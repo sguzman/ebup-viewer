@@ -72,7 +72,7 @@
 - [x] support one sentence crossing column boundaries only when confidence justifies it
 - [x] store confidence and fallback reason per mapping
 - [x] store contributing OCR token ids for auditability
-- [x] Build the artifact deterministically from canonical `tts_text` and OCR geometry, not from renderer DOM guesses alone.
+- [x] Build the artifact deterministically from canonical `tts_text` and OCR geometry, not from renderer layout guesses alone.
 - [x] Persist the artifact alongside OCR text output and cache signatures.
 
 ## Phase 5: Matching and Confidence Model

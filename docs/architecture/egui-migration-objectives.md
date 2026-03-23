@@ -3,9 +3,9 @@
 This document captures the top-level objectives and scope for the egui migration.
 
 ## Primary objectives
-- Replace the shipped Tauri + React/TypeScript desktop app with a native Rust `eframe` + `egui` desktop app.
+- Replace the shipped legacy frontend desktop app with a native Rust `eframe` + `egui` desktop app.
 - Keep the migration staged and parity-driven; do not perform a greenfield reset.
-- End with a pure-Rust shipped desktop application and remove Tauri, TypeScript, React, Zustand, Vite, Vitest, and Playwright from production ownership.
+- End with a pure-Rust shipped desktop application and remove legacy frontend tooling from production ownership.
 
 ## Scope to preserve during migration
 - Starter/library flow.

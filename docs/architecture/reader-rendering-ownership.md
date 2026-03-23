@@ -1,19 +1,14 @@
 # Reader Rendering Ownership
 
-## Frontend ownership boundaries
+## Egui ownership boundaries
 
-- `contentRender.ts` is the reader-facing entry point for pretty-content rendering.
-  - `prettyHtml.ts` owns native HTML sanitization, asset URL rewriting, and iframe-ready HTML document output.
-  - `markdownRender.ts` owns markdown-to-HTML rendering and image resolution for pretty markdown pages.
-- `htmlSync.ts` owns HTML anchor extraction heuristics and sentence-to-anchor matching.
-- `useReaderHighlightSync.ts` owns DOM-facing reader sync behavior:
+- `crates/lanternleaf-egui/src/app/ui/reader.rs` is the reader-facing entry point for pretty-content rendering and layout composition.
+- `crates/lanternleaf-egui/src/app/reader_html.rs` owns HTML sanitization, asset URL rewriting, and content-block conversion for pretty rendering.
+- `crates/lanternleaf-core/src/html_render.rs` owns markdown/HTML parsing into the shared content-block model.
+- `crates/lanternleaf-egui/src/app/tts_sync.rs` owns highlight sync behavior:
   - pretty-anchor lookup
-  - pretty highlight application
+  - highlight application
   - auto-scroll alignment
-  - iframe/native HTML anchor rebuilds
-- `ReaderShell.tsx` owns layout composition and selects which reader pane or panel is visible.
-- `readerPanels.tsx` owns top-bar, search-bar, settings, stats, and TTS side-panel UI.
-- `useReaderSessionStats.ts` owns session-scoped reading metrics derived from stable reader stats plus transient local timers.
 
 ## Data ownership boundaries
 

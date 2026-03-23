@@ -12,7 +12,7 @@
 - [x] `tts_text: String`
 - [x] `has_structured_markdown: bool`
 - [x] Add source capability metadata to session snapshot/event payloads.
-- [x] Update TypeScript generated bindings for the new model.
+- [x] Update Rust DTOs and contract tests for the new model.
 - [x] Add tracing for model creation and field availability decisions.
 
 ## Phase 2: Ingestion Pipeline by Source Type

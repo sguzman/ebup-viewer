@@ -28,7 +28,7 @@ Adopt a Rust-native PDF stack split into:
 If any criteria trigger:
 - Split rendering and text extraction into separate Rust-owned components.
 - Keep all integration native and in-process.
-- Do not reintroduce browser/WebView ownership as a fallback.
+- Do not reintroduce legacy browser/WebView ownership as a fallback.
 
 ## Instrumentation alignment
 - Render requests and completions emit `pdf.render.request` / `pdf.render.complete` with zoom, priority, and cache hit metadata.

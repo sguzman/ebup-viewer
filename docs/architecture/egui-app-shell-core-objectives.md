@@ -3,7 +3,7 @@
 This document captures the core objectives and verification needs for the egui app shell.
 
 ## Objectives
-- Replace the current Tauri window shell and React component composition with a native `eframe` + `egui` application shell.
+- Replace the current legacy window shell and frontend component composition with a native `eframe` + `egui` application shell.
 - Rebuild starter-mode and reader-mode navigation, top bars, side panels, dialogs, and keyboard shortcuts in Rust.
 - Preserve existing interaction semantics while moving all UI ownership into egui widgets and Rust-native app state.
 

@@ -1,7 +1,7 @@
 # Egui Migration Master Roadmap
 
 ## Objective
-- [x] Replace the shipped Tauri + React/TypeScript desktop app with a native Rust `eframe` + `egui` desktop app.
+- [x] Replace the shipped legacy frontend desktop app with a native Rust `eframe` + `egui` desktop app.
 - [x] Preserve full current product scope through migration:
 - [x] starter/library flow
 - [x] reader shell/layout
@@ -12,7 +12,7 @@
 - [x] browser-tab import
 - [x] Calibre integration
 - [x] cache/config/bookmarks/recents
-- [x] End with a pure-Rust shipped desktop application and remove Tauri, TypeScript, React, Zustand, Vite, Vitest, and Playwright from production ownership.
+- [x] End with a pure-Rust shipped desktop application and remove legacy frontend tooling from production ownership.
 - [x] Keep the migration staged and parity-driven rather than performing a greenfield feature reset.
 
 ## Current-State Grounding In This Repo
@@ -51,7 +51,7 @@
 - Rust domain/session state remains canonical
 - egui widgets render native Rust view models
 - async runtime services push typed events into Rust-native app state
-- no TypeScript bindings, no browser bridge, no WebView rendering in the shipped app
+- no legacy frontend bindings, no legacy bridge layer, no WebView rendering in the shipped app
 
 ## Key Architectural Decisions Already Chosen
 - Primary UI stack is `eframe` + `egui`.
@@ -67,28 +67,28 @@
 ## Feature Inventory And Future Ownership
 | Current surface | Current owner | Future egui owner |
 | --- | --- | --- |
-| Starter shell, open flow, quick actions | React app + Tauri shell | egui app shell and command widgets |
+| Starter shell, open flow, quick actions | legacy frontend shell | egui app shell and command widgets |
 | Reader shell/layout, top bars, side panels | legacy React shell (retired) | egui shell crate/widgets |
-| EPUB/HTML/Markdown pretty rendering | React renderers + DOM/HTML pipeline | Rust-native reader rendering/view-model pipeline |
+| EPUB/HTML/Markdown pretty rendering | legacy renderers + DOM/HTML pipeline | Rust-native reader rendering/view-model pipeline |
 | PDF render/sync/highlight | `ReaderPrettyPdfPane.tsx` + Tauri PDF artifacts | Rust-native PDF subsystem integrated into egui |
-| TTS controls/runtime coordination | Zustand + Tauri events + Rust runtime | Rust app runtime + egui playback widgets |
-| Settings, stats, search | React component tree + Zustand slices | egui panels backed by Rust state |
-| Browser-tab import | Tauri command integration + React list flow | Rust-native import service + egui starter/library surfaces |
-| Calibre integration | Rust backend + TS UI list rendering | Rust service + egui library browser |
-| Cache/config/bookmarks/recents | mixed Rust persistence + TS presentation | pure Rust persistence and app-state orchestration |
+| TTS controls/runtime coordination | legacy frontend events + Rust runtime | Rust app runtime + egui playback widgets |
+| Settings, stats, search | legacy frontend component tree | egui panels backed by Rust state |
+| Browser-tab import | legacy command integration + frontend list flow | Rust-native import service + egui starter/library surfaces |
+| Calibre integration | Rust backend + legacy UI list rendering | Rust service + egui library browser |
+| Cache/config/bookmarks/recents | mixed Rust persistence + legacy presentation | pure Rust persistence and app-state orchestration |
 
 ## Migration Principles
 - [x] Keep canonical text/session ownership in Rust from the start of the migration.
 - [x] Extract reusable Rust crates before large UI rewrites whenever a dependency boundary is unclear.
 - [x] Prefer replacing bridge protocols with in-process Rust traits and typed events rather than 1:1 command shims.
-- [x] Do not delete Tauri/UI paths until parity and observability gates pass.
-- [x] Keep dual-run compatibility long enough to compare Tauri and egui behavior on the same sources.
+- [x] Do not delete legacy frontend paths until parity and observability gates pass.
+- [x] Keep dual-run compatibility long enough to compare legacy and egui behavior on the same sources.
 - [x] Treat PDF and browser-tab features as explicit risk domains, not hidden “later” work.
 - [x] Keep state boundaries explicit: document/session/playback/UI/persistence/runtime services.
 - [x] Preserve existing cache/config/bookmark data or provide deterministic migration/invalidation rules.
 
 ## Dependency Order
-- [x] Extract stable Rust-side application/domain boundaries from the current Tauri/UI split.
+- [x] Extract stable Rust-side application/domain boundaries from the legacy frontend split.
 - [x] Create the new egui desktop crate and shell/runtime skeleton.
 - [x] Move app state/event/effect ownership into Rust-native services.
 - [x] Rebuild shell, panels, and reader navigation in egui.
@@ -96,9 +96,9 @@
 - [x] Rebuild TTS controls/runtime flow on top of Rust-native app state.
 - [x] Rebuild native PDF rendering/sync.
 - [x] Rebuild starter/library/browser-tab/Calibre flows.
-- [x] Replace JS/Tauri test coverage with Rust-native and manual QA equivalents.
+- [x] Replace legacy frontend test coverage with Rust-native and manual QA equivalents.
 - [x] Cut over packaging/CI/build scripts.
-- [x] Remove Tauri/UI stacks after final parity gate.
+- [x] Remove legacy frontend stacks after final parity gate.
 
 ## Phase 1: Architecture Extraction
 - [x] Define the target Rust crate map for:
@@ -108,12 +108,12 @@
 - [x] persistence/config/cache
 - [x] import/library integrations
 - [x] PDF rendering/sync
-- [x] Extract or formalize typed Rust interfaces for all current Tauri commands consumed by the UI.
-- [x] Collapse generated TS binding ownership into Rust-side DTO/view-model types.
+- [x] Extract or formalize typed Rust interfaces for all legacy commands consumed by the UI.
+- [x] Collapse generated frontend binding ownership into Rust-side DTO/view-model types.
 - [x] Add architecture docs for the new in-process runtime boundaries before egui feature work begins.
 - Phase exit:
-- [x] implementers can build new UI/runtime work without depending on Tauri command semantics.
-- [x] each current Tauri/UI integration point has a future Rust-native owner.
+- [x] implementers can build new UI/runtime work without depending on legacy command semantics.
+- [x] each legacy integration point has a future Rust-native owner.
 
 ## Phase 2: Egui Shell Bootstrap
 - [x] Add a new egui desktop crate to the workspace.

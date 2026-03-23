@@ -73,7 +73,7 @@
 ## Phase 3: Native PDF Pretty View
 - [x] Render the actual PDF file in Pretty Text mode using a native PDF rendering path.
 - [x] Choose and document the native PDF renderer contract explicitly:
-- [x] renderer implementation (`pdf.js`, browser-native embed, or another owned render path)
+- [x] renderer implementation (native Rust renderer with explicit PDF backend ownership)
 - [x] whether the renderer exposes a trustworthy text layer, selection layer, or only painted pages
 - [x] which layer owns page metrics, zoom state, and page-to-viewport transforms
 - [x] Preserve page geometry, embedded images, figures, tables, and document layout.

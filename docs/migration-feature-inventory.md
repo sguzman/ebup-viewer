@@ -55,5 +55,5 @@ This inventory captures the currently implemented migration-shell features that 
 ## Testing Coverage In Migration Shell
 
 - Rust unit tests for bridge/session/normalizer/pipeline logic.
-- Frontend unit tests for adapters, store behavior, layout/typography policies, list virtualization.
-- Playwright E2E scenarios for starter-to-reader-to-TTS flows and performance baseline capture.
+- Rust unit/integration tests for adapters, state behavior, layout/typography policies, list virtualization.
+- Native UI smoke scenarios for starter-to-reader-to-TTS flows and performance baseline capture.

@@ -267,6 +267,8 @@ struct LanternLeafApp {
     pending_search_focus: bool,
     last_plan: Option<DispatchPlan>,
     auto_scroll_state: AutoScrollState,
+    text_only_override: Option<bool>,
+    text_only_toggle_pending: bool,
     anchor_diagnostics: AnchorDiagnostics,
     overlay_diagnostics: OverlayDiagnostics,
     audio_diagnostics: AudioDiagnostics,
@@ -540,6 +542,8 @@ impl LanternLeafApp {
             pending_search_focus: false,
             last_plan: None,
             auto_scroll_state: AutoScrollState::default(),
+            text_only_override: None,
+            text_only_toggle_pending: false,
             anchor_diagnostics: AnchorDiagnostics::default(),
             overlay_diagnostics: OverlayDiagnostics::default(),
             audio_diagnostics: AudioDiagnostics::default(),
@@ -1446,6 +1450,24 @@ impl LanternLeafApp {
             RegressionSnapshotTimelineKind::AudioEvent(event.clone()),
             event.timestamp,
         );
+    }
+
+    fn maybe_reapply_text_only(&mut self, snapshot: &ReaderSnapshot) {
+        if self.text_only_override == Some(true) && !snapshot.text_only_mode {
+            if !self.text_only_toggle_pending {
+                trace!(
+                    current = snapshot.text_only_mode,
+                    desired = true,
+                    "Text-only override mismatch detected, reapplying toggle"
+                );
+                self.execute_reader_command(ReaderCommand::Session(
+                    session::SessionCommand::ToggleTextOnly,
+                ));
+                self.text_only_toggle_pending = true;
+            }
+        } else {
+            self.text_only_toggle_pending = false;
+        }
     }
 
     fn resolve_sentence_anchor(

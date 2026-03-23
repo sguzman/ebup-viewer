@@ -5,7 +5,7 @@ use eframe::egui::{
 use lanternleaf_app::contracts::{PrettyKind, ReaderSnapshot};
 use lanternleaf_app::pipeline::{AppCommand, ReaderCommand};
 use lanternleaf_app::state::AppState;
-use lanternleaf_core::session::{ReaderSettingsPatch, SessionCommand};
+use lanternleaf_core::session::{ReaderSettingsPatch, SessionCommand, TtsPlaybackState};
 use lanternleaf_core::text_utils;
 use tracing::trace;
 
@@ -17,10 +17,12 @@ use crate::app::{
 impl LanternLeafApp {
     pub(crate) fn render_reader_content(&mut self, ui: &mut Ui, state: &AppState) {
         if let Some(snapshot) = state.reader_document.snapshot.as_ref() {
+            let effective_text_only = self.resolved_text_only_mode(snapshot);
             trace!(
                 page = snapshot.current_page,
-                highlight = ?snapshot.highlighted_sentence_idx,
+                highlight = ?self.resolved_highlight_idx(snapshot),
                 sentences = snapshot.sentences.len(),
+                text_only = effective_text_only,
                 "rendering reader shell content"
             );
             ui.heading("Reader shell");
@@ -40,6 +42,11 @@ impl LanternLeafApp {
             if self.should_render_pretty(snapshot) {
                 self.render_pretty_page(ui, snapshot);
             } else {
+                trace!(
+                    text_only = effective_text_only,
+                    pretty_kind = ?snapshot.pretty_kind,
+                    "Skipping pretty view in favor of sentence list"
+                );
                 self.webview_renderer.hide();
                 self.render_sentence_list(ui, snapshot);
                 ui.add_space(6.0);
@@ -56,13 +63,28 @@ impl LanternLeafApp {
     }
 
     fn should_render_pretty(&self, snapshot: &ReaderSnapshot) -> bool {
-        !snapshot.text_only_mode
+        !self.resolved_text_only_mode(snapshot)
             && snapshot.pretty_kind != PrettyKind::Pdf
             && snapshot.pretty_kind != PrettyKind::None
     }
 
+    fn resolved_text_only_mode(&self, snapshot: &ReaderSnapshot) -> bool {
+        self.text_only_override.unwrap_or(snapshot.text_only_mode)
+    }
+
+    fn resolved_highlight_idx(&self, snapshot: &ReaderSnapshot) -> Option<usize> {
+        if snapshot.tts.state == TtsPlaybackState::Playing {
+            snapshot
+                .tts
+                .current_sentence_idx
+                .or(snapshot.highlighted_sentence_idx)
+        } else {
+            snapshot.highlighted_sentence_idx
+        }
+    }
+
     fn render_pretty_page(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
-        let highlight_idx = snapshot.highlighted_sentence_idx;
+        let highlight_idx = self.resolved_highlight_idx(snapshot);
         let highlight_sentence = highlight_idx
             .and_then(|idx| snapshot.sentences.get(idx))
             .map(String::as_str);
@@ -70,6 +92,14 @@ impl LanternLeafApp {
             Some(idx) => LanternLeafApp::resolve_sentence_anchor(snapshot, idx),
             None => (None, AnchorFallback::Missing),
         };
+        trace!(
+            page = snapshot.current_page,
+            pretty_kind = ?snapshot.pretty_kind,
+            highlight_sentence = ?highlight_idx,
+            html_payload = snapshot.reading_html_page.is_some(),
+            frame_handles_ready = self.frame_handles.is_some(),
+            "render_pretty_page configuration"
+        );
         if let Some(idx) = highlight_idx {
             trace!(
                 sentence_idx = idx,
@@ -88,6 +118,7 @@ impl LanternLeafApp {
                 ui.label("Pretty page");
                 let available = ui.available_size();
                 let (rect, _) = ui.allocate_exact_size(available, Sense::hover());
+                trace!(rect = ?rect, available = ?available, "Allocated HTML webview region");
                 let highlight_css = color32_to_css(highlight_color);
                 let mut scroll_anchor = None;
                 if auto_scroll_requested && highlight_anchor.is_some() && highlight_idx.is_some() {
@@ -125,11 +156,17 @@ impl LanternLeafApp {
                     &highlight_css,
                     scroll_anchor,
                 );
+                trace!("Dispatched HTML payload to webview renderer");
             });
             return;
         }
 
         self.webview_renderer.hide();
+        trace!(
+            html_available = snapshot.reading_html_page.is_some(),
+            frame_ready = self.frame_handles.is_some(),
+            "HTML branch skipped, rendering cached text blocks"
+        );
         self.refresh_pretty_cache(snapshot);
         ui.group(|ui| {
             ui.label("Pretty page");
@@ -280,13 +317,13 @@ impl LanternLeafApp {
                 return;
             }
             let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
-            let target_idx = snapshot.highlighted_sentence_idx;
+            let target_idx = self.resolved_highlight_idx(snapshot);
             ScrollArea::vertical()
                 .id_source("sentence_list")
                 .max_height(240.0)
                 .show(ui, |ui| {
                     for (idx, sentence) in snapshot.sentences.iter().enumerate() {
-                        let selected = snapshot.highlighted_sentence_idx == Some(idx);
+                        let selected = target_idx == Some(idx);
                         let label = format!("{:03} {}", idx + 1, sentence);
                         let response = ui.selectable_label(selected, label);
                         if response.clicked() {
@@ -471,12 +508,19 @@ impl LanternLeafApp {
         ui.group(|ui| {
             ui.label("Quick actions");
             ui.horizontal(|ui| {
-                let text_only_label = if snapshot.text_only_mode {
+                let current_text_only = self.resolved_text_only_mode(snapshot);
+                let text_only_label = if current_text_only {
                     "Switch to pretty"
                 } else {
                     "Switch to text-only"
                 };
                 if ui.button(text_only_label).clicked() {
+                    if !current_text_only {
+                        self.text_only_override = Some(true);
+                    } else {
+                        self.text_only_override = None;
+                    }
+                    self.text_only_toggle_pending = false;
                     self.execute_reader_command(ReaderCommand::Session(
                         SessionCommand::ToggleTextOnly,
                     ));
@@ -609,7 +653,7 @@ impl LanternLeafApp {
     }
 
     fn render_spoken_sentence_banner(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
-        let Some(idx) = snapshot.highlighted_sentence_idx else {
+        let Some(idx) = self.resolved_highlight_idx(snapshot) else {
             return;
         };
         let sentence = snapshot

@@ -75,6 +75,17 @@ impl LanternLeafApp {
             }
 
             if let Some(snapshot) = event.snapshot.clone() {
+                trace!(
+                    tts_request_id,
+                    app_request_id,
+                    text_only_mode = snapshot.text_only_mode,
+                    text_only_override = ?self.text_only_override,
+                    tts_state = ?snapshot.tts.state,
+                    highlighted_sentence = ?snapshot.highlighted_sentence_idx,
+                    tts_cursor = ?snapshot.tts.current_sentence_idx,
+                    "TTS runtime snapshot received"
+                );
+                self.maybe_reapply_text_only(&snapshot);
                 if let Some(cursor) = event.cursor {
                     trace!(
                         tts_request_id,

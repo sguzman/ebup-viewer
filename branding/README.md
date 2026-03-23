@@ -25,6 +25,5 @@
 
 ## Runtime Integration
 
-- Web favicon + manifest links are configured in `ui/index.html`.
-- Web static assets are copied to `ui/public/`.
-- Desktop/taskbar icon assets are generated under `src-tauri/icons/` and wired in `src-tauri/tauri.conf.json`.
+- Desktop/taskbar icon asset lives at `branding/icon.png`.
+- The egui shell loads the icon from `branding/icon.png` at startup.

@@ -85,7 +85,7 @@ pub(crate) fn run() {
     ));
     match eframe::icon_data::from_png_bytes(include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../src-tauri/icons/icon.png"
+        "/../../branding/icon.png"
     ))) {
         Ok(icon) => options.viewport = options.viewport.with_icon(Arc::new(icon)),
         Err(err) => warn!(error = ?err, "Failed to load app icon"),

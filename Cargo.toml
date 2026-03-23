@@ -6,7 +6,6 @@ edition = "2024"
 [workspace]
 members = [
     ".",
-    "src-tauri",
     "crates/lanternleaf-core",
     "crates/lanternleaf-app",
     "crates/lanternleaf-egui",

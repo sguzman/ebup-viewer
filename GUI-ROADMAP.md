@@ -1,3 +1,7 @@
+**Status**
+
+This roadmap documents the completed Tauri/React migration effort. The repository now ships a Rust-only egui app, and the Tauri/TypeScript stack has been removed. Treat the items below as historical context rather than active work.
+
 **Voltlane Findings To Reuse**
 
 - [x] Reuse Voltlane’s split architecture pattern: Rust core crate + Tauri bridge + React/TS UI (`tmp/voltlane/Cargo.toml`, `tmp/voltlane/src-tauri/src/lib.rs`, `tmp/voltlane/ui/src/App.tsx`).

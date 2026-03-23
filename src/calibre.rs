@@ -221,15 +221,6 @@ fn resolve_config_path() -> Option<PathBuf> {
 
     if let Ok(cwd) = std::env::current_dir() {
         candidates.push(cwd.join(DEFAULT_CALIBRE_CONFIG_PATH));
-        if cwd
-            .file_name()
-            .map(|name| name == std::ffi::OsStr::new("src-tauri"))
-            .unwrap_or(false)
-        {
-            if let Some(parent) = cwd.parent() {
-                candidates.push(parent.join(DEFAULT_CALIBRE_CONFIG_PATH));
-            }
-        }
     }
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

@@ -1744,7 +1744,7 @@ struct PrettyPageCacheKey {
     text_only: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PrettyBlockKind {
     Heading,
     Paragraph,
@@ -1755,6 +1755,7 @@ enum PrettyBlockKind {
 struct PrettyBlock {
     kind: PrettyBlockKind,
     text: String,
+    anchor_idx: usize,
 }
 
 #[derive(Default)]

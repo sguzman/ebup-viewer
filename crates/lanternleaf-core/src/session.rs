@@ -1578,9 +1578,7 @@ fn count_markdown_anchors(markdown: &str) -> usize {
 }
 
 fn count_html_anchors(html: &str) -> usize {
-    const TAGS: [&str; 13] = [
-        "<section",
-        "<article",
+    const TAGS: [&str; 11] = [
         "<h1",
         "<h2",
         "<h3",
@@ -2367,7 +2365,7 @@ mod tests {
     #[test]
     fn html_anchor_count_detects_structural_elements() {
         let html = "<section><h1>A</h1><p>One</p><ul><li>x</li><li>y</li></ul><img src=\"a.png\"/></section>";
-        assert_eq!(count_html_anchors(html), 6);
+        assert_eq!(count_html_anchors(html), 5);
     }
 
     #[test]

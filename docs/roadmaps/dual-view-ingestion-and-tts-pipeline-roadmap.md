@@ -66,4 +66,4 @@
 - [x] TTS behavior is identical in both views because `tts_text` is the sole TTS input.
 - [x] Pretty Text is visually richer for structured sources and never blocks reading for unstructured PDFs.
 - [x] No regression in bookmark resume, sentence highlight, auto-scroll, or recent delete flows.
-- [x] Build, tests, and Tauri appimage compile path pass in CI (excluding `deb`/`rpm` targets).
+- [x] Build, tests, and legacy packaging compile paths pass in CI (excluding `deb`/`rpm` targets).

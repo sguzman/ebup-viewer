@@ -102,5 +102,5 @@
 ## Acceptance Criteria
 - [x] Starter/library/import features are fully in scope and explicitly owned in the egui migration.
 - [x] Calibre and browser-tab flows have native-egui UI and service contracts.
-- [x] Recents/local-open/delete/reopen behavior is specified without reliance on Tauri/UI code.
+- [x] Recents/local-open/delete/reopen behavior is specified without reliance on legacy UI code.
 - [x] No major starter/import parity decision remains open.

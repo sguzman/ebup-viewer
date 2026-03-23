@@ -130,7 +130,7 @@
 - [x] Move playback/event ingestion fully into Rust-native app/runtime state.
 - [x] Keep canonical sentence and playback ownership unchanged from the current Rust logic.
 - Phase exit:
-- [x] non-PDF reading and TTS flows reach parity with the Tauri app.
+- [x] non-PDF reading and TTS flows reach parity with the legacy app.
 - [x] bookmark/config/session semantics remain deterministic.
 
 ## Phase 4: Native PDF Parity
@@ -148,7 +148,7 @@
 - [x] the egui app can serve as the main user-facing entrypoint for all current source acquisition paths.
 
 ## Phase 6: Testing And Packaging Parity
-- [x] Replace browser-centric tests with Rust-native unit/integration/UI harness coverage where feasible.
+- [x] Replace legacy frontend-centric tests with Rust-native unit/integration/UI harness coverage where feasible.
 - [x] Add screenshot/manual QA gates where egui automation is weaker.
 - [x] Update workspace build, smoke, and release checks for the new desktop crate.
 - [x] Preserve the rule that full builds are verified excluding AppImage/RPM/DEB artifact generation during normal engineering validation.
@@ -159,7 +159,7 @@
 - [x] Switch primary developer and user docs to the egui app.
 - [x] Remove Tauri runtime ownership from CI/build scripts.
 - [x] Remove TS/React/Tauri dependencies and delete obsolete codepaths only after parity signoff.
-- [x] Retire generated TS bindings, browser tests, and WebView-specific rendering layers.
+- [x] Retire generated legacy bindings, legacy UI tests, and WebView-specific rendering layers.
 - Phase exit:
 - [x] shipped product is pure Rust desktop app.
 - [x] no production dependency remains on the legacy Tauri/React stack.
@@ -177,12 +177,12 @@
 - [x] keep Tauri app runnable until Gate G
 - [x] preserve cache/config compatibility or versioned migration until egui app is stable
 - [x] support side-by-side validation builds during shell, reader, and PDF phases
-- [x] do not remove TypeScript/Tauri tests until equivalent parity evidence exists
+- [x] do not remove legacy frontend tests until equivalent parity evidence exists
 
 ## Risks / Failure Modes
 - PDF parity may stall migration if renderer/sync choices are under-scoped.
 - egui immediate-mode rendering may regress responsiveness if state invalidation is too broad.
-- HTML/EPUB fidelity may regress if DOM-based assumptions are not replaced with a deliberate Rust render model.
+- HTML/EPUB fidelity may regress if legacy web-based assumptions are not replaced with a deliberate Rust render model.
 - Browser-tab import may be deprioritized accidentally because it straddles service integration and UI migration.
 - Existing persistence semantics may break if cache/config/bookmark migration is not treated as a first-class track.
 - Team velocity may drop if extraction work is skipped and egui UI is built directly on top of current Tauri command shapes.
@@ -199,4 +199,4 @@
 - [x] Every current user-facing capability in README and existing roadmap docs has a mapped egui owner and migration phase.
 - [x] No major architectural decision needed for implementation remains open in this master plan.
 - [x] The dependency order, gates, and rollback points are explicit enough to guide parallel execution.
-- [x] Final cutover criteria are clear enough to remove Tauri and TypeScript without reopening strategy decisions.
+- [x] Final cutover criteria are clear enough to remove the legacy frontend stack without reopening strategy decisions.

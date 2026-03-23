@@ -1,7 +1,7 @@
 # Egui App Shell And Navigation Roadmap
 
 ## Objective
-- [x] Replace the current Tauri window shell and React component composition with a native `eframe` + `egui` application shell.
+- [x] Replace the current legacy window shell and frontend component composition with a native `eframe` + `egui` application shell.
 - [x] Rebuild starter-mode and reader-mode navigation, top bars, side panels, dialogs, and keyboard shortcuts in Rust.
 - [x] Preserve existing interaction semantics while moving all UI ownership into egui widgets and Rust-native app state.
 
@@ -9,7 +9,7 @@
 - Current top-level shell ownership lives in `crates/lanternleaf-egui/src/app/ui/mod.rs`, `crates/lanternleaf-egui/src/app/ui/starter.rs`, and `crates/lanternleaf-egui/src/app/ui/reader.rs`.
 - The frontend currently relies on:
 - route-like shell switching between starter and reader views
-- Zustand slices for UI/session state
+- legacy frontend state slices for UI/session state
 - MUI component composition for toolbars, panels, and modal-like surfaces
 - native window/runtime integration via egui/eframe
 - Existing shell behavior that must survive migration:
@@ -70,7 +70,7 @@
 - [x] search
 - [x] TTS controls
 - [x] status diagnostics
-- [x] layout policy utilities map to Rust shell layout helpers rather than CSS/media queries.
+- [x] layout policy utilities map to Rust shell layout helpers rather than legacy CSS/media query logic.
 - Each toolbar button, quick action, or panel toggle must declare which `AppCommand`/`ReaderCommand` it plans (e.g., `ToggleSettingsPanel`, `Reader(TtsSeekNext)`), enabling the AppRuntime command planner to emit telemetry and effect ownership.
 - Shortcut bindings should derive from `ShortcutRegistry` so any new binding automatically flows through the same command pipeline described above, keeping telemetry, cancellation, and logging consistent across mouse/keyboard triggers.
 
@@ -89,10 +89,10 @@
 - [x] central content pane for starter or reader content
 - [x] overlay modal layer that can host blocking or lightweight dialogs
 - [x] Document desktop size-class strategy, minimum supported width (e.g., 900px), and density assumptions (panel collapse thresholds).
-- [x] Define API surfaces for layout helpers that currently live in CSS/media queries (e.g., `isNarrow`, `shouldShowPanels`). These Rust helpers will be called from the runtime to decide redraw scopes.
+- [x] Define API surfaces for layout helpers that currently live in legacy layout breakpoints (e.g., `isNarrow`, `shouldShowPanels`). These Rust helpers will be called from the runtime to decide redraw scopes.
 ### Architectural Artifacts To Deliver
 - Shell state enums/structs representing the existing App.tsx runtime decisions.
-- Layout helpers describing how panel state affects reader width/padding, derived from current CSS breakpoints, to prevent guesswork when implementing UI.
+- Layout helpers describing how panel state affects reader width/padding, derived from current layout breakpoints, to prevent guesswork when implementing UI.
 - A modal overlay contract describing focus and escape semantics so future egui widgets can reuse a single modal manager.
 ### Phase Exit
 - [x] Shell composition and panel ownership are explicit enough for implementation without revisiting layout strategy.
@@ -106,7 +106,7 @@
 - **Tracing hooks**: Every UI action in this tranche should annotate `tracing::instrument` spans that mention the originating `AppCommand`/`ReaderCommand` so shell metrics can correlate frame interactions with the runtime verbs emitted by `AppRuntime`.
 
 ## Phase 2: Navigation And Mode Switching
-- [x] Map every transition that currently lives in React routing or conditional rendering into explicit Rust commands/fsm transitions.
+- [x] Map every transition that currently lives in legacy routing or conditional rendering into explicit Rust commands/fsm transitions.
 - [x] Document how the starter shell pivots to reader mode and back, covering:
 - [x] source open success, failure, and cancellation
 - [x] session close/restart
@@ -218,7 +218,7 @@
 - [x] Define shortcut registration semantics:
 - [x] a `ShortcutRegistry` service that accepts `(ShortcutId, Scope, KeyCombo, Handler)` tuples.
 - [x] a `FocusOwner` state that tracks currently active scope, informs command routing, and resets when panels/modal close.
-- [x] Document how `eframe` key events flow into the registry without the DOM event bubble.
+- [x] Document how `eframe` key events flow into the registry without legacy DOM event bubbling.
 
 ### Shortcut Scope Catalog
 - Global: safe quit, toggle panels, focus search.
@@ -243,11 +243,11 @@
 - When a match is found, it emits the same `AppCommand`/`ReaderCommand` path used by UI buttons.
 - Focus owners (modal/panel input) short-circuit processing before registry lookup.
 ### Phase Exit
-- [x] shortcut routing is deterministic, focus-aware, and no longer relies on browser focus semantics so the egui input layer can plug into the Rust runtime command model.
+- [x] shortcut routing is deterministic, focus-aware, and no longer relies on legacy focus semantics so the egui input layer can plug into the Rust runtime command model.
 
 ## Phase 5: Modal, Notification, And Error Strategy
 ## Phase 5: Modal, Notification, And Error Strategy
-- [x] Replace browser-style modal/dialog flows with egui-native confirmation, alert, toast, and progress surfaces.
+- [x] Replace legacy modal/dialog flows with egui-native confirmation, alert, toast, and progress surfaces.
 - [x] Define the modal stack semantics:
 - [x] blocking confirmations (e.g., close source without save, Calibre import overwrite) that prevent other shell interactions until resolved
 - [x] information dialogs (filters, help) that sit above the shell but permit non-blocking background activity

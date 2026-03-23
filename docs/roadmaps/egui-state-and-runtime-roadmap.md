@@ -1,7 +1,7 @@
 # Egui State And Runtime Roadmap
 
 ## Objective
-- [x] Replace Zustand slices, frontend event ingestion, and Tauri bridge commands with Rust-native application state and runtime orchestration.
+- [x] Replace legacy frontend slices, event ingestion, and bridge commands with Rust-native application state and runtime orchestration.
 - [x] Preserve the existing domain ownership model while moving command, effect, and event flow entirely into Rust.
 - [x] Establish a stable Rust-native state/runtime architecture that all egui UI surfaces can consume directly.
 
@@ -37,7 +37,7 @@
 
 ## Key Architectural Decisions Already Chosen
 - State stays in Rust, not in any embedded scripting layer.
-- Tauri commands are replaced by Rust module/trait boundaries.
+- Legacy bridge commands are replaced by Rust module/trait boundaries.
 - The desired state split is:
 - `app_state`
 - `session_state`
@@ -220,7 +220,7 @@
 
 ## Risks / Failure Modes
 - Carrying over snapshot-shaped frontend assumptions can cause coarse invalidation and sluggish egui updates.
-- Replacing Tauri command/event flow without a formal command/effect model risks hidden coupling.
+- Replacing legacy command/event flow without a formal command/effect model risks hidden coupling.
 - Persistence can regress if session/runtime ownership is not explicit during close/quit transitions.
 - Runtime tasks may overwhelm the UI thread if channel and coalescing rules are unspecified.
 
@@ -232,7 +232,7 @@
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
-- [x] The egui app can be implemented against a Rust-native state model with no Tauri/TS bridge dependency.
+- [x] The egui app can be implemented against a Rust-native state model with no legacy bridge dependency.
 - [x] Command, effect, and event responsibilities are explicit and typed.
 - [x] The target runtime model preserves current ownership boundaries and tracing expectations.
 - [x] No major runtime/state architecture question remains open for implementation.

@@ -21,12 +21,14 @@ impl LanternLeafApp {
 
     pub(crate) fn handle_tts_runtime_events(&mut self) {
         for event in self.tts_runtime.collect_events() {
-            let request_id = event.request_id;
+            let tts_request_id = event.request_id;
+            let app_request_id = self.runtime.next_request_id();
             match event.kind {
                 lanternleaf_app::tts_runtime::TtsRuntimeEventKind::Progress
                 | lanternleaf_app::tts_runtime::TtsRuntimeEventKind::StateChanged => {
                     trace!(
-                        request_id,
+                        tts_request_id,
+                        app_request_id,
                         action = %event.action,
                         kind = ?event.kind,
                         "Applying TTS runtime state event"
@@ -34,7 +36,8 @@ impl LanternLeafApp {
                 }
                 lanternleaf_app::tts_runtime::TtsRuntimeEventKind::Queued => {
                     info!(
-                        request_id,
+                        tts_request_id,
+                        app_request_id,
                         action = %event.action,
                         message = event.message.as_deref().unwrap_or("queued"),
                         "Queued TTS runtime batch"
@@ -42,21 +45,24 @@ impl LanternLeafApp {
                 }
                 lanternleaf_app::tts_runtime::TtsRuntimeEventKind::Completed => {
                     info!(
-                        request_id,
+                        tts_request_id,
+                        app_request_id,
                         action = %event.action,
                         "TTS runtime completed"
                     );
                 }
                 lanternleaf_app::tts_runtime::TtsRuntimeEventKind::Cancelled => {
                     warn!(
-                        request_id,
+                        tts_request_id,
+                        app_request_id,
                         action = %event.action,
                         "TTS runtime cancelled"
                     );
                 }
                 lanternleaf_app::tts_runtime::TtsRuntimeEventKind::Failed => {
                     warn!(
-                        request_id,
+                        tts_request_id,
+                        app_request_id,
                         action = %event.action,
                         message = event.message.as_deref().unwrap_or("unknown"),
                         "TTS runtime failed"
@@ -67,7 +73,8 @@ impl LanternLeafApp {
             if let Some(snapshot) = event.snapshot.clone() {
                 if let Some(cursor) = event.cursor {
                     trace!(
-                        request_id,
+                        tts_request_id,
+                        app_request_id,
                         page = cursor.page + 1,
                         audio_idx = ?cursor.audio_idx,
                         display_idx = ?cursor.display_idx,
@@ -85,19 +92,19 @@ impl LanternLeafApp {
                     self.auto_scroll_state.note_auto_scroll();
                 }
                 self.runtime.apply_event(AppEvent::ReaderUpdated(ReaderStateEvent {
-                    request_id,
+                    request_id: app_request_id,
                     action: event.action.clone(),
                     reader: snapshot.clone(),
                 }));
                 self.runtime.apply_event(AppEvent::TtsStateUpdated(TtsStateEvent {
-                    request_id,
+                    request_id: app_request_id,
                     action: event.action.clone(),
                     tts: snapshot.tts.clone(),
                 }));
             } else if let Some(playback) = event.playback.clone() {
                 self.runtime
                     .apply_event(AppEvent::ReaderPlaybackUpdated(ReaderPlaybackStateEvent {
-                        request_id,
+                        request_id: app_request_id,
                         action: event.action.clone(),
                         playback,
                     }));
@@ -113,7 +120,7 @@ impl LanternLeafApp {
                     message: error_message,
                 };
                 self.runtime.apply_event(AppEvent::CommandFailed {
-                    request_id,
+                    request_id: app_request_id,
                     scope: Some(OperationScope::ReaderTts),
                     error,
                 });

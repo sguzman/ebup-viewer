@@ -1,16 +1,12 @@
 use eframe::egui::{
-    text::LayoutJob, Align, Color32, FontId, Label, RichText, ScrollArea, Slider, TextFormat,
-    TextStyle, Ui,
+    text::LayoutJob, Align, Color32, FontId, Label, RichText, ScrollArea, Sense, Slider,
+    TextFormat, TextStyle, Ui,
 };
-use html5ever::{parse_document, tendril::TendrilSink};
 use lanternleaf_app::contracts::{PrettyKind, ReaderSnapshot};
 use lanternleaf_app::pipeline::{AppCommand, ReaderCommand};
 use lanternleaf_app::state::AppState;
 use lanternleaf_core::session::{ReaderSettingsPatch, SessionCommand};
 use lanternleaf_core::text_utils;
-use markup5ever::Attribute;
-use markup5ever_rcdom::{Handle, NodeData, RcDom};
-use std::time::Instant;
 use tracing::trace;
 
 use crate::app::ui::format::format_duration_secs;
@@ -44,6 +40,7 @@ impl LanternLeafApp {
             if self.should_render_pretty(snapshot) {
                 self.render_pretty_page(ui, snapshot);
             } else {
+                self.webview_renderer.hide();
                 self.render_sentence_list(ui, snapshot);
                 ui.add_space(6.0);
                 self.render_canonical_preview(ui, snapshot);
@@ -52,6 +49,7 @@ impl LanternLeafApp {
             ui.add_space(6.0);
             self.render_pdf_diagnostics(ui, snapshot);
         } else {
+            self.webview_renderer.clear();
             ui.heading("Reader shell");
             ui.label("No reader session currently active.");
         }
@@ -64,7 +62,6 @@ impl LanternLeafApp {
     }
 
     fn render_pretty_page(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
-        self.refresh_pretty_cache(snapshot);
         let highlight_idx = snapshot.highlighted_sentence_idx;
         let highlight_sentence = highlight_idx
             .and_then(|idx| snapshot.sentences.get(idx))
@@ -83,6 +80,59 @@ impl LanternLeafApp {
         }
         let highlight_color = self.resolve_highlight_color(snapshot);
         let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
+        if snapshot.pretty_kind == PrettyKind::Html
+            && snapshot.reading_html_page.is_some()
+            && self.frame_handles.is_some()
+        {
+            ui.group(|ui| {
+                ui.label("Pretty page");
+                let available = ui.available_size();
+                let (rect, _) = ui.allocate_exact_size(available, Sense::hover());
+                let highlight_css = color32_to_css(highlight_color);
+                let mut scroll_anchor = None;
+                if auto_scroll_requested
+                    && highlight_anchor.is_some()
+                    && highlight_idx.is_some()
+                {
+                    let idx = highlight_idx.unwrap_or_default();
+                    let decision =
+                        self.auto_scroll_state.decide_scroll(idx, highlight_fallback);
+                    let decision_label = match decision {
+                        crate::app::ScrollDecision::Scroll => "scroll",
+                        crate::app::ScrollDecision::Blocked(
+                            crate::app::ScrollBlockReason::Duplicate,
+                        ) => "blocked_duplicate",
+                        crate::app::ScrollDecision::Blocked(
+                            crate::app::ScrollBlockReason::Throttled(_),
+                        ) => "blocked_throttled",
+                    };
+                    trace!(
+                        pretty_scroll_action = decision_label,
+                        pretty_scroll_anchor = highlight_anchor,
+                        pretty_scroll_fallback = highlight_fallback.label(),
+                        "pretty scroll decision"
+                    );
+                    if matches!(decision, crate::app::ScrollDecision::Scroll) {
+                        scroll_anchor = highlight_anchor;
+                        self.auto_scroll_state.record(idx, highlight_fallback);
+                    }
+                }
+                self.webview_renderer.render_html(
+                    ui.ctx(),
+                    self.frame_handles.as_ref(),
+                    rect,
+                    snapshot,
+                    highlight_anchor,
+                    highlight_sentence,
+                    &highlight_css,
+                    scroll_anchor,
+                );
+            });
+            return;
+        }
+
+        self.webview_renderer.hide();
+        self.refresh_pretty_cache(snapshot);
         ui.group(|ui| {
             ui.label("Pretty page");
             ScrollArea::vertical()
@@ -331,12 +381,6 @@ impl LanternLeafApp {
                 return blocks;
             }
         }
-        if let Some(html) = snapshot.reading_html_page.as_deref() {
-            let blocks = self.html_to_blocks(html);
-            if !blocks.is_empty() {
-                return blocks;
-            }
-        }
         let text = snapshot.page_text.trim();
         if text.is_empty() {
             return vec![PrettyBlock {
@@ -421,88 +465,6 @@ impl LanternLeafApp {
             });
         }
         blocks
-    }
-
-    fn html_to_blocks(&self, html: &str) -> Vec<PrettyBlock> {
-        let (blocks, stats) = html5_to_blocks(html);
-        trace!(
-            pretty_html_parse_ms = stats.parse_ms,
-            pretty_html_block_count = blocks.len(),
-            pretty_html_skipped_nodes = stats.skipped_nodes,
-            "pretty html parse"
-        );
-        blocks
-    }
-
-    fn decode_html_entities(input: &str) -> String {
-        input
-            .replace("&nbsp;", " ")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&#39;", "'")
-    }
-
-    fn html_to_plain(&self, html: &str) -> String {
-        let mut out = String::new();
-        let mut in_tag = false;
-        let mut tag = String::new();
-
-        for ch in html.chars() {
-            if in_tag {
-                if ch == '>' {
-                    in_tag = false;
-                    let name = tag
-                        .trim()
-                        .trim_start_matches('/')
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or("")
-                        .to_ascii_lowercase();
-                    if matches!(
-                        name.as_str(),
-                        "br" | "p" | "div" | "section" | "article" | "h1" | "h2" | "h3"
-                            | "h4" | "h5" | "h6" | "blockquote"
-                    ) {
-                        out.push('\n');
-                    }
-                    if name == "li" {
-                        out.push('\n');
-                        out.push_str("• ");
-                    }
-                    tag.clear();
-                } else {
-                    tag.push(ch);
-                }
-                continue;
-            }
-
-            if ch == '<' {
-                in_tag = true;
-                continue;
-            }
-            out.push(ch);
-        }
-
-        let decoded = Self::decode_html_entities(&out);
-        let mut normalized = String::new();
-        let mut last_was_blank = false;
-        for line in decoded.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                if !last_was_blank {
-                    normalized.push('\n');
-                    normalized.push('\n');
-                    last_was_blank = true;
-                }
-            } else {
-                normalized.push_str(trimmed);
-                normalized.push('\n');
-                last_was_blank = false;
-            }
-        }
-        normalized
     }
 
     fn render_quick_actions_dock(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
@@ -728,163 +690,15 @@ impl LanternLeafApp {
 
 }
 
-struct HtmlParseStats {
-    parse_ms: u128,
-    skipped_nodes: usize,
-}
-
-fn html5_to_blocks(html: &str) -> (Vec<PrettyBlock>, HtmlParseStats) {
-    let start = Instant::now();
-    let dom = parse_document(RcDom::default(), Default::default())
-        .from_utf8()
-        .read_from(&mut html.as_bytes());
-    let parse_ms = start.elapsed().as_millis();
-    let mut skipped_nodes = 0usize;
-    let mut blocks = Vec::new();
-    let mut anchor_idx = 0usize;
-
-    let dom = match dom {
-        Ok(dom) => dom,
-        Err(err) => {
-            trace!(error = ?err, "pretty html parse failed");
-            return (
-                blocks,
-                HtmlParseStats {
-                    parse_ms,
-                    skipped_nodes,
-                },
-            );
-        }
-    };
-
-    collect_html_blocks(
-        &dom.document,
-        &mut blocks,
-        &mut anchor_idx,
-        &mut skipped_nodes,
-    );
-
-    (
-        blocks,
-        HtmlParseStats {
-            parse_ms,
-            skipped_nodes,
-        },
+fn color32_to_css(color: Color32) -> String {
+    let alpha = (color.a() as f32) / 255.0;
+    format!(
+        "rgba({}, {}, {}, {:.3})",
+        color.r(),
+        color.g(),
+        color.b(),
+        alpha
     )
-}
-
-fn collect_html_blocks(
-    handle: &Handle,
-    blocks: &mut Vec<PrettyBlock>,
-    anchor_idx: &mut usize,
-    skipped_nodes: &mut usize,
-) {
-    match &handle.data {
-        NodeData::Element { name, attrs, .. } => {
-            let tag = name.local.as_ref();
-            if is_skip_container(tag) {
-                *skipped_nodes = skipped_nodes.saturating_add(1);
-                return;
-            }
-            if let Some(kind) = block_kind_for_tag(tag) {
-                if tag == "img" {
-                    if let Some(label) = img_alt_label(attrs) {
-                        blocks.push(PrettyBlock {
-                            kind: PrettyBlockKind::Paragraph,
-                            text: label,
-                            anchor_idx: *anchor_idx,
-                        });
-                        *anchor_idx = anchor_idx.saturating_add(1);
-                    }
-                } else {
-                    let text = collect_block_text(handle);
-                    let normalized = normalize_whitespace(&text);
-                    blocks.push(PrettyBlock {
-                        kind,
-                        text: normalized,
-                        anchor_idx: *anchor_idx,
-                    });
-                    *anchor_idx = anchor_idx.saturating_add(1);
-                }
-            }
-            for child in handle.children.borrow().iter() {
-                collect_html_blocks(child, blocks, anchor_idx, skipped_nodes);
-            }
-        }
-        NodeData::Document => {
-            for child in handle.children.borrow().iter() {
-                collect_html_blocks(child, blocks, anchor_idx, skipped_nodes);
-            }
-        }
-        _ => {
-            for child in handle.children.borrow().iter() {
-                collect_html_blocks(child, blocks, anchor_idx, skipped_nodes);
-            }
-        }
-    }
-}
-
-fn collect_block_text(handle: &Handle) -> String {
-    let mut out = String::new();
-    for child in handle.children.borrow().iter() {
-        collect_text_inner(child, &mut out, true);
-    }
-    out
-}
-
-fn collect_text_inner(handle: &Handle, out: &mut String, skip_blocks: bool) {
-    match &handle.data {
-        NodeData::Text { contents } => {
-            out.push_str(&contents.borrow());
-        }
-        NodeData::Element { name, .. } => {
-            let tag = name.local.as_ref();
-            if is_skip_container(tag) {
-                return;
-            }
-            if skip_blocks && block_kind_for_tag(tag).is_some() {
-                return;
-            }
-            if tag == "br" {
-                out.push('\n');
-            }
-            for child in handle.children.borrow().iter() {
-                collect_text_inner(child, out, skip_blocks);
-            }
-        }
-        _ => {
-            for child in handle.children.borrow().iter() {
-                collect_text_inner(child, out, skip_blocks);
-            }
-        }
-    }
-}
-
-fn img_alt_label(attrs: &std::cell::RefCell<Vec<Attribute>>) -> Option<String> {
-    let alt = attrs
-        .borrow()
-        .iter()
-        .find(|attr| attr.name.local.as_ref() == "alt")
-        .map(|attr| attr.value.to_string());
-    let label = alt
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| format!("[Image: {value}]"))
-        .unwrap_or_else(|| "[Image]".to_string());
-    Some(label)
-}
-
-fn is_skip_container(tag: &str) -> bool {
-    matches!(tag, "head" | "style" | "script")
-}
-
-fn block_kind_for_tag(tag: &str) -> Option<PrettyBlockKind> {
-    match tag {
-        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => Some(PrettyBlockKind::Heading),
-        "p" | "blockquote" | "pre" => Some(PrettyBlockKind::Paragraph),
-        "li" => Some(PrettyBlockKind::ListItem),
-        "img" => Some(PrettyBlockKind::Paragraph),
-        _ => None,
-    }
 }
 
 fn normalize_whitespace(input: &str) -> String {
@@ -979,32 +793,6 @@ fn text_format_for_kind(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn html5_parser_skips_style_script_head() {
-        let html = "<head><style>.a{}</style></head><body><p>One</p><script>console.log(1)</script><p>Two</p></body>";
-        let (blocks, _stats) = html5_to_blocks(html);
-        let texts: Vec<&str> = blocks.iter().map(|b| b.text.as_str()).collect();
-        assert_eq!(texts, vec!["One", "Two"]);
-    }
-
-    #[test]
-    fn html5_parser_preserves_document_order() {
-        let html = "<h1>Title</h1><p>First</p><p>Second</p><li>Item</li>";
-        let (blocks, _stats) = html5_to_blocks(html);
-        let kinds: Vec<PrettyBlockKind> = blocks.iter().map(|b| b.kind).collect();
-        assert_eq!(
-            kinds,
-            vec![
-                PrettyBlockKind::Heading,
-                PrettyBlockKind::Paragraph,
-                PrettyBlockKind::Paragraph,
-                PrettyBlockKind::ListItem
-            ]
-        );
-        let anchors: Vec<usize> = blocks.iter().map(|b| b.anchor_idx).collect();
-        assert_eq!(anchors, vec![0, 1, 2, 3]);
-    }
 
     #[test]
     fn highlight_matching_finds_sentence() {

@@ -4,22 +4,24 @@ mod commands;
 mod tts_sync;
 mod theme;
 mod ui;
+mod webview;
 
 use std::{
     cmp::Reverse,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     fs::OpenOptions,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
+    thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use eframe::{
     NativeOptions,
     egui::{
-        self, Button, CollapsingHeader, Color32, Context, RichText, Slider, TextureHandle, Ui,
-        Vec2, Visuals,
+        self, Button, CollapsingHeader, Color32, ColorImage, Context, RichText, Slider,
+        TextureHandle, Ui, Vec2, Visuals,
     },
 };
 use crate::helpers::{
@@ -62,6 +64,8 @@ use lanternleaf_core::{
 };
 use serde::{Deserialize, Serialize};
 use tracing::{Level, info, trace, warn};
+
+use crate::app::webview::{FrameHandleSnapshot, WebViewRenderer};
 
 pub(crate) fn run() {
     let config_path = app_config_path();
@@ -174,6 +178,9 @@ struct LanternLeafApp {
     current_pdf_path: Option<PathBuf>,
     pretty_page_cache_key: Option<PrettyPageCacheKey>,
     pretty_page_cache_blocks: Vec<PrettyBlock>,
+    webview_renderer: WebViewRenderer,
+    frame_handles: Option<FrameHandleSnapshot>,
+    thumbnail_cache: ThumbnailCache,
     sentence_scroll_offset: Option<Vec2>,
     overlay_eviction_warning_at: Option<Instant>,
     timeline_history: Vec<TimelineHistoryEntry>,
@@ -244,6 +251,129 @@ impl CalibreSort {
             CalibreSort::Year => "Year",
         }
     }
+}
+
+pub(crate) const THUMB_WIDTH: usize = 68;
+pub(crate) const THUMB_HEIGHT: usize = 100;
+pub(crate) const THUMB_ROW_HEIGHT: f32 = 112.0;
+const THUMB_CACHE_MAX: usize = 200;
+
+struct ThumbnailCache {
+    tx: mpsc::Sender<ThumbRequest>,
+    rx: mpsc::Receiver<ThumbReady>,
+    pending: HashSet<PathBuf>,
+    textures: HashMap<PathBuf, TextureHandle>,
+    last_used: HashMap<PathBuf, u64>,
+    usage_tick: u64,
+}
+
+impl ThumbnailCache {
+    fn new() -> Self {
+        let (tx, worker_rx) = mpsc::channel();
+        let (worker_tx, rx) = mpsc::channel();
+        thread::spawn(move || thumbnail_worker(worker_rx, worker_tx));
+        Self {
+            tx,
+            rx,
+            pending: HashSet::new(),
+            textures: HashMap::new(),
+            last_used: HashMap::new(),
+            usage_tick: 0,
+        }
+    }
+
+    fn texture_for(&mut self, ctx: &Context, path: &Path) -> Option<TextureHandle> {
+        self.poll_ready(ctx);
+        let path = path.to_path_buf();
+        if let Some(texture) = self.textures.get(&path).cloned() {
+            self.touch(&path);
+            return Some(texture);
+        }
+        if !self.pending.contains(&path) {
+            self.pending.insert(path.clone());
+            let _ = self.tx.send(ThumbRequest { path });
+        }
+        None
+    }
+
+    fn poll_ready(&mut self, ctx: &Context) {
+        while let Ok(ready) = self.rx.try_recv() {
+            self.pending.remove(&ready.path);
+            let image = ColorImage::from_rgba_unmultiplied(ready.size, &ready.pixels);
+            let texture = ctx.load_texture(
+                format!("thumb:{}", ready.path.display()),
+                image,
+                egui::TextureOptions::LINEAR,
+            );
+            self.textures.insert(ready.path.clone(), texture);
+            self.touch(&ready.path);
+        }
+        self.evict_if_needed();
+    }
+
+    fn touch(&mut self, path: &Path) {
+        self.usage_tick = self.usage_tick.wrapping_add(1);
+        self.last_used.insert(path.to_path_buf(), self.usage_tick);
+    }
+
+    fn evict_if_needed(&mut self) {
+        if self.textures.len() <= THUMB_CACHE_MAX {
+            return;
+        }
+        let mut entries: Vec<(PathBuf, u64)> = self
+            .last_used
+            .iter()
+            .map(|(path, tick)| (path.clone(), *tick))
+            .collect();
+        entries.sort_by_key(|(_, tick)| *tick);
+        let excess = self.textures.len().saturating_sub(THUMB_CACHE_MAX);
+        for (path, _) in entries.into_iter().take(excess) {
+            self.textures.remove(&path);
+            self.last_used.remove(&path);
+        }
+    }
+}
+
+struct ThumbRequest {
+    path: PathBuf,
+}
+
+struct ThumbReady {
+    path: PathBuf,
+    size: [usize; 2],
+    pixels: Vec<u8>,
+}
+
+fn thumbnail_worker(rx: mpsc::Receiver<ThumbRequest>, tx: mpsc::Sender<ThumbReady>) {
+    for req in rx {
+        let start = Instant::now();
+        match load_thumbnail(&req.path) {
+            Ok(ready) => {
+                trace!(
+                    path = %req.path.display(),
+                    thumb_ms = start.elapsed().as_millis(),
+                    "Decoded thumbnail"
+                );
+                let _ = tx.send(ready);
+            }
+            Err(err) => {
+                warn!(path = %req.path.display(), error = %err, "Failed to decode thumbnail");
+            }
+        }
+    }
+}
+
+fn load_thumbnail(path: &Path) -> Result<ThumbReady, String> {
+    let bytes = fs::read(path).map_err(|err| err.to_string())?;
+    let image = image::load_from_memory(&bytes).map_err(|err| err.to_string())?;
+    let thumb = image.resize_exact(THUMB_WIDTH as u32, THUMB_HEIGHT as u32, image::imageops::FilterType::Triangle);
+    let rgba = thumb.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Ok(ThumbReady {
+        path: path.to_path_buf(),
+        size: [width as usize, height as usize],
+        pixels: rgba.into_raw(),
+    })
 }
 
 impl LanternLeafApp {
@@ -317,6 +447,9 @@ impl LanternLeafApp {
             current_pdf_path: None,
             pretty_page_cache_key: None,
             pretty_page_cache_blocks: Vec::new(),
+            webview_renderer: WebViewRenderer::new(),
+            frame_handles: None,
+            thumbnail_cache: ThumbnailCache::new(),
             sentence_scroll_offset: None,
             overlay_eviction_warning_at: None,
             timeline_history: Vec::new(),
@@ -1652,7 +1785,8 @@ impl LanternLeafApp {
 }
 
 impl eframe::App for LanternLeafApp {
-    fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
+        self.frame_handles = Some(FrameHandleSnapshot::from_frame(frame));
         self.sync_tts_runtime_session();
         self.handle_tts_runtime_events();
         self.handle_effect_events();

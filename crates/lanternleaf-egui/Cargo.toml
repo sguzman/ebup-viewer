@@ -9,11 +9,14 @@ lanternleaf-app = { path = "../lanternleaf-app" }
 lanternleaf-core = { path = "../lanternleaf-core" }
 tracing = "0.1"
 tracing-appender = "0.2"
-image = "0.24"
+image = "0.25.10"
 pdfium-auto = { version = "0.3", features = ["bundled"] }
 pdfium-render = "0.8"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
-html5ever = "0.36.1"
-markup5ever = "0.36.1"
-markup5ever_rcdom = "0.36.0"
+wry = { version = "0.54.4", features = ["protocol"] }
+lol_html = "2.7.2"
+http = "1.1"
+percent-encoding = "2.3.2"
+raw-window-handle = "0.6.2"
+raw-window-handle-05 = { package = "raw-window-handle", version = "0.5.2" }

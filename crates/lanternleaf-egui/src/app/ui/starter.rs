@@ -1,10 +1,12 @@
-use eframe::egui::{self, Color32, ComboBox, Label, ScrollArea, Ui};
+use eframe::egui::{self, Color32, ComboBox, Image, Label, ScrollArea, Ui, Vec2};
 use lanternleaf_app::pipeline::AppCommand;
 use lanternleaf_app::state::AppState;
 use tracing::{trace, warn};
 
+use std::path::PathBuf;
+
 use crate::app::ui::format::{format_bytes, format_relative_unix_secs};
-use crate::app::{CalibreSort, LanternLeafApp, StarterViewModel};
+use crate::app::{CalibreSort, LanternLeafApp, StarterViewModel, THUMB_HEIGHT, THUMB_ROW_HEIGHT, THUMB_WIDTH};
 
 impl LanternLeafApp {
     pub(crate) fn render_starter_content(&mut self, ui: &mut Ui, state: &AppState) {
@@ -95,43 +97,51 @@ impl LanternLeafApp {
             }
             ScrollArea::vertical()
                 .id_source("starter_recents_scroll")
-                .max_height(240.0)
+                .max_height(260.0)
                 .show(ui, |ui| {
                     for recent in model.recents {
                         ui.separator();
                         ui.horizontal(|ui| {
-                            ui.label(&recent.display_title);
-                            ui.add_space(6.0);
-                            ui.label(format_relative_unix_secs(recent.last_opened_unix_secs));
-                        });
-                        ui.label(&recent.snippet);
-                        ui.label(&recent.source_path);
-                        if let Some(tab_id) = recent.browser_tab_id {
-                            ui.label(format!("Browser tab: {}", tab_id));
-                        }
-                        ui.horizontal(|ui| {
-                            if ui.button("Open").clicked() {
-                                trace!(path = %recent.source_path, "Starter open recent");
-                                self.execute_command(AppCommand::OpenSourcePath {
-                                    path: recent.source_path.clone(),
+                            self.render_thumbnail(
+                                ui,
+                                recent.thumbnail_path.as_deref().map(PathBuf::from),
+                            );
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(&recent.display_title);
+                                    ui.add_space(6.0);
+                                    ui.label(format_relative_unix_secs(recent.last_opened_unix_secs));
                                 });
-                            }
-                            if ui.button("Delete").clicked() {
-                                let close_browser_tab = model
-                                    .bootstrap
-                                    .map(|bootstrap| bootstrap.config.close_browser_tab_on_recent_delete)
-                                    .unwrap_or(false)
-                                    && recent.browser_tab_id.is_some();
-                                trace!(
-                                    path = %recent.source_path,
-                                    close_browser_tab,
-                                    "Starter delete recent"
-                                );
-                                self.execute_command(AppCommand::DeleteRecent {
-                                    source_path: recent.source_path.clone(),
-                                    close_browser_tab,
+                                ui.label(&recent.snippet);
+                                ui.label(&recent.source_path);
+                                if let Some(tab_id) = recent.browser_tab_id {
+                                    ui.label(format!("Browser tab: {}", tab_id));
+                                }
+                                ui.horizontal(|ui| {
+                                    if ui.button("Open").clicked() {
+                                        trace!(path = %recent.source_path, "Starter open recent");
+                                        self.execute_command(AppCommand::OpenSourcePath {
+                                            path: recent.source_path.clone(),
+                                        });
+                                    }
+                                    if ui.button("Delete").clicked() {
+                                        let close_browser_tab = model
+                                            .bootstrap
+                                            .map(|bootstrap| bootstrap.config.close_browser_tab_on_recent_delete)
+                                            .unwrap_or(false)
+                                            && recent.browser_tab_id.is_some();
+                                        trace!(
+                                            path = %recent.source_path,
+                                            close_browser_tab,
+                                            "Starter delete recent"
+                                        );
+                                        self.execute_command(AppCommand::DeleteRecent {
+                                            source_path: recent.source_path.clone(),
+                                            close_browser_tab,
+                                        });
+                                    }
                                 });
-                            }
+                            });
                         });
                     }
                 });
@@ -221,7 +231,7 @@ impl LanternLeafApp {
                 );
             }
 
-            let row_height = 88.0;
+            let row_height = THUMB_ROW_HEIGHT;
             let total_rows = self.starter_calibre_view.len();
             ScrollArea::vertical()
                 .id_source("starter_calibre_scroll")
@@ -230,34 +240,42 @@ impl LanternLeafApp {
                     for row in range {
                         let book = &model.calibre_books[self.starter_calibre_view[row]];
                         ui.separator();
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(&book.title);
-                            if let Some(year) = book.year {
-                                ui.label(format!("({year})"));
-                            }
-                        });
-                        ui.add(Label::new(&book.authors).wrap(true));
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(format!(
-                                "{} • {}",
-                                book.extension,
-                                format_bytes(book.file_size_bytes)
-                            ));
-                            if book.cover_thumbnail.is_some() {
-                                ui.label("Thumbnail cached");
-                            }
-                        });
                         ui.horizontal(|ui| {
-                            if ui.button("Open").clicked() {
-                                trace!(id = book.id, "Starter open Calibre book");
-                                self.execute_command(AppCommand::OpenCalibreBook { id: book.id });
-                            }
-                            if ui.button("Ensure thumbnail").clicked() {
-                                trace!(id = book.id, "Starter ensure Calibre thumbnail");
-                                self.execute_command(AppCommand::EnsureCalibreThumbnail {
-                                    id: book.id,
+                            self.render_thumbnail(
+                                ui,
+                                book.cover_thumbnail.as_deref().map(PathBuf::from),
+                            );
+                            ui.vertical(|ui| {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label(&book.title);
+                                    if let Some(year) = book.year {
+                                        ui.label(format!("({year})"));
+                                    }
                                 });
-                            }
+                                ui.add(Label::new(&book.authors).wrap(true));
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label(format!(
+                                        "{} • {}",
+                                        book.extension,
+                                        format_bytes(book.file_size_bytes)
+                                    ));
+                                    if book.cover_thumbnail.is_some() {
+                                        ui.label("Thumbnail cached");
+                                    }
+                                });
+                                ui.horizontal(|ui| {
+                                    if ui.button("Open").clicked() {
+                                        trace!(id = book.id, "Starter open Calibre book");
+                                        self.execute_command(AppCommand::OpenCalibreBook { id: book.id });
+                                    }
+                                    if ui.button("Ensure thumbnail").clicked() {
+                                        trace!(id = book.id, "Starter ensure Calibre thumbnail");
+                                        self.execute_command(AppCommand::EnsureCalibreThumbnail {
+                                            id: book.id,
+                                        });
+                                    }
+                                });
+                            });
                         });
                     }
                 });
@@ -466,5 +484,19 @@ impl LanternLeafApp {
             .ok();
         trace!(tab_id, window_id = ?window_id, "Starter refresh browser tab");
         self.execute_command(AppCommand::RefreshBrowserTab { tab_id, window_id });
+    }
+
+    fn render_thumbnail(&mut self, ui: &mut Ui, path: Option<PathBuf>) {
+        let size = Vec2::new(THUMB_WIDTH as f32, THUMB_HEIGHT as f32);
+        if let Some(path) = path {
+            if let Some(texture) = self.thumbnail_cache.texture_for(ui.ctx(), &path) {
+                ui.add(Image::new(&texture).fit_to_exact_size(size));
+                return;
+            }
+        }
+        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+        let painter = ui.painter();
+        painter.rect_filled(rect, 2.0, Color32::from_gray(24));
+        painter.rect_stroke(rect, 2.0, (1.0, Color32::from_gray(60)));
     }
 }

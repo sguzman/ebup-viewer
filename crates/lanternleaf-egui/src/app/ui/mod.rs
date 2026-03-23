@@ -205,7 +205,10 @@ impl LanternLeafApp {
         CentralPanel::default().show(ctx, |ui| {
             match state.session.session.as_ref().map(|session| session.mode) {
                 Some(UiMode::Reader) => self.render_reader_content(ui, state),
-                _ => self.render_starter_content(ui, state),
+                _ => {
+                    self.webview_renderer.clear();
+                    self.render_starter_content(ui, state);
+                }
             }
             if self.pending_search_focus {
                 ui.label("Search field would be focused (shortcut handled).");

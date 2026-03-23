@@ -1650,7 +1650,10 @@ fn markdown_to_content_blocks(markdown: &str) -> Vec<ContentBlock> {
             continue;
         }
 
-        if let Some(item) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
+        if let Some(item) = trimmed
+            .strip_prefix("- ")
+            .or_else(|| trimmed.strip_prefix("* "))
+        {
             if !paragraph.is_empty() {
                 blocks.push(ContentBlock {
                     kind: ContentBlockKind::Paragraph,
@@ -1719,8 +1722,14 @@ fn markdown_to_content_blocks(markdown: &str) -> Vec<ContentBlock> {
 
     tracing::debug!(
         blocks = blocks.len(),
-        headings = blocks.iter().filter(|b| b.kind == ContentBlockKind::Heading).count(),
-        paragraphs = blocks.iter().filter(|b| b.kind == ContentBlockKind::Paragraph).count(),
+        headings = blocks
+            .iter()
+            .filter(|b| b.kind == ContentBlockKind::Heading)
+            .count(),
+        paragraphs = blocks
+            .iter()
+            .filter(|b| b.kind == ContentBlockKind::Paragraph)
+            .count(),
         "Converted markdown to content blocks"
     );
     blocks
@@ -1740,8 +1749,14 @@ fn html_to_content_blocks(html: &str) -> Vec<ContentBlock> {
 
     tracing::debug!(
         blocks = blocks.len(),
-        headings = blocks.iter().filter(|b| b.kind == ContentBlockKind::Heading).count(),
-        paragraphs = blocks.iter().filter(|b| b.kind == ContentBlockKind::Paragraph).count(),
+        headings = blocks
+            .iter()
+            .filter(|b| b.kind == ContentBlockKind::Heading)
+            .count(),
+        paragraphs = blocks
+            .iter()
+            .filter(|b| b.kind == ContentBlockKind::Paragraph)
+            .count(),
         "Converted html to content blocks"
     );
     blocks

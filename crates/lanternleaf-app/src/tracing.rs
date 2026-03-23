@@ -28,7 +28,11 @@ pub fn init_tracing(default_level: impl AsRef<str>) -> WorkerGuard {
 
     let logs_dir = std::env::var_os("LANTERNLEAF_LOG_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join("logs"));
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("logs")
+        });
     if let Err(err) = fs::create_dir_all(&logs_dir) {
         eprintln!(
             "failed to create tracing logs dir {}: {err}",

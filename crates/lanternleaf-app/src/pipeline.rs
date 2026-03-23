@@ -869,8 +869,15 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
             state.set_loading_browser_tabs(false);
             clear_scope(state, OperationScope::BrowserTabRefresh);
         }
-        AppEvent::BrowserTabWindowsLoaded { request_id, windows } => {
-            debug!(request_id, count = windows.len(), "Browser tabs windows loaded");
+        AppEvent::BrowserTabWindowsLoaded {
+            request_id,
+            windows,
+        } => {
+            debug!(
+                request_id,
+                count = windows.len(),
+                "Browser tabs windows loaded"
+            );
             state.set_starter_browser_tabs_windows(windows);
             state.set_loading_browser_tabs(false);
             clear_scope(state, OperationScope::BrowserTabRefresh);
@@ -1558,7 +1565,11 @@ mod tests {
         );
 
         assert_eq!(
-            state.app_shell.app_config_snapshot.as_ref().map(|cfg| cfg.log_level.as_str()),
+            state
+                .app_shell
+                .app_config_snapshot
+                .as_ref()
+                .map(|cfg| cfg.log_level.as_str()),
             Some("info")
         );
         assert!(state.app_shell.service_status.browser_tabs_enabled);
@@ -1603,7 +1614,10 @@ mod tests {
                 },
             },
         );
-        assert_eq!(state.app_shell.service_status.browser_tabs_available, Some(true));
+        assert_eq!(
+            state.app_shell.service_status.browser_tabs_available,
+            Some(true)
+        );
 
         apply_event(
             &mut state,
@@ -1614,7 +1628,10 @@ mod tests {
                 message: None,
             }),
         );
-        assert_eq!(state.app_shell.service_status.calibre_available, Some(false));
+        assert_eq!(
+            state.app_shell.service_status.calibre_available,
+            Some(false)
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 mod commands;
-mod tts_sync;
 mod theme;
+mod tts_sync;
 mod ui;
 mod webview;
 
@@ -17,6 +17,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use crate::helpers::{
+    app_config_path, bootstrap_config_from_app_config, format_combo, workspace_root_from_cwd,
+};
 use eframe::{
     NativeOptions,
     egui::{
@@ -24,11 +27,9 @@ use eframe::{
         TextureHandle, Ui, Vec2, Visuals,
     },
 };
-use crate::helpers::{
-    app_config_path, bootstrap_config_from_app_config, format_combo, workspace_root_from_cwd,
-};
 
 use crate::constants::*;
+use crate::effects::{EffectContext, EffectDispatcher};
 use crate::pdf::{
     PdfPageRegistryEntry, PdfViewportBudgetDecision, PdfViewportBudgetInput, PdfViewportPlanInput,
     PdfViewportRenderPlan, build_pdf_viewport_render_plan, choose_pdf_viewport_evictions,
@@ -37,10 +38,8 @@ use crate::pdf_renderer::{
     NativePdfRenderer, NativeRenderEviction, NativeRenderSpan, RenderTarget,
 };
 use crate::pdf_subsystem::{
-    PdfScrollPolicy, PdfViewportRange, PdfViewportUpdateTrigger, PdfZoomDirection,
-    PdfZoomPolicy,
+    PdfScrollPolicy, PdfViewportRange, PdfViewportUpdateTrigger, PdfZoomDirection, PdfZoomPolicy,
 };
-use crate::effects::{EffectContext, EffectDispatcher};
 use crate::shell::{FocusOwner, LayoutPolicy, ShellState};
 use lanternleaf_app::{
     AppRuntime,
@@ -49,17 +48,16 @@ use lanternleaf_app::{
         CalibreLoadEvent, PrettyKind, ReaderSnapshot, RecentBook, SourceOpenEvent, UiMode,
     },
     persistence::{FilesystemPersistenceService, PersistenceLifecycle},
-    pipeline::{
-        AppCommand, DispatchPlan, PersistenceTrigger, ReaderCommand,
-    },
+    pipeline::{AppCommand, DispatchPlan, PersistenceTrigger, ReaderCommand},
     shortcuts::{ShortcutAction, ShortcutScope, UiShortcutAction},
     state::{AppState, OperationState},
     tracing::init_tracing,
     tts_runtime::{TtsRuntime, TtsRuntimeEvent},
 };
 use lanternleaf_core::{
-    cache, cache_service, config, config_service, normalizer, session,
+    cache, cache_service, config, config_service,
     epub_loader::{PdfGeometryMode, PdfOcrGeometryQualityClass, PdfSyncStrategy},
+    normalizer, session,
     session::ReaderSettingsPatch,
 };
 use serde::{Deserialize, Serialize};
@@ -107,8 +105,7 @@ pub(crate) fn run() {
                 tracing_guard,
                 app_config.clone(),
                 normalizer.clone(),
-            ))
-                as Box<dyn eframe::App>
+            )) as Box<dyn eframe::App>
         }),
     );
 }
@@ -366,7 +363,11 @@ fn thumbnail_worker(rx: mpsc::Receiver<ThumbRequest>, tx: mpsc::Sender<ThumbRead
 fn load_thumbnail(path: &Path) -> Result<ThumbReady, String> {
     let bytes = fs::read(path).map_err(|err| err.to_string())?;
     let image = image::load_from_memory(&bytes).map_err(|err| err.to_string())?;
-    let thumb = image.resize_exact(THUMB_WIDTH as u32, THUMB_HEIGHT as u32, image::imageops::FilterType::Triangle);
+    let thumb = image.resize_exact(
+        THUMB_WIDTH as u32,
+        THUMB_HEIGHT as u32,
+        image::imageops::FilterType::Triangle,
+    );
     let rgba = thumb.to_rgba8();
     let (width, height) = rgba.dimensions();
     Ok(ThumbReady {
@@ -486,7 +487,6 @@ impl LanternLeafApp {
             self.pending_search_focus,
         );
     }
-
 
     fn handle_shortcuts(&mut self, ctx: &Context, state: &AppState) {
         match self.shell_state.focus_owner {
@@ -1228,7 +1228,11 @@ impl LanternLeafApp {
         }
     }
 
-    fn trigger_persistence_flush(&mut self, trigger: PersistenceTrigger, description: &'static str) {
+    fn trigger_persistence_flush(
+        &mut self,
+        trigger: PersistenceTrigger,
+        description: &'static str,
+    ) {
         self.record_persistence_event(trigger, description);
         self.queue_persistence_flush(trigger);
     }
@@ -1398,9 +1402,7 @@ impl LanternLeafApp {
             .pdf_render_state
             .update_confidence_tier(tier, &snapshot.source_path)
         {
-            let label = tier
-                .map(PdfConfidenceTier::label)
-                .unwrap_or("unknown");
+            let label = tier.map(PdfConfidenceTier::label).unwrap_or("unknown");
             trace!(tier = label, "Updated PDF confidence tier");
             self.push_status(format!("PDF confidence: {}", label));
         }
@@ -1678,7 +1680,8 @@ impl LanternLeafApp {
                     jump_target_page_index: Some(highlighted_page),
                 };
                 let visible_range = PdfViewportRange::from_pages(&visible_page_indexes);
-                let trigger = self.pdf_viewport_trigger(snapshot, highlighted_page, &visible_page_indexes);
+                let trigger =
+                    self.pdf_viewport_trigger(snapshot, highlighted_page, &visible_page_indexes);
                 let throttled = self.should_throttle_pdf_viewport_update();
                 if throttled && matches!(trigger, PdfViewportUpdateTrigger::Refresh) {
                     trace!("PDF viewport update throttled");
@@ -2189,20 +2192,14 @@ mod tests {
     #[test]
     fn alignment_fallback_label_falls_through_geometry_tiers() {
         let line_only = alignment_with(Vec::new(), vec![rect()], Vec::new(), Some(2));
-        assert_eq!(
-            PdfRenderState::alignment_fallback_label(&line_only),
-            "line"
-        );
+        assert_eq!(PdfRenderState::alignment_fallback_label(&line_only), "line");
         let block_only = alignment_with(Vec::new(), Vec::new(), vec![rect()], Some(2));
         assert_eq!(
             PdfRenderState::alignment_fallback_label(&block_only),
             "block"
         );
         let page_only = alignment_with(Vec::new(), Vec::new(), Vec::new(), Some(2));
-        assert_eq!(
-            PdfRenderState::alignment_fallback_label(&page_only),
-            "page"
-        );
+        assert_eq!(PdfRenderState::alignment_fallback_label(&page_only), "page");
         let render_only = alignment_with(Vec::new(), Vec::new(), Vec::new(), None);
         assert_eq!(
             PdfRenderState::alignment_fallback_label(&render_only),
@@ -3606,7 +3603,11 @@ impl PdfRenderState {
         allowed
     }
 
-    fn update_confidence_tier(&mut self, tier: Option<PdfConfidenceTier>, source_path: &str) -> bool {
+    fn update_confidence_tier(
+        &mut self,
+        tier: Option<PdfConfidenceTier>,
+        source_path: &str,
+    ) -> bool {
         let changed = self.last_confidence_source.as_deref() != Some(source_path)
             || self.last_confidence_tier != tier;
         self.confidence_tier = tier;
@@ -3859,12 +3860,7 @@ impl PdfRenderState {
             .as_ref()
             .map(|value| value.anchor_label.as_str())
             .unwrap_or("render_only");
-        let span = tracing::span!(
-            Level::TRACE,
-            "pdf.text.sync",
-            sentence_idx,
-            fallback_path
-        );
+        let span = tracing::span!(Level::TRACE, "pdf.text.sync", sentence_idx, fallback_path);
         let _enter = span.enter();
         trace!("PDF text sync evaluated");
         entry

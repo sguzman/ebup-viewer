@@ -1,6 +1,6 @@
-use lanternleaf_core::config;
-use lanternleaf_app::state::AppState;
 use lanternleaf_app::contracts::ReaderSnapshot;
+use lanternleaf_app::state::AppState;
+use lanternleaf_core::config;
 
 use super::LanternLeafApp;
 
@@ -12,8 +12,20 @@ impl LanternLeafApp {
     ) -> config::ThemeMode {
         reader_snapshot
             .map(|snapshot| snapshot.settings.theme)
-            .or_else(|| state.app_shell.bootstrap.as_ref().map(|bootstrap| bootstrap.config.theme))
-            .or_else(|| state.app_shell.app_config_snapshot.as_ref().map(|config| config.theme))
+            .or_else(|| {
+                state
+                    .app_shell
+                    .bootstrap
+                    .as_ref()
+                    .map(|bootstrap| bootstrap.config.theme)
+            })
+            .or_else(|| {
+                state
+                    .app_shell
+                    .app_config_snapshot
+                    .as_ref()
+                    .map(|config| config.theme)
+            })
             .unwrap_or(config::ThemeMode::Night)
     }
 

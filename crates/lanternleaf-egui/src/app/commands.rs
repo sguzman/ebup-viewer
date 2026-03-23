@@ -45,9 +45,9 @@ impl LanternLeafApp {
         let AppCommand::Reader(ReaderCommand::Session(session_command)) = command else {
             return;
         };
-        let Some(tts_command) = lanternleaf_app::tts_runtime::TtsCommand::from_session_command(
-            session_command,
-        ) else {
+        let Some(tts_command) =
+            lanternleaf_app::tts_runtime::TtsCommand::from_session_command(session_command)
+        else {
             return;
         };
         trace!(
@@ -58,12 +58,17 @@ impl LanternLeafApp {
         let _ = self.tts_runtime.apply_command(tts_command);
     }
 
-    fn apply_persistence_trigger(&mut self, command: &AppCommand, _snapshot: Option<&ReaderSnapshot>) {
+    fn apply_persistence_trigger(
+        &mut self,
+        command: &AppCommand,
+        _snapshot: Option<&ReaderSnapshot>,
+    ) {
         let (trigger, description) = match command {
             AppCommand::Reader(_) => (Some(PersistenceTrigger::ReaderCommand), "reader_command"),
-            AppCommand::SetRuntimeLogLevel { .. } => {
-                (Some(PersistenceTrigger::RuntimeConfigChange), "runtime_config")
-            }
+            AppCommand::SetRuntimeLogLevel { .. } => (
+                Some(PersistenceTrigger::RuntimeConfigChange),
+                "runtime_config",
+            ),
             AppCommand::SafeQuit | AppCommand::FlushPersistence { .. } => (None, ""),
             _ => (None, ""),
         };

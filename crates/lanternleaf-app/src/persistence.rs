@@ -261,7 +261,11 @@ impl<S: PersistenceService> PersistenceLifecycle<S> {
         self.policy.log();
     }
 
-    pub fn on_live_update(&self, housekeeping: ReaderHousekeeping<'_>, trigger: PersistenceTrigger) {
+    pub fn on_live_update(
+        &self,
+        housekeeping: ReaderHousekeeping<'_>,
+        trigger: PersistenceTrigger,
+    ) {
         if let Err(error) = self.service.persist_reader_housekeeping(housekeeping) {
             warn!(
                 trigger = ?trigger,
@@ -697,7 +701,12 @@ mod tests {
     impl RecordingCacheService {
         fn new() -> (Self, Arc<Mutex<Vec<&'static str>>>) {
             let calls = Arc::new(Mutex::new(Vec::new()));
-            (Self { calls: Arc::clone(&calls) }, calls)
+            (
+                Self {
+                    calls: Arc::clone(&calls),
+                },
+                calls,
+            )
         }
 
         fn record(&self, name: &'static str) {

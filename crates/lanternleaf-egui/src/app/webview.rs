@@ -11,11 +11,14 @@ use eframe::egui::{Context, Rect as EguiRect};
 use http::{Response, StatusCode, header};
 use lanternleaf_app::contracts::ReaderSnapshot;
 use lanternleaf_core::session::ReaderImageRef;
-use lol_html::{element, rewrite_str, RewriteStrSettings};
 use lol_html::html_content::ContentType;
+use lol_html::{RewriteStrSettings, element, rewrite_str};
 use percent_encoding::percent_decode_str;
 use tracing::{info, trace, warn};
-use wry::{Rect as WryRect, WebView, WebViewBuilder, dpi::{LogicalPosition, LogicalSize}};
+use wry::{
+    Rect as WryRect, WebView, WebViewBuilder,
+    dpi::{LogicalPosition, LogicalSize},
+};
 
 use raw_window_handle as rwh06;
 use raw_window_handle_05 as rwh05;
@@ -224,7 +227,10 @@ impl WebViewRenderer {
             return;
         };
         if self.last_highlight_color.as_deref() != Some(highlight_color) {
-            let script = format!("window.llSetHighlightColor && window.llSetHighlightColor({});", serde_json::to_string(highlight_color).unwrap_or_default());
+            let script = format!(
+                "window.llSetHighlightColor && window.llSetHighlightColor({});",
+                serde_json::to_string(highlight_color).unwrap_or_default()
+            );
             if let Err(err) = webview.evaluate_script(&script) {
                 warn!(error = ?err, "Failed to update webview highlight color");
             } else {
@@ -237,8 +243,7 @@ impl WebViewRenderer {
         let sentence_json = serde_json::to_string(&sentence).unwrap_or_else(|_| "\"\"".to_string());
         let script = format!(
             "window.llHighlight && window.llHighlight({}, {});",
-            anchor,
-            sentence_json
+            anchor, sentence_json
         );
         if let Err(err) = webview.evaluate_script(&script) {
             warn!(error = ?err, "Failed to highlight sentence in webview");
@@ -268,7 +273,10 @@ impl WebViewRenderer {
         let Some(anchor) = self.pending_scroll.take() else {
             return;
         };
-        let script = format!("window.llScrollToAnchor && window.llScrollToAnchor({});", anchor);
+        let script = format!(
+            "window.llScrollToAnchor && window.llScrollToAnchor({});",
+            anchor
+        );
         if let Err(err) = webview.evaluate_script(&script) {
             warn!(error = ?err, "Failed to scroll webview to highlight");
         } else {
@@ -300,9 +308,13 @@ impl AssetResolver {
         for image in images {
             let key = normalize_asset_key(&image.raw_path);
             self.by_key.insert(key, PathBuf::from(&image.local_path));
-            if let Some(name) = Path::new(&image.raw_path).file_name().and_then(|s| s.to_str()) {
+            if let Some(name) = Path::new(&image.raw_path)
+                .file_name()
+                .and_then(|s| s.to_str())
+            {
                 let base = normalize_asset_key(name);
-                self.by_basename.insert(base, PathBuf::from(&image.local_path));
+                self.by_basename
+                    .insert(base, PathBuf::from(&image.local_path));
             }
         }
     }
@@ -446,10 +458,7 @@ struct PreparedHtml {
     html_hash: u64,
 }
 
-fn html_prepare_worker(
-    rx: mpsc::Receiver<HtmlPrepareRequest>,
-    tx: mpsc::Sender<PreparedHtml>,
-) {
+fn html_prepare_worker(rx: mpsc::Receiver<HtmlPrepareRequest>, tx: mpsc::Sender<PreparedHtml>) {
     for req in rx {
         let start = Instant::now();
         let html_hash = hash_html(&req.html);
@@ -475,10 +484,7 @@ fn html_prepare_worker(
 }
 
 fn prepare_html(html: &str, source_hash: &str) -> Result<String, lol_html::errors::RewritingError> {
-    let base_tag = format!(
-        "<base href=\"lanternleaf-asset://{}/\">",
-        source_hash
-    );
+    let base_tag = format!("<base href=\"lanternleaf-asset://{}/\">", source_hash);
     let helpers = format!(
         "{base}<style>{style}</style><script>{script}</script>",
         base = base_tag,

@@ -6,7 +6,9 @@ use tracing::{trace, warn};
 use std::path::PathBuf;
 
 use crate::app::ui::format::{format_bytes, format_relative_unix_secs};
-use crate::app::{CalibreSort, LanternLeafApp, StarterViewModel, THUMB_HEIGHT, THUMB_ROW_HEIGHT, THUMB_WIDTH};
+use crate::app::{
+    CalibreSort, LanternLeafApp, StarterViewModel, THUMB_HEIGHT, THUMB_ROW_HEIGHT, THUMB_WIDTH,
+};
 
 impl LanternLeafApp {
     pub(crate) fn render_starter_content(&mut self, ui: &mut Ui, state: &AppState) {
@@ -110,7 +112,9 @@ impl LanternLeafApp {
                                 ui.horizontal(|ui| {
                                     ui.label(&recent.display_title);
                                     ui.add_space(6.0);
-                                    ui.label(format_relative_unix_secs(recent.last_opened_unix_secs));
+                                    ui.label(format_relative_unix_secs(
+                                        recent.last_opened_unix_secs,
+                                    ));
                                 });
                                 ui.label(&recent.snippet);
                                 ui.label(&recent.source_path);
@@ -127,7 +131,9 @@ impl LanternLeafApp {
                                     if ui.button("Delete").clicked() {
                                         let close_browser_tab = model
                                             .bootstrap
-                                            .map(|bootstrap| bootstrap.config.close_browser_tab_on_recent_delete)
+                                            .map(|bootstrap| {
+                                                bootstrap.config.close_browser_tab_on_recent_delete
+                                            })
                                             .unwrap_or(false)
                                             && recent.browser_tab_id.is_some();
                                         trace!(
@@ -153,7 +159,10 @@ impl LanternLeafApp {
             ui.horizontal(|ui| {
                 ui.label("Calibre");
                 if ui.button("Refresh").clicked() {
-                    trace!(force = self.starter_calibre_force_refresh, "Starter refresh Calibre");
+                    trace!(
+                        force = self.starter_calibre_force_refresh,
+                        "Starter refresh Calibre"
+                    );
                     self.execute_command(AppCommand::LoadCalibreBooks {
                         force_refresh: self.starter_calibre_force_refresh,
                     });
@@ -172,7 +181,11 @@ impl LanternLeafApp {
                     .selected_text(self.starter_calibre_sort.label())
                     .show_ui(ui, |ui| {
                         for option in CalibreSort::OPTIONS {
-                            ui.selectable_value(&mut self.starter_calibre_sort, option, option.label());
+                            ui.selectable_value(
+                                &mut self.starter_calibre_sort,
+                                option,
+                                option.label(),
+                            );
                         }
                     });
             });
@@ -210,8 +223,7 @@ impl LanternLeafApp {
                     .collect();
                 if !query.is_empty() {
                     entries.retain(|entry| {
-                        entry.title_lower.contains(&query)
-                            || entry.authors_lower.contains(&query)
+                        entry.title_lower.contains(&query) || entry.authors_lower.contains(&query)
                     });
                 }
                 match self.starter_calibre_sort {
@@ -220,7 +232,9 @@ impl LanternLeafApp {
                         entries.sort_by(|a, b| a.authors_lower.cmp(&b.authors_lower))
                     }
                     CalibreSort::Year => entries.sort_by(|a, b| {
-                        b.year.cmp(&a.year).then_with(|| a.title_lower.cmp(&b.title_lower))
+                        b.year
+                            .cmp(&a.year)
+                            .then_with(|| a.title_lower.cmp(&b.title_lower))
                     }),
                 }
                 self.starter_calibre_view = entries.into_iter().map(|entry| entry.idx).collect();
@@ -266,7 +280,9 @@ impl LanternLeafApp {
                                 ui.horizontal(|ui| {
                                     if ui.button("Open").clicked() {
                                         trace!(id = book.id, "Starter open Calibre book");
-                                        self.execute_command(AppCommand::OpenCalibreBook { id: book.id });
+                                        self.execute_command(AppCommand::OpenCalibreBook {
+                                            id: book.id,
+                                        });
                                     }
                                     if ui.button("Ensure thumbnail").clicked() {
                                         trace!(id = book.id, "Starter ensure Calibre thumbnail");
@@ -447,7 +463,10 @@ impl LanternLeafApp {
                 ui.label(format!(
                     "Source open: {} ({})",
                     event.phase,
-                    event.message.clone().unwrap_or_else(|| "no message".to_string())
+                    event
+                        .message
+                        .clone()
+                        .unwrap_or_else(|| "no message".to_string())
                 ));
             }
             if let Some(event) = model.calibre_load_event {

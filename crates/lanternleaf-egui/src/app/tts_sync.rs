@@ -1,4 +1,6 @@
-use lanternleaf_app::contracts::{BridgeError, ReaderPlaybackStateEvent, ReaderStateEvent, TtsStateEvent};
+use lanternleaf_app::contracts::{
+    BridgeError, ReaderPlaybackStateEvent, ReaderStateEvent, TtsStateEvent,
+};
 use lanternleaf_app::pipeline::{AppEvent, OperationScope};
 use tracing::{info, trace, warn};
 
@@ -10,7 +12,9 @@ impl LanternLeafApp {
             Ok(guard) => guard,
             Err(_) => return,
         };
-        let current_source = session_guard.as_ref().map(|session| session.source_path.clone());
+        let current_source = session_guard
+            .as_ref()
+            .map(|session| session.source_path.clone());
         if current_source == self.tts_session_source {
             return;
         }
@@ -91,23 +95,26 @@ impl LanternLeafApp {
                 {
                     self.auto_scroll_state.note_auto_scroll();
                 }
-                self.runtime.apply_event(AppEvent::ReaderUpdated(ReaderStateEvent {
-                    request_id: app_request_id,
-                    action: event.action.clone(),
-                    reader: snapshot.clone(),
-                }));
-                self.runtime.apply_event(AppEvent::TtsStateUpdated(TtsStateEvent {
-                    request_id: app_request_id,
-                    action: event.action.clone(),
-                    tts: snapshot.tts.clone(),
-                }));
-            } else if let Some(playback) = event.playback.clone() {
                 self.runtime
-                    .apply_event(AppEvent::ReaderPlaybackUpdated(ReaderPlaybackStateEvent {
+                    .apply_event(AppEvent::ReaderUpdated(ReaderStateEvent {
+                        request_id: app_request_id,
+                        action: event.action.clone(),
+                        reader: snapshot.clone(),
+                    }));
+                self.runtime
+                    .apply_event(AppEvent::TtsStateUpdated(TtsStateEvent {
+                        request_id: app_request_id,
+                        action: event.action.clone(),
+                        tts: snapshot.tts.clone(),
+                    }));
+            } else if let Some(playback) = event.playback.clone() {
+                self.runtime.apply_event(AppEvent::ReaderPlaybackUpdated(
+                    ReaderPlaybackStateEvent {
                         request_id: app_request_id,
                         action: event.action.clone(),
                         playback,
-                    }));
+                    },
+                ));
             }
 
             if event.kind == lanternleaf_app::tts_runtime::TtsRuntimeEventKind::Failed {

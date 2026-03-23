@@ -590,9 +590,7 @@ impl BrowsrBlockingClient {
         if refresh {
             request = request.query(&[("refresh", "true")]);
         }
-        let response = request
-            .send()
-            .context("failed to request browsr tabs")?;
+        let response = request.send().context("failed to request browsr tabs")?;
         let payload = parse_json_response_blocking::<Response>(response)?;
         info!(
             base_url = %self.base_url,
@@ -652,7 +650,10 @@ impl BrowsrBlockingClient {
         Ok(())
     }
 
-    pub fn start_import_bundle_and_wait(&self, tab_id: u64) -> Result<BrowsrImportBundleWaitResponse> {
+    pub fn start_import_bundle_and_wait(
+        &self,
+        tab_id: u64,
+    ) -> Result<BrowsrImportBundleWaitResponse> {
         const BUNDLE_SETTLE_TIMEOUT_MS: u64 = 90_000;
         const BUNDLE_WAIT_TIMEOUT_MS: u64 = 180_000;
         let started = std::time::Instant::now();

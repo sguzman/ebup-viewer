@@ -27,9 +27,11 @@ pub struct EffectContext {
     pub calibre_config: Arc<calibre::CalibreConfig>,
     pub session: Arc<Mutex<Option<session::ReaderSession>>>,
     pub panels: Arc<Mutex<session::PanelState>>,
-    pub persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle<
-        lanternleaf_app::persistence::FilesystemPersistenceService,
-    >>,
+    pub persistence: Arc<
+        lanternleaf_app::persistence::PersistenceLifecycle<
+            lanternleaf_app::persistence::FilesystemPersistenceService,
+        >,
+    >,
     pub cache_service: Arc<dyn cache_service::CacheService>,
     pub config_path: PathBuf,
     pub config_service: Arc<dyn config_service::ConfigService>,
@@ -40,9 +42,11 @@ impl EffectContext {
     pub fn new(
         config: config::AppConfig,
         normalizer: normalizer::TextNormalizer,
-        persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle<
-            lanternleaf_app::persistence::FilesystemPersistenceService,
-        >>,
+        persistence: Arc<
+            lanternleaf_app::persistence::PersistenceLifecycle<
+                lanternleaf_app::persistence::FilesystemPersistenceService,
+            >,
+        >,
         config_path: PathBuf,
     ) -> Self {
         let cache_service: Arc<dyn cache_service::CacheService> =
@@ -62,9 +66,11 @@ impl EffectContext {
     pub fn with_services(
         config: config::AppConfig,
         normalizer: normalizer::TextNormalizer,
-        persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle<
-            lanternleaf_app::persistence::FilesystemPersistenceService,
-        >>,
+        persistence: Arc<
+            lanternleaf_app::persistence::PersistenceLifecycle<
+                lanternleaf_app::persistence::FilesystemPersistenceService,
+            >,
+        >,
         cache_service: Arc<dyn cache_service::CacheService>,
         config_path: PathBuf,
         config_service: Arc<dyn config_service::ConfigService>,
@@ -105,7 +111,10 @@ impl EffectDispatcher {
             }
         });
 
-        Self { effect_tx, event_rx }
+        Self {
+            effect_tx,
+            event_rx,
+        }
     }
 
     pub fn dispatch(&self, effect: PlannedEffect) {
@@ -123,7 +132,11 @@ impl EffectDispatcher {
     }
 }
 
-fn execute_effect(context: EffectContext, planned: PlannedEffect, event_tx: mpsc::Sender<AppEvent>) {
+fn execute_effect(
+    context: EffectContext,
+    planned: PlannedEffect,
+    event_tx: mpsc::Sender<AppEvent>,
+) {
     let request_id = planned.request_id;
     let effect = planned.effect;
     let failure_effect = effect.clone();
@@ -141,19 +154,16 @@ fn execute_effect(context: EffectContext, planned: PlannedEffect, event_tx: mpsc
         RuntimeEffect::CloseRecentBrowserTab { source_path } => {
             handle_close_recent_browser_tab(&context, request_id, &source_path)
         }
-        RuntimeEffect::OpenSourcePath { path } => {
-            handle_open_source(&context, request_id, &path)
-        }
+        RuntimeEffect::OpenSourcePath { path } => handle_open_source(&context, request_id, &path),
         RuntimeEffect::OpenClipboardText { text } => {
             handle_open_clipboard_text(&context, request_id, &text)
         }
-        RuntimeEffect::OpenClipboard => {
-            Err(bridge_error("clipboard_unavailable", "Clipboard access not wired in egui"))
-        }
+        RuntimeEffect::OpenClipboard => Err(bridge_error(
+            "clipboard_unavailable",
+            "Clipboard access not wired in egui",
+        )),
         RuntimeEffect::LoadBrowserTabsHealth => handle_browser_tabs_health(&context, request_id),
-        RuntimeEffect::ListBrowserTabWindows => {
-            handle_browser_tabs_windows(&context, request_id)
-        }
+        RuntimeEffect::ListBrowserTabWindows => handle_browser_tabs_windows(&context, request_id),
         RuntimeEffect::ListBrowserTabs {
             window_id,
             query,
@@ -172,9 +182,7 @@ fn execute_effect(context: EffectContext, planned: PlannedEffect, event_tx: mpsc
         RuntimeEffect::LoadCalibreBooks { force_refresh } => {
             handle_calibre_books(&context, request_id, force_refresh)
         }
-        RuntimeEffect::OpenCalibreBook { id } => {
-            handle_calibre_open_book(&context, request_id, id)
-        }
+        RuntimeEffect::OpenCalibreBook { id } => handle_calibre_open_book(&context, request_id, id),
         RuntimeEffect::EnsureCalibreThumbnail { id } => {
             handle_calibre_thumbnail(&context, request_id, id)
         }
@@ -307,16 +315,19 @@ fn handle_close_recent_browser_tab(
     source_path: &str,
 ) -> Result<Vec<AppEvent>, BridgeError> {
     let path = normalize_source_path(source_path)?;
-    let manifest = context.cache_service.load_browser_tab_manifest(&path).map_err(|err| {
-        bridge_error(
-            "invalid_input",
-            format!(
-                "Source is not a browser-tab manifest: {} ({})",
-                path.display(),
-                err
-            ),
-        )
-    })?;
+    let manifest = context
+        .cache_service
+        .load_browser_tab_manifest(&path)
+        .map_err(|err| {
+            bridge_error(
+                "invalid_input",
+                format!(
+                    "Source is not a browser-tab manifest: {} ({})",
+                    path.display(),
+                    err
+                ),
+            )
+        })?;
     let cfg = load_config(context)?;
     ensure_browser_tabs_enabled(&cfg)?;
     let client = browsr_blocking_client_from_config(&cfg)?;
@@ -368,7 +379,10 @@ fn handle_browser_tabs_health(
         .health()
         .map_err(|err| bridge_error("browsr_unavailable", err.to_string()))?;
     info!(request_id, "Browsr health loaded");
-    Ok(vec![AppEvent::BrowserTabsHealthLoaded { request_id, health }])
+    Ok(vec![AppEvent::BrowserTabsHealthLoaded {
+        request_id,
+        health,
+    }])
 }
 
 fn handle_browser_tabs_windows(
@@ -558,10 +572,8 @@ fn handle_calibre_books(
         count: None,
         message: None,
     })];
-    let books =
-        calibre::load_books_with_cancel(&context.calibre_config, force_refresh, None).map_err(
-            |err| bridge_error("calibre_load_failed", err.to_string()),
-        )?;
+    let books = calibre::load_books_with_cancel(&context.calibre_config, force_refresh, None)
+        .map_err(|err| bridge_error("calibre_load_failed", err.to_string()))?;
     let mapped: Vec<CalibreBookDto> = books.into_iter().map(map_calibre_book).collect();
     let count = mapped.len();
     events.push(AppEvent::CalibreBooksLoaded {
@@ -1148,7 +1160,11 @@ mod tests {
     }
 
     impl config_service::ConfigService for TestConfigService {
-        fn save_base_config(&self, _path: &Path, _config: &config::AppConfig) -> Result<(), String> {
+        fn save_base_config(
+            &self,
+            _path: &Path,
+            _config: &config::AppConfig,
+        ) -> Result<(), String> {
             self.called.store(true, Ordering::SeqCst);
             Ok(())
         }
@@ -1175,9 +1191,8 @@ mod tests {
             config_service,
         );
 
-        let events =
-            handle_persistence_flush(&context, 1, PersistenceTrigger::RuntimeConfigChange)
-                .expect("flush should succeed");
+        let events = handle_persistence_flush(&context, 1, PersistenceTrigger::RuntimeConfigChange)
+            .expect("flush should succeed");
 
         assert!(called.load(Ordering::SeqCst));
         assert!(events.iter().any(|event| matches!(
@@ -1194,7 +1209,11 @@ mod tests {
     }
 
     impl config_service::ConfigService for CountingConfigService {
-        fn save_base_config(&self, _path: &Path, _config: &config::AppConfig) -> Result<(), String> {
+        fn save_base_config(
+            &self,
+            _path: &Path,
+            _config: &config::AppConfig,
+        ) -> Result<(), String> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -1203,7 +1222,11 @@ mod tests {
     struct FailingConfigService;
 
     impl config_service::ConfigService for FailingConfigService {
-        fn save_base_config(&self, _path: &Path, _config: &config::AppConfig) -> Result<(), String> {
+        fn save_base_config(
+            &self,
+            _path: &Path,
+            _config: &config::AppConfig,
+        ) -> Result<(), String> {
             Err("persist_failed".to_string())
         }
     }
@@ -1244,8 +1267,7 @@ mod tests {
         ));
         let cache_service: Arc<dyn cache_service::CacheService> =
             Arc::new(cache_service::FilesystemCacheService);
-        let config_service: Arc<dyn config_service::ConfigService> =
-            Arc::new(FailingConfigService);
+        let config_service: Arc<dyn config_service::ConfigService> = Arc::new(FailingConfigService);
         let config_path = std::env::temp_dir().join("lanternleaf-egui-config-test.toml");
         let context = EffectContext::with_services(
             config::AppConfig::default(),
@@ -1257,7 +1279,11 @@ mod tests {
         );
 
         let events = handle_set_log_level(&context, 33, "warn").expect("log level update");
-        assert!(events.iter().any(|event| matches!(event, AppEvent::CommandFailed { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, AppEvent::CommandFailed { .. }))
+        );
     }
 
     struct TestCacheService {
@@ -1421,9 +1447,13 @@ mod tests {
             config_service,
         );
 
-        let events = handle_delete_recent(&context, 10, "/tmp/recents.epub")
-            .expect("delete recent");
-        assert!(events.iter().any(|event| matches!(event, AppEvent::RecentsLoaded { .. })));
+        let events =
+            handle_delete_recent(&context, 10, "/tmp/recents.epub").expect("delete recent");
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, AppEvent::RecentsLoaded { .. }))
+        );
         let deleted_path = deleted.lock().expect("deleted lock").clone();
         assert_eq!(deleted_path, Some(PathBuf::from("/tmp/recents.epub")));
     }

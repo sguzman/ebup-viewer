@@ -36,7 +36,10 @@ impl PdfViewportRange {
             min = min.min(page);
             max = max.max(page);
         }
-        Some(Self { start: min, end: max })
+        Some(Self {
+            start: min,
+            end: max,
+        })
     }
 
     pub fn as_inclusive_range(&self) -> RangeInclusive<usize> {

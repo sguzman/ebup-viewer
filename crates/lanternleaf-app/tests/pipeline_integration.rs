@@ -119,9 +119,11 @@ fn open_source_command_flows_into_state() {
         path: "/tmp/book.epub".to_string(),
     });
 
-    assert!(plan.effects.iter().any(|effect| {
-        matches!(effect.effect, RuntimeEffect::OpenSourcePath { .. })
-    }));
+    assert!(
+        plan.effects
+            .iter()
+            .any(|effect| { matches!(effect.effect, RuntimeEffect::OpenSourcePath { .. }) })
+    );
 
     for event in plan.local_events {
         runtime.apply_event(event);

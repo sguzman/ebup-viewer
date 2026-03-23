@@ -1,4 +1,6 @@
-use crate::pipeline::{AppCommand, AppEvent, PersistenceOutcome, PersistenceTrigger, RuntimeEffect};
+use crate::pipeline::{
+    AppCommand, AppEvent, PersistenceOutcome, PersistenceTrigger, RuntimeEffect,
+};
 use tracing::{Span, field, info_span};
 
 pub fn command_span(request_id: u64, command: &AppCommand) -> Span {
@@ -144,7 +146,12 @@ fn command_span_fields(command: &AppCommand) -> SpanFields {
         },
         AppCommand::ListBrowserTabs { query, refresh, .. } => SpanFields {
             refresh: Some(*refresh),
-            query_present: Some(query.as_ref().map(|text| !text.trim().is_empty()).unwrap_or(false)),
+            query_present: Some(
+                query
+                    .as_ref()
+                    .map(|text| !text.trim().is_empty())
+                    .unwrap_or(false),
+            ),
             ..SpanFields::default()
         },
         AppCommand::OpenCalibreBook { id } | AppCommand::EnsureCalibreThumbnail { id } => {
@@ -184,7 +191,12 @@ fn effect_span_fields(effect: &RuntimeEffect) -> SpanFields {
         },
         RuntimeEffect::ListBrowserTabs { query, refresh, .. } => SpanFields {
             refresh: Some(*refresh),
-            query_present: Some(query.as_ref().map(|text| !text.trim().is_empty()).unwrap_or(false)),
+            query_present: Some(
+                query
+                    .as_ref()
+                    .map(|text| !text.trim().is_empty())
+                    .unwrap_or(false),
+            ),
             ..SpanFields::default()
         },
         RuntimeEffect::OpenCalibreBook { id } | RuntimeEffect::EnsureCalibreThumbnail { id } => {
@@ -203,7 +215,9 @@ fn effect_span_fields(effect: &RuntimeEffect) -> SpanFields {
 
 fn event_span_fields(event: &AppEvent) -> EventSpanFields {
     match event {
-        AppEvent::PersistenceFlushed { trigger, outcome, .. } => EventSpanFields {
+        AppEvent::PersistenceFlushed {
+            trigger, outcome, ..
+        } => EventSpanFields {
             trigger: Some(*trigger),
             outcome: Some(*outcome),
             ..EventSpanFields::default()

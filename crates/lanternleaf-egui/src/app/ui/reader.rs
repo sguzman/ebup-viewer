@@ -1,6 +1,6 @@
 use eframe::egui::{
-    text::LayoutJob, Align, Color32, FontId, Label, RichText, ScrollArea, Sense, Slider,
-    TextFormat, TextStyle, Ui,
+    Align, Color32, FontId, Label, RichText, ScrollArea, Sense, Slider, TextFormat, TextStyle, Ui,
+    text::LayoutJob,
 };
 use lanternleaf_app::contracts::{PrettyKind, ReaderSnapshot};
 use lanternleaf_app::pipeline::{AppCommand, ReaderCommand};
@@ -90,13 +90,11 @@ impl LanternLeafApp {
                 let (rect, _) = ui.allocate_exact_size(available, Sense::hover());
                 let highlight_css = color32_to_css(highlight_color);
                 let mut scroll_anchor = None;
-                if auto_scroll_requested
-                    && highlight_anchor.is_some()
-                    && highlight_idx.is_some()
-                {
+                if auto_scroll_requested && highlight_anchor.is_some() && highlight_idx.is_some() {
                     let idx = highlight_idx.unwrap_or_default();
-                    let decision =
-                        self.auto_scroll_state.decide_scroll(idx, highlight_fallback);
+                    let decision = self
+                        .auto_scroll_state
+                        .decide_scroll(idx, highlight_fallback);
                     let decision_label = match decision {
                         crate::app::ScrollDecision::Scroll => "scroll",
                         crate::app::ScrollDecision::Blocked(
@@ -138,114 +136,110 @@ impl LanternLeafApp {
             ScrollArea::vertical()
                 .id_source("pretty_page")
                 .show(ui, |ui| {
-                for block in &self.pretty_page_cache_blocks {
-                    let mut response = None;
-                    let mut highlight_matched = false;
-                    let display_text = if block.text.is_empty() {
-                        " "
-                    } else {
-                        block.text.as_str()
-                    };
-                    let highlight_job = if highlight_anchor == Some(block.anchor_idx) {
-                        if let Some(sentence) = highlight_sentence {
-                            let (job, matched) = build_highlight_job(
-                                ui,
-                                display_text,
-                                sentence,
-                                block.kind,
-                                highlight_color,
-                            );
-                            highlight_matched = matched;
-                            Some(job)
+                    for block in &self.pretty_page_cache_blocks {
+                        let mut response = None;
+                        let mut highlight_matched = false;
+                        let display_text = if block.text.is_empty() {
+                            " "
+                        } else {
+                            block.text.as_str()
+                        };
+                        let highlight_job = if highlight_anchor == Some(block.anchor_idx) {
+                            if let Some(sentence) = highlight_sentence {
+                                let (job, matched) = build_highlight_job(
+                                    ui,
+                                    display_text,
+                                    sentence,
+                                    block.kind,
+                                    highlight_color,
+                                );
+                                highlight_matched = matched;
+                                Some(job)
+                            } else {
+                                None
+                            }
                         } else {
                             None
-                        }
-                    } else {
-                        None
-                    };
+                        };
 
-                    match block.kind {
-                        PrettyBlockKind::Heading => {
-                            if let Some(job) = highlight_job {
-                                response = Some(ui.add(Label::new(job).wrap(true)));
-                            } else {
-                                response = Some(
-                                    ui.add(
-                                        Label::new(
-                                            RichText::new(display_text)
-                                                .strong()
-                                                .size(18.0),
-                                        )
-                                        .wrap(true),
-                                    ),
-                                );
-                            }
-                        }
-                        PrettyBlockKind::Paragraph => {
-                            if let Some(job) = highlight_job {
-                                response = Some(ui.add(Label::new(job).wrap(true)));
-                            } else {
-                                response = Some(ui.add(Label::new(display_text).wrap(true)));
-                            }
-                        }
-                        PrettyBlockKind::ListItem => {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.label("•");
-                                let label = if let Some(job) = highlight_job {
-                                    Label::new(job).wrap(true)
+                        match block.kind {
+                            PrettyBlockKind::Heading => {
+                                if let Some(job) = highlight_job {
+                                    response = Some(ui.add(Label::new(job).wrap(true)));
                                 } else {
-                                    Label::new(display_text).wrap(true)
-                                };
-                                response = Some(ui.add(label));
-                            });
-                        }
-                    }
-
-                    if highlight_anchor == Some(block.anchor_idx) {
-                        trace!(
-                            pretty_highlight_anchor = block.anchor_idx,
-                            pretty_highlight_fallback = highlight_fallback.label(),
-                            pretty_highlight_sentence_match = highlight_matched,
-                            "pretty highlight applied"
-                        );
-                    }
-
-                    if auto_scroll_requested
-                        && highlight_anchor == Some(block.anchor_idx)
-                        && highlight_idx.is_some()
-                    {
-                        if let Some(response) = response.as_ref() {
-                            let idx = highlight_idx.unwrap_or_default();
-                            let decision =
-                                self.auto_scroll_state.decide_scroll(idx, highlight_fallback);
-                            let decision_label = match decision {
-                                crate::app::ScrollDecision::Scroll => "scroll",
-                                crate::app::ScrollDecision::Blocked(
-                                    crate::app::ScrollBlockReason::Duplicate,
-                                ) => "blocked_duplicate",
-                                crate::app::ScrollDecision::Blocked(
-                                    crate::app::ScrollBlockReason::Throttled(_),
-                                ) => "blocked_throttled",
-                            };
-                            trace!(
-                                pretty_scroll_action = decision_label,
-                                pretty_scroll_anchor = block.anchor_idx,
-                                pretty_scroll_fallback = highlight_fallback.label(),
-                                "pretty scroll decision"
-                            );
-                            if matches!(
-                                decision,
-                                crate::app::ScrollDecision::Scroll
-                            ) {
-                                response.scroll_to_me(Some(Align::Center));
-                                self.auto_scroll_state.record(idx, highlight_fallback);
+                                    response = Some(
+                                        ui.add(
+                                            Label::new(
+                                                RichText::new(display_text).strong().size(18.0),
+                                            )
+                                            .wrap(true),
+                                        ),
+                                    );
+                                }
+                            }
+                            PrettyBlockKind::Paragraph => {
+                                if let Some(job) = highlight_job {
+                                    response = Some(ui.add(Label::new(job).wrap(true)));
+                                } else {
+                                    response = Some(ui.add(Label::new(display_text).wrap(true)));
+                                }
+                            }
+                            PrettyBlockKind::ListItem => {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label("•");
+                                    let label = if let Some(job) = highlight_job {
+                                        Label::new(job).wrap(true)
+                                    } else {
+                                        Label::new(display_text).wrap(true)
+                                    };
+                                    response = Some(ui.add(label));
+                                });
                             }
                         }
-                    }
 
-                    ui.add_space(6.0);
-                }
-            });
+                        if highlight_anchor == Some(block.anchor_idx) {
+                            trace!(
+                                pretty_highlight_anchor = block.anchor_idx,
+                                pretty_highlight_fallback = highlight_fallback.label(),
+                                pretty_highlight_sentence_match = highlight_matched,
+                                "pretty highlight applied"
+                            );
+                        }
+
+                        if auto_scroll_requested
+                            && highlight_anchor == Some(block.anchor_idx)
+                            && highlight_idx.is_some()
+                        {
+                            if let Some(response) = response.as_ref() {
+                                let idx = highlight_idx.unwrap_or_default();
+                                let decision = self
+                                    .auto_scroll_state
+                                    .decide_scroll(idx, highlight_fallback);
+                                let decision_label = match decision {
+                                    crate::app::ScrollDecision::Scroll => "scroll",
+                                    crate::app::ScrollDecision::Blocked(
+                                        crate::app::ScrollBlockReason::Duplicate,
+                                    ) => "blocked_duplicate",
+                                    crate::app::ScrollDecision::Blocked(
+                                        crate::app::ScrollBlockReason::Throttled(_),
+                                    ) => "blocked_throttled",
+                                };
+                                trace!(
+                                    pretty_scroll_action = decision_label,
+                                    pretty_scroll_anchor = block.anchor_idx,
+                                    pretty_scroll_fallback = highlight_fallback.label(),
+                                    "pretty scroll decision"
+                                );
+                                if matches!(decision, crate::app::ScrollDecision::Scroll) {
+                                    response.scroll_to_me(Some(Align::Center));
+                                    self.auto_scroll_state.record(idx, highlight_fallback);
+                                }
+                            }
+                        }
+
+                        ui.add_space(6.0);
+                    }
+                });
         });
     }
 
@@ -291,25 +285,28 @@ impl LanternLeafApp {
                 .id_source("sentence_list")
                 .max_height(240.0)
                 .show(ui, |ui| {
-                for (idx, sentence) in snapshot.sentences.iter().enumerate() {
-                    let selected = snapshot.highlighted_sentence_idx == Some(idx);
-                    let label = format!("{:03} {}", idx + 1, sentence);
-                    let response = ui.selectable_label(selected, label);
-                    if response.clicked() {
-                        self.execute_reader_command(ReaderCommand::Session(
-                            SessionCommand::SentenceClick { sentence_idx: idx },
-                        ));
-                    }
-                    if auto_scroll_requested && target_idx == Some(idx) {
-                        let (_anchor, fallback) =
-                            LanternLeafApp::resolve_sentence_anchor(snapshot, idx);
-                        if matches!(self.auto_scroll_state.decide_scroll(idx, fallback), crate::app::ScrollDecision::Scroll) {
-                            response.scroll_to_me(Some(Align::Center));
-                            self.auto_scroll_state.record(idx, fallback);
+                    for (idx, sentence) in snapshot.sentences.iter().enumerate() {
+                        let selected = snapshot.highlighted_sentence_idx == Some(idx);
+                        let label = format!("{:03} {}", idx + 1, sentence);
+                        let response = ui.selectable_label(selected, label);
+                        if response.clicked() {
+                            self.execute_reader_command(ReaderCommand::Session(
+                                SessionCommand::SentenceClick { sentence_idx: idx },
+                            ));
+                        }
+                        if auto_scroll_requested && target_idx == Some(idx) {
+                            let (_anchor, fallback) =
+                                LanternLeafApp::resolve_sentence_anchor(snapshot, idx);
+                            if matches!(
+                                self.auto_scroll_state.decide_scroll(idx, fallback),
+                                crate::app::ScrollDecision::Scroll
+                            ) {
+                                response.scroll_to_me(Some(Align::Center));
+                                self.auto_scroll_state.record(idx, fallback);
+                            }
                         }
                     }
-                }
-            });
+                });
         });
     }
 
@@ -436,7 +433,10 @@ impl LanternLeafApp {
                 }
                 continue;
             }
-            if let Some(item) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
+            if let Some(item) = trimmed
+                .strip_prefix("- ")
+                .or_else(|| trimmed.strip_prefix("* "))
+            {
                 if !paragraph.is_empty() {
                     blocks.push(PrettyBlock {
                         kind: PrettyBlockKind::Paragraph,
@@ -580,10 +580,7 @@ impl LanternLeafApp {
                 }
             });
             ui.horizontal(|ui| {
-                ui.label(format!(
-                    "TTS progress: {:.1}%",
-                    snapshot.tts.progress_pct
-                ));
+                ui.label(format!("TTS progress: {:.1}%", snapshot.tts.progress_pct));
                 ui.separator();
                 ui.label(format!(
                     "Page ETA: {}",
@@ -678,16 +675,12 @@ impl LanternLeafApp {
                 &state.reader_ui.search_query
             }
         ));
-        ui.label(format!(
-            "Matches: {}",
-            state.reader_ui.search_matches.len()
-        ));
+        ui.label(format!("Matches: {}", state.reader_ui.search_matches.len()));
         if ui.button("Focus search").clicked() {
             self.pending_search_focus = true;
             self.push_status("Search focus requested".to_string());
         }
     }
-
 }
 
 fn color32_to_css(color: Color32) -> String {
@@ -761,11 +754,7 @@ fn match_sentence_index(sentences: &[String], target_sentence: &str) -> Option<u
     None
 }
 
-fn text_format_for_kind(
-    ui: &Ui,
-    kind: PrettyBlockKind,
-    background: Option<Color32>,
-) -> TextFormat {
+fn text_format_for_kind(ui: &Ui, kind: PrettyBlockKind, background: Option<Color32>) -> TextFormat {
     let text_style = match kind {
         PrettyBlockKind::Heading => TextStyle::Heading,
         _ => TextStyle::Body,

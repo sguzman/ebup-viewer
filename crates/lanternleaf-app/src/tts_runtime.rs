@@ -54,7 +54,9 @@ impl TtsCommand {
             session::SessionCommand::TtsStop => Some(Self::Stop),
             session::SessionCommand::ApplySettings { patch } => {
                 if patch_has_tts_fields(patch) {
-                    Some(Self::ApplySettings { patch: patch.clone() })
+                    Some(Self::ApplySettings {
+                        patch: patch.clone(),
+                    })
                 } else {
                     None
                 }
@@ -74,9 +76,9 @@ impl TtsCommand {
             Self::SeekPrev => session::SessionCommand::TtsSeekPrev,
             Self::RepeatSentence => session::SessionCommand::TtsRepeatSentence,
             Self::Stop => session::SessionCommand::TtsStop,
-            Self::ApplySettings { patch } => {
-                session::SessionCommand::ApplySettings { patch: patch.clone() }
-            }
+            Self::ApplySettings { patch } => session::SessionCommand::ApplySettings {
+                patch: patch.clone(),
+            },
         }
     }
 
@@ -171,11 +173,15 @@ struct TtsEventBatcher {
 impl TtsEventBatcher {
     fn collect(&mut self, rx: &mpsc::Receiver<TtsRuntimeEvent>) {
         while let Ok(event) = rx.try_recv() {
-            if matches!(event.kind, TtsRuntimeEventKind::Progress | TtsRuntimeEventKind::StateChanged)
-            {
-                if let Some(existing) = self.bucket.iter_mut().find(|entry| {
-                    entry.request_id == event.request_id && entry.kind == event.kind
-                }) {
+            if matches!(
+                event.kind,
+                TtsRuntimeEventKind::Progress | TtsRuntimeEventKind::StateChanged
+            ) {
+                if let Some(existing) = self
+                    .bucket
+                    .iter_mut()
+                    .find(|entry| entry.request_id == event.request_id && entry.kind == event.kind)
+                {
                     *existing = event;
                     continue;
                 }
@@ -279,8 +285,7 @@ impl TtsRuntime {
                 None => {
                     warn!(
                         request_id,
-                        action,
-                        "Ignoring TTS command because no reader session is active"
+                        action, "Ignoring TTS command because no reader session is active"
                     );
                     self.emit_event(TtsRuntimeEvent {
                         request_id,
@@ -359,7 +364,11 @@ impl TtsRuntime {
             .session
             .lock()
             .ok()
-            .and_then(|guard| guard.as_ref().map(|reader| reader.config.tts_pause_resume_behavior))
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .map(|reader| reader.config.tts_pause_resume_behavior)
+            })
             .unwrap_or_default();
         match behavior {
             config::TtsPauseResumeBehavior::RestartSentence => self.cancel_request(),
@@ -387,11 +396,16 @@ impl TtsRuntime {
             (
                 reader.config.tts_pause_resume_behavior,
                 state == session::TtsPlaybackState::Paused,
-                self.request.lock().ok().and_then(|guard| guard.as_ref().map(|_| ())).is_some(),
+                self.request
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.as_ref().map(|_| ()))
+                    .is_some(),
             )
         };
 
-        if behavior == config::TtsPauseResumeBehavior::ResumeFromPausePoint && paused && can_resume {
+        if behavior == config::TtsPauseResumeBehavior::ResumeFromPausePoint && paused && can_resume
+        {
             if let Ok(guard) = self.request.lock() {
                 if let Some(runtime) = guard.as_ref() {
                     runtime.set_paused(false);
@@ -416,7 +430,11 @@ impl TtsRuntime {
             (
                 reader.config.tts_pause_resume_behavior,
                 state,
-                self.request.lock().ok().and_then(|guard| guard.as_ref().map(|_| ())).is_some(),
+                self.request
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.as_ref().map(|_| ()))
+                    .is_some(),
             )
         };
 
@@ -585,13 +603,19 @@ fn run_tts_runtime_loop(
         }
 
         if ctx.mode == TtsRuntimeMode::Real && engine.is_none() {
-            let built_engine = match tts::TtsEngine::new(plan.model_path.clone(), plan.espeak_path.clone()) {
-                Ok(engine) => engine,
-                Err(err) => {
-                    transition_tts_runtime_to_paused(&ctx, runtime_request_id, "reader_tts_runtime_error", &format!("Failed to initialize Piper TTS engine: {err}"));
-                    break;
-                }
-            };
+            let built_engine =
+                match tts::TtsEngine::new(plan.model_path.clone(), plan.espeak_path.clone()) {
+                    Ok(engine) => engine,
+                    Err(err) => {
+                        transition_tts_runtime_to_paused(
+                            &ctx,
+                            runtime_request_id,
+                            "reader_tts_runtime_error",
+                            &format!("Failed to initialize Piper TTS engine: {err}"),
+                        );
+                        break;
+                    }
+                };
             engine = Some(built_engine);
         }
 
@@ -615,15 +639,16 @@ fn run_tts_runtime_loop(
                     })
             }
         } else {
-            prepare_tts_batch(&ctx, &plan, plan.start_idx, chunk_end, engine.as_ref()).unwrap_or_else(|err| {
-                transition_tts_runtime_to_paused(
-                    &ctx,
-                    runtime_request_id,
-                    "reader_tts_runtime_error",
-                    &format!("Failed to prepare TTS audio batch: {err}"),
-                );
-                Vec::new()
-            })
+            prepare_tts_batch(&ctx, &plan, plan.start_idx, chunk_end, engine.as_ref())
+                .unwrap_or_else(|err| {
+                    transition_tts_runtime_to_paused(
+                        &ctx,
+                        runtime_request_id,
+                        "reader_tts_runtime_error",
+                        &format!("Failed to prepare TTS audio batch: {err}"),
+                    );
+                    Vec::new()
+                })
         };
 
         if cancel_token.is_cancelled() {
@@ -922,7 +947,8 @@ fn transition_tts_runtime_to_paused(
             None => return,
         };
         let panels = panels_snapshot(&ctx.panels);
-        let event = reader.apply_command(session::SessionCommand::TtsPause, panels, &ctx.normalizer);
+        let event =
+            reader.apply_command(session::SessionCommand::TtsPause, panels, &ctx.normalizer);
         persist_reader_progress(reader, "tts_runtime_pause");
         Some((event.snapshot, reader.source_path.clone()))
     };
@@ -934,7 +960,14 @@ fn transition_tts_runtime_to_paused(
             error = %message,
             "TTS runtime transitioned to paused"
         );
-        emit_snapshot_event(ctx, runtime_request_id, action, snapshot, TtsRuntimeEventKind::Failed, Some(message.to_string()));
+        emit_snapshot_event(
+            ctx,
+            runtime_request_id,
+            action,
+            snapshot,
+            TtsRuntimeEventKind::Failed,
+            Some(message.to_string()),
+        );
     }
 }
 
@@ -961,7 +994,11 @@ fn advance_tts_runtime_cursor(ctx: &TtsRuntimeContext, runtime_request_id: u64) 
         if current_snapshot.tts.state != session::TtsPlaybackState::Playing {
             return false;
         }
-        let event = reader.apply_command(session::SessionCommand::TtsSeekNext, panels, &ctx.normalizer);
+        let event = reader.apply_command(
+            session::SessionCommand::TtsSeekNext,
+            panels,
+            &ctx.normalizer,
+        );
         persist_reader_progress(reader, "tts_runtime_step");
         Some(event.snapshot)
     };
@@ -1114,7 +1151,10 @@ fn build_playback(
 ) -> Result<PlaybackHandle, String> {
     match ctx.mode {
         TtsRuntimeMode::Simulated => {
-            let sentence_durations = prepared.iter().map(|item| item.duration).collect::<Vec<_>>();
+            let sentence_durations = prepared
+                .iter()
+                .map(|item| item.duration)
+                .collect::<Vec<_>>();
             let queued = Arc::new(AtomicUsize::new(sentence_durations.len()));
             Ok(PlaybackHandle {
                 kind: PlaybackKind::Simulated {
@@ -1185,7 +1225,12 @@ fn emit_terminal_event(
     let _ = ctx.event_tx.send(event);
 }
 
-fn emit_queued_event(ctx: &TtsRuntimeContext, request_id: u64, plan: &TtsPlaybackPlan, prepared: &[PreparedSentence]) {
+fn emit_queued_event(
+    ctx: &TtsRuntimeContext,
+    request_id: u64,
+    plan: &TtsPlaybackPlan,
+    prepared: &[PreparedSentence],
+) {
     let event = TtsRuntimeEvent {
         request_id,
         action: "reader_tts_runtime_queue".to_string(),
@@ -1310,7 +1355,7 @@ mod tests {
     fn tts_command_updates_snapshot_and_state() {
         let normalizer = normalizer::TextNormalizer::default();
         let runtime = TtsRuntime::new_with_mode(normalizer, TtsRuntimeMode::Simulated);
-        runtime.set_session(Some(build_test_session(&[&["A.", "B."]] )));
+        runtime.set_session(Some(build_test_session(&[&["A.", "B."]])));
 
         let snapshot = runtime.apply_command(TtsCommand::Play).expect("snapshot");
         assert_eq!(snapshot.tts.state, session::TtsPlaybackState::Playing);
@@ -1320,7 +1365,7 @@ mod tests {
     fn tts_runtime_emits_progress_events() {
         let normalizer = normalizer::TextNormalizer::default();
         let runtime = TtsRuntime::new_with_mode(normalizer, TtsRuntimeMode::Simulated);
-        runtime.set_session(Some(build_test_session(&[&["A.", "B.", "C."]] )));
+        runtime.set_session(Some(build_test_session(&[&["A.", "B.", "C."]])));
 
         let _ = runtime.apply_command(TtsCommand::Play);
         let started = Instant::now();
@@ -1343,12 +1388,17 @@ mod tests {
     fn tts_runtime_cancels_on_clear_session() {
         let normalizer = normalizer::TextNormalizer::default();
         let runtime = TtsRuntime::new_with_mode(normalizer, TtsRuntimeMode::Simulated);
-        runtime.set_session(Some(build_test_session(&[&["A.", "B."]] )));
+        runtime.set_session(Some(build_test_session(&[&["A.", "B."]])));
 
         let _ = runtime.apply_command(TtsCommand::Play);
         runtime.set_session(None);
         thread::sleep(Duration::from_millis(10));
         let events = runtime.collect_events();
-        assert!(events.iter().any(|event| event.kind == TtsRuntimeEventKind::Completed || event.kind == TtsRuntimeEventKind::Cancelled));
+        assert!(
+            events
+                .iter()
+                .any(|event| event.kind == TtsRuntimeEventKind::Completed
+                    || event.kind == TtsRuntimeEventKind::Cancelled)
+        );
     }
 }

@@ -180,8 +180,7 @@ fn persistence_rebuilds_after_corruption() {
         if let Some(parent) = bookmark_path.parent() {
             fs::create_dir_all(parent).expect("create cache dir");
         }
-        fs::write(&bookmark_path, "not = valid = toml")
-            .expect("write corrupt bookmark");
+        fs::write(&bookmark_path, "not = valid = toml").expect("write corrupt bookmark");
         let loaded = cache::load_bookmark(&source);
         assert!(loaded.is_none(), "corrupt bookmark should be ignored");
 

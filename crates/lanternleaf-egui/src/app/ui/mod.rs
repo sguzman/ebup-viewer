@@ -1,6 +1,6 @@
 pub(crate) mod format;
-mod starter;
 mod reader;
+mod starter;
 
 use eframe::egui::{self, CentralPanel, Color32, Context, RichText, SidePanel, TopBottomPanel};
 use lanternleaf_app::contracts::{ReaderSnapshot, UiMode};
@@ -73,9 +73,11 @@ impl LanternLeafApp {
                         )
                         .clicked()
                     {
-                        self.execute_command(lanternleaf_app::pipeline::AppCommand::RefreshRecents {
-                            limit: Some(10),
-                        });
+                        self.execute_command(
+                            lanternleaf_app::pipeline::AppCommand::RefreshRecents {
+                                limit: Some(10),
+                            },
+                        );
                     }
                     if ui.button("Safe quit (AppCommand::SafeQuit)").clicked() {
                         self.show_safe_quit_modal = true;
@@ -225,7 +227,11 @@ impl LanternLeafApp {
         });
     }
 
-    pub(crate) fn render_modals(&mut self, ctx: &Context, reader_snapshot: Option<&ReaderSnapshot>) {
+    pub(crate) fn render_modals(
+        &mut self,
+        ctx: &Context,
+        reader_snapshot: Option<&ReaderSnapshot>,
+    ) {
         if self.show_safe_quit_modal {
             self.render_safe_quit_modal(ctx);
         }

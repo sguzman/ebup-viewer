@@ -1,8 +1,8 @@
 use crate::contracts::{
     BootstrapConfig, BootstrapState, BrowserTabsHealth, BrowserTabsTab, BrowserTabsWindow,
     CalibreBookDto, CalibreLoadEvent, LogLevelEvent, PdfTranscriptionEvent, ReaderPlaybackState,
-    ReaderPlaybackStateEvent, ReaderSnapshot, RecentBook, SessionState, SourceOpenEvent, TtsStateEvent,
-    UiMode,
+    ReaderPlaybackStateEvent, ReaderSnapshot, RecentBook, SessionState, SourceOpenEvent,
+    TtsStateEvent, UiMode,
 };
 use crate::pipeline::{PersistenceOutcome, PersistenceTrigger};
 use lanternleaf_core::{epub_loader, session};
@@ -257,8 +257,9 @@ impl AppState {
 
     pub fn set_bootstrap_config(&mut self, config: BootstrapConfig) {
         self.app_shell.service_status.browser_tabs_enabled = config.browser_tabs_enabled;
-        self.app_shell.service_status.close_browser_tab_on_recent_delete =
-            config.close_browser_tab_on_recent_delete;
+        self.app_shell
+            .service_status
+            .close_browser_tab_on_recent_delete = config.close_browser_tab_on_recent_delete;
         self.app_shell.app_config_snapshot = Some(config);
     }
 

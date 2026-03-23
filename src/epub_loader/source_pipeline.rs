@@ -2882,9 +2882,9 @@ mod tests {
         );
         assert!(
             summary
-            .trace_notes
-            .iter()
-            .any(|value| value == "terminal_punctuation_repaired_when_confident")
+                .trace_notes
+                .iter()
+                .any(|value| value == "terminal_punctuation_repaired_when_confident")
         );
     }
 
@@ -2916,15 +2916,20 @@ mod tests {
     fn classification_confidence_marks_empty_transcripts_as_image_only() {
         let report = sample_report();
 
-        let classification = classify_pdf_runtime(Some(&report), "", "")
-            .expect("classification should exist");
+        let classification =
+            classify_pdf_runtime(Some(&report), "", "").expect("classification should exist");
 
-        assert_eq!(classification.document_class, PdfDocumentClass::ImageOnlyNoText);
+        assert_eq!(
+            classification.document_class,
+            PdfDocumentClass::ImageOnlyNoText
+        );
         assert!((classification.confidence - 0.98).abs() < f32::EPSILON);
-        assert!(classification
-            .reasons
-            .iter()
-            .any(|reason| reason == "transcript_text_empty"));
+        assert!(
+            classification
+                .reasons
+                .iter()
+                .any(|reason| reason == "transcript_text_empty")
+        );
     }
 
     #[test]

@@ -68,7 +68,7 @@
 | Current surface | Current owner | Future egui owner |
 | --- | --- | --- |
 | Starter shell, open flow, quick actions | legacy frontend shell | egui app shell and command widgets |
-| Reader shell/layout, top bars, side panels | legacy React shell (retired) | egui shell crate/widgets |
+| Reader shell/layout, top bars, side panels | legacy frontend shell (retired) | egui shell crate/widgets |
 | EPUB/HTML/Markdown pretty rendering | legacy renderers + DOM/HTML pipeline | Rust-native reader rendering/view-model pipeline |
 | PDF render/sync/highlight | `ReaderPrettyPdfPane.tsx` + Tauri PDF artifacts | Rust-native PDF subsystem integrated into egui |
 | TTS controls/runtime coordination | legacy frontend events + Rust runtime | Rust app runtime + egui playback widgets |

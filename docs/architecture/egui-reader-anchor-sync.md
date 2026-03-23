@@ -9,7 +9,7 @@ This document defines canonical anchor ownership and fallback rules for highligh
 
 ## Rust-native anchor lookup
 - HTML/Markdown anchor semantics are mapped into the content-block model during conversion.
-- Anchor resolution is deterministic and independent of browser DOM behavior.
+- Anchor resolution is deterministic and independent of legacy DOM behavior.
 
 ## Fallback order and tracing
 Fallbacks are explicit and traced:

@@ -11,5 +11,5 @@ This document defines the target Rust crate map for the egui migration.
 - **PDF rendering/sync:** PDF rendering, geometry mapping, and highlight/overlay sync.
 
 ## Notes
-- Crate boundaries should be owned by Rust traits/modules rather than Tauri command shims.
+- Crate boundaries should be owned by Rust traits/modules rather than legacy command shims.
 - Tracing is mandatory across crate boundaries to preserve parity diagnostics.

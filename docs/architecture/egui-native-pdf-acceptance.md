@@ -3,7 +3,7 @@
 This document maps the egui-native PDF acceptance criteria to concrete artifacts in the repo.
 
 ## Acceptance criteria mapping
-- **Rust-native PDF rendering/sync strategy fully specified without WebView fallback**
+- **Rust-native PDF rendering/sync strategy fully specified without legacy WebView fallback**
   - `docs/architecture/egui-native-pdf-subsystem.md`
   - `docs/architecture/egui-native-pdf-renderer-decision.md`
 - **Existing PDF quality contracts and degraded modes remain intact**

@@ -12,7 +12,7 @@ This document defines the parity gate for the egui-native PDF subsystem. It esta
   - `docs/architecture/pdf-renderer-contract.md`
 
 ## Gate structure
-- **Functional parity:** checklist items that must be satisfied before native PDF replaces the WebView path.
+- **Functional parity:** checklist items that must be satisfied before native PDF replaces the legacy WebView path.
 - **Degraded modes parity:** render-only and OCR-required behavior must be traceable via `pdf.*` spans and visible in diagnostics.
 - **Performance parity:** scheduler/viewport budget behavior must align with shell tracing, with explicit spans for render/eviction/throttle events.
 

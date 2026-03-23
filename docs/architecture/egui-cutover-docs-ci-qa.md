@@ -7,4 +7,4 @@ This document captures documentation, CI, and QA update requirements for cutover
 - Replace Tauri-era QA checklists with egui-native checklists.
 - Update parity acceptance checklist to point at native test/QA gates.
 - Update CI to run Rust-native checks and native app build/test flows.
-- Archive or delete obsolete Tauri/WebView/browser-test documentation.
+- Archive or delete obsolete legacy frontend test documentation.

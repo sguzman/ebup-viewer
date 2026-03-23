@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::time::Duration;
 
 pub const PDF_CANVAS_BUDGET_PAGES: usize = 2;

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod commands;
 mod tts_sync;
 mod theme;

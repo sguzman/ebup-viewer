@@ -115,6 +115,7 @@ struct LanternLeafApp {
     audio_diagnostics: AudioDiagnostics,
     tts_runtime: TtsRuntime,
     last_tts_runtime_event: Option<TtsRuntimeEvent>,
+    theme_override: Option<config::ThemeMode>,
     persistence: Arc<PersistenceLifecycle<FilesystemPersistenceService>>,
     cache_service: Arc<dyn cache_service::CacheService>,
     effect_session: Arc<Mutex<Option<session::ReaderSession>>>,
@@ -257,6 +258,7 @@ impl LanternLeafApp {
             audio_diagnostics: AudioDiagnostics::default(),
             tts_runtime: TtsRuntime::new(normalizer.clone()),
             last_tts_runtime_event: None,
+            theme_override: None,
             persistence,
             cache_service,
             effect_session,
@@ -1632,6 +1634,10 @@ impl eframe::App for LanternLeafApp {
         self.tts_runtime.set_panels(panels);
         self.refresh_anchor_diagnostics(reader_snapshot);
         self.update_pdf_render_state(reader_snapshot);
+        let state_theme = self.theme_from_state(&snapshot, reader_snapshot);
+        if self.theme_override == Some(state_theme) {
+            self.theme_override = None;
+        }
         let theme = self.resolve_theme(&snapshot, reader_snapshot);
         let visuals = match theme {
             config::ThemeMode::Day => Visuals::light(),

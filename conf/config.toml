@@ -1,5 +1,5 @@
 [appearance]
-theme = "day"
+theme = "night"
 font_family = "lexend"
 font_weight = "bold"
 font_size = 26
@@ -14,13 +14,13 @@ margin_vertical = 0
 r = 0.2
 g = 0.4
 b = 0.7
-a = 0.60
+a = 0.6
 
 [appearance.night_highlight]
 r = 0.8
 g = 0.8
 b = 0.5
-a = 0.60
+a = 0.6
 
 [window]
 width = 1624.0
@@ -30,12 +30,15 @@ height = 768.0
 pause_after_sentence = 0.06
 auto_scroll_tts = true
 center_spoken_sentence = true
+text_only_show_original_text = false
 tts_pause_resume_behavior = "resume_from_pause_point"
 time_remaining_display = "adaptive"
 
 [ui]
 show_tts = true
 show_settings = true
+show_stats = false
+dual_view_pipeline_enabled = true
 native_html_pretty_enabled = true
 native_html_pagination_mode = "sentence_window"
 
@@ -49,6 +52,7 @@ cache_dir = ".cache"
 browser_tabs_enabled = true
 browsr_base_url = "http://127.0.0.1:17373"
 browsr_timeout_ms = 8000
+close_browser_tab_on_recent_delete = true
 
 [tts]
 tts_model_path = "/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx"

@@ -275,6 +275,8 @@ struct LanternLeafApp {
     tts_runtime: TtsRuntime,
     last_tts_runtime_event: Option<TtsRuntimeEvent>,
     theme_override: Option<config::ThemeMode>,
+    pending_theme_mode: Option<config::ThemeMode>,
+    theme_patch_pending: bool,
     persistence: Arc<PersistenceLifecycle<FilesystemPersistenceService>>,
     cache_service: Arc<dyn cache_service::CacheService>,
     effect_session: Arc<Mutex<Option<session::ReaderSession>>>,
@@ -550,6 +552,8 @@ impl LanternLeafApp {
             tts_runtime: TtsRuntime::new(normalizer.clone()),
             last_tts_runtime_event: None,
             theme_override: None,
+            pending_theme_mode: None,
+            theme_patch_pending: false,
             persistence,
             cache_service,
             effect_session,
@@ -1337,6 +1341,51 @@ impl LanternLeafApp {
         ));
     }
 
+    fn maybe_apply_pending_theme_patch(&mut self, state: &AppState) {
+        if !self.theme_patch_pending {
+            return;
+        }
+        let pending = match self.pending_theme_mode {
+            Some(mode) => mode,
+            None => return,
+        };
+        if state.reader_document.snapshot.is_none() {
+            return;
+        }
+        self.apply_reader_settings_patch(
+            ReaderSettingsPatch {
+                theme: Some(pending),
+                ..Default::default()
+            },
+            "theme_toggle_pending",
+        );
+        self.theme_patch_pending = false;
+    }
+
+    fn sync_theme_override(
+        &mut self,
+        state_theme: config::ThemeMode,
+        reader_snapshot: Option<&ReaderSnapshot>,
+        bootstrap: Option<&BootstrapState>,
+    ) {
+        if let Some(pending) = self.pending_theme_mode {
+            let reader_matches = reader_snapshot
+                .map(|snapshot| snapshot.settings.theme == pending)
+                .unwrap_or(false);
+            let bootstrap_matches = bootstrap
+                .map(|bootstrap| bootstrap.config.theme == pending)
+                .unwrap_or(false);
+            if reader_matches && bootstrap_matches {
+                self.pending_theme_mode = None;
+                self.theme_override = None;
+            } else {
+                self.theme_override = Some(pending);
+            }
+        } else if self.theme_override == Some(state_theme) {
+            self.theme_override = None;
+        }
+    }
+
     fn record_settings_event(&mut self, description: &'static str, summary: String) {
         const MAX_EVENTS: usize = 16;
         let event = SettingsTraceEvent {
@@ -1949,10 +1998,13 @@ impl eframe::App for LanternLeafApp {
         self.tts_runtime.set_panels(panels);
         self.refresh_anchor_diagnostics(reader_snapshot);
         self.update_pdf_render_state(reader_snapshot);
+        self.maybe_apply_pending_theme_patch(&snapshot);
         let state_theme = self.theme_from_state(&snapshot, reader_snapshot);
-        if self.theme_override == Some(state_theme) {
-            self.theme_override = None;
-        }
+        self.sync_theme_override(
+            state_theme,
+            reader_snapshot,
+            snapshot.app_shell.bootstrap.as_ref(),
+        );
         let theme = self.resolve_theme(&snapshot, reader_snapshot);
         let visuals = match theme {
             config::ThemeMode::Day => Visuals::light(),
@@ -3482,6 +3534,13 @@ impl AutoScrollState {
     fn record(&mut self, idx: usize, fallback: AnchorFallback) {
         self.last_highlighted = Some((idx, fallback));
         self.last_jump_at = Some(Instant::now());
+    }
+
+    fn request_jump(&mut self) {
+        self.pending_auto_scroll = true;
+        self.last_highlighted = None;
+        self.last_jump_at = None;
+        self.throttle_blocked = 0;
     }
 
     fn reset(&mut self) {

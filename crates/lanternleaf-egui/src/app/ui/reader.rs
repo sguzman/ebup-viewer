@@ -1,6 +1,6 @@
 use eframe::egui::{
-    Align, Color32, FontId, Label, RichText, ScrollArea, Sense, Slider, TextFormat, TextStyle, Ui,
-    text::LayoutJob,
+    Align, Color32, FontId, Grid, Label, RichText, ScrollArea, Sense, Slider, TextFormat,
+    TextStyle, Ui, text::LayoutJob,
 };
 use lanternleaf_app::contracts::{PrettyKind, ReaderSnapshot};
 use lanternleaf_app::pipeline::{AppCommand, ReaderCommand};
@@ -8,6 +8,27 @@ use lanternleaf_app::state::AppState;
 use lanternleaf_core::session::{ReaderSettingsPatch, SessionCommand, TtsPlaybackState};
 use lanternleaf_core::text_utils;
 use tracing::trace;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HighlightSource {
+    Canonical,
+    TtsCursor,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct HighlightContext {
+    idx: Option<usize>,
+    source: HighlightSource,
+}
+
+impl HighlightContext {
+    fn label(self) -> &'static str {
+        match self.source {
+            HighlightSource::Canonical => "canonical",
+            HighlightSource::TtsCursor => "tts_cursor",
+        }
+    }
+}
 
 use crate::app::ui::format::format_duration_secs;
 use crate::app::{
@@ -18,9 +39,11 @@ impl LanternLeafApp {
     pub(crate) fn render_reader_content(&mut self, ui: &mut Ui, state: &AppState) {
         if let Some(snapshot) = state.reader_document.snapshot.as_ref() {
             let effective_text_only = self.resolved_text_only_mode(snapshot);
+            let highlight_ctx = self.highlight_context(snapshot);
             trace!(
                 page = snapshot.current_page,
-                highlight = ?self.resolved_highlight_idx(snapshot),
+                highlight = ?highlight_ctx.idx,
+                highlight_source = highlight_ctx.label(),
                 sentences = snapshot.sentences.len(),
                 text_only = effective_text_only,
                 "rendering reader shell content"
@@ -62,6 +85,21 @@ impl LanternLeafApp {
         }
     }
 
+    fn highlight_context(&self, snapshot: &ReaderSnapshot) -> HighlightContext {
+        if snapshot.tts.state == TtsPlaybackState::Playing {
+            if let Some(tts_idx) = snapshot.tts.current_sentence_idx {
+                return HighlightContext {
+                    idx: Some(tts_idx),
+                    source: HighlightSource::TtsCursor,
+                };
+            }
+        }
+        HighlightContext {
+            idx: snapshot.highlighted_sentence_idx,
+            source: HighlightSource::Canonical,
+        }
+    }
+
     fn should_render_pretty(&self, snapshot: &ReaderSnapshot) -> bool {
         !self.resolved_text_only_mode(snapshot)
             && snapshot.pretty_kind != PrettyKind::Pdf
@@ -84,7 +122,8 @@ impl LanternLeafApp {
     }
 
     fn render_pretty_page(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
-        let highlight_idx = self.resolved_highlight_idx(snapshot);
+        let highlight_ctx = self.highlight_context(snapshot);
+        let highlight_idx = highlight_ctx.idx;
         let highlight_sentence = highlight_idx
             .and_then(|idx| snapshot.sentences.get(idx))
             .map(String::as_str);
@@ -95,6 +134,7 @@ impl LanternLeafApp {
         trace!(
             page = snapshot.current_page,
             pretty_kind = ?snapshot.pretty_kind,
+            highlight_source = highlight_ctx.label(),
             highlight_sentence = ?highlight_idx,
             html_payload = snapshot.reading_html_page.is_some(),
             frame_handles_ready = self.frame_handles.is_some(),
@@ -109,18 +149,16 @@ impl LanternLeafApp {
             );
         }
         let highlight_color = self.resolve_highlight_color(snapshot);
+        let mut scroll_anchor = None;
         let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
-        if snapshot.pretty_kind == PrettyKind::Html
-            && snapshot.reading_html_page.is_some()
-            && self.frame_handles.is_some()
-        {
+        let html_available = snapshot.reading_html_page.is_some();
+        let frame_ready = self.frame_handles.is_some();
+        if snapshot.pretty_kind == PrettyKind::Html && html_available && frame_ready {
             ui.group(|ui| {
-                ui.label("Pretty page");
+                ui.label("Pretty view");
                 let available = ui.available_size();
                 let (rect, _) = ui.allocate_exact_size(available, Sense::hover());
                 trace!(rect = ?rect, available = ?available, "Allocated HTML webview region");
-                let highlight_css = color32_to_css(highlight_color);
-                let mut scroll_anchor = None;
                 if auto_scroll_requested && highlight_anchor.is_some() && highlight_idx.is_some() {
                     let idx = highlight_idx.unwrap_or_default();
                     let decision = self
@@ -146,6 +184,7 @@ impl LanternLeafApp {
                         self.auto_scroll_state.record(idx, highlight_fallback);
                     }
                 }
+                let highlight_css = color32_to_css(highlight_color);
                 self.webview_renderer.render_html(
                     ui.ctx(),
                     self.frame_handles.as_ref(),
@@ -163,13 +202,13 @@ impl LanternLeafApp {
 
         self.webview_renderer.hide();
         trace!(
-            html_available = snapshot.reading_html_page.is_some(),
-            frame_ready = self.frame_handles.is_some(),
+            html_available = html_available,
+            frame_ready = frame_ready,
             "HTML branch skipped, rendering cached text blocks"
         );
         self.refresh_pretty_cache(snapshot);
         ui.group(|ui| {
-            ui.label("Pretty page");
+            ui.label("Pretty view");
             ScrollArea::vertical()
                 .id_source("pretty_page")
                 .show(ui, |ui| {
@@ -284,11 +323,15 @@ impl LanternLeafApp {
         ui.group(|ui| {
             ui.label(format!("Source: {}", snapshot.source_name));
             ui.label(format!("Path: {}", snapshot.source_path));
-            ui.label(format!(
-                "Page {} / {}",
-                snapshot.current_page + 1,
-                snapshot.total_pages
-            ));
+            if snapshot.pretty_kind == PrettyKind::Html {
+                ui.label("HTML view: all sections rendered as a single stream.");
+            } else {
+                ui.label(format!(
+                    "Page {} / {}",
+                    snapshot.current_page + 1,
+                    snapshot.total_pages
+                ));
+            }
             ui.label(format!(
                 "Pretty mode: {:?}{}",
                 snapshot.pretty_kind,
@@ -317,7 +360,8 @@ impl LanternLeafApp {
                 return;
             }
             let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
-            let target_idx = self.resolved_highlight_idx(snapshot);
+            let highlight_ctx = self.highlight_context(snapshot);
+            let target_idx = highlight_ctx.idx;
             ScrollArea::vertical()
                 .id_source("sentence_list")
                 .max_height(240.0)
@@ -330,6 +374,10 @@ impl LanternLeafApp {
                             self.execute_reader_command(ReaderCommand::Session(
                                 SessionCommand::SentenceClick { sentence_idx: idx },
                             ));
+                            self.execute_reader_command(ReaderCommand::Session(
+                                SessionCommand::TtsPlayFromHighlight,
+                            ));
+                            self.auto_scroll_state.request_jump();
                         }
                         if auto_scroll_requested && target_idx == Some(idx) {
                             let (_anchor, fallback) =
@@ -546,7 +594,7 @@ impl LanternLeafApp {
                     ));
                 }
                 if ui.button("Jump to highlight").clicked() {
-                    self.auto_scroll_state.note_auto_scroll();
+                    self.auto_scroll_state.request_jump();
                 }
             });
         });
@@ -555,7 +603,7 @@ impl LanternLeafApp {
     pub(crate) fn render_tts_widget(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
         ui.group(|ui| {
             ui.label("TTS controls");
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if ui.button("Play").clicked() {
                     self.execute_reader_command(ReaderCommand::Session(SessionCommand::TtsPlay));
                 }
@@ -571,7 +619,8 @@ impl LanternLeafApp {
                     ));
                 }
             });
-            ui.horizontal(|ui| {
+            ui.add_space(2.0);
+            ui.horizontal_wrapped(|ui| {
                 if ui.button("Play from page").clicked() {
                     self.execute_reader_command(ReaderCommand::Session(
                         SessionCommand::TtsPlayFromPageStart,
@@ -593,7 +642,8 @@ impl LanternLeafApp {
                     ));
                 }
             });
-            ui.horizontal(|ui| {
+            ui.add_space(2.0);
+            ui.horizontal_wrapped(|ui| {
                 let mut tts_speed = snapshot.settings.tts_speed;
                 if ui
                     .add(Slider::new(&mut tts_speed, 0.5..=2.5).text("Speed"))
@@ -623,29 +673,37 @@ impl LanternLeafApp {
                     ));
                 }
             });
-            ui.horizontal(|ui| {
-                ui.label(format!("TTS progress: {:.1}%", snapshot.tts.progress_pct));
-                ui.separator();
-                ui.label(format!(
-                    "Page ETA: {}",
-                    format_duration_secs(snapshot.stats.page_time_remaining_secs)
-                ));
-                ui.separator();
-                ui.label(format!(
-                    "Book ETA: {}",
-                    format_duration_secs(snapshot.stats.book_time_remaining_secs)
-                ));
-            });
-            if let Some(event) = self.last_tts_runtime_event.as_ref() {
-                ui.horizontal(|ui| {
-                    ui.label(format!("Last TTS event: {:?}", event.kind));
-                    ui.separator();
-                    ui.label(event.action.as_str());
-                    if let Some(message) = event.message.as_ref() {
-                        ui.separator();
-                        ui.label(message);
-                    }
+            ui.add_space(6.0);
+            Grid::new("tts_stats_grid")
+                .spacing([8.0, 4.0])
+                .min_col_width(140.0)
+                .show(ui, |ui| {
+                    ui.label(format!("TTS progress: {:.1}%", snapshot.tts.progress_pct));
+                    ui.label(format!(
+                        "Page ETA: {}",
+                        format_duration_secs(snapshot.stats.page_time_remaining_secs)
+                    ));
+                    ui.end_row();
+                    ui.label(format!(
+                        "Book ETA: {}",
+                        format_duration_secs(snapshot.stats.book_time_remaining_secs)
+                    ));
+                    ui.label("");
+                    ui.end_row();
                 });
+            ui.add_space(4.0);
+            if let Some(event) = self.last_tts_runtime_event.as_ref() {
+                Grid::new("tts_event_grid")
+                    .spacing([6.0, 2.0])
+                    .min_col_width(120.0)
+                    .show(ui, |ui| {
+                        ui.label(format!("Last TTS event: {:?}", event.kind));
+                        ui.label(event.action.as_str());
+                        if let Some(message) = event.message.as_ref() {
+                            ui.label(message);
+                        }
+                        ui.end_row();
+                    });
             } else {
                 ui.label("Last TTS event: none");
             }
@@ -653,7 +711,8 @@ impl LanternLeafApp {
     }
 
     fn render_spoken_sentence_banner(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
-        let Some(idx) = self.resolved_highlight_idx(snapshot) else {
+        let highlight_ctx = self.highlight_context(snapshot);
+        let Some(idx) = highlight_ctx.idx else {
             return;
         };
         let sentence = snapshot

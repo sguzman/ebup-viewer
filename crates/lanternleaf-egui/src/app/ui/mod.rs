@@ -52,16 +52,9 @@ impl LanternLeafApp {
                         lanternleaf_core::config::ThemeMode::Night => "Night",
                     };
                     if ui.button(label).clicked() {
+                        self.pending_theme_mode = Some(next_theme);
                         self.theme_override = Some(next_theme);
-                        if let Some(_snapshot) = state.reader_document.snapshot.as_ref() {
-                            self.apply_reader_settings_patch(
-                                lanternleaf_core::session::ReaderSettingsPatch {
-                                    theme: Some(next_theme),
-                                    ..Default::default()
-                                },
-                                "theme_toggle",
-                            );
-                        }
+                        self.theme_patch_pending = true;
                         self.execute_command(lanternleaf_app::pipeline::AppCommand::ToggleTheme);
                     }
                     ui.separator();

@@ -15,18 +15,22 @@ impl LanternLeafApp {
         let model = StarterViewModel::from_state(state);
         ui.heading("Starter shell");
         ui.add_space(8.0);
-        if self.layout_policy.is_narrow() {
-            self.render_starter_open_controls(ui, &model);
-            self.render_starter_recents(ui, &model);
-            self.render_starter_calibre(ui, &model);
-            self.render_starter_browser_tabs(ui, &model);
-        } else {
+        let available_width = ui.available_width();
+        let multi_column_mode = !self.layout_policy.is_narrow() && available_width >= 1100.0;
+        if multi_column_mode {
             ui.columns(2, |columns| {
                 self.render_starter_open_controls(&mut columns[0], &model);
                 self.render_starter_recents(&mut columns[0], &model);
                 self.render_starter_calibre(&mut columns[1], &model);
                 self.render_starter_browser_tabs(&mut columns[1], &model);
             });
+        } else {
+            self.render_starter_open_controls(ui, &model);
+            self.render_starter_recents(ui, &model);
+            ui.add_space(6.0);
+            ui.label(
+                "Calibre and browser-tab lists hidden at narrow widths to prevent layout bleed.",
+            );
         }
         ui.add_space(8.0);
         self.render_starter_diagnostics(ui, &model);

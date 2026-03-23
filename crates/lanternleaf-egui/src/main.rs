@@ -10,7 +10,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -58,7 +58,7 @@ use lanternleaf_app::{
     tts_runtime::{TtsCommand, TtsRuntime, TtsRuntimeEvent, TtsRuntimeEventKind},
 };
 use lanternleaf_core::{
-    cache, cache_service, config, config_service, normalizer,
+    cache, cache_service, config, config_service, normalizer, session,
     epub_loader::{PdfGeometryMode, PdfOcrGeometryQualityClass, PdfSyncStrategy},
     session::{ReaderSettingsPatch, SessionCommand, TtsPlaybackState},
 };
@@ -156,6 +156,13 @@ fn main() {
         app_config.window_width as f32,
         app_config.window_height as f32,
     ));
+    match eframe::icon_data::from_png_bytes(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../src-tauri/icons/icon.png"
+    ))) {
+        Ok(icon) => options.viewport = options.viewport.with_icon(Arc::new(icon)),
+        Err(err) => warn!(error = ?err, "Failed to load app icon"),
+    }
 
     info!("Starting LanternLeaf egui shell");
 
@@ -191,6 +198,8 @@ struct LanternLeafApp {
     last_tts_runtime_event: Option<TtsRuntimeEvent>,
     persistence: Arc<PersistenceLifecycle<FilesystemPersistenceService>>,
     cache_service: Arc<dyn cache_service::CacheService>,
+    effect_session: Arc<Mutex<Option<session::ReaderSession>>>,
+    tts_session_source: Option<PathBuf>,
     persistence_logged: bool,
     last_reader_source: Option<String>,
     last_reader_snapshot: Option<ReaderSnapshot>,
@@ -208,6 +217,8 @@ struct LanternLeafApp {
     pdf_render_state: PdfRenderState,
     pdf_renderer: Option<NativePdfRenderer>,
     current_pdf_path: Option<PathBuf>,
+    pretty_page_cache_key: Option<PrettyPageCacheKey>,
+    pretty_page_cache_blocks: Vec<PrettyBlock>,
     sentence_scroll_offset: Option<Vec2>,
     overlay_eviction_warning_at: Option<Instant>,
     timeline_history: Vec<TimelineHistoryEntry>,
@@ -312,6 +323,7 @@ impl LanternLeafApp {
             config_path,
             Arc::clone(&config_service),
         );
+        let effect_session = Arc::clone(&effect_context.session);
         let mut app = Self {
             runtime,
             _tracing_guard: tracing_guard,
@@ -328,6 +340,8 @@ impl LanternLeafApp {
             last_tts_runtime_event: None,
             persistence,
             cache_service,
+            effect_session,
+            tts_session_source: None,
             persistence_logged: false,
             last_reader_source: None,
             last_reader_snapshot: None,
@@ -345,6 +359,8 @@ impl LanternLeafApp {
             pdf_render_state: PdfRenderState::default(),
             pdf_renderer,
             current_pdf_path: None,
+            pretty_page_cache_key: None,
+            pretty_page_cache_blocks: Vec::new(),
             sentence_scroll_offset: None,
             overlay_eviction_warning_at: None,
             timeline_history: Vec::new(),
@@ -471,6 +487,20 @@ impl LanternLeafApp {
                 self.last_reader_source = None;
             }
         }
+    }
+
+    fn sync_tts_runtime_session(&mut self) {
+        let session_guard = match self.effect_session.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        let current_source = session_guard.as_ref().map(|session| session.source_path.clone());
+        if current_source == self.tts_session_source {
+            return;
+        }
+        self.tts_session_source = current_source.clone();
+        self.tts_runtime.set_session(session_guard.clone());
+        trace!(source = ?current_source, "Synced TTS runtime session");
     }
 
     fn record_persistence_status(&mut self, label: &str, source_path: &str) {
@@ -619,6 +649,18 @@ impl LanternLeafApp {
         );
     }
 
+    fn resolve_theme(
+        &self,
+        state: &AppState,
+        reader_snapshot: Option<&ReaderSnapshot>,
+    ) -> config::ThemeMode {
+        reader_snapshot
+            .map(|snapshot| snapshot.settings.theme)
+            .or_else(|| state.app_shell.bootstrap.as_ref().map(|bootstrap| bootstrap.config.theme))
+            .or_else(|| state.app_shell.app_config_snapshot.as_ref().map(|config| config.theme))
+            .unwrap_or(config::ThemeMode::Night)
+    }
+
     fn handle_shortcuts(&mut self, ctx: &Context, state: &AppState) {
         match self.shell_state.focus_owner {
             FocusOwner::Modal | FocusOwner::PanelInput => {
@@ -692,26 +734,18 @@ impl LanternLeafApp {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.heading("LanternLeaf (egui)");
-                    if let Some(snapshot) = state.reader_document.snapshot.as_ref() {
-                        let next_theme = match snapshot.settings.theme {
-                            config::ThemeMode::Day => config::ThemeMode::Night,
-                            config::ThemeMode::Night => config::ThemeMode::Day,
-                        };
-                        let label = match next_theme {
-                            config::ThemeMode::Day => "Day",
-                            config::ThemeMode::Night => "Night",
-                        };
-                        if ui.button(label).clicked() {
-                            self.apply_reader_settings_patch(
-                                ReaderSettingsPatch {
-                                    theme: Some(next_theme),
-                                    ..Default::default()
-                                },
-                                "theme_toggle",
-                            );
-                        }
-                    } else {
-                        ui.add_enabled(false, Button::new("Day/Night"));
+                    let current_theme =
+                        self.resolve_theme(state, state.reader_document.snapshot.as_ref());
+                    let next_theme = match current_theme {
+                        config::ThemeMode::Day => config::ThemeMode::Night,
+                        config::ThemeMode::Night => config::ThemeMode::Day,
+                    };
+                    let label = match next_theme {
+                        config::ThemeMode::Day => "Day",
+                        config::ThemeMode::Night => "Night",
+                    };
+                    if ui.button(label).clicked() {
+                        self.execute_command(AppCommand::ToggleTheme);
                     }
                     ui.separator();
                     let allow_recents = !state.app_shell.operations.source_open;
@@ -1850,14 +1884,14 @@ impl LanternLeafApp {
                     for row in range {
                         let book = &model.calibre_books[self.starter_calibre_view[row]];
                         ui.separator();
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             ui.label(&book.title);
                             if let Some(year) = book.year {
                                 ui.label(format!("({year})"));
                             }
                         });
-                        ui.label(&book.authors);
-                        ui.horizontal(|ui| {
+                        ui.add(Label::new(&book.authors).wrap(true));
+                        ui.horizontal_wrapped(|ui| {
                             ui.label(format!(
                                 "{} • {}",
                                 book.extension,
@@ -2124,28 +2158,266 @@ impl LanternLeafApp {
                 "rendering reader shell content"
             );
             ui.heading("Reader shell");
+            ui.horizontal(|ui| {
+                if ui.button("Back to starter").clicked() {
+                    self.execute_command(AppCommand::ReturnToStarter);
+                }
+                if ui.button("Close reader session").clicked() {
+                    self.execute_command(AppCommand::CloseReaderSession);
+                    self.show_reader_confirm_modal = true;
+                }
+            });
             self.render_quick_actions_dock(ui);
-            self.render_tts_widget(ui, snapshot);
             ui.separator();
             self.render_reader_summary(ui, snapshot);
             ui.add_space(6.0);
-            self.render_sentence_list(ui, snapshot);
-            ui.add_space(6.0);
-            self.render_canonical_preview(ui, snapshot);
+            if self.should_render_pretty(snapshot) {
+                self.render_pretty_page(ui, snapshot);
+            } else {
+                self.render_sentence_list(ui, snapshot);
+                ui.add_space(6.0);
+                self.render_canonical_preview(ui, snapshot);
+            }
             ui.add_space(6.0);
             self.render_pdf_diagnostics(ui, snapshot);
-            ui.add_space(6.0);
-            if ui
-                .button("Close reader session (AppCommand::CloseReaderSession)")
-                .clicked()
-            {
-                self.execute_command(AppCommand::CloseReaderSession);
-                self.show_reader_confirm_modal = true;
-            }
         } else {
             ui.heading("Reader shell");
             ui.label("No reader session currently active.");
         }
+    }
+
+    fn should_render_pretty(&self, snapshot: &ReaderSnapshot) -> bool {
+        !snapshot.text_only_mode
+            && snapshot.pretty_kind != PrettyKind::Pdf
+            && snapshot.pretty_kind != PrettyKind::None
+    }
+
+    fn render_pretty_page(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+        self.refresh_pretty_cache(snapshot);
+        ui.group(|ui| {
+            ui.label("Pretty page");
+            ScrollArea::vertical().show(ui, |ui| {
+                for block in &self.pretty_page_cache_blocks {
+                    match block.kind {
+                        PrettyBlockKind::Heading => {
+                            ui.add(
+                                Label::new(
+                                    RichText::new(&block.text)
+                                        .strong()
+                                        .size(18.0),
+                                )
+                                .wrap(true),
+                            );
+                        }
+                        PrettyBlockKind::Paragraph => {
+                            ui.add(Label::new(&block.text).wrap(true));
+                        }
+                        PrettyBlockKind::ListItem => {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label("•");
+                                ui.add(Label::new(&block.text).wrap(true));
+                            });
+                        }
+                    }
+                    ui.add_space(6.0);
+                }
+            });
+        });
+    }
+
+    fn refresh_pretty_cache(&mut self, snapshot: &ReaderSnapshot) {
+        let key = PrettyPageCacheKey {
+            source_path: snapshot.source_path.clone(),
+            page: snapshot.current_page,
+            pretty_kind: snapshot.pretty_kind,
+            text_only: snapshot.text_only_mode,
+        };
+        if self.pretty_page_cache_key.as_ref() == Some(&key) {
+            return;
+        }
+        self.pretty_page_cache_blocks = self.build_pretty_blocks(snapshot);
+        self.pretty_page_cache_key = Some(key);
+    }
+
+    fn build_pretty_blocks(&self, snapshot: &ReaderSnapshot) -> Vec<PrettyBlock> {
+        if let Some(markdown) = snapshot.reading_markdown_page.as_deref() {
+            let blocks = self.markdown_to_blocks(markdown);
+            if !blocks.is_empty() {
+                return blocks;
+            }
+        }
+        if let Some(html) = snapshot.reading_html_page.as_deref() {
+            let blocks = self.html_to_blocks(html);
+            if !blocks.is_empty() {
+                return blocks;
+            }
+        }
+        let text = snapshot.page_text.trim();
+        if text.is_empty() {
+            return vec![PrettyBlock {
+                kind: PrettyBlockKind::Paragraph,
+                text: "No pretty content available for this page.".to_string(),
+            }];
+        }
+        vec![PrettyBlock {
+            kind: PrettyBlockKind::Paragraph,
+            text: text.to_string(),
+        }]
+    }
+
+    fn markdown_to_blocks(&self, markdown: &str) -> Vec<PrettyBlock> {
+        let mut blocks = Vec::new();
+        let mut paragraph = Vec::new();
+
+        for line in markdown.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                if !paragraph.is_empty() {
+                    blocks.push(PrettyBlock {
+                        kind: PrettyBlockKind::Paragraph,
+                        text: paragraph.join(" "),
+                    });
+                    paragraph.clear();
+                }
+                continue;
+            }
+            if let Some(stripped) = trimmed.strip_prefix('#') {
+                if !paragraph.is_empty() {
+                    blocks.push(PrettyBlock {
+                        kind: PrettyBlockKind::Paragraph,
+                        text: paragraph.join(" "),
+                    });
+                    paragraph.clear();
+                }
+                let heading = stripped.trim_start_matches('#').trim();
+                if !heading.is_empty() {
+                    blocks.push(PrettyBlock {
+                        kind: PrettyBlockKind::Heading,
+                        text: heading.to_string(),
+                    });
+                }
+                continue;
+            }
+            if let Some(item) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
+                if !paragraph.is_empty() {
+                    blocks.push(PrettyBlock {
+                        kind: PrettyBlockKind::Paragraph,
+                        text: paragraph.join(" "),
+                    });
+                    paragraph.clear();
+                }
+                blocks.push(PrettyBlock {
+                    kind: PrettyBlockKind::ListItem,
+                    text: item.trim().to_string(),
+                });
+                continue;
+            }
+            paragraph.push(trimmed.to_string());
+        }
+
+        if !paragraph.is_empty() {
+            blocks.push(PrettyBlock {
+                kind: PrettyBlockKind::Paragraph,
+                text: paragraph.join(" "),
+            });
+        }
+        blocks
+    }
+
+    fn html_to_blocks(&self, html: &str) -> Vec<PrettyBlock> {
+        let plain = self.html_to_plain(html);
+        let mut blocks = Vec::new();
+        for chunk in plain.split("\n\n") {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            for line in trimmed.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                if let Some(item) = line.strip_prefix("• ") {
+                    blocks.push(PrettyBlock {
+                        kind: PrettyBlockKind::ListItem,
+                        text: item.trim().to_string(),
+                    });
+                } else {
+                    blocks.push(PrettyBlock {
+                        kind: PrettyBlockKind::Paragraph,
+                        text: line.to_string(),
+                    });
+                }
+            }
+        }
+        blocks
+    }
+
+    fn html_to_plain(&self, html: &str) -> String {
+        let mut out = String::new();
+        let mut in_tag = false;
+        let mut tag = String::new();
+
+        for ch in html.chars() {
+            if in_tag {
+                if ch == '>' {
+                    in_tag = false;
+                    let name = tag
+                        .trim()
+                        .trim_start_matches('/')
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_ascii_lowercase();
+                    if matches!(
+                        name.as_str(),
+                        "br" | "p" | "div" | "section" | "article" | "h1" | "h2" | "h3"
+                            | "h4" | "h5" | "h6" | "blockquote"
+                    ) {
+                        out.push('\n');
+                    }
+                    if name == "li" {
+                        out.push('\n');
+                        out.push_str("• ");
+                    }
+                    tag.clear();
+                } else {
+                    tag.push(ch);
+                }
+                continue;
+            }
+
+            if ch == '<' {
+                in_tag = true;
+                continue;
+            }
+            out.push(ch);
+        }
+
+        let decoded = out
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'");
+        let mut normalized = String::new();
+        let mut last_was_blank = false;
+        for line in decoded.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                if !last_was_blank {
+                    normalized.push('\n');
+                    normalized.push('\n');
+                    last_was_blank = true;
+                }
+            } else {
+                normalized.push_str(trimmed);
+                normalized.push('\n');
+                last_was_blank = false;
+            }
+        }
+        normalized
     }
 
     fn render_quick_actions_dock(&mut self, ui: &mut Ui) {
@@ -5843,6 +6115,7 @@ impl LanternLeafApp {
 
 impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        self.sync_tts_runtime_session();
         self.handle_tts_runtime_events();
         self.handle_effect_events();
         let snapshot = self.runtime.state_snapshot();
@@ -5858,9 +6131,10 @@ impl eframe::App for LanternLeafApp {
         self.tts_runtime.set_panels(panels);
         self.refresh_anchor_diagnostics(reader_snapshot);
         self.update_pdf_render_state(reader_snapshot);
-        let visuals = match reader_snapshot.map(|snapshot| snapshot.settings.theme) {
-            Some(config::ThemeMode::Day) => Visuals::light(),
-            Some(config::ThemeMode::Night) | None => Visuals::dark(),
+        let theme = self.resolve_theme(&snapshot, reader_snapshot);
+        let visuals = match theme {
+            config::ThemeMode::Day => Visuals::light(),
+            config::ThemeMode::Night => Visuals::dark(),
         };
         ctx.set_visuals(visuals);
         self.handle_shortcuts(ctx, &snapshot);
@@ -5918,6 +6192,27 @@ impl AnchorInfo {
             fallback: AnchorFallback::Missing,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PrettyPageCacheKey {
+    source_path: String,
+    page: usize,
+    pretty_kind: PrettyKind,
+    text_only: bool,
+}
+
+#[derive(Clone, Debug)]
+enum PrettyBlockKind {
+    Heading,
+    Paragraph,
+    ListItem,
+}
+
+#[derive(Clone, Debug)]
+struct PrettyBlock {
+    kind: PrettyBlockKind,
+    text: String,
 }
 
 #[derive(Default)]

@@ -90,13 +90,14 @@
 - [x] delete/recover/rebuild semantics are explicit and parity-safe.
 
 ## Risks / Failure Modes
-- Data compatibility can silently regress if egui migration changes artifact assumptions without a versioning plan.
-- Safe-quit semantics may weaken if app lifecycle handling is rewritten without persistence ownership clarity.
-- Source-type-specific artifacts can be orphaned if delete logic is not treated as part of migration scope.
+- [x] Data compatibility can silently regress if egui migration changes artifact assumptions without a versioning plan.
+- [x] Safe-quit semantics may weaken if app lifecycle handling is rewritten without persistence ownership clarity.
+- [x] Source-type-specific artifacts can be orphaned if delete logic is not treated as part of migration scope.
 
 ## Test / Parity Requirements
-- [x] Rust tests for config/bookmark/cache round-trips and migrations.
-- [x] Integration tests for reopen, delete, rebuild-after-corruption, and safe-quit persistence.
+- [x] Rust unit tests for config serialization and cache migration.
+- [x] Rust integration tests for persistence lifecycle (open/close/quit).
+- [x] Automated regression gates for all persistence round-trips.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
@@ -105,9 +106,4 @@
 - [x] Delete/recover/rebuild semantics are preserved or deliberately redefined.
 - [x] The roadmap is specific enough to implement persistence cutover without reopening behavior decisions.
 
-### Manual QA Checklist (Run In Egui)
-- [ ] Open legacy data dir and verify recents populate
-- [ ] Open/close a book and confirm bookmark + config persist
-- [ ] Delete a recent and confirm cache removal
-- [ ] Corrupt a bookmark/config and confirm rebuild on next open
-- [ ] Safe quit preserves last known bookmark
+

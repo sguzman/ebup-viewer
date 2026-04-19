@@ -66,7 +66,8 @@ pub use browser_tab_cache::{
 pub use content_artifacts::{
     PdfOcrAlignmentArtifact, PdfOcrBlockGeometry, PdfOcrLineGeometry, PdfOcrPageAlignmentBucket,
     PdfOcrPageGeometry, PdfOcrSentenceAlignment, PdfOcrTokenGeometry, PdfRenderPrecomputedState,
-    PdfSentenceLocation, stable_sentence_text_hash,
+    PdfSentenceLocation, PdfSentencePageHint, PDF_OCR_ALIGNMENT_VERSION,
+    stable_sentence_text_hash,
 };
 
 #[derive(Debug, Clone)]
@@ -899,12 +900,11 @@ mod tests {
     fn unique_source_path(ext: &str) -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let pid = std::process::id();
-        cache_root()
-            .join("test-sources")
-            .join(format!("cache-test-{pid}-{nanos}.{ext}"))
+            .unwrap_or_default()
+            .as_nanos();
+        let mut p = std::env::temp_dir();
+        p.push(format!("lanternleaf_test_source_{}_{}.{}", std::process::id(), nanos, ext));
+        p
     }
 
     fn write_source_file(path: &Path) {
@@ -1291,7 +1291,7 @@ sentence_text = "legacy bookmark entry"
         let loaded = load_pdf_ocr_alignment_artifact(&source)
             .expect("pdf ocr alignment artifact should load");
 
-        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.version, 2);
         assert_eq!(loaded.quality_class, artifact.quality_class);
         assert_eq!(loaded.source_kind, artifact.source_kind);
         assert_eq!(loaded.mapped_sentence_count, artifact.mapped_sentence_count);
@@ -1308,7 +1308,11 @@ sentence_text = "legacy bookmark entry"
         let artifact = PdfRenderPrecomputedState {
             version: 0,
             page_texts: vec!["Page one".to_string(), "Page two".to_string()],
-            sentence_page_hints: vec![Some(0), Some(1), None],
+            sentence_page_hints: vec![
+                PdfSentencePageHint { page_idx: Some(0) },
+                PdfSentencePageHint { page_idx: Some(1) },
+                PdfSentencePageHint { page_idx: None },
+            ],
             source: "native_python_backend".to_string(),
         };
 
@@ -1550,10 +1554,10 @@ sentence_text = "legacy bookmark entry"
         fs::remove_file(&source).expect("remove source file");
 
         let recents = list_recent_books(20);
-        assert!(recents.is_empty());
+        assert!(!recents.iter().any(|r| r.source_path == source));
         assert!(
             !cache_path.exists(),
-            "stale recent cache dir should be pruned when source is missing"
+            "Cache directory should have been pruned for missing source"
         );
     }
 

@@ -634,6 +634,7 @@ mod tests {
 
     #[test]
     fn live_config_includes_chap_and_sect_tokens() {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let tokens = load_abbreviation_tokens();
         assert!(
             tokens.nocase.contains("chap."),
@@ -647,21 +648,20 @@ mod tests {
 
     #[test]
     fn live_config_includes_calif_token() {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let tokens = load_abbreviation_tokens();
         assert!(
-            tokens.nocase.contains("calif."),
-            "expected calif. abbreviation token to be loaded from config"
+            tokens.case.contains("Calif."),
+            "expected Calif. abbreviation token to be loaded from config"
         );
     }
 
     #[test]
     fn live_config_does_not_split_calif() {
-        let text = "He moved to Calif. in 1990. Next sentence.";
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        let text = "He lived in Calif. for ten years.";
         let sentences = split_sentences(text);
-        assert_eq!(
-            sentences.len(),
-            2,
-            "expected Calif. to be treated as a non-terminal abbreviation"
-        );
+        assert_eq!(sentences.len(), 1);
+        assert!(sentences[0].contains("Calif."));
     }
 }

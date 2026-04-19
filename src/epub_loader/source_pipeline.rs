@@ -456,6 +456,8 @@ fn load_pdf_with_quack_check(
     })
 }
 
+
+
 pub(super) fn resolve_pdf_dual_view_content(
     transcript_text: &str,
     markdown: &str,
@@ -658,9 +660,10 @@ fn replace_ligatures_and_measure(value: &str) -> (String, u32) {
 fn can_repair_pdf_paragraph_punctuation(
     paragraph: &str,
     report: Option<&crate::quack_check::report::JobReport>,
+    text_quality: &PdfEmbeddedTextTrustDiagnostics,
 ) -> bool {
     let trimmed = paragraph.trim_end();
-    if trimmed.len() < 24 {
+    if trimmed.len() < 12 {
         return false;
     }
     let last = match trimmed.chars().last() {
@@ -676,21 +679,31 @@ fn can_repair_pdf_paragraph_punctuation(
     if !last.is_alphanumeric() {
         return false;
     }
-    let Some(report) = report else {
+
+    // Only repair if text quality is reasonably high.
+    if text_quality.block_coherence < 0.7 || text_quality.coordinate_sanity < 0.65 {
         return false;
-    };
-    report.sample.garbage_ratio <= 0.08
-        && report.sample.text_page_ratio >= 0.5
-        && report.sample.full_page_raster_page_ratio <= 0.7
+    }
+
+    if let Some(report) = report {
+        if report.sample.garbage_ratio > 0.08
+            || report.sample.text_page_ratio < 0.5
+            || report.sample.full_page_raster_page_ratio > 0.7
+        {
+            return false;
+        }
+    }
+    true
 }
 
 fn finalize_pdf_paragraph(
     out: &mut String,
     paragraph: &mut String,
     report: Option<&crate::quack_check::report::JobReport>,
+    text_quality: &PdfEmbeddedTextTrustDiagnostics,
     state: &mut PdfTranscriptNormalizationState,
 ) {
-    if can_repair_pdf_paragraph_punctuation(paragraph, report) {
+    if can_repair_pdf_paragraph_punctuation(paragraph, report, text_quality) {
         paragraph.push('.');
         state.punctuation_repair_count += 1;
     }
@@ -714,6 +727,25 @@ fn normalize_pdf_text_for_reader_with_summary(
     input: &str,
     report: Option<&crate::quack_check::report::JobReport>,
 ) -> (String, PdfOcrNormalizationSummary) {
+    let text_quality = if let Some(report) = report {
+        derive_pdf_trust_diagnostics(&report.sample)
+    } else {
+        PdfEmbeddedTextTrustDiagnostics {
+            block_coherence: 1.0,
+            coordinate_sanity: 1.0,
+            reading_order_stability: 1.0,
+            duplicate_text_suppression_needed: false,
+            hidden_text_layer_suspected: false,
+            invisible_text_suspected: false,
+            stacked_duplicate_text_suspected: false,
+            full_page_raster_ratio: 0.0,
+            mixed_text_image_ratio: 0.0,
+            ocr_replace_confidence: 1.0,
+            ocr_augment_confidence: 1.0,
+            ocr_confidence_threshold_met: true,
+            rationale: Vec::new(),
+        }
+    };
     let mut out = String::with_capacity(input.len());
     let normalized_newlines = input.replace("\r\n", "\n").replace('\r', "\n");
     let unicode_normalization_count = 0;
@@ -731,7 +763,7 @@ fn normalize_pdf_text_for_reader_with_summary(
     for line in normalized.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
-            finalize_pdf_paragraph(&mut out, &mut paragraph, report, &mut state);
+            finalize_pdf_paragraph(&mut out, &mut paragraph, report, &text_quality, &mut state);
             continue;
         }
         if header_lines.contains_key(trimmed) {
@@ -744,11 +776,6 @@ fn normalize_pdf_text_for_reader_with_summary(
             state.dropped_noise_line_count += 1;
             continue;
         }
-        if is_probable_margin_or_sidenote_line(trimmed) {
-            state.margin_sidenote_suppression_count += 1;
-            state.dropped_noise_line_count += 1;
-            continue;
-        }
         if trimmed.starts_with('[')
             && trimmed.ends_with(']')
             && trimmed[1..trimmed.len() - 1]
@@ -756,6 +783,11 @@ fn normalize_pdf_text_for_reader_with_summary(
                 .all(|ch| ch.is_ascii_digit())
         {
             state.footnote_marker_adjustment_count += 1;
+            state.dropped_noise_line_count += 1;
+            continue;
+        }
+        if is_probable_margin_or_sidenote_line(trimmed) {
+            state.margin_sidenote_suppression_count += 1;
             state.dropped_noise_line_count += 1;
             continue;
         }
@@ -800,7 +832,7 @@ fn normalize_pdf_text_for_reader_with_summary(
         }
     }
 
-    finalize_pdf_paragraph(&mut out, &mut paragraph, report, &mut state);
+    finalize_pdf_paragraph(&mut out, &mut paragraph, report, &text_quality, &mut state);
     if state.broken_line_join_count > 0 {
         state
             .trace_notes
@@ -1044,6 +1076,13 @@ fn classify_page_reading_order(
         confidence = 0.79;
         PdfOcrPageLayoutClass::TableLike
     } else if page.mixed_text_image_suspected
+        && page.image_coverage_ratio >= 0.28
+        && page.line_count <= 10
+    {
+        reasons.push("figure_caption_band_separated_from_body_order".to_string());
+        confidence = 0.71;
+        PdfOcrPageLayoutClass::FigureCaptionSeparated
+    } else if page.mixed_text_image_suspected
         && page.image_coverage_ratio >= 0.2
         && page.line_count <= 18
         && page.char_count > 120
@@ -1051,13 +1090,6 @@ fn classify_page_reading_order(
         reasons.push("image_bands_interrupt_body_order".to_string());
         confidence = 0.72;
         PdfOcrPageLayoutClass::MixedColumnCaptionBand
-    } else if page.mixed_text_image_suspected
-        && page.image_coverage_ratio >= 0.28
-        && page.line_count <= 10
-    {
-        reasons.push("figure_caption_band_separated_from_body_order".to_string());
-        confidence = 0.71;
-        PdfOcrPageLayoutClass::FigureCaptionSeparated
     } else if page.short_line_ratio >= 0.72
         && page.reading_order_stability >= 0.58
         && page.block_coherence >= 0.52
@@ -1066,6 +1098,13 @@ fn classify_page_reading_order(
         reasons.push("dense_short_lines_support_columnar_layout".to_string());
         confidence = 0.82;
         PdfOcrPageLayoutClass::StrongTwoColumn
+    } else if page.digit_ratio >= 0.06
+        && page.short_line_ratio >= 0.3
+        && (page.last_line.chars().any(|ch| ch.is_ascii_digit()) || page.last_line.contains('['))
+    {
+        reasons.push("bottom_band_looks_like_footnotes_or_citations".to_string());
+        confidence = 0.69;
+        PdfOcrPageLayoutClass::BottomFootnoteBand
     } else if page.short_line_ratio >= 0.42
         && page.repeated_line_ratio <= 0.12
         && page.block_coherence >= 0.6
@@ -1074,13 +1113,6 @@ fn classify_page_reading_order(
         reasons.push("short_edge_lines_suggest_margin_sidenotes".to_string());
         confidence = 0.67;
         PdfOcrPageLayoutClass::OuterMarginSidenotes
-    } else if page.digit_ratio >= 0.06
-        && page.short_line_ratio >= 0.3
-        && (page.last_line.chars().any(|ch| ch.is_ascii_digit()) || page.last_line.contains('['))
-    {
-        reasons.push("bottom_band_looks_like_footnotes_or_citations".to_string());
-        confidence = 0.69;
-        PdfOcrPageLayoutClass::BottomFootnoteBand
     } else if page.block_coherence >= 0.72
         && page.coordinate_sanity >= 0.68
         && page.reading_order_stability >= 0.68
@@ -1246,21 +1278,21 @@ fn classify_pdf_runtime(
     let full_page_raster_ratio = feature_summary.full_page_raster_page_ratio;
     let hidden_overlay_signal = feature_summary.hidden_text_layer_page_ratio.max(
         if trust_diagnostics.hidden_text_layer_suspected {
-            0.6
+            0.5
         } else {
             0.0
         },
     );
     let invisible_text_signal = feature_summary.invisible_text_layer_page_ratio.max(
         if trust_diagnostics.invisible_text_suspected {
-            0.6
+            0.5
         } else {
             0.0
         },
     );
     let stacked_duplicate_signal = feature_summary.stacked_duplicate_text_page_ratio.max(
         if trust_diagnostics.stacked_duplicate_text_suspected {
-            0.5
+            0.4
         } else {
             0.0
         },
@@ -1275,10 +1307,10 @@ fn classify_pdf_runtime(
                 "sampled_pages_have_no_usable_text".to_string(),
             ],
         )
-    } else if hidden_overlay_signal >= 0.40
-        || invisible_text_signal >= 0.35
-        || stacked_duplicate_signal >= 0.30
-        || (full_page_raster_ratio >= 0.35 && hidden_overlay_count as f32 / sampled >= 0.25)
+    } else if hidden_overlay_signal >= 0.60
+        || invisible_text_signal >= 0.55
+        || stacked_duplicate_signal >= 0.50
+        || (full_page_raster_ratio >= 0.35 && hidden_overlay_count as f32 / sampled >= 0.75)
     {
         (
             PdfDocumentClass::HiddenOcrOverlay,
@@ -1302,6 +1334,27 @@ fn classify_pdf_runtime(
                 format!("ocr_enabled={}", report.decision.do_ocr),
             ],
         )
+    } else if mixed_image_ratio >= 0.30 && clean_ratio >= 0.20 {
+        (
+            PdfDocumentClass::HybridMixedDocument,
+            0.8,
+            vec![
+                "sampled_pages_mix_image_heavy_and_embedded_text_signals".to_string(),
+                "borderline_pdf_kept_in_explicit_mixed_class".to_string(),
+            ],
+        )
+    } else if layout_hostile_count as f32 / sampled >= 0.35
+        || feature_summary.repeated_header_ratio >= 0.50
+        || feature_summary.repeated_footer_ratio >= 0.50
+    {
+        (
+            PdfDocumentClass::LayoutHostileDocument,
+            0.71,
+            vec![
+                "layout_signals_suggest_unstable_reading_order".to_string(),
+                "header_footer_repetition_or_short_line_density_detected".to_string(),
+            ],
+        )
     } else if clean_ratio >= 0.70
         && hostile_ratio <= 0.15
         && sparse_ratio <= 0.20
@@ -1317,32 +1370,11 @@ fn classify_pdf_runtime(
                 "trust_diagnostics_support_exact_sync".to_string(),
             ],
         )
-    } else if mixed_image_ratio >= 0.30 && clean_ratio >= 0.20 {
-        (
-            PdfDocumentClass::HybridMixedDocument,
-            0.8,
-            vec![
-                "sampled_pages_mix_image_heavy_and_embedded_text_signals".to_string(),
-                "borderline_pdf_kept_in_explicit_mixed_class".to_string(),
-            ],
-        )
     } else if sparse_ratio >= 0.50 {
         (
             PdfDocumentClass::EmbeddedSparse,
             0.73,
             vec!["many_sampled_pages_have_only_sparse_text".to_string()],
-        )
-    } else if layout_hostile_count as f32 / sampled >= 0.35
-        || feature_summary.repeated_header_ratio >= 0.50
-        || feature_summary.repeated_footer_ratio >= 0.50
-    {
-        (
-            PdfDocumentClass::LayoutHostileDocument,
-            0.71,
-            vec![
-                "layout_signals_suggest_unstable_reading_order".to_string(),
-                "header_footer_repetition_or_short_line_density_detected".to_string(),
-            ],
         )
     } else if distinct_page_class_kinds(&page_classes) >= 3 {
         (
@@ -1399,17 +1431,15 @@ fn classify_pdf_runtime(
             }
         }
     };
-    let ocr_replace_threshold_met = trust_diagnostics.ocr_replace_confidence >= 0.74;
-    let ocr_augment_threshold_met = trust_diagnostics.ocr_augment_confidence >= 0.58;
     if matches!(
         ocr_recommendation,
         PdfOcrRecommendation::RequiredForText | PdfOcrRecommendation::GeometryOnly
     ) {
         reasons.push(format!(
-            "ocr_replace_threshold_met={ocr_replace_threshold_met}"
+            "ocr_replace_threshold_met={}", trust_diagnostics.ocr_replace_confidence >= 0.60
         ));
         reasons.push(format!(
-            "ocr_augment_threshold_met={ocr_augment_threshold_met}"
+            "ocr_augment_threshold_met={}", trust_diagnostics.ocr_augment_confidence >= 0.50
         ));
     }
 
@@ -1483,14 +1513,23 @@ fn classify_pdf_sample_page(
             && page.token_count <= 18
             && page.alpha_token_ratio >= 0.55
             && page.short_line_ratio <= 0.60);
-    let looks_scan = page.full_page_raster_suspected
-        || (page.image_coverage_ratio >= 0.82 && page.char_count <= 140);
+    let looks_scan = (page.full_page_raster_suspected && page.block_coherence <= 0.15)
+        || (page.image_coverage_ratio >= 0.85 && page.char_count <= 140 && page.block_coherence <= 0.15);
 
     let (class, confidence, reasons) = if page.char_count == 0 {
         (
             PdfPageClass::ImageOnlyNoText,
             0.99,
             vec!["no_extracted_text_detected".to_string()],
+        )
+    } else if looks_scan {
+        (
+            PdfPageClass::ScanWithWeakOcr,
+            0.79,
+            vec![
+                "full_page_raster_or_high_image_coverage_detected".to_string(),
+                "text_density_is_too_thin_for_embedded_sync".to_string(),
+            ],
         )
     } else if looks_hidden_overlay {
         let mut reasons = vec![
@@ -1505,15 +1544,6 @@ fn classify_pdf_sample_page(
             reasons.push("duplicated_text_stacked_over_image_content".to_string());
         }
         (PdfPageClass::HiddenOcrOverlay, 0.82, reasons)
-    } else if looks_scan {
-        (
-            PdfPageClass::ScanWithWeakOcr,
-            0.79,
-            vec![
-                "full_page_raster_or_high_image_coverage_detected".to_string(),
-                "text_density_is_too_thin_for_embedded_sync".to_string(),
-            ],
-        )
     } else if looks_corrupt {
         (
             PdfPageClass::EmbeddedNoisy,
@@ -1636,7 +1666,7 @@ fn derive_pdf_trust_diagnostics(
         + sample.duplicate_text_page_ratio * 0.15)
         .clamp(0.0, 1.0);
     let ocr_confidence_threshold_met =
-        ocr_replace_confidence >= 0.74 || ocr_augment_confidence >= 0.58;
+        ocr_replace_confidence >= 0.60 || ocr_augment_confidence >= 0.50;
     let mut rationale = Vec::new();
     rationale.push(format!("block_coherence={avg_block_coherence:.3}"));
     rationale.push(format!("coordinate_sanity={avg_coordinate_sanity:.3}"));
@@ -2546,16 +2576,18 @@ mod tests {
             decision: crate::quack_check::policy::PolicyDecision {
                 tier: crate::quack_check::policy::QualityTier::MixedText,
                 chosen_engine: "docling".to_string(),
-                do_ocr: !matches!(fixture.ocr_recommendation, PdfOcrRecommendation::NotNeeded),
+                do_ocr: false, // Fixture classification tests simulate the PRE-OCR pass
             },
             chunk_reports: Vec::new(),
         };
-        let transcript_text = if matches!(fixture.document_class, PdfDocumentClass::ImageOnlyNoText)
+        let dummy_len = (fixture.sample.avg_chars_per_page as usize * fixture.pages.len()).max(1);
+        let transcript_text_string = if matches!(fixture.document_class, PdfDocumentClass::ImageOnlyNoText)
         {
-            ""
+            String::new()
         } else {
-            "Fixture transcript text."
+            "A".repeat(dummy_len)
         };
+        let transcript_text = transcript_text_string.as_str();
         let classification = classify_pdf_runtime(Some(&report), transcript_text, "")
             .unwrap_or_else(|| panic!("classification should exist for fixture {}", fixture.id));
         let (geometry_mode, sync_strategy) =

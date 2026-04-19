@@ -18,7 +18,7 @@ const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
 const CONTENT_PDF_OCR_ALIGNMENT_FILE: &str = "content/pdf-ocr-alignment.toml";
 const CONTENT_PDF_RENDER_PRECOMPUTE_FILE: &str = "content/pdf-render-precompute.toml";
 const PDF_SYNC_META_CLASSIFICATION_VERSION: u32 = 3;
-const PDF_OCR_ALIGNMENT_VERSION: u32 = 2;
+pub const PDF_OCR_ALIGNMENT_VERSION: u32 = 2;
 const PDF_RENDER_PRECOMPUTE_VERSION: u32 = 1;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -173,12 +173,17 @@ pub struct PdfOcrAlignmentArtifact {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfSentencePageHint {
+    pub page_idx: Option<usize>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct PdfRenderPrecomputedState {
     pub version: u32,
     #[serde(default)]
     pub page_texts: Vec<String>,
     #[serde(default)]
-    pub sentence_page_hints: Vec<Option<usize>>,
+    pub sentence_page_hints: Vec<PdfSentencePageHint>,
     #[serde(default)]
     pub source: String,
 }
@@ -590,6 +595,7 @@ pub(super) fn persist_pdf_render_precomputed_state(
             ..artifact.clone()
         },
     };
+    println!("DEBUG: persisting precompute to path: {}", path.display());
     match toml::to_string(&envelope) {
         Ok(serialized) => match fs::write(&path, serialized) {
             Ok(()) => debug!(

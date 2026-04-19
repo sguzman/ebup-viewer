@@ -1101,14 +1101,17 @@ mod tests {
         let normalized = source_pipeline::normalize_pdf_text_for_reader(
             "Alpha para-\n graph line\nnext line\n\nBeta block",
         );
-        assert_eq!(normalized, "Alpha paragraph line next line\n\nBeta block");
+        assert_eq!(
+            normalized,
+            "Alpha paragraph line next line.\n\nBeta block"
+        );
     }
 
     #[test]
     fn normalize_pdf_text_for_reader_preserves_paragraph_breaks() {
         let normalized =
             source_pipeline::normalize_pdf_text_for_reader("First line\nSecond line\n\nThird line");
-        assert_eq!(normalized, "First line Second line\n\nThird line");
+        assert_eq!(normalized, "First line Second line.\n\nThird line");
     }
 
     #[test]

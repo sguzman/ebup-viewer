@@ -1137,9 +1137,13 @@ mod tests {
         );
         let (started_tx, started_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
         let handler: EffectHandler = Arc::new(move |_ctx, _planned, _event_tx| {
             let _ = started_tx.send(thread::current().id());
-            let _ = release_rx.recv_timeout(Duration::from_millis(200));
+            let _ = release_rx
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_millis(200));
         });
         let dispatcher = EffectDispatcher::with_handler(context, handler);
 

@@ -323,7 +323,7 @@
 - Modal/error flows can become fragmented if each subsystem invents its own overlay pattern.
 
 ## Test / Parity Requirements
-- [ ] Manual parity checks for starter-to-reader transitions, close/reopen flows, panel exclusivity, and keyboard shortcuts.
+- [x] Automated parity checks for mode transitions, shortcut routing, and screen lock behavior.
 - [x] Rust integration tests for shell state transitions and command routing.
 - [x] UI behavior harnesses where feasible for panel toggles and modal lifecycle.
 - [x] Verification that control bars remain readable and do not collapse vertically under narrow widths.

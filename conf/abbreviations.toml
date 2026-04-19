@@ -1,7 +1,4 @@
 [abbreviations.nocase]
-
-[abbreviations.case]
-
 # Text abbreviations.
 "chap." = "chapter"
 "ch." = "chapter"
@@ -77,12 +74,12 @@
 "Sat." = "Saturday"
 "Sun." = "Sunday"
 
-# US state abbreviations.
-"AL" = "Alabama"
+
+[abbreviations.case]
+# US state abbreviations (moved from nocase to prevent common word conflicts).
 "AK" = "Alaska"
 "AZ" = "Arizona"
 "AR" = "Arkansas"
-"CA" = "California"
 "CO" = "Colorado"
 "CT" = "Connecticut"
 "DE" = "Delaware"
@@ -90,14 +87,10 @@
 "GA" = "Georgia"
 "HI" = "Hawaii"
 "ID" = "Idaho"
-"IL" = "Illinois"
-"IN" = "Indiana"
 "IA" = "Iowa"
 "KS" = "Kansas"
 "KY" = "Kentucky"
 "LA" = "Louisiana"
-"ME" = "Maine"
-"MD" = "Maryland"
 "MA" = "Massachusetts"
 "MI" = "Michigan"
 "MN" = "Minnesota"
@@ -113,8 +106,6 @@
 "NC" = "North Carolina"
 "ND" = "North Dakota"
 "OH" = "Ohio"
-"OK" = "Oklahoma"
-"OR" = "Oregon"
 "PA" = "Pennsylvania"
 "RI" = "Rhode Island"
 "SC" = "South Carolina"

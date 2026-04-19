@@ -70,6 +70,7 @@ pub struct ProbeSampleStats {
     pub invisible_text_layer_page_ratio: f32,
     pub duplicate_text_page_ratio: f32,
     pub stacked_duplicate_text_page_ratio: f32,
+    #[serde(default)]
     pub pages: Vec<ProbePageStats>,
 }
 

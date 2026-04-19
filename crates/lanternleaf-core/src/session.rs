@@ -339,7 +339,7 @@ fn maybe_log_mapping_summary(path: &Path) {
     const SUMMARY_EVERY: usize = 128;
     let telemetry = mapping_telemetry();
     let lookups = telemetry.lookups.load(Ordering::Relaxed);
-    if lookups == 0 || !lookups.is_multiple_of(SUMMARY_EVERY) {
+    if lookups == 0 || lookups % SUMMARY_EVERY != 0 {
         return;
     }
     let summary_idx = lookups / SUMMARY_EVERY;
@@ -682,23 +682,19 @@ fn build_pdf_ocr_alignment_artifact(
         .into_iter()
         .map(|location| (location.sentence_idx, location))
         .collect();
-    let previous_alignment_map: HashMap<(usize, String), crate::cache::PdfOcrSentenceAlignment> =
-        previous_artifact
-            .as_ref()
-            .map(|artifact| {
-                artifact
-                    .alignments
-                    .iter()
-                    .cloned()
-                    .map(|alignment| {
-                        (
-                            (alignment.sentence_idx, alignment.sentence_text_hash.clone()),
-                            alignment,
-                        )
-                    })
-                    .collect()
+    let previous_alignment_map = if let Some(ref art) = previous_artifact {
+        art.alignments
+            .iter()
+            .map(|alignment| {
+                (
+                    (alignment.sentence_idx, alignment.sentence_text_hash.clone()),
+                    alignment.clone(),
+                )
             })
-            .unwrap_or_default();
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let source_kind = derive_pdf_ocr_source_kind(classification);
     let mut alignments = Vec::with_capacity(sentences.len());
     let mut rect_mapped = 0usize;
@@ -859,7 +855,7 @@ fn build_pdf_ocr_alignment_artifact(
     };
 
     crate::cache::PdfOcrAlignmentArtifact {
-        version: 0,
+        version: crate::cache::PDF_OCR_ALIGNMENT_VERSION,
         quality_class,
         source_kind,
         sentence_count: sentences.len(),
@@ -1864,8 +1860,7 @@ fn proportional_html_anchor_map(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use crate::session::TtsPlaybackState;
 
     fn build_test_session(page_sentences: &[&[&str]]) -> ReaderSession {
         let pages: Vec<String> = page_sentences
@@ -1930,11 +1925,11 @@ mod tests {
     }
 
     fn unique_pdf_source_path() -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be after epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!("lanternleaf_pdf_sync_session_{nanos}.pdf"))
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let mut p = std::env::temp_dir();
+        p.push(format!("lanternleaf_pdf_sync_session_{}_{}.pdf", std::process::id(), count));
+        p
     }
 
     #[test]

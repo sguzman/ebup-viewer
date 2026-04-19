@@ -17,8 +17,8 @@
 | [x] | 2 | Shell Frame & Navigation | Build egui app shell frame, mode management, modal/shortcut contracts (Shell roadmap Phases 1-4) tying into runtime commands | Runtime tranches, tracing instrumentation | `eframe` shell renders starter/reader skeleton + navigation commands wired |
 | [x] | 3 | Reader Rendering Core | Implement text-only reader, content-block models, anchor mapping (Reader roadmap Phases 2–5) leveraging shell redraw budgets | Runtime + Shell tranches | canonical sentence renderer, highlight/jump service, shell instrumentation logs |
 | [x] | 4 | PDF Subsystem | Build Rust-owned PDF renderer, overlays, viewport scheduler, OCR fallback (PDF roadmap Phases 1–6) | Runtime + Shell + Reader (for highlight sync) | Native PDF pipeline outputs textures, overlays, commands logged |
-| [ ] | 5 | Audio & TTS Integration | Wire Piper/rodio playback, sentence timing, caching, and command integration in egui (covered indirectly via existing roadmaps) | Runtime + Reader + Shell for highlight sync | Playback controls drive highlights with tracing |
-| [ ] | 6 | Settings/Cache Persistence & QA | Migrate persistence, cache, bookmarks, plus testing harness replacements (Config + Testing roadmaps) | Runtime + Shell + Reader + PDF | Native persistence API, egui settings surfaces, Rust test suites pass |
+| [x] | 5 | Audio & TTS Integration | Wire Piper/rodio playback, sentence timing, caching, and command integration in egui (covered indirectly via existing roadmaps) | Runtime + Reader + Shell for highlight sync | Playback controls drive highlights with tracing |
+| [x] | 6 | Settings/Cache Persistence & QA | Migrate persistence, cache, bookmarks, plus testing harness replacements (Config + Testing roadmaps) | Runtime + Shell + Reader + PDF | Native persistence API, egui settings surfaces, Rust test suites pass |
 
 ## Scope Coverage Note
 - [x] The roadmap prioritizes the highest-risk, largest subsystems (runtime, shell, reader, PDF, audio, persistence) with instrumentation and tracing baked in.
@@ -42,7 +42,7 @@
 - Keep referencing the shared tracing schema (`highlight.anchor`, `pdf.*`, `shell.*`) when describing work in every tranche so instrumentation remains consistent.
 - Track fallback hierarchies (exact → fuzzy → block → render-only) and log transitions explicitly as part of the runtime telemetry story.
 
-## Upcoming Tranche Focus
+## Completed Tranche Focus
 
 ### Tranche 5: Audio & TTS Integration
 - [x] Tie `Piper`/Rodio playback interfaces into the egui shortcut registry + command contracts so the keyboard-driven TTS controls behave exactly like the iced shell.

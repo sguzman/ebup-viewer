@@ -22,6 +22,7 @@ impl ReaderSession {
             time_remaining_display: self.config.time_remaining_display,
             tts_speed: self.config.tts_speed,
             tts_volume: self.config.tts_volume,
+            pretty: self.config.pretty,
         }
     }
 

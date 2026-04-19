@@ -42,6 +42,32 @@ dual_view_pipeline_enabled = true
 native_html_pretty_enabled = true
 native_html_pagination_mode = "sentence_window"
 
+[ui.pretty]
+enabled = true
+base_font_scale = 0.88
+heading_scale_h1 = 1.70
+heading_scale_h2 = 1.45
+heading_scale_h3 = 1.25
+heading_scale_h4 = 1.10
+heading_scale_h5 = 1.00
+heading_scale_h6 = 0.95
+paragraph_spacing = 6.0
+block_spacing = 10.0
+list_indent = 20.0
+list_item_spacing = 4.0
+hr_thickness = 1.0
+hr_margin = 10.0
+code_font_scale = 0.90
+code_bg_alpha = 0.08
+code_border_alpha = 0.18
+link_color = { r = 0.30, g = 0.55, b = 0.95, a = 1.00 }
+image_max_width_pct = 95.0
+image_max_height_px = 520.0
+image_cache_max_entries = 128
+table_cell_padding = 6.0
+table_border_alpha = 0.16
+table_stripe_alpha = 0.05
+
 [logging]
 log_level = "debug"
 

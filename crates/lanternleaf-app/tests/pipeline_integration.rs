@@ -65,6 +65,7 @@ fn make_reader_snapshot(source_path: &str) -> session::ReaderSnapshot {
             time_remaining_display: config::TimeRemainingDisplay::Adaptive,
             tts_speed: 1.0,
             tts_volume: 1.0,
+            pretty: config::PrettyUiConfig::default(),
         },
         tts: session::ReaderTtsView {
             state: session::TtsPlaybackState::Paused,

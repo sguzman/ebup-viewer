@@ -5,6 +5,7 @@ mod helpers;
 mod pdf;
 mod pdf_renderer;
 mod pdf_subsystem;
+mod pretty;
 mod shell;
 
 pub(crate) use constants::*;

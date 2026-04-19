@@ -63,6 +63,7 @@ pub struct ReaderSettingsView {
     pub time_remaining_display: config::TimeRemainingDisplay,
     pub tts_speed: f32,
     pub tts_volume: f32,
+    pub pretty: config::PrettyUiConfig,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]

@@ -1,5 +1,7 @@
 use super::defaults;
-use super::models::{AppConfig, FontFamily, FontWeight, HighlightColor, LogLevel, ThemeMode};
+use super::models::{
+    AppConfig, FontFamily, FontWeight, HighlightColor, LogLevel, PrettyUiConfig, ThemeMode,
+};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
@@ -64,6 +66,7 @@ impl From<ConfigTables> for AppConfig {
             dual_view_pipeline_enabled: tables.ui.dual_view_pipeline_enabled,
             native_html_pretty_enabled: tables.ui.native_html_pretty_enabled,
             native_html_pagination_mode: tables.ui.native_html_pagination_mode,
+            pretty: tables.ui.pretty,
             log_level: tables.logging.log_level,
             cache_dir: tables.storage.cache_dir,
             browser_tabs_enabled: tables.integration.browser_tabs_enabled,
@@ -121,6 +124,7 @@ impl From<&AppConfig> for ConfigTables {
                 dual_view_pipeline_enabled: config.dual_view_pipeline_enabled,
                 native_html_pretty_enabled: config.native_html_pretty_enabled,
                 native_html_pagination_mode: config.native_html_pagination_mode,
+                pretty: config.pretty,
             },
             logging: LoggingConfig {
                 log_level: config.log_level,
@@ -271,6 +275,8 @@ struct UiConfig {
     native_html_pretty_enabled: bool,
     #[serde(default = "defaults::default_native_html_pagination_mode")]
     native_html_pagination_mode: super::models::NativeHtmlPaginationMode,
+    #[serde(default)]
+    pretty: PrettyUiConfig,
 }
 
 impl Default for UiConfig {
@@ -282,6 +288,7 @@ impl Default for UiConfig {
             dual_view_pipeline_enabled: defaults::default_dual_view_pipeline_enabled(),
             native_html_pretty_enabled: defaults::default_native_html_pretty_enabled(),
             native_html_pagination_mode: defaults::default_native_html_pagination_mode(),
+            pretty: PrettyUiConfig::default(),
         }
     }
 }

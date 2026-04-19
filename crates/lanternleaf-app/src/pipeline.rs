@@ -1113,6 +1113,7 @@ mod tests {
                 time_remaining_display: config::TimeRemainingDisplay::Adaptive,
                 tts_speed: 1.0,
                 tts_volume: 1.0,
+                pretty: config::PrettyUiConfig::default(),
             },
             tts: session::ReaderTtsView {
                 state: session::TtsPlaybackState::Playing,

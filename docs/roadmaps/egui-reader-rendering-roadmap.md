@@ -105,6 +105,10 @@
 - [x] images/assets with placeholder sizing information and lazy load hooks tied to scroll visibility.
 - [x] block spacing and margin controls derived from the layout helper policy so panel resizes have deterministic width adjustments.
 - [x] footnote/caption-like secondary content rendered as detachable overlays or collapsible summaries to avoid repaint storms.
+- [x] Implement rich Markdown parsing + inline styles in the pure-egui pretty renderer.
+- [x] Implement HTML/EPUB parsing into pretty blocks (core tags, images, tables, nested lists).
+- [x] Add a decoded-texture image cache pipeline for inline pretty rendering.
+- [x] Add config-driven pretty rendering knobs under `conf/config.toml` (`[ui.pretty]`).
 - [x] Define explicit degraded behavior for HTML/Markdown features that exceed the Rust content-block model (e.g., complex grids), documenting fallback spacing and diagnostics for QA.
 - [x] Connect each content block to the shell tracing plan (Phase 6) so layout recalculation is traced, and highlight updates emit spans tied to the command/effect pipeline.
 - [x] Document how the content-block conversion pipeline runs off the UI thread (Phase 4 runtime async plan) before handing data to egui so the render passes remain responsive.

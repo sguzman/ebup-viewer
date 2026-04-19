@@ -23,8 +23,8 @@ use crate::helpers::{
 use eframe::{
     NativeOptions,
     egui::{
-        self, Button, CollapsingHeader, Color32, ColorImage, Context, RichText, Slider,
-        TextureHandle, Ui, Vec2, Visuals,
+        self, Button, CollapsingHeader, Color32, ColorImage, Context, FontData, FontDefinitions,
+        FontFamily, RichText, Slider, TextureHandle, TextStyle, Ui, Vec2, Visuals,
     },
 };
 
@@ -41,6 +41,7 @@ use crate::pdf_subsystem::{
     PdfScrollPolicy, PdfViewportRange, PdfViewportUpdateTrigger, PdfZoomDirection, PdfZoomPolicy,
 };
 use crate::shell::{FocusOwner, LayoutPolicy, ShellState};
+use crate::pretty::{PrettyBlock, PrettyPageCacheKey};
 use lanternleaf_app::{
     AppRuntime,
     contracts::{
@@ -258,6 +259,7 @@ fn is_pid_running(pid: u32) -> bool {
 struct LanternLeafApp {
     runtime: AppRuntime,
     _tracing_guard: tracing_appender::non_blocking::WorkerGuard,
+    fonts_configured: bool,
     status_log: Vec<StatusLogEntry>,
     show_safe_quit_modal: bool,
     show_reader_confirm_modal: bool,
@@ -298,6 +300,7 @@ struct LanternLeafApp {
     pretty_page_cache_key: Option<PrettyPageCacheKey>,
     pretty_page_cache_blocks: Vec<PrettyBlock>,
     thumbnail_cache: ThumbnailCache,
+    pretty_image_cache: PrettyImageCache,
     sentence_scroll_offset: Option<Vec2>,
     overlay_eviction_warning_at: Option<Instant>,
     timeline_history: Vec<TimelineHistoryEntry>,
@@ -497,15 +500,160 @@ fn load_thumbnail(path: &Path) -> Result<ThumbReady, String> {
     })
 }
 
+struct PrettyImageCache {
+    tx: mpsc::Sender<ImageRequest>,
+    rx: mpsc::Receiver<ImageReady>,
+    pending: HashSet<PathBuf>,
+    textures: HashMap<PathBuf, TextureHandle>,
+    last_used: HashMap<PathBuf, u64>,
+    usage_tick: u64,
+}
+
+impl PrettyImageCache {
+    fn new() -> Self {
+        let (tx, worker_rx) = mpsc::channel();
+        let (worker_tx, rx) = mpsc::channel();
+        thread::spawn(move || pretty_image_worker(worker_rx, worker_tx));
+        Self {
+            tx,
+            rx,
+            pending: HashSet::new(),
+            textures: HashMap::new(),
+            last_used: HashMap::new(),
+            usage_tick: 0,
+        }
+    }
+
+    fn texture_for(
+        &mut self,
+        ctx: &Context,
+        path: &Path,
+        max_width_px: u32,
+        max_height_px: u32,
+        max_entries: usize,
+    ) -> Option<TextureHandle> {
+        self.poll_ready(ctx, max_entries);
+        let path = path.to_path_buf();
+        if let Some(texture) = self.textures.get(&path).cloned() {
+            trace!(path = %path.display(), "Pretty image cache hit");
+            self.touch(&path);
+            return Some(texture);
+        }
+        if !self.pending.contains(&path) {
+            trace!(path = %path.display(), "Pretty image cache miss; enqueue decode");
+            self.pending.insert(path.clone());
+            let _ = self.tx.send(ImageRequest {
+                path,
+                max_width_px,
+                max_height_px,
+            });
+        }
+        None
+    }
+
+    fn poll_ready(&mut self, ctx: &Context, max_entries: usize) {
+        while let Ok(ready) = self.rx.try_recv() {
+            self.pending.remove(&ready.path);
+            let image = ColorImage::from_rgba_unmultiplied(ready.size, &ready.pixels);
+            let texture = ctx.load_texture(
+                format!("pretty_image:{}", ready.path.display()),
+                image,
+                egui::TextureOptions::LINEAR,
+            );
+            self.textures.insert(ready.path.clone(), texture);
+            self.touch(&ready.path);
+        }
+        self.evict_if_needed(max_entries.max(1));
+    }
+
+    fn touch(&mut self, path: &Path) {
+        self.usage_tick = self.usage_tick.wrapping_add(1);
+        self.last_used.insert(path.to_path_buf(), self.usage_tick);
+    }
+
+    fn evict_if_needed(&mut self, max_entries: usize) {
+        if self.textures.len() <= max_entries {
+            return;
+        }
+        let mut entries: Vec<(PathBuf, u64)> = self
+            .last_used
+            .iter()
+            .map(|(path, tick)| (path.clone(), *tick))
+            .collect();
+        entries.sort_by_key(|(_, tick)| *tick);
+        let excess = self.textures.len().saturating_sub(max_entries);
+        trace!(excess, max_entries, current = self.textures.len(), "Evicting pretty images");
+        for (path, _) in entries.into_iter().take(excess) {
+            self.textures.remove(&path);
+            self.last_used.remove(&path);
+        }
+    }
+}
+
+struct ImageRequest {
+    path: PathBuf,
+    max_width_px: u32,
+    max_height_px: u32,
+}
+
+struct ImageReady {
+    path: PathBuf,
+    size: [usize; 2],
+    pixels: Vec<u8>,
+}
+
+fn pretty_image_worker(rx: mpsc::Receiver<ImageRequest>, tx: mpsc::Sender<ImageReady>) {
+    for req in rx {
+        let start = Instant::now();
+        match decode_pretty_image(&req.path, req.max_width_px, req.max_height_px) {
+            Ok(ready) => {
+                trace!(
+                    path = %req.path.display(),
+                    width = ready.size[0],
+                    height = ready.size[1],
+                    decode_ms = start.elapsed().as_millis(),
+                    "Decoded pretty image"
+                );
+                let _ = tx.send(ready);
+            }
+            Err(err) => {
+                warn!(
+                    path = %req.path.display(),
+                    error = %err,
+                    "Failed to decode pretty image"
+                );
+            }
+        }
+    }
+}
+
+fn decode_pretty_image(path: &Path, max_width_px: u32, max_height_px: u32) -> Result<ImageReady, String> {
+    let bytes = fs::read(path).map_err(|err| err.to_string())?;
+    let image = image::load_from_memory(&bytes).map_err(|err| err.to_string())?;
+    let resized = image.resize(
+        max_width_px.max(1),
+        max_height_px.max(1),
+        image::imageops::FilterType::Triangle,
+    );
+    let rgba = resized.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Ok(ImageReady {
+        path: path.to_path_buf(),
+        size: [width as usize, height as usize],
+        pixels: rgba.into_raw(),
+    })
+}
+
 impl LanternLeafApp {
     const OVERLAY_EVICTION_SNACK_DURATION: Duration = Duration::from_secs(5);
     fn new(
-        _cc: &eframe::CreationContext<'_>,
+        cc: &eframe::CreationContext<'_>,
         runtime: AppRuntime,
         tracing_guard: tracing_appender::non_blocking::WorkerGuard,
         app_config: config::AppConfig,
         normalizer: normalizer::TextNormalizer,
     ) -> Self {
+        let fonts_configured = setup_egui_fonts(&cc.egui_ctx, &app_config);
         let pdf_renderer = match NativePdfRenderer::new() {
             Ok(renderer) => Some(renderer),
             Err(err) => {
@@ -533,6 +681,7 @@ impl LanternLeafApp {
         let mut app = Self {
             runtime,
             _tracing_guard: tracing_guard,
+            fonts_configured,
             status_log: Vec::new(),
             show_safe_quit_modal: false,
             show_reader_confirm_modal: false,
@@ -573,6 +722,7 @@ impl LanternLeafApp {
             pretty_page_cache_key: None,
             pretty_page_cache_blocks: Vec::new(),
             thumbnail_cache: ThumbnailCache::new(),
+            pretty_image_cache: PrettyImageCache::new(),
             sentence_scroll_offset: None,
             overlay_eviction_warning_at: None,
             timeline_history: Vec::new(),
@@ -1972,6 +2122,152 @@ impl LanternLeafApp {
     }
 }
 
+fn setup_egui_fonts(ctx: &Context, cfg: &config::AppConfig) -> bool {
+    let requested = cfg.font_family.to_string();
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+
+    let prop_regular = pick_face(&db, &requested, false);
+    let prop_bold = pick_face(&db, &requested, true).or(prop_regular);
+    let mono_requested = match cfg.font_family {
+        config::FontFamily::FiraCode => "Fira Code".to_string(),
+        config::FontFamily::Courier => "Courier".to_string(),
+        config::FontFamily::Monospace => "Monospace".to_string(),
+        _ => "Fira Code".to_string(),
+    };
+    let mono_regular = pick_face(&db, &mono_requested, false);
+    let mono_bold = pick_face(&db, &mono_requested, true).or(mono_regular);
+
+    let mut fonts = FontDefinitions::default();
+    let mut inserted_any = false;
+
+    if let Some(id) = prop_regular {
+        if let Some(bytes) = face_bytes(&db, id) {
+            fonts
+                .font_data
+                .insert("ll-prop-regular".into(), FontData::from_owned(bytes));
+            fonts
+                .families
+                .insert(FontFamily::Name("LanternLeafProportionalRegular".into()), vec![
+                    "ll-prop-regular".to_string(),
+                ]);
+            inserted_any = true;
+        }
+    }
+    if let Some(id) = prop_bold {
+        if let Some(bytes) = face_bytes(&db, id) {
+            fonts
+                .font_data
+                .insert("ll-prop-bold".into(), FontData::from_owned(bytes));
+            fonts
+                .families
+                .insert(FontFamily::Name("LanternLeafProportionalBold".into()), vec![
+                    "ll-prop-bold".to_string(),
+                ]);
+            inserted_any = true;
+        }
+    }
+    if let Some(id) = mono_regular {
+        if let Some(bytes) = face_bytes(&db, id) {
+            fonts
+                .font_data
+                .insert("ll-mono-regular".into(), FontData::from_owned(bytes));
+            fonts
+                .families
+                .insert(FontFamily::Name("LanternLeafMonospaceRegular".into()), vec![
+                    "ll-mono-regular".to_string(),
+                ]);
+            inserted_any = true;
+        }
+    }
+    if let Some(id) = mono_bold {
+        if let Some(bytes) = face_bytes(&db, id) {
+            fonts
+                .font_data
+                .insert("ll-mono-bold".into(), FontData::from_owned(bytes));
+            fonts
+                .families
+                .insert(FontFamily::Name("LanternLeafMonospaceBold".into()), vec![
+                    "ll-mono-bold".to_string(),
+                ]);
+            inserted_any = true;
+        }
+    }
+
+    if inserted_any {
+        tracing::info!(
+            requested_family = %requested,
+            mono_family = %mono_requested,
+            "Configured egui font families via fontdb"
+        );
+        ctx.set_fonts(fonts);
+        ctx.style_mut(|style| {
+            let base = cfg.font_size.max(8) as f32;
+            style.text_styles.insert(
+                TextStyle::Body,
+                eframe::egui::FontId::new(
+                    base,
+                    FontFamily::Name("LanternLeafProportionalRegular".into()),
+                ),
+            );
+            style.text_styles.insert(
+                TextStyle::Heading,
+                eframe::egui::FontId::new(
+                    (base * 1.25).max(10.0),
+                    FontFamily::Name("LanternLeafProportionalBold".into()),
+                ),
+            );
+            style.text_styles.insert(
+                TextStyle::Monospace,
+                eframe::egui::FontId::new(
+                    (base * 0.95).max(9.0),
+                    FontFamily::Name("LanternLeafMonospaceRegular".into()),
+                ),
+            );
+        });
+        true
+    } else {
+        tracing::warn!(
+            requested_family = %requested,
+            "Unable to resolve system font family; using egui defaults"
+        );
+        false
+    }
+}
+
+fn pick_face(db: &fontdb::Database, family: &str, bold: bool) -> Option<fontdb::ID> {
+    use fontdb::{Style, Weight};
+    let desired_weight = if bold { Weight::BOLD } else { Weight::NORMAL };
+    let mut best: Option<(fontdb::ID, i32)> = None;
+    for face in db.faces() {
+        let fam_hit = face
+            .families
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case(family));
+        if !fam_hit {
+            continue;
+        }
+        if face.style != Style::Normal {
+            continue;
+        }
+        let weight_delta = (face.weight.0 as i32 - desired_weight.0 as i32).abs();
+        let score = -weight_delta;
+        match best {
+            Some((_, best_score)) if best_score >= score => {}
+            _ => best = Some((face.id, score)),
+        }
+    }
+    best.map(|(id, _)| id)
+}
+
+fn face_bytes(db: &fontdb::Database, id: fontdb::ID) -> Option<Vec<u8>> {
+    let mut out: Option<Vec<u8>> = None;
+    db.with_face_data(id, |data, _index| {
+        out = Some(data.to_vec());
+    });
+    out
+}
+
 impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
         let _ = frame;
@@ -2059,28 +2355,6 @@ impl AnchorInfo {
             fallback: AnchorFallback::Missing,
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PrettyPageCacheKey {
-    source_path: String,
-    page: usize,
-    pretty_kind: PrettyKind,
-    text_only: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PrettyBlockKind {
-    Heading,
-    Paragraph,
-    ListItem,
-}
-
-#[derive(Clone, Debug)]
-struct PrettyBlock {
-    kind: PrettyBlockKind,
-    text: String,
-    anchor_idx: usize,
 }
 
 #[derive(Default)]
@@ -2315,6 +2589,7 @@ mod tests {
                 time_remaining_display: config::TimeRemainingDisplay::Adaptive,
                 tts_speed: 1.0,
                 tts_volume: 1.0,
+                pretty: config::PrettyUiConfig::default(),
             },
             tts: ReaderTtsView {
                 state: TtsPlaybackState::Idle,

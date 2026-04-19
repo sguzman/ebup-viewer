@@ -1,6 +1,6 @@
 use eframe::egui::{
-    Align, Color32, FontId, Grid, Label, RichText, ScrollArea, Slider, TextFormat,
-    TextStyle, Ui, text::LayoutJob,
+    Align, Color32, FontFamily, Frame, Grid, Label, RichText, ScrollArea, Slider, Stroke,
+    TextFormat, Ui, text::LayoutJob, Image,
 };
 use lanternleaf_app::contracts::{PrettyKind, ReaderSnapshot};
 use lanternleaf_app::pipeline::{AppCommand, ReaderCommand};
@@ -31,8 +31,10 @@ impl HighlightContext {
 }
 
 use crate::app::ui::format::format_duration_secs;
-use crate::app::{
-    AnchorFallback, LanternLeafApp, PrettyBlock, PrettyBlockKind, PrettyPageCacheKey,
+use crate::app::{AnchorFallback, LanternLeafApp};
+use crate::pretty::{
+    PrettyBlock, PrettyBlockKind, PrettyPageCacheKey, PrettySourceKind, PrettySpan, PrettyStyle,
+    clamp_image_size, font_id_for, html_to_blocks, markdown_to_blocks,
 };
 
 impl LanternLeafApp {
@@ -137,117 +139,298 @@ impl LanternLeafApp {
             html_payload = snapshot.reading_html_page.is_some(),
             "render_pretty_page configuration"
         );
-        if let Some(idx) = highlight_idx {
-            trace!(
-                sentence_idx = idx,
-                pretty_highlight_anchor = highlight_anchor,
-                pretty_highlight_fallback = highlight_fallback.label(),
-                "pretty highlight resolved"
-            );
-        }
         let highlight_color = self.resolve_highlight_color(snapshot);
         let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
-        trace!(renderer = "pure_egui", "Rendering pretty view via cached text blocks");
+        trace!(renderer = "pure_egui", "Rendering pretty view via pretty blocks");
         self.refresh_pretty_cache(snapshot);
         ui.group(|ui| {
             ui.label("Pretty view");
+            if !snapshot.settings.pretty.enabled {
+                ui.label("Pretty rendering is disabled in config.");
+                ui.add_space(6.0);
+                ui.label(snapshot.page_text.trim());
+                return;
+            }
             ScrollArea::vertical()
                 .id_source("pretty_page")
                 .show(ui, |ui| {
-                    for block in &self.pretty_page_cache_blocks {
+                    let pretty_cfg = snapshot.settings.pretty;
+                    let base_px =
+                        (snapshot.settings.font_size as f32 * pretty_cfg.base_font_scale).max(10.0);
+                    let regular_family = if self.fonts_configured {
+                        FontFamily::Name("LanternLeafProportionalRegular".into())
+                    } else {
+                        FontFamily::Proportional
+                    };
+                    let bold_family = if self.fonts_configured {
+                        FontFamily::Name("LanternLeafProportionalBold".into())
+                    } else {
+                        FontFamily::Proportional
+                    };
+                    let mono_regular = if self.fonts_configured {
+                        FontFamily::Name("LanternLeafMonospaceRegular".into())
+                    } else {
+                        FontFamily::Monospace
+                    };
+                    let mono_bold = if self.fonts_configured {
+                        FontFamily::Name("LanternLeafMonospaceBold".into())
+                    } else {
+                        FontFamily::Monospace
+                    };
+
+                    for (block_i, block) in self.pretty_page_cache_blocks.iter().enumerate() {
                         let mut response = None;
-                        let mut highlight_matched = false;
-                        let display_text = if block.text.is_empty() {
-                            " "
-                        } else {
-                            block.text.as_str()
+                        let highlight_matched = match (highlight_anchor, highlight_sentence) {
+                            (Some(anchor), _) => anchor == block.anchor_idx,
+                            (None, Some(sentence)) => block_contains_sentence(block, sentence),
+                            (None, None) => false,
                         };
-                        let highlight_job = if highlight_anchor == Some(block.anchor_idx) {
-                            if let Some(sentence) = highlight_sentence {
-                                let (job, matched) = build_highlight_job(
-                                    ui,
-                                    display_text,
-                                    sentence,
-                                    block.kind,
-                                    highlight_color,
-                                );
-                                highlight_matched = matched;
-                                Some(job)
-                            } else {
-                                None
-                            }
+                        let block_highlight_bg = if highlight_matched {
+                            Some(highlight_color)
                         } else {
                             None
                         };
 
-                        match block.kind {
-                            PrettyBlockKind::Heading => {
-                                if let Some(job) = highlight_job {
-                                    response = Some(ui.add(Label::new(job).wrap(true)));
+                        match &block.kind {
+                            PrettyBlockKind::Heading { level } => {
+                                let size = heading_size(base_px, *level, pretty_cfg);
+                                let mut spans = block.spans.clone();
+                                for span in &mut spans {
+                                    if span.style.code {
+                                        span.style.code = false;
+                                    }
+                                    span.style.bold = true;
+                                }
+                                let job = spans_to_job(
+                                    ui,
+                                    &spans,
+                                    size,
+                                    block_highlight_bg,
+                                    regular_family.clone(),
+                                    bold_family.clone(),
+                                    mono_regular.clone(),
+                                    mono_bold.clone(),
+                                    pretty_cfg,
+                                );
+                                response = Some(ui.add(Label::new(job).wrap(true)));
+                            }
+                            PrettyBlockKind::Paragraph | PrettyBlockKind::BlockQuote => {
+                                let text_color = if matches!(block.kind, PrettyBlockKind::BlockQuote)
+                                {
+                                    ui.visuals().weak_text_color()
                                 } else {
-                                    response = Some(
-                                        ui.add(
-                                            Label::new(
-                                                RichText::new(display_text).strong().size(18.0),
-                                            )
-                                            .wrap(true),
-                                        ),
+                                    ui.visuals().text_color()
+                                };
+                                let job = spans_to_job_with_base(
+                                    ui,
+                                    &block.spans,
+                                    base_px,
+                                    text_color,
+                                    block_highlight_bg,
+                                    regular_family.clone(),
+                                    bold_family.clone(),
+                                    mono_regular.clone(),
+                                    mono_bold.clone(),
+                                    pretty_cfg,
+                                );
+                                if matches!(block.kind, PrettyBlockKind::BlockQuote) {
+                                    Frame::none()
+                                        .stroke(Stroke::new(
+                                            1.0,
+                                            ui.visuals().widgets.noninteractive.bg_stroke.color,
+                                        ))
+                                        .inner_margin(eframe::egui::Margin::symmetric(8.0, 6.0))
+                                        .show(ui, |ui| {
+                                            response = Some(ui.add(Label::new(job).wrap(true)));
+                                        });
+                                } else {
+                                    response = Some(ui.add(Label::new(job).wrap(true)));
+                                }
+                            }
+                            PrettyBlockKind::ListItem {
+                                depth,
+                                ordered,
+                                index,
+                            } => {
+                                let indent = pretty_cfg.list_indent * (*depth as f32).max(1.0);
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.add_space(indent);
+                                    let marker = if *ordered {
+                                        format!("{}.", index.unwrap_or(1))
+                                    } else {
+                                        "•".to_string()
+                                    };
+                                    ui.label(marker);
+                                    let job = spans_to_job(
+                                        ui,
+                                        &block.spans,
+                                        base_px,
+                                        block_highlight_bg,
+                                        regular_family.clone(),
+                                        bold_family.clone(),
+                                        mono_regular.clone(),
+                                        mono_bold.clone(),
+                                        pretty_cfg,
+                                    );
+                                    response = Some(ui.add(Label::new(job).wrap(true)));
+                                });
+                            }
+                            PrettyBlockKind::HorizontalRule => {
+                                ui.add_space(pretty_cfg.hr_margin);
+                                let (rect, _) = ui.allocate_exact_size(
+                                    eframe::egui::vec2(ui.available_width(), pretty_cfg.hr_thickness),
+                                    eframe::egui::Sense::hover(),
+                                );
+                                ui.painter().line_segment(
+                                    [rect.left_center(), rect.right_center()],
+                                    Stroke::new(
+                                        pretty_cfg.hr_thickness,
+                                        ui.visuals().widgets.noninteractive.bg_stroke.color,
+                                    ),
+                                );
+                                ui.add_space(pretty_cfg.hr_margin);
+                            }
+                            PrettyBlockKind::CodeBlock => {
+                                let code = block.code.as_deref().unwrap_or_default();
+                                let style = PrettyStyle {
+                                    code: true,
+                                    ..PrettyStyle::default()
+                                };
+                                let spans = vec![PrettySpan {
+                                    text: code.to_string(),
+                                    style,
+                                }];
+                                let bg = ui
+                                    .visuals()
+                                    .extreme_bg_color
+                                    .linear_multiply(pretty_cfg.code_bg_alpha.clamp(0.0, 1.0));
+                                Frame::none()
+                                    .fill(bg)
+                                    .stroke(Stroke::new(
+                                        1.0,
+                                        ui.visuals()
+                                            .widgets
+                                            .noninteractive
+                                            .bg_stroke
+                                            .color
+                                            .linear_multiply(
+                                                pretty_cfg.code_border_alpha.clamp(0.0, 1.0),
+                                            ),
+                                    ))
+                                    .inner_margin(eframe::egui::Margin::symmetric(8.0, 6.0))
+                                    .show(ui, |ui| {
+                                        let job = spans_to_job(
+                                            ui,
+                                            &spans,
+                                            base_px * pretty_cfg.code_font_scale,
+                                            block_highlight_bg,
+                                            regular_family.clone(),
+                                            bold_family.clone(),
+                                            mono_regular.clone(),
+                                            mono_bold.clone(),
+                                            pretty_cfg,
+                                        );
+                                        response = Some(ui.add(Label::new(job).wrap(true)));
+                                    });
+                            }
+                            PrettyBlockKind::Image => {
+                                let Some(img) = block.image.as_ref() else {
+                                    ui.label("[image]");
+                                    continue;
+                                };
+                                if let Some(texture) = self.pretty_image_cache.texture_for(
+                                    ui.ctx(),
+                                    &img.local_path,
+                                    (ui.available_width() * (pretty_cfg.image_max_width_pct / 100.0)) as u32,
+                                    pretty_cfg.image_max_height_px as u32,
+                                    pretty_cfg.image_cache_max_entries,
+                                ) {
+                                    let size = clamp_image_size(
+                                        ui.available_width(),
+                                        [texture.size()[0], texture.size()[1]],
+                                        pretty_cfg.image_max_width_pct,
+                                        pretty_cfg.image_max_height_px,
+                                    );
+                                    response = Some(ui.add(
+                                        Image::new(&texture)
+                                            .fit_to_exact_size(eframe::egui::vec2(size[0], size[1])),
+                                    ));
+                                } else {
+                                    ui.label(
+                                        img.alt
+                                            .as_deref()
+                                            .unwrap_or(img.src_raw.as_str())
+                                            .to_string(),
                                     );
                                 }
                             }
-                            PrettyBlockKind::Paragraph => {
-                                if let Some(job) = highlight_job {
-                                    response = Some(ui.add(Label::new(job).wrap(true)));
-                                } else {
-                                    response = Some(ui.add(Label::new(display_text).wrap(true)));
-                                }
-                            }
-                            PrettyBlockKind::ListItem => {
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.label("•");
-                                    let label = if let Some(job) = highlight_job {
-                                        Label::new(job).wrap(true)
-                                    } else {
-                                        Label::new(display_text).wrap(true)
-                                    };
-                                    response = Some(ui.add(label));
-                                });
+                            PrettyBlockKind::Table => {
+                                let Some(rows) = block.table.as_ref() else {
+                                    ui.label("[table]");
+                                    continue;
+                                };
+                                let stripe = ui
+                                    .visuals()
+                                    .faint_bg_color
+                                    .linear_multiply(pretty_cfg.table_stripe_alpha.clamp(0.0, 1.0));
+                                let border = ui
+                                    .visuals()
+                                    .widgets
+                                    .noninteractive
+                                    .bg_stroke
+                                    .color
+                                    .linear_multiply(pretty_cfg.table_border_alpha.clamp(0.0, 1.0));
+                                Frame::none()
+                                    .stroke(Stroke::new(1.0, border))
+                                    .inner_margin(eframe::egui::Margin::symmetric(
+                                        pretty_cfg.table_cell_padding,
+                                        pretty_cfg.table_cell_padding,
+                                    ))
+                                    .show(ui, |ui| {
+                                        Grid::new(format!("pretty_table_{}", block_i))
+                                            .spacing([pretty_cfg.table_cell_padding, pretty_cfg.table_cell_padding])
+                                            .striped(true)
+                                            .show(ui, |ui| {
+                                                for (row_i, row) in rows.iter().enumerate() {
+                                                    for cell in row {
+                                                        let mut spans = cell.spans.clone();
+                                                        if cell.header {
+                                                            for span in &mut spans {
+                                                                span.style.bold = true;
+                                                            }
+                                                        }
+                                                        let job = spans_to_job(
+                                                            ui,
+                                                            &spans,
+                                                            base_px,
+                                                            None,
+                                                            regular_family.clone(),
+                                                            bold_family.clone(),
+                                                            mono_regular.clone(),
+                                                            mono_bold.clone(),
+                                                            pretty_cfg,
+                                                        );
+                                                        let cell_frame = if row_i % 2 == 1 {
+                                                            Frame::none().fill(stripe)
+                                                        } else {
+                                                            Frame::none()
+                                                        };
+                                                        cell_frame.show(ui, |ui| {
+                                                            ui.add(Label::new(job).wrap(true));
+                                                        });
+                                                    }
+                                                    ui.end_row();
+                                                }
+                                            });
+                                    });
                             }
                         }
 
-                        if highlight_anchor == Some(block.anchor_idx) {
-                            trace!(
-                                pretty_highlight_anchor = block.anchor_idx,
-                                pretty_highlight_fallback = highlight_fallback.label(),
-                                pretty_highlight_sentence_match = highlight_matched,
-                                "pretty highlight applied"
-                            );
-                        }
-
-                        if auto_scroll_requested
-                            && highlight_anchor == Some(block.anchor_idx)
-                            && highlight_idx.is_some()
-                        {
+                        if auto_scroll_requested && highlight_matched && highlight_idx.is_some() {
                             if let Some(response) = response.as_ref() {
                                 let idx = highlight_idx.unwrap_or_default();
-                                let decision = self
-                                    .auto_scroll_state
-                                    .decide_scroll(idx, highlight_fallback);
-                                let decision_label = match decision {
-                                    crate::app::ScrollDecision::Scroll => "scroll",
-                                    crate::app::ScrollDecision::Blocked(
-                                        crate::app::ScrollBlockReason::Duplicate,
-                                    ) => "blocked_duplicate",
-                                    crate::app::ScrollDecision::Blocked(
-                                        crate::app::ScrollBlockReason::Throttled(_),
-                                    ) => "blocked_throttled",
-                                };
-                                trace!(
-                                    pretty_scroll_action = decision_label,
-                                    pretty_scroll_anchor = block.anchor_idx,
-                                    pretty_scroll_fallback = highlight_fallback.label(),
-                                    "pretty scroll decision"
-                                );
+                                let decision =
+                                    self.auto_scroll_state.decide_scroll(idx, highlight_fallback);
                                 if matches!(decision, crate::app::ScrollDecision::Scroll) {
                                     response.scroll_to_me(Some(Align::Center));
                                     self.auto_scroll_state.record(idx, highlight_fallback);
@@ -255,7 +438,14 @@ impl LanternLeafApp {
                             }
                         }
 
-                        ui.add_space(6.0);
+                        let spacing = match block.kind {
+                            PrettyBlockKind::Paragraph | PrettyBlockKind::BlockQuote => {
+                                pretty_cfg.paragraph_spacing
+                            }
+                            PrettyBlockKind::ListItem { .. } => pretty_cfg.list_item_spacing,
+                            _ => pretty_cfg.block_spacing,
+                        };
+                        ui.add_space(spacing.max(0.0));
                     }
                 });
         });
@@ -387,7 +577,11 @@ impl LanternLeafApp {
     fn refresh_pretty_cache(&mut self, snapshot: &ReaderSnapshot) {
         let key = PrettyPageCacheKey {
             source_path: snapshot.source_path.clone(),
-            page: snapshot.current_page,
+            page: if snapshot.pretty_kind == PrettyKind::Html {
+                0
+            } else {
+                snapshot.current_page
+            },
             pretty_kind: snapshot.pretty_kind,
             text_only: snapshot.text_only_mode,
         };
@@ -399,99 +593,52 @@ impl LanternLeafApp {
     }
 
     fn build_pretty_blocks(&self, snapshot: &ReaderSnapshot) -> Vec<PrettyBlock> {
-        if let Some(markdown) = snapshot.reading_markdown_page.as_deref() {
-            let blocks = self.markdown_to_blocks(markdown);
-            if !blocks.is_empty() {
-                return blocks;
+        let pretty_cfg = snapshot.settings.pretty;
+        match snapshot.pretty_kind {
+            PrettyKind::Markdown => {
+                if let Some(markdown) = snapshot.reading_markdown_page.as_deref() {
+                    let blocks = markdown_to_blocks(markdown, &snapshot.images, pretty_cfg);
+                    trace_pretty_block_counts(&blocks);
+                    return blocks;
+                }
             }
+            PrettyKind::Html => {
+                if let Some(html) = snapshot.reading_html_page.as_deref() {
+                    let blocks = html_to_blocks(html, &snapshot.images, pretty_cfg);
+                    trace_pretty_block_counts(&blocks);
+                    return blocks;
+                }
+            }
+            _ => {}
         }
+
         let text = snapshot.page_text.trim();
         if text.is_empty() {
             return vec![PrettyBlock {
                 kind: PrettyBlockKind::Paragraph,
-                text: "No pretty content available for this page.".to_string(),
+                spans: vec![PrettySpan {
+                    text: "No pretty content available for this page.".to_string(),
+                    style: PrettyStyle::default(),
+                }],
+                code: None,
+                image: None,
+                table: None,
                 anchor_idx: 0,
+                source_kind: PrettySourceKind::Markdown,
             }];
         }
         vec![PrettyBlock {
             kind: PrettyBlockKind::Paragraph,
-            text: text.to_string(),
+            spans: vec![PrettySpan {
+                text: text.to_string(),
+                style: PrettyStyle::default(),
+            }],
+            code: None,
+            image: None,
+            table: None,
             anchor_idx: 0,
+            source_kind: PrettySourceKind::Markdown,
         }]
-    }
-
-    fn markdown_to_blocks(&self, markdown: &str) -> Vec<PrettyBlock> {
-        let mut blocks = Vec::new();
-        let mut paragraph = Vec::new();
-        let mut anchor_idx = 0usize;
-
-        for line in markdown.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                if !paragraph.is_empty() {
-                    blocks.push(PrettyBlock {
-                        kind: PrettyBlockKind::Paragraph,
-                        text: paragraph.join(" "),
-                        anchor_idx,
-                    });
-                    anchor_idx = anchor_idx.saturating_add(1);
-                    paragraph.clear();
-                }
-                continue;
-            }
-            if let Some(stripped) = trimmed.strip_prefix('#') {
-                if !paragraph.is_empty() {
-                    blocks.push(PrettyBlock {
-                        kind: PrettyBlockKind::Paragraph,
-                        text: paragraph.join(" "),
-                        anchor_idx,
-                    });
-                    anchor_idx = anchor_idx.saturating_add(1);
-                    paragraph.clear();
-                }
-                let heading = stripped.trim_start_matches('#').trim();
-                if !heading.is_empty() {
-                    blocks.push(PrettyBlock {
-                        kind: PrettyBlockKind::Heading,
-                        text: heading.to_string(),
-                        anchor_idx,
-                    });
-                    anchor_idx = anchor_idx.saturating_add(1);
-                }
-                continue;
-            }
-            if let Some(item) = trimmed
-                .strip_prefix("- ")
-                .or_else(|| trimmed.strip_prefix("* "))
-            {
-                if !paragraph.is_empty() {
-                    blocks.push(PrettyBlock {
-                        kind: PrettyBlockKind::Paragraph,
-                        text: paragraph.join(" "),
-                        anchor_idx,
-                    });
-                    anchor_idx = anchor_idx.saturating_add(1);
-                    paragraph.clear();
-                }
-                blocks.push(PrettyBlock {
-                    kind: PrettyBlockKind::ListItem,
-                    text: item.trim().to_string(),
-                    anchor_idx,
-                });
-                anchor_idx = anchor_idx.saturating_add(1);
-                continue;
-            }
-            paragraph.push(trimmed.to_string());
-        }
-
-        if !paragraph.is_empty() {
-            blocks.push(PrettyBlock {
-                kind: PrettyBlockKind::Paragraph,
-                text: paragraph.join(" "),
-                anchor_idx,
-            });
-        }
-        blocks
     }
 
     fn render_quick_actions_dock(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
@@ -749,33 +896,22 @@ fn normalize_for_match(input: &str) -> String {
     normalize_whitespace(input).to_ascii_lowercase()
 }
 
-fn build_highlight_job(
-    ui: &Ui,
-    block_text: &str,
-    target_sentence: &str,
-    kind: PrettyBlockKind,
-    highlight_color: Color32,
-) -> (LayoutJob, bool) {
-    let mut job = LayoutJob::default();
-    let sentences = text_utils::split_sentences(block_text);
-    if sentences.is_empty() {
-        let format = text_format_for_kind(ui, kind, None);
-        job.append(block_text, 0.0, format);
-        return (job, false);
+fn block_contains_sentence(block: &PrettyBlock, target_sentence: &str) -> bool {
+    let mut text = String::new();
+    match block.kind {
+        PrettyBlockKind::CodeBlock => {
+            if let Some(code) = block.code.as_deref() {
+                text.push_str(code);
+            }
+        }
+        _ => {
+            for span in &block.spans {
+                text.push_str(&span.text);
+            }
+        }
     }
-
-    let match_idx = match_sentence_index(&sentences, target_sentence);
-
-    for (idx, sentence) in sentences.iter().enumerate() {
-        let format = if Some(idx) == match_idx {
-            text_format_for_kind(ui, kind, Some(highlight_color))
-        } else {
-            text_format_for_kind(ui, kind, None)
-        };
-        job.append(sentence, 0.0, format);
-    }
-
-    (job, match_idx.is_some())
+    let sentences = text_utils::split_sentences(&text);
+    match_sentence_index(&sentences, target_sentence).is_some()
 }
 
 fn match_sentence_index(sentences: &[String], target_sentence: &str) -> Option<usize> {
@@ -788,29 +924,100 @@ fn match_sentence_index(sentences: &[String], target_sentence: &str) -> Option<u
     None
 }
 
-fn text_format_for_kind(ui: &Ui, kind: PrettyBlockKind, background: Option<Color32>) -> TextFormat {
-    let text_style = match kind {
-        PrettyBlockKind::Heading => TextStyle::Heading,
-        _ => TextStyle::Body,
+fn heading_size(
+    base_px: f32,
+    level: u8,
+    pretty_cfg: lanternleaf_core::config::PrettyUiConfig,
+) -> f32 {
+    let scale = match level {
+        1 => pretty_cfg.heading_scale_h1,
+        2 => pretty_cfg.heading_scale_h2,
+        3 => pretty_cfg.heading_scale_h3,
+        4 => pretty_cfg.heading_scale_h4,
+        5 => pretty_cfg.heading_scale_h5,
+        _ => pretty_cfg.heading_scale_h6,
     };
-    let font_id = ui
-        .style()
-        .text_styles
-        .get(&text_style)
-        .cloned()
-        .unwrap_or_else(|| match kind {
-            PrettyBlockKind::Heading => FontId::proportional(18.0),
-            _ => FontId::proportional(14.0),
-        });
-    let mut format = TextFormat {
-        font_id,
-        color: ui.visuals().text_color(),
-        ..Default::default()
-    };
-    if let Some(color) = background {
-        format.background = color;
+    (base_px * scale.max(0.5)).max(base_px)
+}
+
+fn spans_to_job(
+    ui: &Ui,
+    spans: &[PrettySpan],
+    base_px: f32,
+    background: Option<Color32>,
+    regular_family: FontFamily,
+    bold_family: FontFamily,
+    mono_regular: FontFamily,
+    mono_bold: FontFamily,
+    pretty_cfg: lanternleaf_core::config::PrettyUiConfig,
+) -> LayoutJob {
+    spans_to_job_with_base(
+        ui,
+        spans,
+        base_px,
+        ui.visuals().text_color(),
+        background,
+        regular_family,
+        bold_family,
+        mono_regular,
+        mono_bold,
+        pretty_cfg,
+    )
+}
+
+fn spans_to_job_with_base(
+    ui: &Ui,
+    spans: &[PrettySpan],
+    base_px: f32,
+    base_color: Color32,
+    background: Option<Color32>,
+    regular_family: FontFamily,
+    bold_family: FontFamily,
+    mono_regular: FontFamily,
+    mono_bold: FontFamily,
+    pretty_cfg: lanternleaf_core::config::PrettyUiConfig,
+) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    for span in spans {
+        let style = span.style;
+        let font_id = font_id_for(
+            base_px,
+            style,
+            regular_family.clone(),
+            bold_family.clone(),
+            mono_regular.clone(),
+            mono_bold.clone(),
+        );
+        let color = style.color.unwrap_or(base_color);
+        let mut format = TextFormat {
+            font_id,
+            color,
+            italics: style.italics,
+            ..Default::default()
+        };
+        if let Some(bg) = background {
+            format.background = bg;
+        } else if style.code {
+            format.background = ui
+                .visuals()
+                .extreme_bg_color
+                .linear_multiply(pretty_cfg.code_bg_alpha.clamp(0.0, 1.0));
+        }
+        if style.underline {
+            format.underline = Stroke::new(1.0, color);
+        }
+        if style.strikethrough {
+            format.strikethrough = Stroke::new(1.0, color);
+        }
+        if style.sup {
+            format.valign = Align::TOP;
+        }
+        if style.sub {
+            format.valign = Align::BOTTOM;
+        }
+        job.append(&span.text, 0.0, format);
     }
-    format
+    job
 }
 
 #[cfg(test)]
@@ -825,4 +1032,21 @@ mod tests {
         let matched = match_sentence_index(&sentences, target);
         assert_eq!(matched, Some(1));
     }
+}
+
+fn trace_pretty_block_counts(blocks: &[PrettyBlock]) {
+    let mut markdown = 0usize;
+    let mut html = 0usize;
+    for b in blocks {
+        match b.source_kind {
+            PrettySourceKind::Markdown => markdown += 1,
+            PrettySourceKind::Html => html += 1,
+        }
+    }
+    tracing::debug!(
+        total = blocks.len(),
+        markdown_blocks = markdown,
+        html_blocks = html,
+        "Pretty blocks built"
+    );
 }

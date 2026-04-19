@@ -155,8 +155,8 @@ impl LanternLeafApp {
                 .id_source("pretty_page")
                 .show(ui, |ui| {
                     let pretty_cfg = snapshot.settings.pretty;
-                    let base_px =
-                        (snapshot.settings.font_size as f32 * pretty_cfg.base_font_scale).max(10.0);
+                    let base_px = (snapshot.settings.font_size as f32 * pretty_cfg.base_font_scale)
+                        .clamp(8.0, 48.0);
                     let regular_family = if self.fonts_configured {
                         FontFamily::Name("LanternLeafProportionalRegular".into())
                     } else {

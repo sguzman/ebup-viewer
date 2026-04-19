@@ -44,13 +44,13 @@ native_html_pagination_mode = "sentence_window"
 
 [ui.pretty]
 enabled = true
-base_font_scale = 0.88
-heading_scale_h1 = 1.70
-heading_scale_h2 = 1.45
-heading_scale_h3 = 1.25
-heading_scale_h4 = 1.10
+base_font_scale = 0.72
+heading_scale_h1 = 1.55
+heading_scale_h2 = 1.35
+heading_scale_h3 = 1.18
+heading_scale_h4 = 1.06
 heading_scale_h5 = 1.00
-heading_scale_h6 = 0.95
+heading_scale_h6 = 0.96
 paragraph_spacing = 6.0
 block_spacing = 10.0
 list_indent = 20.0

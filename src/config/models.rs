@@ -109,6 +109,8 @@ pub struct AppConfig {
     pub key_toggle_stats: String,
     #[serde(default = "crate::config::defaults::default_key_toggle_tts")]
     pub key_toggle_tts: String,
+    #[serde(default)]
+    pub remote_url: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -172,6 +174,7 @@ impl Default for AppConfig {
             key_toggle_settings: crate::config::defaults::default_key_toggle_settings(),
             key_toggle_stats: crate::config::defaults::default_key_toggle_stats(),
             key_toggle_tts: crate::config::defaults::default_key_toggle_tts(),
+            remote_url: None,
         }
     }
 }

@@ -205,14 +205,16 @@ pub fn save_bookmark(epub_path: &Path, bookmark: &Bookmark) {
     bookmarks_config::save_bookmark(epub_path, bookmark)
 }
 
-pub fn hash_dir(epub_path: &Path) -> PathBuf {
-    let hash = source_content_hash(epub_path).unwrap_or_else(|| {
-        // Fallback for unreadable paths keeps cache functions non-fatal.
+pub fn source_hash(path: &Path) -> String {
+    source_content_hash(path).unwrap_or_else(|| {
         let mut hasher = Sha256::new();
-        hasher.update(epub_path.as_os_str().to_string_lossy().as_bytes());
+        hasher.update(path.as_os_str().to_string_lossy().as_bytes());
         format!("{:x}", hasher.finalize())
-    });
-    cache_root().join(hash)
+    })
+}
+
+pub fn hash_dir(epub_path: &Path) -> PathBuf {
+    cache_root().join(source_hash(epub_path))
 }
 
 fn source_content_hash(path: &Path) -> Option<String> {

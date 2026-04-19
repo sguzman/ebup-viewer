@@ -83,6 +83,7 @@ impl From<ConfigTables> for AppConfig {
             tts_threads: tables.tts.tts_threads,
             normalizer_threads: tables.tts.normalizer_threads,
             tts_progress_log_interval_secs: tables.tts.tts_progress_log_interval_secs,
+            remote_url: tables.integration.remote_url,
         }
     }
 }
@@ -139,6 +140,7 @@ impl From<&AppConfig> for ConfigTables {
                 browsr_base_url: config.browsr_base_url.clone(),
                 browsr_timeout_ms: config.browsr_timeout_ms,
                 close_browser_tab_on_recent_delete: config.close_browser_tab_on_recent_delete,
+                remote_url: config.remote_url.clone(),
             },
             tts: TtsConfig {
                 tts_model_path: config.tts_model_path.clone(),
@@ -336,6 +338,8 @@ struct IntegrationConfig {
     browsr_timeout_ms: u64,
     #[serde(default = "defaults::default_close_browser_tab_on_recent_delete")]
     close_browser_tab_on_recent_delete: bool,
+    #[serde(default)]
+    remote_url: Option<String>,
 }
 
 impl Default for IntegrationConfig {
@@ -346,6 +350,7 @@ impl Default for IntegrationConfig {
             browsr_timeout_ms: defaults::default_browsr_timeout_ms(),
             close_browser_tab_on_recent_delete:
                 defaults::default_close_browser_tab_on_recent_delete(),
+            remote_url: None,
         }
     }
 }

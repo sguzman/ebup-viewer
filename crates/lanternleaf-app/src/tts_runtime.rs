@@ -1265,6 +1265,10 @@ fn reader_playback_state_from_snapshot(
         highlighted_sentence_idx: reader.highlighted_sentence_idx,
         tts: reader.tts.clone(),
         stats: reader.stats.clone(),
+        updated_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
     }
 }
 

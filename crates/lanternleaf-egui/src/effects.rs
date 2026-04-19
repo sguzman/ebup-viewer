@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use eframe::egui;
 
 use lanternleaf_app::contracts::{
     BootstrapState, BridgeError, CalibreBookDto, CalibreLoadEvent, LogLevelEvent, OpenSourceResult,
@@ -28,11 +29,7 @@ pub struct EffectContext {
     pub calibre_config: Arc<calibre::CalibreConfig>,
     pub session: Arc<Mutex<Option<session::ReaderSession>>>,
     pub panels: Arc<Mutex<session::PanelState>>,
-    pub persistence: Arc<
-        lanternleaf_app::persistence::PersistenceLifecycle<
-            lanternleaf_app::persistence::FilesystemPersistenceService,
-        >,
-    >,
+    pub persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle>,
     pub cache_service: Arc<dyn cache_service::CacheService>,
     pub config_path: PathBuf,
     pub config_service: Arc<dyn config_service::ConfigService>,
@@ -43,11 +40,7 @@ impl EffectContext {
     pub fn new(
         config: config::AppConfig,
         normalizer: normalizer::TextNormalizer,
-        persistence: Arc<
-            lanternleaf_app::persistence::PersistenceLifecycle<
-                lanternleaf_app::persistence::FilesystemPersistenceService,
-            >,
-        >,
+        persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle>,
         config_path: PathBuf,
     ) -> Self {
         let cache_service: Arc<dyn cache_service::CacheService> =
@@ -67,11 +60,7 @@ impl EffectContext {
     pub fn with_services(
         config: config::AppConfig,
         normalizer: normalizer::TextNormalizer,
-        persistence: Arc<
-            lanternleaf_app::persistence::PersistenceLifecycle<
-                lanternleaf_app::persistence::FilesystemPersistenceService,
-            >,
-        >,
+        persistence: Arc<lanternleaf_app::persistence::PersistenceLifecycle>,
         cache_service: Arc<dyn cache_service::CacheService>,
         config_path: PathBuf,
         config_service: Arc<dyn config_service::ConfigService>,
@@ -92,30 +81,56 @@ impl EffectContext {
 
 pub struct EffectDispatcher {
     effect_tx: mpsc::Sender<PlannedEffect>,
+    event_tx: mpsc::Sender<AppEvent>,
     event_rx: mpsc::Receiver<AppEvent>,
 }
 
 impl EffectDispatcher {
-    pub fn new(context: EffectContext) -> Self {
-        Self::with_handler(context, Arc::new(execute_effect))
+    pub fn new(context: EffectContext, egui_ctx: Option<egui::Context>) -> Self {
+        Self::with_handler(context, egui_ctx, Arc::new(execute_effect))
     }
 
-    fn with_handler(context: EffectContext, handler: EffectHandler) -> Self {
+    fn with_handler(
+        context: EffectContext,
+        egui_ctx: Option<egui::Context>,
+        handler: EffectHandler,
+    ) -> Self {
         let (effect_tx, effect_rx) = mpsc::channel();
         let (event_tx, event_rx) = mpsc::channel();
+
+        // Internal channel that will proxy to the final event_tx and trigger repaint
+        let (internal_tx, internal_rx) = mpsc::channel::<AppEvent>();
+
+        let proxy_event_tx = event_tx.clone();
+        let proxy_egui_ctx = egui_ctx.clone();
+        thread::spawn(move || {
+            while let Ok(event) = internal_rx.recv() {
+                let _ = proxy_event_tx.send(event);
+                if let Some(ref ctx) = proxy_egui_ctx {
+                    ctx.request_repaint();
+                }
+            }
+        });
+
+        let dispatcher_internal_tx = internal_tx.clone();
         thread::spawn(move || {
             for planned in effect_rx {
                 let ctx = context.clone();
                 let handler = handler.clone();
-                let event_tx = event_tx.clone();
+                let event_tx = dispatcher_internal_tx.clone();
                 thread::spawn(move || handler(ctx, planned, event_tx));
             }
         });
 
         Self {
             effect_tx,
+            event_tx: internal_tx,
             event_rx,
         }
+    }
+
+    pub fn event_tx(&self) -> mpsc::Sender<AppEvent> {
+        self.event_tx.clone()
     }
 
     pub fn dispatch(&self, effect: PlannedEffect) {
@@ -1133,7 +1148,7 @@ mod tests {
     #[test]
     fn dispatcher_runs_effects_off_thread() {
         let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
-            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+            Arc::new(lanternleaf_app::persistence::FilesystemPersistenceService::default()),
         ));
         let config_path = std::env::temp_dir().join("lanternleaf-egui-config.toml");
         let context = EffectContext::new(
@@ -1152,7 +1167,7 @@ mod tests {
                 .unwrap()
                 .recv_timeout(Duration::from_millis(200));
         });
-        let dispatcher = EffectDispatcher::with_handler(context, handler);
+        let dispatcher = EffectDispatcher::with_handler(context, None, handler);
 
         dispatcher.dispatch(PlannedEffect {
             request_id: 1,
@@ -1184,7 +1199,7 @@ mod tests {
     #[test]
     fn runtime_config_flush_persists_base_config_without_session() {
         let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
-            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+            Arc::new(lanternleaf_app::persistence::FilesystemPersistenceService::default()),
         ));
         let cache_service: Arc<dyn cache_service::CacheService> =
             Arc::new(cache_service::FilesystemCacheService);
@@ -1245,7 +1260,7 @@ mod tests {
     #[test]
     fn set_log_level_persists_config() {
         let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
-            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+            Arc::new(lanternleaf_app::persistence::FilesystemPersistenceService::default()),
         ));
         let cache_service: Arc<dyn cache_service::CacheService> =
             Arc::new(cache_service::FilesystemCacheService);
@@ -1274,7 +1289,7 @@ mod tests {
     #[test]
     fn set_log_level_reports_persist_failure() {
         let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
-            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+            Arc::new(lanternleaf_app::persistence::FilesystemPersistenceService::default()),
         ));
         let cache_service: Arc<dyn cache_service::CacheService> =
             Arc::new(cache_service::FilesystemCacheService);
@@ -1397,7 +1412,7 @@ mod tests {
     #[test]
     fn list_recents_uses_cache_service() {
         let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
-            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+            Arc::new(lanternleaf_app::persistence::FilesystemPersistenceService::default()),
         ));
         let recent = cache::RecentBook {
             source_path: PathBuf::from("/tmp/recents.epub"),
@@ -1433,7 +1448,7 @@ mod tests {
     #[test]
     fn delete_recent_records_path_and_refreshes() {
         let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
-            lanternleaf_app::persistence::FilesystemPersistenceService::default(),
+            Arc::new(lanternleaf_app::persistence::FilesystemPersistenceService::default()),
         ));
         let recent = cache::RecentBook {
             source_path: PathBuf::from("/tmp/recents.epub"),

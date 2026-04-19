@@ -5,7 +5,7 @@ use lanternleaf_app::pipeline::PersistenceTrigger;
 use lanternleaf_core::{cache, config, session};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static CACHE_LOCK: Mutex<()> = Mutex::new(());
@@ -148,7 +148,7 @@ fn persistence_roundtrip_and_delete() {
         let source = unique_source_path("epub");
         write_source(&source);
         cache::remember_source_path(&source);
-        let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService::default());
+        let lifecycle = PersistenceLifecycle::new(Arc::new(FilesystemPersistenceService::default()));
         let snapshot = sample_snapshot(&source);
         let config = config::AppConfig::default();
 
@@ -185,7 +185,7 @@ fn persistence_rebuilds_after_corruption() {
         let loaded = cache::load_bookmark(&source);
         assert!(loaded.is_none(), "corrupt bookmark should be ignored");
 
-        let lifecycle = PersistenceLifecycle::new(FilesystemPersistenceService::default());
+        let lifecycle = PersistenceLifecycle::new(Arc::new(FilesystemPersistenceService::default()));
         let snapshot = sample_snapshot(&source);
         let config = config::AppConfig::default();
         lifecycle.flush_trigger(

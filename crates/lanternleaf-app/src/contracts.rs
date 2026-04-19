@@ -34,6 +34,7 @@ pub struct BootstrapConfig {
     pub key_toggle_tts: String,
     pub browser_tabs_enabled: bool,
     pub close_browser_tab_on_recent_delete: bool,
+    pub remote_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -53,14 +54,14 @@ pub struct SessionState {
     pub panels: session::PanelState,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct OpenSourceResult {
     pub session: SessionState,
     pub reader: session::ReaderSnapshot,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct RecentBook {
     pub source_path: String,
@@ -75,7 +76,7 @@ pub struct RecentBook {
     pub browser_window_id: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CalibreBookDto {
     #[ts(type = "number")]
@@ -110,7 +111,7 @@ pub struct CalibreLoadEvent {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct TtsStateEvent {
     #[ts(type = "number")]
@@ -137,7 +138,7 @@ pub struct LogLevelEvent {
     pub level: String,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct SessionStateEvent {
     #[ts(type = "number")]
@@ -146,7 +147,7 @@ pub struct SessionStateEvent {
     pub session: SessionState,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderStateEvent {
     #[ts(type = "number")]
@@ -155,7 +156,7 @@ pub struct ReaderStateEvent {
     pub reader: session::ReaderSnapshot,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderPlaybackState {
     pub source_path: String,
@@ -163,9 +164,12 @@ pub struct ReaderPlaybackState {
     pub highlighted_sentence_idx: Option<usize>,
     pub tts: session::ReaderTtsView,
     pub stats: session::ReaderStats,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub updated_at: u64,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderPlaybackStateEvent {
     #[ts(type = "number")]

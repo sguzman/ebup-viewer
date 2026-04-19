@@ -48,7 +48,10 @@ use lanternleaf_app::{
         BootstrapState, BrowserTabsHealth, BrowserTabsTab, BrowserTabsWindow, CalibreBookDto,
         CalibreLoadEvent, PrettyKind, ReaderSnapshot, RecentBook, SourceOpenEvent, UiMode,
     },
-    persistence::{FilesystemPersistenceService, PersistenceLifecycle},
+    persistence::{
+        FilesystemPersistenceService, PersistenceLifecycle, PersistenceService,
+        RemotePersistenceService,
+    },
     pipeline::{AppCommand, DispatchPlan, PersistenceTrigger, ReaderCommand},
     shortcuts::{ShortcutAction, ShortcutScope, UiShortcutAction},
     state::{AppState, OperationState},
@@ -241,7 +244,7 @@ struct LanternLeafApp {
     theme_override: Option<config::ThemeMode>,
     pending_theme_mode: Option<config::ThemeMode>,
     theme_patch_pending: bool,
-    persistence: Arc<PersistenceLifecycle<FilesystemPersistenceService>>,
+    persistence: Arc<PersistenceLifecycle>,
     cache_service: Arc<dyn cache_service::CacheService>,
     effect_session: Arc<Mutex<Option<session::ReaderSession>>>,
     tts_session_source: Option<PathBuf>,
@@ -626,9 +629,12 @@ impl LanternLeafApp {
                 None
             }
         };
-        let persistence = Arc::new(PersistenceLifecycle::new(
-            FilesystemPersistenceService::default(),
-        ));
+        let persistence_service: Arc<dyn PersistenceService> = if let Some(url) = &app_config.remote_url {
+            Arc::new(RemotePersistenceService::new(url.clone()))
+        } else {
+            Arc::new(FilesystemPersistenceService::default())
+        };
+        let persistence = Arc::new(PersistenceLifecycle::new(persistence_service));
         let cache_service: Arc<dyn cache_service::CacheService> =
             Arc::new(cache_service::FilesystemCacheService);
         let config_service: Arc<dyn config_service::ConfigService> =
@@ -643,6 +649,9 @@ impl LanternLeafApp {
             Arc::clone(&config_service),
         );
         let effect_session = Arc::clone(&effect_context.session);
+        let effect_dispatcher = EffectDispatcher::new(effect_context, Some(cc.egui_ctx.clone()));
+        persistence.start_sync_thread(effect_dispatcher.event_tx());
+
         let mut app = Self {
             runtime,
             _tracing_guard: tracing_guard,
@@ -670,7 +679,7 @@ impl LanternLeafApp {
             persistence_logged: false,
             last_reader_source: None,
             last_reader_snapshot: None,
-            effect_dispatcher: EffectDispatcher::new(effect_context),
+            effect_dispatcher,
             shell_state: ShellState::default(),
             layout_policy: LayoutPolicy::default(),
             settings_trace_events: Vec::new(),

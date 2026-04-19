@@ -423,6 +423,7 @@ pub enum AppEvent {
         scope: Option<OperationScope>,
         error: BridgeError,
     },
+    RemotePlaybackStateUpdated(crate::contracts::ReaderPlaybackState),
 }
 
 pub fn plan_command(state: &AppState, request_id: u64, command: AppCommand) -> DispatchPlan {
@@ -1007,6 +1008,15 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
             state.set_loading_calibre(false);
             state.set_loading_browser_tabs(false);
         }
+        AppEvent::RemotePlaybackStateUpdated(playback) => {
+            if let Some(snapshot) = &state.reader_document.snapshot {
+                if snapshot.source_path == playback.source_path {
+                    if playback.updated_at > state.reader_playback.last_updated_at {
+                        state.set_reader_playback(Some(playback));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1311,6 +1321,7 @@ mod tests {
                         key_toggle_tts: "T".to_string(),
                         browser_tabs_enabled: true,
                         close_browser_tab_on_recent_delete: false,
+                        remote_url: None,
                     },
                 },
             },
@@ -1440,6 +1451,7 @@ mod tests {
                 progress_pct: 0.5,
             },
             stats: make_reader_snapshot().stats,
+            updated_at: 0,
         };
         apply_event(
             &mut state,
@@ -1554,6 +1566,7 @@ mod tests {
                 key_toggle_tts: "y".to_string(),
                 browser_tabs_enabled: true,
                 close_browser_tab_on_recent_delete: false,
+                remote_url: None,
             },
         };
 
@@ -1664,6 +1677,7 @@ mod tests {
                     highlighted_sentence_idx: Some(1),
                     tts: snapshot.tts.clone(),
                     stats: snapshot.stats.clone(),
+                    updated_at: 0,
                 },
             }),
         );

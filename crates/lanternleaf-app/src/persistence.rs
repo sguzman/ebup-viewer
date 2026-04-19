@@ -2,7 +2,7 @@ use crate::contracts::BridgeError;
 use crate::contracts::ReaderSnapshot;
 use crate::pipeline::PersistenceTrigger;
 use lanternleaf_core::{cache, cache_service, config};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -169,6 +169,11 @@ pub trait PersistenceService: Send + Sync {
     fn load_bookmark(&self, source_path: &Path) -> Option<cache::Bookmark>;
 
     fn load_epub_config(&self, source_path: &Path) -> Option<config::AppConfig>;
+
+    fn list_recent_books(&self, limit: usize) -> Vec<cache::RecentBook>;
+
+    fn delete_recent_book(&self, source_path: &Path) -> Result<(), String>;
+    fn start_sync_thread(&self, _event_tx: std::sync::mpsc::Sender<crate::pipeline::AppEvent>) {}
 }
 
 pub struct FilesystemPersistenceService {
@@ -226,25 +231,205 @@ impl PersistenceService for FilesystemPersistenceService {
     fn load_epub_config(&self, source_path: &Path) -> Option<config::AppConfig> {
         cache::load_epub_config(source_path)
     }
+
+    fn list_recent_books(&self, limit: usize) -> Vec<cache::RecentBook> {
+        self.cache_service.list_recent_books(limit)
+    }
+
+    fn delete_recent_book(&self, source_path: &Path) -> Result<(), String> {
+        self.cache_service.delete_recent_source_and_cache(source_path)
+    }
 }
 
-pub struct PersistenceLifecycle<S> {
-    service: std::sync::Arc<S>,
+pub struct RemotePersistenceService {
+    server_url: String,
+    client: reqwest::blocking::Client,
+}
+
+impl RemotePersistenceService {
+    pub fn new(server_url: String) -> Self {
+        Self {
+            server_url,
+            client: reqwest::blocking::Client::new(),
+        }
+    }
+
+    fn book_url(&self, source_path: &Path) -> String {
+        let hash = cache::source_hash(source_path);
+        format!("{}/api/v1/book/{}", self.server_url, hash)
+    }
+
+    pub fn start_sync_thread(&self, event_tx: std::sync::mpsc::Sender<crate::pipeline::AppEvent>) {
+        use tungstenite::connect;
+        use url::Url;
+
+        let ws_url = self.server_url.replace("http://", "ws://").replace("https://", "wss://") + "/api/v1/ws";
+        let url = Url::parse(&ws_url).expect("Invalid server URL for WebSocket");
+
+        std::thread::spawn(move || {
+            loop {
+                info!("Connecting to remote sync server at {}...", ws_url);
+                match connect(url.to_string()) {
+                    Ok((mut socket, _)) => {
+                        info!("Connected to remote sync server.");
+                        loop {
+                            match socket.read() {
+                                Ok(msg) => {
+                                    if let tungstenite::Message::Text(text) = msg {
+                                        if let Ok(state) = serde_json::from_str::<crate::contracts::ReaderPlaybackState>(&text) {
+                                            let _ = event_tx.send(crate::pipeline::AppEvent::RemotePlaybackStateUpdated(state));
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!("WebSocket read error: {}. Reconnecting...", err);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        warn!("Failed to connect to remote sync server: {}. Retrying in 5s...", err);
+                        std::thread::sleep(std::time::Duration::from_secs(5));
+                    }
+                }
+            }
+        });
+    }
+}
+
+impl PersistenceService for RemotePersistenceService {
+    fn persist_reader_housekeeping<'a>(
+        &self,
+        housekeeping: ReaderHousekeeping<'a>,
+    ) -> Result<(), BridgeError> {
+        let source_path = Path::new(&housekeeping.snapshot.source_path);
+        let sentence_text = housekeeping
+            .snapshot
+            .highlighted_sentence_idx
+            .and_then(|idx| housekeeping.snapshot.sentences.get(idx).cloned());
+        let bookmark = cache::Bookmark {
+            page: housekeeping.snapshot.current_page,
+            sentence_idx: housekeeping.snapshot.highlighted_sentence_idx,
+            sentence_text,
+            scroll_y: 0.0,
+            pdf_page_idx: None,
+            pdf_rects: Vec::new(),
+            pdf_line_rects: Vec::new(),
+            pdf_block_rects: Vec::new(),
+            pdf_confidence: None,
+            pdf_reason: None,
+            pdf_quality_class: None,
+            pdf_sentence_text_hash: None,
+            pdf_token_lineage: Vec::new(),
+        };
+
+        let updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        let playback = crate::contracts::ReaderPlaybackState {
+            source_path: housekeeping.snapshot.source_path.clone(),
+            current_page: housekeeping.snapshot.current_page,
+            highlighted_sentence_idx: housekeeping.snapshot.highlighted_sentence_idx,
+            tts: housekeeping.snapshot.tts.clone(),
+            stats: housekeeping.snapshot.stats.clone(),
+            updated_at,
+        };
+
+        let update = serde_json::json!({
+            "bookmark": bookmark,
+            "config": housekeeping.config,
+            "playback": playback,
+        });
+
+        self.client
+            .post(self.book_url(source_path))
+            .json(&update)
+            .send()
+            .map_err(|err| BridgeError {
+                code: "network_error".to_string(),
+                message: err.to_string(),
+            })?;
+
+        Ok(())
+    }
+
+    fn load_bookmark(&self, source_path: &Path) -> Option<cache::Bookmark> {
+        let resp = self.client.get(self.book_url(source_path)).send().ok()?;
+        if resp.status().is_success() {
+            let data: serde_json::Value = resp.json().ok()?;
+            serde_json::from_value(data.get("bookmark")?.clone()).ok()
+        } else {
+            None
+        }
+    }
+
+    fn load_epub_config(&self, source_path: &Path) -> Option<config::AppConfig> {
+        let resp = self.client.get(self.book_url(source_path)).send().ok()?;
+        if resp.status().is_success() {
+            let data: serde_json::Value = resp.json().ok()?;
+            serde_json::from_value(data.get("config")?.clone()).ok()
+        } else {
+            None
+        }
+    }
+
+    fn list_recent_books(&self, limit: usize) -> Vec<cache::RecentBook> {
+        let url = format!("{}/api/v1/recent?limit={}", self.server_url, limit);
+        match self.client.get(&url).send() {
+            Ok(resp) if resp.status().is_success() => {
+                let remote_books: Vec<crate::contracts::RecentBook> = resp.json().unwrap_or_default();
+                remote_books.into_iter().map(|b| cache::RecentBook {
+                    source_path: PathBuf::from(b.source_path),
+                    display_title: b.display_title,
+                    snippet: b.snippet,
+                    thumbnail_path: b.thumbnail_path.map(PathBuf::from),
+                    last_opened_unix_secs: b.last_opened_unix_secs,
+                    browser_tab_id: b.browser_tab_id,
+                    browser_window_id: b.browser_window_id,
+                }).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn delete_recent_book(&self, source_path: &Path) -> Result<(), String> {
+        let hash = cache::source_hash(source_path);
+        let url = format!("{}/api/v1/book/{}", self.server_url, hash);
+        match self.client.delete(&url).send() {
+            Ok(resp) if resp.status().is_success() => Ok(()),
+            _ => Err(format!("Failed to delete remote book: {}", hash)),
+        }
+    }
+
+    fn start_sync_thread(&self, event_tx: std::sync::mpsc::Sender<crate::pipeline::AppEvent>) {
+        self.start_sync_thread(event_tx);
+    }
+}
+
+pub struct PersistenceLifecycle {
+    service: std::sync::Arc<dyn PersistenceService>,
     inventory: PersistenceInventory,
     policy: PersistencePolicy,
 }
 
-impl<S: PersistenceService> PersistenceLifecycle<S> {
-    pub fn new(service: S) -> Self {
+impl PersistenceLifecycle {
+    pub fn new(service: Arc<dyn PersistenceService>) -> Self {
         Self {
-            service: std::sync::Arc::new(service),
+            service,
             inventory: PersistenceInventory::default_inventory(),
             policy: PersistencePolicy::default_policy(),
         }
     }
 
-    pub fn service(&self) -> std::sync::Arc<S> {
+    pub fn service(&self) -> std::sync::Arc<dyn PersistenceService> {
         std::sync::Arc::clone(&self.service)
+    }
+
+    pub fn start_sync_thread(&self, event_tx: std::sync::mpsc::Sender<crate::pipeline::AppEvent>) {
+        self.service.start_sync_thread(event_tx);
     }
 
     pub fn inventory(&self) -> &PersistenceInventory {
@@ -493,6 +678,14 @@ mod tests {
         fn load_epub_config(&self, _: &Path) -> Option<config::AppConfig> {
             None
         }
+
+        fn list_recent_books(&self, _: usize) -> Vec<cache::RecentBook> {
+            Vec::new()
+        }
+
+        fn delete_recent_book(&self, _: &Path) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     fn sample_bookmark() -> cache::Bookmark {
@@ -618,8 +811,8 @@ mod tests {
 
     #[test]
     fn lifecycle_flush_calls_service() {
-        let service = StubService::new(None);
-        let lifecycle = PersistenceLifecycle::new(service);
+        let service = Arc::new(StubService::new(None));
+        let lifecycle = PersistenceLifecycle::new(service.clone());
         let snapshot = make_reader_snapshot();
         let config = config::AppConfig::default();
         lifecycle.flush_trigger(
@@ -629,13 +822,13 @@ mod tests {
             }),
             PersistenceTrigger::SourceOpen,
         );
-        assert!(lifecycle.service().persisted.load(Ordering::SeqCst));
+        assert!(service.persisted.load(Ordering::SeqCst));
     }
 
     #[test]
     fn lifecycle_flush_calls_service_on_session_close() {
-        let service = StubService::new(None);
-        let lifecycle = PersistenceLifecycle::new(service);
+        let service = Arc::new(StubService::new(None));
+        let lifecycle = PersistenceLifecycle::new(service.clone());
         let snapshot = make_reader_snapshot();
         let config = config::AppConfig::default();
         lifecycle.flush_trigger(
@@ -645,13 +838,13 @@ mod tests {
             }),
             PersistenceTrigger::SessionClose,
         );
-        assert!(lifecycle.service().persisted.load(Ordering::SeqCst));
+        assert!(service.persisted.load(Ordering::SeqCst));
     }
 
     #[test]
     fn lifecycle_flush_calls_service_on_safe_quit() {
-        let service = StubService::new(None);
-        let lifecycle = PersistenceLifecycle::new(service);
+        let service = Arc::new(StubService::new(None));
+        let lifecycle = PersistenceLifecycle::new(service.clone());
         let snapshot = make_reader_snapshot();
         let config = config::AppConfig::default();
         lifecycle.flush_trigger(
@@ -661,13 +854,13 @@ mod tests {
             }),
             PersistenceTrigger::SafeQuit,
         );
-        assert!(lifecycle.service().persisted.load(Ordering::SeqCst));
+        assert!(service.persisted.load(Ordering::SeqCst));
     }
 
     #[test]
     fn lifecycle_load_returns_bookmark() {
         let bookmark = sample_bookmark();
-        let service = StubService::new(Some(bookmark.clone()));
+        let service = Arc::new(StubService::new(Some(bookmark.clone())));
         let lifecycle = PersistenceLifecycle::new(service);
         let (loaded_bookmark, loaded_config) =
             lifecycle.load_bookmark_and_config(Path::new("/tmp/book.epub"));

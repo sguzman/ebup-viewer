@@ -336,6 +336,7 @@ fn event_name(event: &AppEvent) -> &'static str {
         AppEvent::NotificationDismissed { .. } => "NotificationDismissed",
         AppEvent::PersistenceFlushed { .. } => "PersistenceFlushed",
         AppEvent::CommandFailed { .. } => "CommandFailed",
+        AppEvent::RemotePlaybackStateUpdated(_) => "RemotePlaybackStateUpdated",
     }
 }
 

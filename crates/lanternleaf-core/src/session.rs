@@ -41,7 +41,7 @@ pub enum TtsPlaybackState {
     Paused,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderSettingsView {
     pub theme: config::ThemeMode,
@@ -66,7 +66,7 @@ pub struct ReaderSettingsView {
     pub pretty: config::PrettyUiConfig,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderTtsView {
     pub state: TtsPlaybackState,
@@ -77,7 +77,7 @@ pub struct ReaderTtsView {
     pub progress_pct: f64,
 }
 
-#[derive(Debug, Clone, Deserialize, Default, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
 #[ts(export)]
 pub struct ReaderSettingsPatch {
     #[ts(optional)]
@@ -118,7 +118,7 @@ pub struct ReaderSettingsPatch {
     pub tts_volume: Option<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderStats {
     pub page_index: usize,
@@ -139,7 +139,7 @@ pub struct ReaderStats {
     pub sentences_read_up_to_current_position: usize,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderSnapshot {
     pub source_path: String,
@@ -178,7 +178,7 @@ pub struct ReaderSnapshot {
     pub panels: PanelState,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderImageRef {
     pub raw_path: String,

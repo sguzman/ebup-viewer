@@ -46,6 +46,7 @@ pub fn bootstrap_config_from_app_config(app_cfg: &config::AppConfig) -> Bootstra
         key_toggle_tts: app_cfg.key_toggle_tts.clone(),
         browser_tabs_enabled: app_cfg.browser_tabs_enabled,
         close_browser_tab_on_recent_delete: app_cfg.close_browser_tab_on_recent_delete,
+        remote_url: app_cfg.remote_url.clone(),
     }
 }
 

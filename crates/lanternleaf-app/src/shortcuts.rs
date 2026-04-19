@@ -241,6 +241,7 @@ mod tests {
             key_toggle_tts: "T".to_string(),
             browser_tabs_enabled: true,
             close_browser_tab_on_recent_delete: false,
+            remote_url: None,
         }
     }
 

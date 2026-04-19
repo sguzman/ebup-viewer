@@ -120,6 +120,7 @@ pub struct ReaderPlaybackDomainState {
     pub highlighted_sentence_idx: Option<usize>,
     pub tts_state: Option<session::ReaderTtsView>,
     pub playback_stats: Option<session::ReaderStats>,
+    pub last_updated_at: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -349,8 +350,8 @@ impl AppState {
     }
 
     pub fn set_reader_playback(&mut self, playback: Option<ReaderPlaybackState>) {
-        self.reader_playback.playback = playback;
-        if let Some(ref state) = self.reader_playback.playback {
+        if let Some(ref state) = playback {
+            self.reader_playback.last_updated_at = state.updated_at;
             self.reader_playback.highlighted_sentence_idx = state.highlighted_sentence_idx;
             self.reader_playback.tts_state = Some(state.tts.clone());
             self.reader_playback.playback_stats = Some(state.stats.clone());
@@ -359,6 +360,7 @@ impl AppState {
             self.reader_playback.tts_state = None;
             self.reader_playback.playback_stats = None;
         }
+        self.reader_playback.playback = playback;
     }
 
     pub fn set_tts_state_event(&mut self, event: Option<TtsStateEvent>) {
@@ -486,12 +488,18 @@ pub fn derive_reader_ui(reader: Option<&ReaderSnapshot>) -> ReaderUiState {
 }
 
 pub fn derive_reader_playback(reader: Option<&ReaderSnapshot>) -> Option<ReaderPlaybackState> {
+    let updated_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
     reader.map(|value| ReaderPlaybackState {
         source_path: value.source_path.clone(),
         current_page: value.current_page,
         highlighted_sentence_idx: value.highlighted_sentence_idx,
         tts: value.tts.clone(),
         stats: value.stats.clone(),
+        updated_at,
     })
 }
 
@@ -641,6 +649,7 @@ mod tests {
                 progress_pct: 0.9,
             },
             stats: make_reader_snapshot().stats,
+            updated_at: 0,
         });
 
         state.set_reader_document(Some(make_reader_snapshot()));
@@ -729,6 +738,7 @@ mod tests {
                 key_toggle_tts: "T".to_string(),
                 browser_tabs_enabled: true,
                 close_browser_tab_on_recent_delete: false,
+                remote_url: None,
             },
         }));
         state.set_session(Some(SessionState {

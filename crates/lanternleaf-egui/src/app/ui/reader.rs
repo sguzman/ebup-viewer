@@ -154,6 +154,14 @@ impl LanternLeafApp {
             ScrollArea::vertical()
                 .id_source("pretty_page")
                 .show(ui, |ui| {
+                    let max_width = 720.0;
+                    let available_width = ui.available_width();
+                    let margin = ((available_width - max_width) / 2.0).max(0.0);
+
+                    ui.horizontal(|ui| {
+                        ui.add_space(margin);
+                        ui.vertical(|ui| {
+                            ui.set_max_width(max_width);
                     let pretty_cfg = snapshot.settings.pretty;
                     let base_px = (snapshot.settings.font_size as f32 * pretty_cfg.base_font_scale)
                         .clamp(8.0, 48.0);
@@ -179,6 +187,17 @@ impl LanternLeafApp {
                     };
 
                     for (block_i, block) in self.pretty_page_cache_blocks.iter().enumerate() {
+                        if block_i > 0 {
+                            if let PrettyBlockKind::Heading { level } = &block.kind {
+                                let extra_space = match *level {
+                                    1 => pretty_cfg.block_spacing * 2.5,
+                                    2 => pretty_cfg.block_spacing * 2.0,
+                                    _ => pretty_cfg.block_spacing * 1.5,
+                                };
+                                ui.add_space(extra_space);
+                            }
+                        }
+
                         let mut response = None;
                         let highlight_matched = match (highlight_anchor, highlight_sentence) {
                             (Some(anchor), _) => anchor == block.anchor_idx,
@@ -211,6 +230,7 @@ impl LanternLeafApp {
                                     mono_regular.clone(),
                                     mono_bold.clone(),
                                     pretty_cfg,
+                                    snapshot.settings.line_spacing,
                                 );
                                 response = Some(ui.add(Label::new(job).wrap(true)));
                             }
@@ -232,15 +252,25 @@ impl LanternLeafApp {
                                     mono_regular.clone(),
                                     mono_bold.clone(),
                                     pretty_cfg,
+                                    snapshot.settings.line_spacing,
                                 );
                                 if matches!(block.kind, PrettyBlockKind::BlockQuote) {
+                                    let border_color = ui.visuals().widgets.active.bg_fill;
+                                    let bg_fill = ui.visuals().widgets.noninteractive.bg_fill;
                                     Frame::none()
-                                        .stroke(Stroke::new(
-                                            1.0,
-                                            ui.visuals().widgets.noninteractive.bg_stroke.color,
-                                        ))
-                                        .inner_margin(eframe::egui::Margin::symmetric(8.0, 6.0))
+                                        .fill(bg_fill)
+                                        .inner_margin(eframe::egui::Margin {
+                                            left: 16.0,
+                                            right: 8.0,
+                                            top: 8.0,
+                                            bottom: 8.0,
+                                        })
                                         .show(ui, |ui| {
+                                            let rect = ui.max_rect();
+                                            ui.painter().line_segment(
+                                                [rect.left_top(), rect.left_bottom()],
+                                                Stroke::new(3.0, border_color),
+                                            );
                                             response = Some(ui.add(Label::new(job).wrap(true)));
                                         });
                                 } else {
@@ -271,6 +301,7 @@ impl LanternLeafApp {
                                         mono_regular.clone(),
                                         mono_bold.clone(),
                                         pretty_cfg,
+                                        snapshot.settings.line_spacing,
                                     );
                                     response = Some(ui.add(Label::new(job).wrap(true)));
                                 });
@@ -306,18 +337,8 @@ impl LanternLeafApp {
                                     .linear_multiply(pretty_cfg.code_bg_alpha.clamp(0.0, 1.0));
                                 Frame::none()
                                     .fill(bg)
-                                    .stroke(Stroke::new(
-                                        1.0,
-                                        ui.visuals()
-                                            .widgets
-                                            .noninteractive
-                                            .bg_stroke
-                                            .color
-                                            .linear_multiply(
-                                                pretty_cfg.code_border_alpha.clamp(0.0, 1.0),
-                                            ),
-                                    ))
-                                    .inner_margin(eframe::egui::Margin::symmetric(8.0, 6.0))
+                                    .rounding(4.0)
+                                    .inner_margin(eframe::egui::Margin::symmetric(12.0, 10.0))
                                     .show(ui, |ui| {
                                         let job = spans_to_job(
                                             ui,
@@ -329,6 +350,7 @@ impl LanternLeafApp {
                                             mono_regular.clone(),
                                             mono_bold.clone(),
                                             pretty_cfg,
+                                            snapshot.settings.line_spacing,
                                         );
                                         response = Some(ui.add(Label::new(job).wrap(true)));
                                     });
@@ -409,6 +431,7 @@ impl LanternLeafApp {
                                                             mono_regular.clone(),
                                                             mono_bold.clone(),
                                                             pretty_cfg,
+                                                            snapshot.settings.line_spacing,
                                                         );
                                                         let cell_frame = if row_i % 2 == 1 {
                                                             Frame::none().fill(stripe)
@@ -447,6 +470,8 @@ impl LanternLeafApp {
                         };
                         ui.add_space(spacing.max(0.0));
                     }
+                        });
+                    });
                 });
         });
     }
@@ -950,6 +975,7 @@ fn spans_to_job(
     mono_regular: FontFamily,
     mono_bold: FontFamily,
     pretty_cfg: lanternleaf_core::config::PrettyUiConfig,
+    line_spacing_scale: f32,
 ) -> LayoutJob {
     spans_to_job_with_base(
         ui,
@@ -962,6 +988,7 @@ fn spans_to_job(
         mono_regular,
         mono_bold,
         pretty_cfg,
+        line_spacing_scale,
     )
 }
 
@@ -976,6 +1003,7 @@ fn spans_to_job_with_base(
     mono_regular: FontFamily,
     mono_bold: FontFamily,
     pretty_cfg: lanternleaf_core::config::PrettyUiConfig,
+    line_spacing_scale: f32,
 ) -> LayoutJob {
     let mut job = LayoutJob::default();
     for span in spans {
@@ -1015,6 +1043,7 @@ fn spans_to_job_with_base(
         if style.sub {
             format.valign = Align::BOTTOM;
         }
+        format.line_height = Some(base_px * line_spacing_scale);
         job.append(&span.text, 0.0, format);
     }
     job

@@ -64,14 +64,6 @@ use lanternleaf_core::{
 use serde::{Deserialize, Serialize};
 use tracing::{Level, info, trace, warn};
 
-#[cfg(unix)]
-use libc;
-
-#[cfg(windows)]
-use windows_sys::Win32::Foundation::CloseHandle;
-
-#[cfg(windows)]
-use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
 pub(crate) fn run() {
     let config_path = app_config_path();
@@ -141,7 +133,7 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
         return None;
     }
 
-    let path = logs_dir.join("lanternleaf-egui.lock");
+    let path: PathBuf = logs_dir.join("lanternleaf-egui.lock");
     match try_create_lock(&path) {
         Ok(file) => {
             trace!(
@@ -185,7 +177,8 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
                         pid = %std::process::id(),
                         "Reacquired LanternLeaf egui lock after clearing stale file"
                     );
-                    Some(SingleInstanceLock { path, _file: file })
+                    let owned_path: PathBuf = path.clone();
+                    Some(SingleInstanceLock { path: owned_path, _file: file })
                 }
                 Err(final_err) => {
                     warn!(
@@ -225,35 +218,7 @@ fn read_lock_pid(path: &Path) -> Option<u32> {
 }
 
 fn is_pid_running(pid: u32) -> bool {
-    if pid == 0 {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
-        if result == 0 {
-            true
-        } else if let Some(errno) = std::io::Error::last_os_error().raw_os_error() {
-            errno != libc::ESRCH
-        } else {
-            false
-        }
-    }
-    #[cfg(windows)]
-    {
-        unsafe {
-            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-            if handle == 0 {
-                return false;
-            }
-            CloseHandle(handle);
-            true
-        }
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        true
-    }
+    crate::os::is_pid_running(pid)
 }
 
 struct LanternLeafApp {

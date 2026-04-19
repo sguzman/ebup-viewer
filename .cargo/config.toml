@@ -1,4 +1,7 @@
 [env]
 # espeak-ng tries to link pcaudiolib for audio output; disable it to avoid
 # missing system dependency when we only need phonemization for piper.
-CMAKE_ARGS = "-DUSE_LIBPCAUDIO=OFF"
+# Force static build for espeak-ng.
+CMAKE_ARGS = "-DUSE_LIBPCAUDIO=OFF -DBUILD_SHARED_LIBS=OFF"
+# Force static linking for ONNX Runtime (ort crate).
+ORT_STRATEGY = "static"

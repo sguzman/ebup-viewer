@@ -2,6 +2,7 @@ mod app;
 mod constants;
 mod effects;
 mod helpers;
+mod os;
 mod pdf;
 mod pdf_renderer;
 mod pdf_subsystem;

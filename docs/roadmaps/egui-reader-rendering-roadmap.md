@@ -19,6 +19,7 @@
 - CSS layout and scrolling
 - clickable spans/anchors
 - iframe/native HTML assumptions for rich content
+- [x] Remove WRY/WebKit HTML webview rendering and always render `PrettyKind::Html` via the Rust-native content-block renderer.
 
 ## Target End State Under Egui
 - Reader rendering is Rust-native for:

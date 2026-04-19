@@ -4,7 +4,6 @@ mod commands;
 mod theme;
 mod tts_sync;
 mod ui;
-mod webview;
 
 use std::{
     cmp::Reverse,
@@ -72,8 +71,6 @@ use windows_sys::Win32::Foundation::CloseHandle;
 
 #[cfg(windows)]
 use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-
-use crate::app::webview::{FrameHandleSnapshot, WebViewRenderer};
 
 pub(crate) fn run() {
     let config_path = app_config_path();
@@ -300,8 +297,6 @@ struct LanternLeafApp {
     current_pdf_path: Option<PathBuf>,
     pretty_page_cache_key: Option<PrettyPageCacheKey>,
     pretty_page_cache_blocks: Vec<PrettyBlock>,
-    webview_renderer: WebViewRenderer,
-    frame_handles: Option<FrameHandleSnapshot>,
     thumbnail_cache: ThumbnailCache,
     sentence_scroll_offset: Option<Vec2>,
     overlay_eviction_warning_at: Option<Instant>,
@@ -577,8 +572,6 @@ impl LanternLeafApp {
             current_pdf_path: None,
             pretty_page_cache_key: None,
             pretty_page_cache_blocks: Vec::new(),
-            webview_renderer: WebViewRenderer::new(),
-            frame_handles: None,
             thumbnail_cache: ThumbnailCache::new(),
             sentence_scroll_offset: None,
             overlay_eviction_warning_at: None,
@@ -1981,7 +1974,7 @@ impl LanternLeafApp {
 
 impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
-        self.frame_handles = Some(FrameHandleSnapshot::from_frame(frame));
+        let _ = frame;
         self.sync_tts_runtime_session();
         self.handle_tts_runtime_events();
         self.handle_effect_events();

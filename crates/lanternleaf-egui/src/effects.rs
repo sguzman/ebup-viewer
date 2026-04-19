@@ -4,7 +4,8 @@ use std::thread;
 
 use lanternleaf_app::contracts::{
     BootstrapState, BridgeError, CalibreBookDto, CalibreLoadEvent, LogLevelEvent, OpenSourceResult,
-    ReaderStateEvent, RecentBook, SessionState, SessionStateEvent, SourceOpenEvent, UiMode,
+    PrettyKind, ReaderStateEvent, RecentBook, SessionState, SessionStateEvent, SourceOpenEvent,
+    UiMode,
 };
 use lanternleaf_app::pipeline::{
     AppEvent, EffectOwner, OperationScope, PanelToggle, PersistenceOutcome, PersistenceTrigger,
@@ -951,6 +952,12 @@ fn open_source_from_path(
     info!(
         request_id,
         path = %source_path.display(),
+        pretty_kind = ?snapshot.pretty_kind,
+        pretty_renderer = if snapshot.pretty_kind == PrettyKind::Html {
+            "pure_egui"
+        } else {
+            "default"
+        },
         "Completed source open in egui dispatcher"
     );
     Ok(events)

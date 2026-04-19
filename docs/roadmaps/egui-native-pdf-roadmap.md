@@ -18,6 +18,7 @@
 - rendered PDF is legacy PDF.js driven
 - text sync depends on page text, text layer spans, cached sync maps, and OCR alignment artifacts
 - quality modes already exist (`high_text_trust`, `mixed_text_trust`, `ocr_required`, `render_only_no_sync`)
+- [x] Patch vendored `pdfium-auto` so release builds do not self-invalidate and rebuild `lanternleaf-egui` (stable cached `cargo build --release`).
 
 ## Target End State Under Egui
 - PDF pages render natively in Rust into textures/images shown in egui.

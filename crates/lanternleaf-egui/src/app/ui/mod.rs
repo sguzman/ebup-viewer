@@ -201,7 +201,6 @@ impl LanternLeafApp {
             match state.session.session.as_ref().map(|session| session.mode) {
                 Some(UiMode::Reader) => self.render_reader_content(ui, state),
                 _ => {
-                    self.webview_renderer.clear();
                     self.render_starter_content(ui, state);
                 }
             }

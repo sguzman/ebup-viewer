@@ -1,5 +1,5 @@
 use eframe::egui::{
-    Align, Color32, FontId, Grid, Label, RichText, ScrollArea, Sense, Slider, TextFormat,
+    Align, Color32, FontId, Grid, Label, RichText, ScrollArea, Slider, TextFormat,
     TextStyle, Ui, text::LayoutJob,
 };
 use lanternleaf_app::contracts::{PrettyKind, ReaderSnapshot};
@@ -70,7 +70,6 @@ impl LanternLeafApp {
                     pretty_kind = ?snapshot.pretty_kind,
                     "Skipping pretty view in favor of sentence list"
                 );
-                self.webview_renderer.hide();
                 self.render_sentence_list(ui, snapshot);
                 ui.add_space(6.0);
                 self.render_canonical_preview(ui, snapshot);
@@ -79,7 +78,6 @@ impl LanternLeafApp {
             ui.add_space(6.0);
             self.render_pdf_diagnostics(ui, snapshot);
         } else {
-            self.webview_renderer.clear();
             ui.heading("Reader shell");
             ui.label("No reader session currently active.");
         }
@@ -137,7 +135,6 @@ impl LanternLeafApp {
             highlight_source = highlight_ctx.label(),
             highlight_sentence = ?highlight_idx,
             html_payload = snapshot.reading_html_page.is_some(),
-            frame_handles_ready = self.frame_handles.is_some(),
             "render_pretty_page configuration"
         );
         if let Some(idx) = highlight_idx {
@@ -149,63 +146,8 @@ impl LanternLeafApp {
             );
         }
         let highlight_color = self.resolve_highlight_color(snapshot);
-        let mut scroll_anchor = None;
         let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
-        let html_available = snapshot.reading_html_page.is_some();
-        let frame_ready = self.frame_handles.is_some();
-        if snapshot.pretty_kind == PrettyKind::Html && html_available && frame_ready {
-            ui.group(|ui| {
-                ui.label("Pretty view");
-                let available = ui.available_size();
-                let (rect, _) = ui.allocate_exact_size(available, Sense::hover());
-                trace!(rect = ?rect, available = ?available, "Allocated HTML webview region");
-                if auto_scroll_requested && highlight_anchor.is_some() && highlight_idx.is_some() {
-                    let idx = highlight_idx.unwrap_or_default();
-                    let decision = self
-                        .auto_scroll_state
-                        .decide_scroll(idx, highlight_fallback);
-                    let decision_label = match decision {
-                        crate::app::ScrollDecision::Scroll => "scroll",
-                        crate::app::ScrollDecision::Blocked(
-                            crate::app::ScrollBlockReason::Duplicate,
-                        ) => "blocked_duplicate",
-                        crate::app::ScrollDecision::Blocked(
-                            crate::app::ScrollBlockReason::Throttled(_),
-                        ) => "blocked_throttled",
-                    };
-                    trace!(
-                        pretty_scroll_action = decision_label,
-                        pretty_scroll_anchor = highlight_anchor,
-                        pretty_scroll_fallback = highlight_fallback.label(),
-                        "pretty scroll decision"
-                    );
-                    if matches!(decision, crate::app::ScrollDecision::Scroll) {
-                        scroll_anchor = highlight_anchor;
-                        self.auto_scroll_state.record(idx, highlight_fallback);
-                    }
-                }
-                let highlight_css = color32_to_css(highlight_color);
-                self.webview_renderer.render_html(
-                    ui.ctx(),
-                    self.frame_handles.as_ref(),
-                    rect,
-                    snapshot,
-                    highlight_anchor,
-                    highlight_sentence,
-                    &highlight_css,
-                    scroll_anchor,
-                );
-                trace!("Dispatched HTML payload to webview renderer");
-            });
-            return;
-        }
-
-        self.webview_renderer.hide();
-        trace!(
-            html_available = html_available,
-            frame_ready = frame_ready,
-            "HTML branch skipped, rendering cached text blocks"
-        );
+        trace!(renderer = "pure_egui", "Rendering pretty view via cached text blocks");
         self.refresh_pretty_cache(snapshot);
         ui.group(|ui| {
             ui.label("Pretty view");
@@ -784,17 +726,6 @@ impl LanternLeafApp {
             self.push_status("Search focus requested".to_string());
         }
     }
-}
-
-fn color32_to_css(color: Color32) -> String {
-    let alpha = (color.a() as f32) / 255.0;
-    format!(
-        "rgba({}, {}, {}, {:.3})",
-        color.r(),
-        color.g(),
-        color.b(),
-        alpha
-    )
 }
 
 fn normalize_whitespace(input: &str) -> String {

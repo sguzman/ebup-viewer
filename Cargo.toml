@@ -21,3 +21,4 @@ hound = "3.5"
 
 [patch.crates-io]
 espeak-rs-sys = { path = "vendor/espeak-rs-sys" }
+pdfium-auto = { path = "vendor/pdfium-auto" }

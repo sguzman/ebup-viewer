@@ -301,6 +301,8 @@ struct StarterViewModel<'a> {
     source_open_event: Option<&'a SourceOpenEvent>,
     calibre_load_event: Option<&'a CalibreLoadEvent>,
     operations: &'a OperationState,
+    last_remote_update_at: u64,
+    remote_url: Option<&'a String>,
 }
 
 impl<'a> StarterViewModel<'a> {
@@ -318,6 +320,8 @@ impl<'a> StarterViewModel<'a> {
             source_open_event: state.runtime_jobs.source_open_event.as_ref(),
             calibre_load_event: state.runtime_jobs.calibre_load_event.as_ref(),
             operations: &state.app_shell.operations,
+            last_remote_update_at: state.reader_playback.last_updated_at,
+            remote_url: state.app_shell.app_config_snapshot.as_ref().and_then(|c| c.remote_url.as_ref()),
         }
     }
 }

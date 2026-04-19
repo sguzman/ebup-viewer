@@ -1013,6 +1013,12 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
                 if snapshot.source_path == playback.source_path {
                     if playback.updated_at > state.reader_playback.last_updated_at {
                         state.set_reader_playback(Some(playback));
+                    } else {
+                        warn!(
+                            remote = playback.updated_at,
+                            local = state.reader_playback.last_updated_at,
+                            "Rejected stale remote playback update"
+                        );
                     }
                 }
             }

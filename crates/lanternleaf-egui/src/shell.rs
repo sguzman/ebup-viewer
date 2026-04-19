@@ -55,6 +55,8 @@ pub struct ShellState {
     pub notifications: Vec<Notification>,
     pub safe_quit_pending: bool,
     pub screen_lock_active: bool,
+    pub last_playback_update_at: u64,
+    pub bootstrap: Option<lanternleaf_app::contracts::BootstrapState>,
 }
 
 impl Default for ShellState {
@@ -67,6 +69,8 @@ impl Default for ShellState {
             notifications: Vec::new(),
             safe_quit_pending: false,
             screen_lock_active: false,
+            last_playback_update_at: 0,
+            bootstrap: None,
         }
     }
 }
@@ -140,6 +144,8 @@ impl ShellState {
         } else {
             FocusOwner::Starter
         };
+        self.last_playback_update_at = state.reader_playback.last_updated_at;
+        self.bootstrap = state.app_shell.bootstrap.clone();
 
         if previous_mode != self.active_mode {
             debug!(?previous_mode, ?self.active_mode, "Shell active mode updated");

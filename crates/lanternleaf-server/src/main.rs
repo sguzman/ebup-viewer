@@ -27,22 +27,59 @@ struct ServerState {
 
 type SharedState = Arc<Mutex<ServerState>>;
 
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Start the LanternLeaf synchronization server (default)
+    Serve {
+        /// Port to listen on
+        #[arg(short, long, default_value_t = 3030)]
+        port: u16,
+
+        /// Interface to bind to
+        #[arg(short, long, default_value = "0.0.0.0")]
+        bind: String,
+    },
+    /// List all books currently in memory
+    ListBooks,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    let args = Args::parse();
     let state = SharedState::default();
 
-    let app = Router::new()
-        .route("/api/v1/book/:hash", get(get_book).post(update_book))
-        .route("/api/v1/ws", get(ws_handler))
-        .with_state(state);
+    match args.command.unwrap_or(Commands::Serve {
+        port: 3030,
+        bind: "0.0.0.0".to_string(),
+    }) {
+        Commands::Serve { port, bind } => {
+            let app = Router::new()
+                .route("/api/v1/book/:hash", get(get_book).post(update_book))
+                .route("/api/v1/ws", get(ws_handler))
+                .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3030").await?;
-    info!("Server listening on {}", listener.local_addr()?);
-    axum::serve(listener, app).await?;
+            let addr = format!("{}:{}", bind, port);
+            let listener = tokio::net::TcpListener::bind(&addr).await?;
+            info!("Server listening on {}", addr);
+            axum::serve(listener, app).await?;
+        }
+        Commands::ListBooks => {
+            info!("Querying books in memory (not implemented as persistence is transient in this version)");
+        }
+    }
 
     Ok(())
 }

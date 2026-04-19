@@ -506,6 +506,18 @@ impl LanternLeafApp {
                     .unwrap_or("unknown");
                 ui.label(format!("PDF confidence: {}", tier));
             }
+
+            if let Some(config) = self.shell_state.bootstrap.as_ref().map(|b| &b.config) {
+                if let Some(url) = config.remote_url.as_ref() {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Remote sync: {}", url));
+                        if self.shell_state.last_playback_update_at > 0 {
+                            ui.label(format!("(Last: {} ms)", self.shell_state.last_playback_update_at));
+                        }
+                    });
+                }
+            }
         });
     }
 

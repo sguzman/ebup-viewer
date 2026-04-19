@@ -488,6 +488,18 @@ impl LanternLeafApp {
             if model.operations.browser_tab_refresh {
                 ui.label("Browser tab refresh in progress");
             }
+
+            ui.separator();
+            if let Some(url) = model.remote_url {
+                ui.label(format!("Remote sync: {}", url));
+                if model.last_remote_update_at > 0 {
+                    ui.label(format!("Last update: {} ms (epoch)", model.last_remote_update_at));
+                } else {
+                    ui.label("No remote updates received yet.");
+                }
+            } else {
+                ui.label("Remote sync: disabled");
+            }
         });
     }
 

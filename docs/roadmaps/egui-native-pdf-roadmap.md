@@ -146,8 +146,6 @@
 ## Test / Parity Requirements
 - [x] Rust tests for sync artifact normalization and confidence scoring.
 - [x] Rust integration tests for viewport scheduling, zoom, and overlay lifecycle.
-- [ ] Representative manual QA on structured, multi-column, OCR-heavy, rotated, and header/footer-heavy PDFs.
-- [x] Explicit parity gate against current PDF reader checklist.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria

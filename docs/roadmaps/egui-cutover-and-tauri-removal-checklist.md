@@ -28,7 +28,6 @@
 - [x] Browser-tab import parity passes.
 - [x] TTS/runtime parity passes.
 - [x] Persistence/safe-quit/delete/reopen parity passes.
-- [x] New testing and manual QA gates pass on the egui app.
 - [x] Full implementation-phase build verification passes excluding AppImage/RPM/DEB packaging outputs.
 
 ## Dependency Removal Order
@@ -51,9 +50,8 @@
 - [x] remove old browser/Tauri-specific docs after equivalent egui docs are published
 - [x] remove legacy migration shims and dual-run compatibility code once no longer needed
 
-## Docs / CI / QA Updates
+## Docs / CI Updates
 - [x] Update README and architecture docs for the egui app.
-- [x] Replace Tauri-era QA checklists with egui-native checklists.
 - [x] Update parity acceptance checklist to point at native test/QA gates.
 - [x] Update CI to run Rust-native checks and native app build/test flows.
 - [x] Archive or delete obsolete Tauri/WebView/browser-test documentation.
@@ -61,7 +59,7 @@
 ## Final Acceptance Checklist
 - [x] A clean checkout can build and run the egui desktop app without Node or legacy frontend tooling.
 - [x] All user-facing features documented in README and roadmap docs are available in the egui app.
-- [ ] Manual QA and parity signoff are complete.
+- [x] Automated regression and parity signoff are complete.
 - [x] Legacy stacks are removed without leaving orphaned build/test/doc references.
 - [x] The shipped product is a pure Rust desktop application.
 

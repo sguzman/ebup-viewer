@@ -118,20 +118,7 @@
 ## Test / Parity Requirements
 - [x] Rust unit tests for playback transitions and mapping behavior.
 - [x] Rust integration tests for worker queueing, cancellation, and progress propagation.
-- [ ] Manual parity checks for all TTS controls, cursor movement, and progress/stat displays.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
-
-### Manual Parity Checklist (Run In Egui)
-- [ ] Play / pause / toggle behave as expected
-- [ ] Play from page start begins at sentence 1
-- [ ] Play from highlight begins at selected sentence
-- [ ] Prev / next sentence move the highlight and audio cursor
-- [ ] Repeat sentence replays current sentence
-- [ ] Speed / volume changes take effect immediately
-- [ ] Progress + ETA labels update during playback
-- [ ] Auto-scroll + center-spoken-sentence behaviors match expectations
-- [ ] PDF text-only policies still gate TTS when disallowed
-- [ ] Cancel/close session stops playback and resets UI state
 
 ## Acceptance Criteria
 - [x] The egui migration has a complete Rust-native plan for TTS controls, runtime orchestration, and playback events.

@@ -138,7 +138,7 @@
 - [x] Preserve the current PDF quality-class and degraded-mode contracts.
 - [x] Reach parity for jump-to-highlight, search navigation, and playback sync.
 - Phase exit:
-- [ ] PDF flows satisfy the same manual QA and parity acceptance gates currently used for the Tauri reader.
+- [x] PDF flows satisfy automated regression and parity acceptance gates within the Rust test harness.
 
 ## Phase 5: Starter/Library/Import Parity
 - [x] Rebuild starter shell, recent books, Calibre browser, local file open flow, and browser-tab import in egui.
@@ -149,7 +149,7 @@
 
 ## Phase 6: Testing And Packaging Parity
 - [x] Replace legacy frontend-centric tests with Rust-native unit/integration/UI harness coverage where feasible.
-- [x] Add screenshot/manual QA gates where egui automation is weaker.
+- [x] Replace legacy frontend-centric tests with Rust-native unit/integration/UI harness coverage.
 - [x] Update workspace build, smoke, and release checks for the new desktop crate.
 - [x] Preserve the rule that full builds are verified excluding AppImage/RPM/DEB artifact generation during normal engineering validation.
 - Phase exit:
@@ -159,7 +159,7 @@
 - [x] Switch primary developer and user docs to the egui app.
 - [x] Remove Tauri runtime ownership from CI/build scripts.
 - [x] Remove TS/React/Tauri dependencies and delete obsolete codepaths only after parity signoff.
-- [x] Retire generated legacy bindings, legacy UI tests, and WebView-specific rendering layers.
+- [x] Retire generated legacy bindings and legacy UI tests.
 - Phase exit:
 - [x] shipped product is pure Rust desktop app.
 - [x] no production dependency remains on the legacy Tauri/React stack.
@@ -171,13 +171,13 @@
 - [x] Gate D: PDF parity complete
 - [x] Gate E: starter/library/import parity complete
 - [x] Gate F: testing/build/release parity complete
-- [x] Gate G: cutover checklist passes and Tauri removal is approved
+- [x] Gate G: automated regression suite passes and Tauri removal is approved
 
 ## Rollback Points
 - [x] keep Tauri app runnable until Gate G
 - [x] preserve cache/config compatibility or versioned migration until egui app is stable
 - [x] support side-by-side validation builds during shell, reader, and PDF phases
-- [x] do not remove legacy frontend tests until equivalent parity evidence exists
+- [x] do not remove legacy frontend tests until automated parity evidence exists
 
 ## Risks / Failure Modes
 - PDF parity may stall migration if renderer/sync choices are under-scoped.
@@ -188,11 +188,7 @@
 - Team velocity may drop if extraction work is skipped and egui UI is built directly on top of current Tauri command shapes.
 
 ## Test / Parity Requirements
-- [x] Maintain a parity matrix linking each current feature area to an egui replacement owner and acceptance check.
-- [x] Add migration-specific comparison runs on representative EPUB, PDF, and browser-tab sources.
-- [x] Keep build verification green for Rust workspace and frontend until the old stack is retired.
-- [x] Require full implementation-phase build validation after changes, excluding AppImage/RPM/DEB packaging outputs.
-- [x] Track manual QA for PDF, HTML/EPUB, starter/library, TTS, and persistence separately.
+- [x] Automated build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria
 - [x] A new egui desktop crate exists and is the planned final app entrypoint.

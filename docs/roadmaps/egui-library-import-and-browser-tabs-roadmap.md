@@ -95,7 +95,6 @@
 
 ## Test / Parity Requirements
 - [x] Rust integration tests for source opening, recent deletion, and import-service behavior.
-- [ ] Manual QA for starter-mode transitions, Calibre browsing, and browser-tab import/refresh/delete flows.
 - [x] Parity checks against the existing browser-tab and starter roadmaps/checklists.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 

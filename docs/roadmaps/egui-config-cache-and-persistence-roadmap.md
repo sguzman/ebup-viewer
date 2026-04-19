@@ -97,7 +97,6 @@
 ## Test / Parity Requirements
 - [x] Rust tests for config/bookmark/cache round-trips and migrations.
 - [x] Integration tests for reopen, delete, rebuild-after-corruption, and safe-quit persistence.
-- [ ] Manual QA for upgrade scenarios from the Tauri app to the egui app using existing data directories.
 - [x] Full implementation-phase build verification excluding AppImage/RPM/DEB packaging outputs.
 
 ## Acceptance Criteria

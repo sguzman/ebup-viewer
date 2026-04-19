@@ -38,6 +38,7 @@ time_remaining_display = "adaptive"
 show_tts = true
 show_settings = true
 show_stats = false
+chrome_font_scale = 0.62
 dual_view_pipeline_enabled = true
 native_html_pretty_enabled = true
 native_html_pagination_mode = "sentence_window"

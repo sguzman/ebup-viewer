@@ -33,6 +33,7 @@ impl From<ConfigTables> for AppConfig {
             font_family: tables.appearance.font_family,
             font_weight: tables.appearance.font_weight,
             font_size: tables.appearance.font_size,
+            chrome_font_scale: tables.ui.chrome_font_scale,
             line_spacing: tables.appearance.line_spacing,
             word_spacing: tables.appearance.word_spacing,
             letter_spacing: tables.appearance.letter_spacing,
@@ -121,6 +122,7 @@ impl From<&AppConfig> for ConfigTables {
                 show_tts: config.show_tts,
                 show_settings: config.show_settings,
                 show_stats: config.show_stats,
+                chrome_font_scale: config.chrome_font_scale,
                 dual_view_pipeline_enabled: config.dual_view_pipeline_enabled,
                 native_html_pretty_enabled: config.native_html_pretty_enabled,
                 native_html_pagination_mode: config.native_html_pagination_mode,
@@ -269,6 +271,8 @@ struct UiConfig {
     show_settings: bool,
     #[serde(default = "defaults::default_show_stats")]
     show_stats: bool,
+    #[serde(default = "defaults::default_chrome_font_scale")]
+    chrome_font_scale: f32,
     #[serde(default = "defaults::default_dual_view_pipeline_enabled")]
     dual_view_pipeline_enabled: bool,
     #[serde(default = "defaults::default_native_html_pretty_enabled")]
@@ -285,6 +289,7 @@ impl Default for UiConfig {
             show_tts: defaults::default_show_tts(),
             show_settings: defaults::default_show_settings(),
             show_stats: defaults::default_show_stats(),
+            chrome_font_scale: defaults::default_chrome_font_scale(),
             dual_view_pipeline_enabled: defaults::default_dual_view_pipeline_enabled(),
             native_html_pretty_enabled: defaults::default_native_html_pretty_enabled(),
             native_html_pagination_mode: defaults::default_native_html_pagination_mode(),

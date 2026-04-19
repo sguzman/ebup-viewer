@@ -9,6 +9,8 @@ pub struct AppConfig {
     pub theme: ThemeMode,
     #[serde(default = "crate::config::defaults::default_font_size")]
     pub font_size: u32,
+    #[serde(default = "crate::config::defaults::default_chrome_font_scale")]
+    pub chrome_font_scale: f32,
     #[serde(default = "crate::config::defaults::default_line_spacing")]
     pub line_spacing: f32,
     #[serde(default = "crate::config::defaults::default_margin_horizontal")]
@@ -114,6 +116,7 @@ impl Default for AppConfig {
         AppConfig {
             theme: ThemeMode::Night,
             font_size: crate::config::defaults::default_font_size(),
+            chrome_font_scale: crate::config::defaults::default_chrome_font_scale(),
             line_spacing: crate::config::defaults::default_line_spacing(),
             margin_horizontal: crate::config::defaults::default_margin_horizontal(),
             margin_vertical: crate::config::defaults::default_margin_vertical(),

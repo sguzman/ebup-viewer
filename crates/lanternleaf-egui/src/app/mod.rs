@@ -2202,7 +2202,7 @@ fn setup_egui_fonts(ctx: &Context, cfg: &config::AppConfig) -> bool {
         );
         ctx.set_fonts(fonts);
         ctx.style_mut(|style| {
-            let base = cfg.font_size.max(8) as f32;
+            let base = (cfg.font_size.max(8) as f32 * cfg.chrome_font_scale).clamp(10.0, 22.0);
             style.text_styles.insert(
                 TextStyle::Body,
                 eframe::egui::FontId::new(

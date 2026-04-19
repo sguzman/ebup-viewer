@@ -2,6 +2,11 @@ pub(crate) fn default_font_size() -> u32 {
     22
 }
 
+pub(crate) fn default_chrome_font_scale() -> f32 {
+    // Keep the main app chrome compact even if the reader font is large.
+    0.62
+}
+
 pub(crate) fn default_line_spacing() -> f32 {
     1.2
 }

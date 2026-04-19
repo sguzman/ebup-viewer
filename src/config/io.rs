@@ -54,6 +54,7 @@ pub fn serialize_config(config: &AppConfig) -> Result<String, toml::ser::Error> 
 
 fn normalize_config(mut cfg: AppConfig) -> AppConfig {
     cfg.pretty.base_font_scale = cfg.pretty.base_font_scale.clamp(0.4, 2.0);
+    cfg.chrome_font_scale = cfg.chrome_font_scale.clamp(0.4, 1.2);
     cfg.pretty.heading_scale_h1 = cfg.pretty.heading_scale_h1.clamp(0.5, 5.0);
     cfg.pretty.heading_scale_h2 = cfg.pretty.heading_scale_h2.clamp(0.5, 5.0);
     cfg.pretty.heading_scale_h3 = cfg.pretty.heading_scale_h3.clamp(0.5, 5.0);

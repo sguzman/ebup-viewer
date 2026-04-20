@@ -163,6 +163,7 @@ pub struct ReaderSnapshot {
     pub tts_text_page: String,
     pub reading_markdown_page: Option<String>,
     pub reading_html_page: Option<String>,
+    pub tts_current_sentence_text: Option<String>,
     pub page_text: String,
     pub sentences: Vec<String>,
     pub canonical_sentences: Vec<String>,
@@ -1126,6 +1127,13 @@ impl ReaderSession {
         } else {
             None
         };
+        let tts_current_sentence_text = tts
+            .current_sentence_idx
+            .and_then(|audio_idx| {
+                let audio_sentences = self.current_audio_sentences(normalizer);
+                audio_sentences.get(audio_idx).cloned()
+            })
+            .filter(|value| !value.trim().is_empty());
         let source_is_pdf = self
             .source_path
             .extension()
@@ -1173,6 +1181,7 @@ impl ReaderSession {
             tts_text_page: tts_text_page.clone(),
             reading_markdown_page,
             reading_html_page,
+            tts_current_sentence_text,
             page_text: tts_text_page,
             sentences,
             canonical_sentences,
@@ -1929,7 +1938,11 @@ mod tests {
         static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
         let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
         let mut p = std::env::temp_dir();
-        p.push(format!("lanternleaf_pdf_sync_session_{}_{}.pdf", std::process::id(), count));
+        p.push(format!(
+            "lanternleaf_pdf_sync_session_{}_{}.pdf",
+            std::process::id(),
+            count
+        ));
         p
     }
 

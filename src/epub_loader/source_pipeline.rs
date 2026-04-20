@@ -10,6 +10,9 @@ use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest}
 use crate::cancellation::CancellationToken;
 use anyhow::{Context, Result};
 use epub::doc::EpubDoc;
+use once_cell::sync::Lazy;
+use regex::Regex;
+use scraper::Html;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -31,6 +34,12 @@ const AVAILABILITY_LOG_EVERY: u64 = 20;
 
 static LOAD_COUNT_TOTAL: AtomicU64 = AtomicU64::new(0);
 static LOAD_COUNT_WITH_MARKDOWN: AtomicU64 = AtomicU64::new(0);
+
+static RE_STRIP_SCRIPT_STYLE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?is)<(script|style)\\b[^>]*>.*?</\\1>").expect("valid script/style regex")
+});
+static RE_STRIP_HTML_COMMENTS: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?is)<!--.*?-->").expect("valid html comment regex"));
 
 pub(super) fn load_source_content(
     path: &Path,
@@ -113,17 +122,35 @@ pub(super) fn load_source_content(
     }
 
     if is_native_html_source(path) {
-        let tts_text = load_with_pandoc(path, "plain", cancel)?;
         let html = load_native_pretty_html(path, cancel)?;
         let reading_html = if html.trim().is_empty() {
             None
         } else {
             Some(html)
         };
+        let reading_html_chars = reading_html.as_deref().map(|v| v.len()).unwrap_or(0);
+        let (tts_text, tts_text_source) = if is_epub(path) && reading_html.is_some() {
+            let extracted = extract_tts_text_from_html(reading_html.as_deref().unwrap_or(""));
+            if html_extract_seems_too_small(&extracted) {
+                warn!(
+                    path = %path.display(),
+                    reading_html_chars,
+                    extracted_chars = extracted.len(),
+                    tts_text_source = "pandoc_plain_fallback",
+                    "EPUB HTML->text extraction produced too little text; falling back to pandoc plain-text"
+                );
+                (load_with_pandoc(path, "plain", cancel)?, "pandoc_plain")
+            } else {
+                (extracted, "epub_html_extract")
+            }
+        } else {
+            (load_with_pandoc(path, "plain", cancel)?, "pandoc_plain")
+        };
         let has_pretty = reading_html
             .as_deref()
             .map(|v| !v.trim().is_empty())
             .unwrap_or(false);
+        let tts_text_chars = tts_text.len();
         let result = SourceContent {
             tts_text,
             reading_markdown: None,
@@ -138,6 +165,9 @@ pub(super) fn load_source_content(
         info!(
             path = %path.display(),
             stage = "native_html_dual_convert",
+            tts_text_source,
+            tts_text_chars,
+            reading_html_chars,
             elapsed_ms = start.elapsed().as_millis(),
             has_structured_markdown = result.has_structured_markdown,
             "Completed source conversion stage"
@@ -456,8 +486,6 @@ fn load_pdf_with_quack_check(
     })
 }
 
-
-
 pub(super) fn resolve_pdf_dual_view_content(
     transcript_text: &str,
     markdown: &str,
@@ -594,6 +622,44 @@ fn load_epub_native_html(path: &Path, cancel: Option<&CancellationToken>) -> Res
         };
         Ok(format!("{styles}{}", sections.join("\n")))
     }
+}
+
+fn extract_tts_text_from_html(html: &str) -> String {
+    // Remove non-content nodes that would otherwise pollute the TTS transcript.
+    let cleaned = RE_STRIP_SCRIPT_STYLE.replace_all(html, " ");
+    let cleaned = RE_STRIP_HTML_COMMENTS.replace_all(cleaned.as_ref(), " ");
+    let doc = Html::parse_document(cleaned.as_ref());
+    let mut out = String::new();
+    let mut prev_ws = false;
+    for chunk in doc.root_element().text() {
+        let trimmed = chunk.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        for ch in trimmed.chars() {
+            if ch.is_whitespace() {
+                if !prev_ws {
+                    out.push(' ');
+                    prev_ws = true;
+                }
+            } else {
+                out.push(ch);
+                prev_ws = false;
+            }
+        }
+        if !prev_ws {
+            out.push(' ');
+            prev_ws = true;
+        }
+    }
+    out.trim().to_string()
+}
+
+fn html_extract_seems_too_small(extracted: &str) -> bool {
+    // Heuristic: if we only extracted a tiny amount of text, it is likely boilerplate
+    // and we should fall back to pandoc plain-text for that file.
+    let non_ws = extracted.chars().filter(|ch| !ch.is_whitespace()).count();
+    non_ws < 200
 }
 
 #[derive(Debug, Default)]
@@ -1436,10 +1502,12 @@ fn classify_pdf_runtime(
         PdfOcrRecommendation::RequiredForText | PdfOcrRecommendation::GeometryOnly
     ) {
         reasons.push(format!(
-            "ocr_replace_threshold_met={}", trust_diagnostics.ocr_replace_confidence >= 0.60
+            "ocr_replace_threshold_met={}",
+            trust_diagnostics.ocr_replace_confidence >= 0.60
         ));
         reasons.push(format!(
-            "ocr_augment_threshold_met={}", trust_diagnostics.ocr_augment_confidence >= 0.50
+            "ocr_augment_threshold_met={}",
+            trust_diagnostics.ocr_augment_confidence >= 0.50
         ));
     }
 
@@ -1514,7 +1582,9 @@ fn classify_pdf_sample_page(
             && page.alpha_token_ratio >= 0.55
             && page.short_line_ratio <= 0.60);
     let looks_scan = (page.full_page_raster_suspected && page.block_coherence <= 0.15)
-        || (page.image_coverage_ratio >= 0.85 && page.char_count <= 140 && page.block_coherence <= 0.15);
+        || (page.image_coverage_ratio >= 0.85
+            && page.char_count <= 140
+            && page.block_coherence <= 0.15);
 
     let (class, confidence, reasons) = if page.char_count == 0 {
         (
@@ -2581,12 +2651,12 @@ mod tests {
             chunk_reports: Vec::new(),
         };
         let dummy_len = (fixture.sample.avg_chars_per_page as usize * fixture.pages.len()).max(1);
-        let transcript_text_string = if matches!(fixture.document_class, PdfDocumentClass::ImageOnlyNoText)
-        {
-            String::new()
-        } else {
-            "A".repeat(dummy_len)
-        };
+        let transcript_text_string =
+            if matches!(fixture.document_class, PdfDocumentClass::ImageOnlyNoText) {
+                String::new()
+            } else {
+                "A".repeat(dummy_len)
+            };
         let transcript_text = transcript_text_string.as_str();
         let classification = classify_pdf_runtime(Some(&report), transcript_text, "")
             .unwrap_or_else(|| panic!("classification should exist for fixture {}", fixture.id));

@@ -237,7 +237,8 @@ impl PersistenceService for FilesystemPersistenceService {
     }
 
     fn delete_recent_book(&self, source_path: &Path) -> Result<(), String> {
-        self.cache_service.delete_recent_source_and_cache(source_path)
+        self.cache_service
+            .delete_recent_source_and_cache(source_path)
     }
 }
 
@@ -263,7 +264,11 @@ impl RemotePersistenceService {
         use tungstenite::connect;
         use url::Url;
 
-        let ws_url = self.server_url.replace("http://", "ws://").replace("https://", "wss://") + "/api/v1/ws";
+        let ws_url = self
+            .server_url
+            .replace("http://", "ws://")
+            .replace("https://", "wss://")
+            + "/api/v1/ws";
         let url = Url::parse(&ws_url).expect("Invalid server URL for WebSocket");
 
         std::thread::spawn(move || {
@@ -276,7 +281,11 @@ impl RemotePersistenceService {
                             match socket.read() {
                                 Ok(msg) => {
                                     if let tungstenite::Message::Text(text) = msg {
-                                        if let Ok(state) = serde_json::from_str::<crate::contracts::ReaderPlaybackState>(&text) {
+                                        if let Ok(state) =
+                                            serde_json::from_str::<
+                                                crate::contracts::ReaderPlaybackState,
+                                            >(&text)
+                                        {
                                             let _ = event_tx.send(crate::pipeline::AppEvent::RemotePlaybackStateUpdated(state));
                                         }
                                     }
@@ -289,7 +298,10 @@ impl RemotePersistenceService {
                         }
                     }
                     Err(err) => {
-                        warn!("Failed to connect to remote sync server: {}. Retrying in 5s...", err);
+                        warn!(
+                            "Failed to connect to remote sync server: {}. Retrying in 5s...",
+                            err
+                        );
                         std::thread::sleep(std::time::Duration::from_secs(5));
                     }
                 }
@@ -380,16 +392,20 @@ impl PersistenceService for RemotePersistenceService {
         let url = format!("{}/api/v1/recent?limit={}", self.server_url, limit);
         match self.client.get(&url).send() {
             Ok(resp) if resp.status().is_success() => {
-                let remote_books: Vec<crate::contracts::RecentBook> = resp.json().unwrap_or_default();
-                remote_books.into_iter().map(|b| cache::RecentBook {
-                    source_path: PathBuf::from(b.source_path),
-                    display_title: b.display_title,
-                    snippet: b.snippet,
-                    thumbnail_path: b.thumbnail_path.map(PathBuf::from),
-                    last_opened_unix_secs: b.last_opened_unix_secs,
-                    browser_tab_id: b.browser_tab_id,
-                    browser_window_id: b.browser_window_id,
-                }).collect()
+                let remote_books: Vec<crate::contracts::RecentBook> =
+                    resp.json().unwrap_or_default();
+                remote_books
+                    .into_iter()
+                    .map(|b| cache::RecentBook {
+                        source_path: PathBuf::from(b.source_path),
+                        display_title: b.display_title,
+                        snippet: b.snippet,
+                        thumbnail_path: b.thumbnail_path.map(PathBuf::from),
+                        last_opened_unix_secs: b.last_opened_unix_secs,
+                        browser_tab_id: b.browser_tab_id,
+                        browser_window_id: b.browser_window_id,
+                    })
+                    .collect()
             }
             _ => Vec::new(),
         }
@@ -573,6 +589,7 @@ mod tests {
             tts_text_page: "tts".to_string(),
             reading_markdown_page: None,
             reading_html_page: Some("<p>hi</p>".to_string()),
+            tts_current_sentence_text: Some("one".to_string()),
             page_text: "page".to_string(),
             sentences: vec!["one".to_string()],
             canonical_sentences: vec!["one".to_string()],

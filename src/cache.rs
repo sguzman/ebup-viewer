@@ -64,10 +64,9 @@ pub use browser_tab_cache::{
     rehydrate_browser_tab_manifest_assets,
 };
 pub use content_artifacts::{
-    PdfOcrAlignmentArtifact, PdfOcrBlockGeometry, PdfOcrLineGeometry, PdfOcrPageAlignmentBucket,
-    PdfOcrPageGeometry, PdfOcrSentenceAlignment, PdfOcrTokenGeometry, PdfRenderPrecomputedState,
-    PdfSentenceLocation, PdfSentencePageHint, PDF_OCR_ALIGNMENT_VERSION,
-    stable_sentence_text_hash,
+    PDF_OCR_ALIGNMENT_VERSION, PdfOcrAlignmentArtifact, PdfOcrBlockGeometry, PdfOcrLineGeometry,
+    PdfOcrPageAlignmentBucket, PdfOcrPageGeometry, PdfOcrSentenceAlignment, PdfOcrTokenGeometry,
+    PdfRenderPrecomputedState, PdfSentenceLocation, PdfSentencePageHint, stable_sentence_text_hash,
 };
 
 #[derive(Debug, Clone)]
@@ -905,7 +904,12 @@ mod tests {
             .unwrap_or_default()
             .as_nanos();
         let mut p = std::env::temp_dir();
-        p.push(format!("lanternleaf_test_source_{}_{}.{}", std::process::id(), nanos, ext));
+        p.push(format!(
+            "lanternleaf_test_source_{}_{}.{}",
+            std::process::id(),
+            nanos,
+            ext
+        ));
         p
     }
 

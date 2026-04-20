@@ -26,6 +26,7 @@ fn make_reader_snapshot(source_path: &str) -> session::ReaderSnapshot {
         tts_text_page: "tts".to_string(),
         reading_markdown_page: None,
         reading_html_page: None,
+        tts_current_sentence_text: None,
         page_text: "page".to_string(),
         sentences: vec!["sentence".to_string()],
         canonical_sentences: vec!["sentence".to_string()],

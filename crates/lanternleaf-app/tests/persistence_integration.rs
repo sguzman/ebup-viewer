@@ -67,6 +67,7 @@ fn sample_snapshot(path: &Path) -> session::ReaderSnapshot {
         tts_text_page: "tts".to_string(),
         reading_markdown_page: None,
         reading_html_page: None,
+        tts_current_sentence_text: None,
         page_text: "page".to_string(),
         sentences: vec!["sentence".to_string()],
         canonical_sentences: vec!["sentence".to_string()],
@@ -148,7 +149,8 @@ fn persistence_roundtrip_and_delete() {
         let source = unique_source_path("epub");
         write_source(&source);
         cache::remember_source_path(&source);
-        let lifecycle = PersistenceLifecycle::new(Arc::new(FilesystemPersistenceService::default()));
+        let lifecycle =
+            PersistenceLifecycle::new(Arc::new(FilesystemPersistenceService::default()));
         let snapshot = sample_snapshot(&source);
         let config = config::AppConfig::default();
 
@@ -185,7 +187,8 @@ fn persistence_rebuilds_after_corruption() {
         let loaded = cache::load_bookmark(&source);
         assert!(loaded.is_none(), "corrupt bookmark should be ignored");
 
-        let lifecycle = PersistenceLifecycle::new(Arc::new(FilesystemPersistenceService::default()));
+        let lifecycle =
+            PersistenceLifecycle::new(Arc::new(FilesystemPersistenceService::default()));
         let snapshot = sample_snapshot(&source);
         let config = config::AppConfig::default();
         lifecycle.flush_trigger(

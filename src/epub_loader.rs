@@ -1101,10 +1101,7 @@ mod tests {
         let normalized = source_pipeline::normalize_pdf_text_for_reader(
             "Alpha para-\n graph line\nnext line\n\nBeta block",
         );
-        assert_eq!(
-            normalized,
-            "Alpha paragraph line next line.\n\nBeta block"
-        );
+        assert_eq!(normalized, "Alpha paragraph line next line.\n\nBeta block");
     }
 
     #[test]

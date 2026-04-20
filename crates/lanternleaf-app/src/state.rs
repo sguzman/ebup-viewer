@@ -528,6 +528,7 @@ mod tests {
             tts_text_page: "tts".to_string(),
             reading_markdown_page: None,
             reading_html_page: Some("<p>hi</p>".to_string()),
+            tts_current_sentence_text: Some("one".to_string()),
             page_text: "page".to_string(),
             sentences: vec!["one".to_string()],
             canonical_sentences: vec!["one".to_string()],

@@ -24,7 +24,7 @@ use eframe::{
     NativeOptions,
     egui::{
         self, Button, CollapsingHeader, Color32, ColorImage, Context, FontData, FontDefinitions,
-        FontFamily, RichText, Slider, TextureHandle, TextStyle, Ui, Vec2, Visuals,
+        FontFamily, RichText, Slider, TextStyle, TextureHandle, Ui, Vec2, Visuals,
     },
 };
 
@@ -40,8 +40,8 @@ use crate::pdf_renderer::{
 use crate::pdf_subsystem::{
     PdfScrollPolicy, PdfViewportRange, PdfViewportUpdateTrigger, PdfZoomDirection, PdfZoomPolicy,
 };
-use crate::shell::{FocusOwner, LayoutPolicy, ShellState};
 use crate::pretty::{PrettyBlock, PrettyPageCacheKey};
+use crate::shell::{FocusOwner, LayoutPolicy, ShellState};
 use lanternleaf_app::{
     AppRuntime,
     contracts::{
@@ -66,7 +66,6 @@ use lanternleaf_core::{
 };
 use serde::{Deserialize, Serialize};
 use tracing::{Level, info, trace, warn};
-
 
 pub(crate) fn run() {
     let config_path = app_config_path();
@@ -181,7 +180,10 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
                         "Reacquired LanternLeaf egui lock after clearing stale file"
                     );
                     let owned_path: PathBuf = path.clone();
-                    Some(SingleInstanceLock { path: owned_path, _file: file })
+                    Some(SingleInstanceLock {
+                        path: owned_path,
+                        _file: file,
+                    })
                 }
                 Err(final_err) => {
                     warn!(
@@ -321,7 +323,11 @@ impl<'a> StarterViewModel<'a> {
             calibre_load_event: state.runtime_jobs.calibre_load_event.as_ref(),
             operations: &state.app_shell.operations,
             last_remote_update_at: state.reader_playback.last_updated_at,
-            remote_url: state.app_shell.app_config_snapshot.as_ref().and_then(|c| c.remote_url.as_ref()),
+            remote_url: state
+                .app_shell
+                .app_config_snapshot
+                .as_ref()
+                .and_then(|c| c.remote_url.as_ref()),
         }
     }
 }
@@ -554,7 +560,12 @@ impl PrettyImageCache {
             .collect();
         entries.sort_by_key(|(_, tick)| *tick);
         let excess = self.textures.len().saturating_sub(max_entries);
-        trace!(excess, max_entries, current = self.textures.len(), "Evicting pretty images");
+        trace!(
+            excess,
+            max_entries,
+            current = self.textures.len(),
+            "Evicting pretty images"
+        );
         for (path, _) in entries.into_iter().take(excess) {
             self.textures.remove(&path);
             self.last_used.remove(&path);
@@ -599,7 +610,11 @@ fn pretty_image_worker(rx: mpsc::Receiver<ImageRequest>, tx: mpsc::Sender<ImageR
     }
 }
 
-fn decode_pretty_image(path: &Path, max_width_px: u32, max_height_px: u32) -> Result<ImageReady, String> {
+fn decode_pretty_image(
+    path: &Path,
+    max_width_px: u32,
+    max_height_px: u32,
+) -> Result<ImageReady, String> {
     let bytes = fs::read(path).map_err(|err| err.to_string())?;
     let image = image::load_from_memory(&bytes).map_err(|err| err.to_string())?;
     let resized = image.resize(
@@ -633,11 +648,12 @@ impl LanternLeafApp {
                 None
             }
         };
-        let persistence_service: Arc<dyn PersistenceService> = if let Some(url) = &app_config.remote_url {
-            Arc::new(RemotePersistenceService::new(url.clone()))
-        } else {
-            Arc::new(FilesystemPersistenceService::default())
-        };
+        let persistence_service: Arc<dyn PersistenceService> =
+            if let Some(url) = &app_config.remote_url {
+                Arc::new(RemotePersistenceService::new(url.clone()))
+            } else {
+                Arc::new(FilesystemPersistenceService::default())
+            };
         let persistence = Arc::new(PersistenceLifecycle::new(persistence_service));
         let cache_service: Arc<dyn cache_service::CacheService> =
             Arc::new(cache_service::FilesystemCacheService);
@@ -2124,11 +2140,10 @@ fn setup_egui_fonts(ctx: &Context, cfg: &config::AppConfig) -> bool {
             fonts
                 .font_data
                 .insert("ll-prop-regular".into(), FontData::from_owned(bytes));
-            fonts
-                .families
-                .insert(FontFamily::Name("LanternLeafProportionalRegular".into()), vec![
-                    "ll-prop-regular".to_string(),
-                ]);
+            fonts.families.insert(
+                FontFamily::Name("LanternLeafProportionalRegular".into()),
+                vec!["ll-prop-regular".to_string()],
+            );
             inserted_any = true;
         }
     }
@@ -2137,11 +2152,10 @@ fn setup_egui_fonts(ctx: &Context, cfg: &config::AppConfig) -> bool {
             fonts
                 .font_data
                 .insert("ll-prop-bold".into(), FontData::from_owned(bytes));
-            fonts
-                .families
-                .insert(FontFamily::Name("LanternLeafProportionalBold".into()), vec![
-                    "ll-prop-bold".to_string(),
-                ]);
+            fonts.families.insert(
+                FontFamily::Name("LanternLeafProportionalBold".into()),
+                vec!["ll-prop-bold".to_string()],
+            );
             inserted_any = true;
         }
     }
@@ -2150,11 +2164,10 @@ fn setup_egui_fonts(ctx: &Context, cfg: &config::AppConfig) -> bool {
             fonts
                 .font_data
                 .insert("ll-mono-regular".into(), FontData::from_owned(bytes));
-            fonts
-                .families
-                .insert(FontFamily::Name("LanternLeafMonospaceRegular".into()), vec![
-                    "ll-mono-regular".to_string(),
-                ]);
+            fonts.families.insert(
+                FontFamily::Name("LanternLeafMonospaceRegular".into()),
+                vec!["ll-mono-regular".to_string()],
+            );
             inserted_any = true;
         }
     }
@@ -2163,11 +2176,10 @@ fn setup_egui_fonts(ctx: &Context, cfg: &config::AppConfig) -> bool {
             fonts
                 .font_data
                 .insert("ll-mono-bold".into(), FontData::from_owned(bytes));
-            fonts
-                .families
-                .insert(FontFamily::Name("LanternLeafMonospaceBold".into()), vec![
-                    "ll-mono-bold".to_string(),
-                ]);
+            fonts.families.insert(
+                FontFamily::Name("LanternLeafMonospaceBold".into()),
+                vec!["ll-mono-bold".to_string()],
+            );
             inserted_any = true;
         }
     }
@@ -2528,6 +2540,7 @@ mod tests {
             tts_text_page: String::new(),
             reading_markdown_page: None,
             reading_html_page: None,
+            tts_current_sentence_text: None,
             page_text: String::new(),
             sentences: vec!["one".to_string()],
             canonical_sentences: vec!["one".to_string()],

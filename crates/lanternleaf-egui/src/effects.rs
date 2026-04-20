@@ -1,7 +1,7 @@
+use eframe::egui;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use eframe::egui;
 
 use lanternleaf_app::contracts::{
     BootstrapState, BridgeError, CalibreBookDto, CalibreLoadEvent, LogLevelEvent, OpenSourceResult,

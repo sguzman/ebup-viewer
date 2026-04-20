@@ -6,6 +6,23 @@ use tracing::{info, trace, warn};
 
 use super::LanternLeafApp;
 
+fn normalize_for_tts_compare(input: &str) -> String {
+    let mut out = String::new();
+    let mut last_space = false;
+    for ch in input.chars() {
+        if ch.is_whitespace() {
+            if !last_space {
+                out.push(' ');
+                last_space = true;
+            }
+        } else {
+            out.push(ch.to_ascii_lowercase());
+            last_space = false;
+        }
+    }
+    out.trim().to_string()
+}
+
 impl LanternLeafApp {
     pub(crate) fn sync_tts_runtime_session(&mut self) {
         let session_guard = match self.effect_session.lock() {
@@ -78,13 +95,47 @@ impl LanternLeafApp {
                 trace!(
                     tts_request_id,
                     app_request_id,
+                    source_path = %snapshot.source_path,
+                    page = snapshot.current_page + 1,
                     text_only_mode = snapshot.text_only_mode,
+                    text_only_show_original_text = snapshot.settings.text_only_show_original_text,
                     text_only_override = ?self.text_only_override,
+                    sentence_count = snapshot.sentences.len(),
                     tts_state = ?snapshot.tts.state,
-                    highlighted_sentence = ?snapshot.highlighted_sentence_idx,
-                    tts_cursor = ?snapshot.tts.current_sentence_idx,
+                    highlighted_sentence_idx = ?snapshot.highlighted_sentence_idx,
+                    tts_audio_idx = ?snapshot.tts.current_sentence_idx,
                     "TTS runtime snapshot received"
                 );
+                if snapshot.tts.state == lanternleaf_core::session::TtsPlaybackState::Playing {
+                    let highlighted_text = snapshot
+                        .highlighted_sentence_idx
+                        .and_then(|idx| snapshot.sentences.get(idx))
+                        .map(String::as_str);
+                    let spoken_text = snapshot.tts_current_sentence_text.as_deref();
+                    match (highlighted_text, spoken_text) {
+                        (Some(highlighted), Some(spoken)) => {
+                            let highlighted_norm = normalize_for_tts_compare(highlighted);
+                            let spoken_norm = normalize_for_tts_compare(spoken);
+                            if !highlighted_norm.is_empty()
+                                && !spoken_norm.is_empty()
+                                && highlighted_norm != spoken_norm
+                            {
+                                trace!(
+                                    tts_request_id,
+                                    app_request_id,
+                                    highlighted_len = highlighted.len(),
+                                    spoken_len = spoken.len(),
+                                    highlighted_preview = %highlighted.chars().take(80).collect::<String>(),
+                                    spoken_preview = %spoken.chars().take(80).collect::<String>(),
+                                    display_idx = snapshot.highlighted_sentence_idx,
+                                    audio_idx = snapshot.tts.current_sentence_idx,
+                                    "TTS desync detected: spoken sentence text differs from highlighted sentence text"
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 self.maybe_reapply_text_only(&snapshot);
                 if let Some(cursor) = event.cursor {
                     trace!(

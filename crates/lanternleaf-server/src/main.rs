@@ -1,16 +1,19 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use axum::{
-    extract::{Path, State, ws::{Message, WebSocket, WebSocketUpgrade}},
+    Json, Router,
+    extract::{
+        Path, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
     response::IntoResponse,
     routing::get,
-    Json, Router,
 };
 use futures_util::{sink::SinkExt, stream::StreamExt};
-use serde::{Deserialize, Serialize};
-use tracing::info;
 use lanternleaf_app::contracts::ReaderPlaybackState;
 use lanternleaf_core::{cache, config};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BookState {
@@ -77,17 +80,16 @@ async fn main() -> anyhow::Result<()> {
             axum::serve(listener, app).await?;
         }
         Commands::ListBooks => {
-            info!("Querying books in memory (not implemented as persistence is transient in this version)");
+            info!(
+                "Querying books in memory (not implemented as persistence is transient in this version)"
+            );
         }
     }
 
     Ok(())
 }
 
-async fn get_book(
-    Path(hash): Path<String>,
-    State(state): State<SharedState>,
-) -> impl IntoResponse {
+async fn get_book(Path(hash): Path<String>, State(state): State<SharedState>) -> impl IntoResponse {
     let guard = state.lock().unwrap();
     if let Some(book) = guard.books.get(&hash) {
         Json(book.clone()).into_response()
@@ -103,34 +105,34 @@ async fn update_book(
 ) -> impl IntoResponse {
     let mut guard = state.lock().unwrap();
     guard.books.insert(hash.clone(), update.clone());
-    
+
     // Broadcast update to all clients
-    let msg = Message::Text(serde_json::to_string(&ServerEvent::BookUpdated {
-        hash,
-        state: update,
-    }).unwrap());
-    
+    let msg = Message::Text(
+        serde_json::to_string(&ServerEvent::BookUpdated {
+            hash,
+            state: update,
+        })
+        .unwrap(),
+    );
+
     broadcast(&mut guard, msg);
-    
+
     axum::http::StatusCode::OK
 }
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<SharedState>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<SharedState>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
 async fn handle_socket(socket: WebSocket, state: SharedState) {
     let (mut sender, mut receiver) = socket.split();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    
+
     {
         let mut guard = state.lock().unwrap();
         guard.clients.push(tx);
     }
-    
+
     let mut send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if sender.send(msg).await.is_err() {
@@ -138,7 +140,7 @@ async fn handle_socket(socket: WebSocket, state: SharedState) {
             }
         }
     });
-    
+
     let state_clone = state.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
@@ -149,12 +151,12 @@ async fn handle_socket(socket: WebSocket, state: SharedState) {
             }
         }
     });
-    
+
     tokio::select! {
         _ = (&mut send_task) => recv_task.abort(),
         _ = (&mut recv_task) => send_task.abort(),
     };
-    
+
     // Cleanup client on disconnect
     // (In a real app we'd need a better way to remove the specific client)
 }
@@ -166,20 +168,17 @@ fn handle_client_event(event: ClientEvent, state: &SharedState) {
             if let Some(book) = guard.books.get_mut(&hash) {
                 book.playback = Some(playback.clone());
             }
-            
-            let msg = Message::Text(serde_json::to_string(&ServerEvent::PlaybackUpdated {
-                hash,
-                playback,
-            }).unwrap());
+
+            let msg = Message::Text(
+                serde_json::to_string(&ServerEvent::PlaybackUpdated { hash, playback }).unwrap(),
+            );
             broadcast(&mut guard, msg);
         }
     }
 }
 
 fn broadcast(state: &mut ServerState, msg: Message) {
-    state.clients.retain(|tx| {
-        tx.send(msg.clone()).is_ok()
-    });
+    state.clients.retain(|tx| tx.send(msg.clone()).is_ok());
 }
 
 #[derive(Debug, Serialize, Deserialize)]

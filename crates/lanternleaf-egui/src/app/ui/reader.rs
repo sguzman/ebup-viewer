@@ -1,34 +1,13 @@
 use eframe::egui::{
-    Align, Color32, FontFamily, Frame, Grid, Label, RichText, ScrollArea, Slider, Stroke,
-    TextFormat, Ui, text::LayoutJob, Image,
+    Align, Color32, FontFamily, Frame, Grid, Image, Label, RichText, ScrollArea, Slider, Stroke,
+    TextFormat, Ui, text::LayoutJob,
 };
 use lanternleaf_app::contracts::{PrettyKind, ReaderSnapshot};
 use lanternleaf_app::pipeline::{AppCommand, ReaderCommand};
 use lanternleaf_app::state::AppState;
-use lanternleaf_core::session::{ReaderSettingsPatch, SessionCommand, TtsPlaybackState};
+use lanternleaf_core::session::{ReaderSettingsPatch, SessionCommand};
 use lanternleaf_core::text_utils;
 use tracing::trace;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HighlightSource {
-    Canonical,
-    TtsCursor,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct HighlightContext {
-    idx: Option<usize>,
-    source: HighlightSource,
-}
-
-impl HighlightContext {
-    fn label(self) -> &'static str {
-        match self.source {
-            HighlightSource::Canonical => "canonical",
-            HighlightSource::TtsCursor => "tts_cursor",
-        }
-    }
-}
 
 use crate::app::ui::format::format_duration_secs;
 use crate::app::{AnchorFallback, LanternLeafApp};
@@ -41,13 +20,13 @@ impl LanternLeafApp {
     pub(crate) fn render_reader_content(&mut self, ui: &mut Ui, state: &AppState) {
         if let Some(snapshot) = state.reader_document.snapshot.as_ref() {
             let effective_text_only = self.resolved_text_only_mode(snapshot);
-            let highlight_ctx = self.highlight_context(snapshot);
             trace!(
                 page = snapshot.current_page,
-                highlight = ?highlight_ctx.idx,
-                highlight_source = highlight_ctx.label(),
+                highlight = ?snapshot.highlighted_sentence_idx,
+                tts_audio_idx = ?snapshot.tts.current_sentence_idx,
                 sentences = snapshot.sentences.len(),
                 text_only = effective_text_only,
+                text_only_show_original_text = snapshot.settings.text_only_show_original_text,
                 "rendering reader shell content"
             );
             ui.heading("Reader shell");
@@ -85,21 +64,6 @@ impl LanternLeafApp {
         }
     }
 
-    fn highlight_context(&self, snapshot: &ReaderSnapshot) -> HighlightContext {
-        if snapshot.tts.state == TtsPlaybackState::Playing {
-            if let Some(tts_idx) = snapshot.tts.current_sentence_idx {
-                return HighlightContext {
-                    idx: Some(tts_idx),
-                    source: HighlightSource::TtsCursor,
-                };
-            }
-        }
-        HighlightContext {
-            idx: snapshot.highlighted_sentence_idx,
-            source: HighlightSource::Canonical,
-        }
-    }
-
     fn should_render_pretty(&self, snapshot: &ReaderSnapshot) -> bool {
         !self.resolved_text_only_mode(snapshot)
             && snapshot.pretty_kind != PrettyKind::Pdf
@@ -110,20 +74,8 @@ impl LanternLeafApp {
         self.text_only_override.unwrap_or(snapshot.text_only_mode)
     }
 
-    fn resolved_highlight_idx(&self, snapshot: &ReaderSnapshot) -> Option<usize> {
-        if snapshot.tts.state == TtsPlaybackState::Playing {
-            snapshot
-                .tts
-                .current_sentence_idx
-                .or(snapshot.highlighted_sentence_idx)
-        } else {
-            snapshot.highlighted_sentence_idx
-        }
-    }
-
     fn render_pretty_page(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
-        let highlight_ctx = self.highlight_context(snapshot);
-        let highlight_idx = highlight_ctx.idx;
+        let highlight_idx = snapshot.highlighted_sentence_idx;
         let highlight_sentence = highlight_idx
             .and_then(|idx| snapshot.sentences.get(idx))
             .map(String::as_str);
@@ -131,17 +83,38 @@ impl LanternLeafApp {
             Some(idx) => LanternLeafApp::resolve_sentence_anchor(snapshot, idx),
             None => (None, AnchorFallback::Missing),
         };
+        // The sentence_anchor_map for HTML pretty rendering is a proportional heuristic. To avoid
+        // highlighting "random" blocks when the heuristic is off, prefer a direct text match when
+        // we have the highlighted sentence available.
+        let highlight_block_idx_by_text = if snapshot.pretty_kind == PrettyKind::Html {
+            highlight_sentence.and_then(|sentence| {
+                self.pretty_page_cache_blocks
+                    .iter()
+                    .position(|block| block_contains_sentence(block, sentence))
+            })
+        } else {
+            None
+        };
+        trace!(
+            highlight_block_idx_by_text,
+            highlight_anchor,
+            highlight_fallback = ?highlight_fallback,
+            "Resolved pretty highlight target"
+        );
         trace!(
             page = snapshot.current_page,
             pretty_kind = ?snapshot.pretty_kind,
-            highlight_source = highlight_ctx.label(),
+            tts_audio_idx = ?snapshot.tts.current_sentence_idx,
             highlight_sentence = ?highlight_idx,
             html_payload = snapshot.reading_html_page.is_some(),
             "render_pretty_page configuration"
         );
         let highlight_color = self.resolve_highlight_color(snapshot);
         let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
-        trace!(renderer = "pure_egui", "Rendering pretty view via pretty blocks");
+        trace!(
+            renderer = "pure_egui",
+            "Rendering pretty view via pretty blocks"
+        );
         self.refresh_pretty_cache(snapshot);
         ui.group(|ui| {
             ui.label("Pretty view");
@@ -162,188 +135,77 @@ impl LanternLeafApp {
                         ui.add_space(margin);
                         ui.vertical(|ui| {
                             ui.set_max_width(max_width);
-                    let pretty_cfg = snapshot.settings.pretty;
-                    let base_px = (snapshot.settings.font_size as f32 * pretty_cfg.base_font_scale)
-                        .clamp(8.0, 48.0);
-                    let regular_family = if self.fonts_configured {
-                        FontFamily::Name("LanternLeafProportionalRegular".into())
-                    } else {
-                        FontFamily::Proportional
-                    };
-                    let bold_family = if self.fonts_configured {
-                        FontFamily::Name("LanternLeafProportionalBold".into())
-                    } else {
-                        FontFamily::Proportional
-                    };
-                    let mono_regular = if self.fonts_configured {
-                        FontFamily::Name("LanternLeafMonospaceRegular".into())
-                    } else {
-                        FontFamily::Monospace
-                    };
-                    let mono_bold = if self.fonts_configured {
-                        FontFamily::Name("LanternLeafMonospaceBold".into())
-                    } else {
-                        FontFamily::Monospace
-                    };
+                            let pretty_cfg = snapshot.settings.pretty;
+                            let base_px = (snapshot.settings.font_size as f32
+                                * pretty_cfg.base_font_scale)
+                                .clamp(8.0, 48.0);
+                            let regular_family = if self.fonts_configured {
+                                FontFamily::Name("LanternLeafProportionalRegular".into())
+                            } else {
+                                FontFamily::Proportional
+                            };
+                            let bold_family = if self.fonts_configured {
+                                FontFamily::Name("LanternLeafProportionalBold".into())
+                            } else {
+                                FontFamily::Proportional
+                            };
+                            let mono_regular = if self.fonts_configured {
+                                FontFamily::Name("LanternLeafMonospaceRegular".into())
+                            } else {
+                                FontFamily::Monospace
+                            };
+                            let mono_bold = if self.fonts_configured {
+                                FontFamily::Name("LanternLeafMonospaceBold".into())
+                            } else {
+                                FontFamily::Monospace
+                            };
 
-                    for (block_i, block) in self.pretty_page_cache_blocks.iter().enumerate() {
-                        if block_i > 0 {
-                            if let PrettyBlockKind::Heading { level } = &block.kind {
-                                let extra_space = match *level {
-                                    1 => pretty_cfg.block_spacing * 2.5,
-                                    2 => pretty_cfg.block_spacing * 2.0,
-                                    _ => pretty_cfg.block_spacing * 1.5,
-                                };
-                                ui.add_space(extra_space);
-                            }
-                        }
-
-                        let mut response = None;
-                        let highlight_matched = match (highlight_anchor, highlight_sentence) {
-                            (Some(anchor), _) => anchor == block.anchor_idx,
-                            (None, Some(sentence)) => block_contains_sentence(block, sentence),
-                            (None, None) => false,
-                        };
-                        let block_highlight_bg = if highlight_matched {
-                            Some(highlight_color)
-                        } else {
-                            None
-                        };
-
-                        match &block.kind {
-                            PrettyBlockKind::Heading { level } => {
-                                let size = heading_size(base_px, *level, pretty_cfg);
-                                let mut spans = block.spans.clone();
-                                for span in &mut spans {
-                                    if span.style.code {
-                                        span.style.code = false;
+                            for (block_i, block) in self.pretty_page_cache_blocks.iter().enumerate()
+                            {
+                                if block_i > 0 {
+                                    if let PrettyBlockKind::Heading { level } = &block.kind {
+                                        let extra_space = match *level {
+                                            1 => pretty_cfg.block_spacing * 2.5,
+                                            2 => pretty_cfg.block_spacing * 2.0,
+                                            _ => pretty_cfg.block_spacing * 1.5,
+                                        };
+                                        ui.add_space(extra_space);
                                     }
-                                    span.style.bold = true;
                                 }
-                                let job = spans_to_job(
-                                    ui,
-                                    &spans,
-                                    size,
-                                    block_highlight_bg,
-                                    regular_family.clone(),
-                                    bold_family.clone(),
-                                    mono_regular.clone(),
-                                    mono_bold.clone(),
-                                    pretty_cfg,
-                                    snapshot.settings.line_spacing,
-                                );
-                                response = Some(ui.add(Label::new(job).wrap(true)));
-                            }
-                            PrettyBlockKind::Paragraph | PrettyBlockKind::BlockQuote => {
-                                let text_color = if matches!(block.kind, PrettyBlockKind::BlockQuote)
-                                {
-                                    ui.visuals().weak_text_color()
-                                } else {
-                                    ui.visuals().text_color()
-                                };
-                                let job = spans_to_job_with_base(
-                                    ui,
-                                    &block.spans,
-                                    base_px,
-                                    text_color,
-                                    block_highlight_bg,
-                                    regular_family.clone(),
-                                    bold_family.clone(),
-                                    mono_regular.clone(),
-                                    mono_bold.clone(),
-                                    pretty_cfg,
-                                    snapshot.settings.line_spacing,
-                                );
-                                if matches!(block.kind, PrettyBlockKind::BlockQuote) {
-                                    let border_color = ui.visuals().widgets.active.bg_fill;
-                                    let bg_fill = ui.visuals().widgets.noninteractive.bg_fill;
-                                    Frame::none()
-                                        .fill(bg_fill)
-                                        .inner_margin(eframe::egui::Margin {
-                                            left: 16.0,
-                                            right: 8.0,
-                                            top: 8.0,
-                                            bottom: 8.0,
-                                        })
-                                        .show(ui, |ui| {
-                                            let rect = ui.max_rect();
-                                            ui.painter().line_segment(
-                                                [rect.left_top(), rect.left_bottom()],
-                                                Stroke::new(3.0, border_color),
-                                            );
-                                            response = Some(ui.add(Label::new(job).wrap(true)));
-                                        });
-                                } else {
-                                    response = Some(ui.add(Label::new(job).wrap(true)));
-                                }
-                            }
-                            PrettyBlockKind::ListItem {
-                                depth,
-                                ordered,
-                                index,
-                            } => {
-                                let indent = pretty_cfg.list_indent * (*depth as f32).max(1.0);
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.add_space(indent);
-                                    let marker = if *ordered {
-                                        format!("{}.", index.unwrap_or(1))
+
+                                let mut response = None;
+                                let highlight_matched =
+                                    if let Some(target_block) = highlight_block_idx_by_text {
+                                        target_block == block_i
                                     } else {
-                                        "•".to_string()
+                                        match (highlight_anchor, highlight_sentence) {
+                                            (Some(anchor), _) => anchor == block.anchor_idx,
+                                            (None, Some(sentence)) => {
+                                                block_contains_sentence(block, sentence)
+                                            }
+                                            (None, None) => false,
+                                        }
                                     };
-                                    ui.label(marker);
-                                    let job = spans_to_job(
-                                        ui,
-                                        &block.spans,
-                                        base_px,
-                                        block_highlight_bg,
-                                        regular_family.clone(),
-                                        bold_family.clone(),
-                                        mono_regular.clone(),
-                                        mono_bold.clone(),
-                                        pretty_cfg,
-                                        snapshot.settings.line_spacing,
-                                    );
-                                    response = Some(ui.add(Label::new(job).wrap(true)));
-                                });
-                            }
-                            PrettyBlockKind::HorizontalRule => {
-                                ui.add_space(pretty_cfg.hr_margin);
-                                let (rect, _) = ui.allocate_exact_size(
-                                    eframe::egui::vec2(ui.available_width(), pretty_cfg.hr_thickness),
-                                    eframe::egui::Sense::hover(),
-                                );
-                                ui.painter().line_segment(
-                                    [rect.left_center(), rect.right_center()],
-                                    Stroke::new(
-                                        pretty_cfg.hr_thickness,
-                                        ui.visuals().widgets.noninteractive.bg_stroke.color,
-                                    ),
-                                );
-                                ui.add_space(pretty_cfg.hr_margin);
-                            }
-                            PrettyBlockKind::CodeBlock => {
-                                let code = block.code.as_deref().unwrap_or_default();
-                                let style = PrettyStyle {
-                                    code: true,
-                                    ..PrettyStyle::default()
+                                let block_highlight_bg = if highlight_matched {
+                                    Some(highlight_color)
+                                } else {
+                                    None
                                 };
-                                let spans = vec![PrettySpan {
-                                    text: code.to_string(),
-                                    style,
-                                }];
-                                let bg = ui
-                                    .visuals()
-                                    .extreme_bg_color
-                                    .linear_multiply(pretty_cfg.code_bg_alpha.clamp(0.0, 1.0));
-                                Frame::none()
-                                    .fill(bg)
-                                    .rounding(4.0)
-                                    .inner_margin(eframe::egui::Margin::symmetric(12.0, 10.0))
-                                    .show(ui, |ui| {
+
+                                match &block.kind {
+                                    PrettyBlockKind::Heading { level } => {
+                                        let size = heading_size(base_px, *level, pretty_cfg);
+                                        let mut spans = block.spans.clone();
+                                        for span in &mut spans {
+                                            if span.style.code {
+                                                span.style.code = false;
+                                            }
+                                            span.style.bold = true;
+                                        }
                                         let job = spans_to_job(
                                             ui,
                                             &spans,
-                                            base_px * pretty_cfg.code_font_scale,
+                                            size,
                                             block_highlight_bg,
                                             regular_family.clone(),
                                             bold_family.clone(),
@@ -353,123 +215,266 @@ impl LanternLeafApp {
                                             snapshot.settings.line_spacing,
                                         );
                                         response = Some(ui.add(Label::new(job).wrap(true)));
-                                    });
-                            }
-                            PrettyBlockKind::Image => {
-                                let Some(img) = block.image.as_ref() else {
-                                    ui.label("[image]");
-                                    continue;
-                                };
-                                if let Some(texture) = self.pretty_image_cache.texture_for(
-                                    ui.ctx(),
-                                    &img.local_path,
-                                    (ui.available_width() * (pretty_cfg.image_max_width_pct / 100.0)) as u32,
-                                    pretty_cfg.image_max_height_px as u32,
-                                    pretty_cfg.image_cache_max_entries,
-                                ) {
-                                    let size = clamp_image_size(
-                                        ui.available_width(),
-                                        [texture.size()[0], texture.size()[1]],
-                                        pretty_cfg.image_max_width_pct,
-                                        pretty_cfg.image_max_height_px,
-                                    );
-                                    response = Some(ui.add(
-                                        Image::new(&texture)
-                                            .fit_to_exact_size(eframe::egui::vec2(size[0], size[1])),
-                                    ));
-                                } else {
-                                    ui.label(
-                                        img.alt
-                                            .as_deref()
-                                            .unwrap_or(img.src_raw.as_str())
-                                            .to_string(),
-                                    );
-                                }
-                            }
-                            PrettyBlockKind::Table => {
-                                let Some(rows) = block.table.as_ref() else {
-                                    ui.label("[table]");
-                                    continue;
-                                };
-                                let stripe = ui
-                                    .visuals()
-                                    .faint_bg_color
-                                    .linear_multiply(pretty_cfg.table_stripe_alpha.clamp(0.0, 1.0));
-                                let border = ui
-                                    .visuals()
-                                    .widgets
-                                    .noninteractive
-                                    .bg_stroke
-                                    .color
-                                    .linear_multiply(pretty_cfg.table_border_alpha.clamp(0.0, 1.0));
-                                Frame::none()
-                                    .stroke(Stroke::new(1.0, border))
-                                    .inner_margin(eframe::egui::Margin::symmetric(
-                                        pretty_cfg.table_cell_padding,
-                                        pretty_cfg.table_cell_padding,
-                                    ))
-                                    .show(ui, |ui| {
-                                        Grid::new(format!("pretty_table_{}", block_i))
-                                            .spacing([pretty_cfg.table_cell_padding, pretty_cfg.table_cell_padding])
-                                            .striped(true)
+                                    }
+                                    PrettyBlockKind::Paragraph | PrettyBlockKind::BlockQuote => {
+                                        let text_color =
+                                            if matches!(block.kind, PrettyBlockKind::BlockQuote) {
+                                                ui.visuals().weak_text_color()
+                                            } else {
+                                                ui.visuals().text_color()
+                                            };
+                                        let job = spans_to_job_with_base(
+                                            ui,
+                                            &block.spans,
+                                            base_px,
+                                            text_color,
+                                            block_highlight_bg,
+                                            regular_family.clone(),
+                                            bold_family.clone(),
+                                            mono_regular.clone(),
+                                            mono_bold.clone(),
+                                            pretty_cfg,
+                                            snapshot.settings.line_spacing,
+                                        );
+                                        if matches!(block.kind, PrettyBlockKind::BlockQuote) {
+                                            let border_color = ui.visuals().widgets.active.bg_fill;
+                                            let bg_fill =
+                                                ui.visuals().widgets.noninteractive.bg_fill;
+                                            Frame::none()
+                                                .fill(bg_fill)
+                                                .inner_margin(eframe::egui::Margin {
+                                                    left: 16.0,
+                                                    right: 8.0,
+                                                    top: 8.0,
+                                                    bottom: 8.0,
+                                                })
+                                                .show(ui, |ui| {
+                                                    let rect = ui.max_rect();
+                                                    ui.painter().line_segment(
+                                                        [rect.left_top(), rect.left_bottom()],
+                                                        Stroke::new(3.0, border_color),
+                                                    );
+                                                    response =
+                                                        Some(ui.add(Label::new(job).wrap(true)));
+                                                });
+                                        } else {
+                                            response = Some(ui.add(Label::new(job).wrap(true)));
+                                        }
+                                    }
+                                    PrettyBlockKind::ListItem {
+                                        depth,
+                                        ordered,
+                                        index,
+                                    } => {
+                                        let indent =
+                                            pretty_cfg.list_indent * (*depth as f32).max(1.0);
+                                        ui.horizontal_wrapped(|ui| {
+                                            ui.add_space(indent);
+                                            let marker = if *ordered {
+                                                format!("{}.", index.unwrap_or(1))
+                                            } else {
+                                                "•".to_string()
+                                            };
+                                            ui.label(marker);
+                                            let job = spans_to_job(
+                                                ui,
+                                                &block.spans,
+                                                base_px,
+                                                block_highlight_bg,
+                                                regular_family.clone(),
+                                                bold_family.clone(),
+                                                mono_regular.clone(),
+                                                mono_bold.clone(),
+                                                pretty_cfg,
+                                                snapshot.settings.line_spacing,
+                                            );
+                                            response = Some(ui.add(Label::new(job).wrap(true)));
+                                        });
+                                    }
+                                    PrettyBlockKind::HorizontalRule => {
+                                        ui.add_space(pretty_cfg.hr_margin);
+                                        let (rect, _) = ui.allocate_exact_size(
+                                            eframe::egui::vec2(
+                                                ui.available_width(),
+                                                pretty_cfg.hr_thickness,
+                                            ),
+                                            eframe::egui::Sense::hover(),
+                                        );
+                                        ui.painter().line_segment(
+                                            [rect.left_center(), rect.right_center()],
+                                            Stroke::new(
+                                                pretty_cfg.hr_thickness,
+                                                ui.visuals().widgets.noninteractive.bg_stroke.color,
+                                            ),
+                                        );
+                                        ui.add_space(pretty_cfg.hr_margin);
+                                    }
+                                    PrettyBlockKind::CodeBlock => {
+                                        let code = block.code.as_deref().unwrap_or_default();
+                                        let style = PrettyStyle {
+                                            code: true,
+                                            ..PrettyStyle::default()
+                                        };
+                                        let spans = vec![PrettySpan {
+                                            text: code.to_string(),
+                                            style,
+                                        }];
+                                        let bg = ui.visuals().extreme_bg_color.linear_multiply(
+                                            pretty_cfg.code_bg_alpha.clamp(0.0, 1.0),
+                                        );
+                                        Frame::none()
+                                            .fill(bg)
+                                            .rounding(4.0)
+                                            .inner_margin(eframe::egui::Margin::symmetric(
+                                                12.0, 10.0,
+                                            ))
                                             .show(ui, |ui| {
-                                                for (row_i, row) in rows.iter().enumerate() {
-                                                    for cell in row {
-                                                        let mut spans = cell.spans.clone();
-                                                        if cell.header {
-                                                            for span in &mut spans {
-                                                                span.style.bold = true;
-                                                            }
-                                                        }
-                                                        let job = spans_to_job(
-                                                            ui,
-                                                            &spans,
-                                                            base_px,
-                                                            None,
-                                                            regular_family.clone(),
-                                                            bold_family.clone(),
-                                                            mono_regular.clone(),
-                                                            mono_bold.clone(),
-                                                            pretty_cfg,
-                                                            snapshot.settings.line_spacing,
-                                                        );
-                                                        let cell_frame = if row_i % 2 == 1 {
-                                                            Frame::none().fill(stripe)
-                                                        } else {
-                                                            Frame::none()
-                                                        };
-                                                        cell_frame.show(ui, |ui| {
-                                                            ui.add(Label::new(job).wrap(true));
-                                                        });
-                                                    }
-                                                    ui.end_row();
-                                                }
+                                                let job = spans_to_job(
+                                                    ui,
+                                                    &spans,
+                                                    base_px * pretty_cfg.code_font_scale,
+                                                    block_highlight_bg,
+                                                    regular_family.clone(),
+                                                    bold_family.clone(),
+                                                    mono_regular.clone(),
+                                                    mono_bold.clone(),
+                                                    pretty_cfg,
+                                                    snapshot.settings.line_spacing,
+                                                );
+                                                response = Some(ui.add(Label::new(job).wrap(true)));
                                             });
-                                    });
-                            }
-                        }
-
-                        if auto_scroll_requested && highlight_matched && highlight_idx.is_some() {
-                            if let Some(response) = response.as_ref() {
-                                let idx = highlight_idx.unwrap_or_default();
-                                let decision =
-                                    self.auto_scroll_state.decide_scroll(idx, highlight_fallback);
-                                if matches!(decision, crate::app::ScrollDecision::Scroll) {
-                                    response.scroll_to_me(Some(Align::Center));
-                                    self.auto_scroll_state.record(idx, highlight_fallback);
+                                    }
+                                    PrettyBlockKind::Image => {
+                                        let Some(img) = block.image.as_ref() else {
+                                            ui.label("[image]");
+                                            continue;
+                                        };
+                                        if let Some(texture) = self.pretty_image_cache.texture_for(
+                                            ui.ctx(),
+                                            &img.local_path,
+                                            (ui.available_width()
+                                                * (pretty_cfg.image_max_width_pct / 100.0))
+                                                as u32,
+                                            pretty_cfg.image_max_height_px as u32,
+                                            pretty_cfg.image_cache_max_entries,
+                                        ) {
+                                            let size = clamp_image_size(
+                                                ui.available_width(),
+                                                [texture.size()[0], texture.size()[1]],
+                                                pretty_cfg.image_max_width_pct,
+                                                pretty_cfg.image_max_height_px,
+                                            );
+                                            response = Some(ui.add(
+                                                Image::new(&texture).fit_to_exact_size(
+                                                    eframe::egui::vec2(size[0], size[1]),
+                                                ),
+                                            ));
+                                        } else {
+                                            ui.label(
+                                                img.alt
+                                                    .as_deref()
+                                                    .unwrap_or(img.src_raw.as_str())
+                                                    .to_string(),
+                                            );
+                                        }
+                                    }
+                                    PrettyBlockKind::Table => {
+                                        let Some(rows) = block.table.as_ref() else {
+                                            ui.label("[table]");
+                                            continue;
+                                        };
+                                        let stripe = ui.visuals().faint_bg_color.linear_multiply(
+                                            pretty_cfg.table_stripe_alpha.clamp(0.0, 1.0),
+                                        );
+                                        let border = ui
+                                            .visuals()
+                                            .widgets
+                                            .noninteractive
+                                            .bg_stroke
+                                            .color
+                                            .linear_multiply(
+                                                pretty_cfg.table_border_alpha.clamp(0.0, 1.0),
+                                            );
+                                        Frame::none()
+                                            .stroke(Stroke::new(1.0, border))
+                                            .inner_margin(eframe::egui::Margin::symmetric(
+                                                pretty_cfg.table_cell_padding,
+                                                pretty_cfg.table_cell_padding,
+                                            ))
+                                            .show(ui, |ui| {
+                                                Grid::new(format!("pretty_table_{}", block_i))
+                                                    .spacing([
+                                                        pretty_cfg.table_cell_padding,
+                                                        pretty_cfg.table_cell_padding,
+                                                    ])
+                                                    .striped(true)
+                                                    .show(ui, |ui| {
+                                                        for (row_i, row) in rows.iter().enumerate()
+                                                        {
+                                                            for cell in row {
+                                                                let mut spans = cell.spans.clone();
+                                                                if cell.header {
+                                                                    for span in &mut spans {
+                                                                        span.style.bold = true;
+                                                                    }
+                                                                }
+                                                                let job = spans_to_job(
+                                                                    ui,
+                                                                    &spans,
+                                                                    base_px,
+                                                                    None,
+                                                                    regular_family.clone(),
+                                                                    bold_family.clone(),
+                                                                    mono_regular.clone(),
+                                                                    mono_bold.clone(),
+                                                                    pretty_cfg,
+                                                                    snapshot.settings.line_spacing,
+                                                                );
+                                                                let cell_frame = if row_i % 2 == 1 {
+                                                                    Frame::none().fill(stripe)
+                                                                } else {
+                                                                    Frame::none()
+                                                                };
+                                                                cell_frame.show(ui, |ui| {
+                                                                    ui.add(
+                                                                        Label::new(job).wrap(true),
+                                                                    );
+                                                                });
+                                                            }
+                                                            ui.end_row();
+                                                        }
+                                                    });
+                                            });
+                                    }
                                 }
-                            }
-                        }
 
-                        let spacing = match block.kind {
-                            PrettyBlockKind::Paragraph | PrettyBlockKind::BlockQuote => {
-                                pretty_cfg.paragraph_spacing
+                                if auto_scroll_requested
+                                    && highlight_matched
+                                    && highlight_idx.is_some()
+                                {
+                                    if let Some(response) = response.as_ref() {
+                                        let idx = highlight_idx.unwrap_or_default();
+                                        let decision = self
+                                            .auto_scroll_state
+                                            .decide_scroll(idx, highlight_fallback);
+                                        if matches!(decision, crate::app::ScrollDecision::Scroll) {
+                                            response.scroll_to_me(Some(Align::Center));
+                                            self.auto_scroll_state.record(idx, highlight_fallback);
+                                        }
+                                    }
+                                }
+
+                                let spacing = match block.kind {
+                                    PrettyBlockKind::Paragraph | PrettyBlockKind::BlockQuote => {
+                                        pretty_cfg.paragraph_spacing
+                                    }
+                                    PrettyBlockKind::ListItem { .. } => {
+                                        pretty_cfg.list_item_spacing
+                                    }
+                                    _ => pretty_cfg.block_spacing,
+                                };
+                                ui.add_space(spacing.max(0.0));
                             }
-                            PrettyBlockKind::ListItem { .. } => pretty_cfg.list_item_spacing,
-                            _ => pretty_cfg.block_spacing,
-                        };
-                        ui.add_space(spacing.max(0.0));
-                    }
                         });
                     });
                 });
@@ -513,7 +518,10 @@ impl LanternLeafApp {
                     ui.horizontal(|ui| {
                         ui.label(format!("Remote sync: {}", url));
                         if self.shell_state.last_playback_update_at > 0 {
-                            ui.label(format!("(Last: {} ms)", self.shell_state.last_playback_update_at));
+                            ui.label(format!(
+                                "(Last: {} ms)",
+                                self.shell_state.last_playback_update_at
+                            ));
                         }
                     });
                 }
@@ -529,8 +537,7 @@ impl LanternLeafApp {
                 return;
             }
             let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
-            let highlight_ctx = self.highlight_context(snapshot);
-            let target_idx = highlight_ctx.idx;
+            let target_idx = snapshot.highlighted_sentence_idx;
             ScrollArea::vertical()
                 .id_source("sentence_list")
                 .max_height(240.0)
@@ -837,19 +844,22 @@ impl LanternLeafApp {
     }
 
     fn render_spoken_sentence_banner(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
-        let highlight_ctx = self.highlight_context(snapshot);
-        let Some(idx) = highlight_ctx.idx else {
-            return;
-        };
-        let sentence = snapshot
-            .sentences
-            .get(idx)
-            .map(|text| text.as_str())
-            .unwrap_or("Unknown sentence");
         let background = self.resolve_highlight_color(snapshot);
         ui.group(|ui| {
-            ui.label("Spoken sentence");
-            ui.label(RichText::new(sentence).background_color(background));
+            ui.label("TTS vs highlight");
+            let highlighted = snapshot
+                .highlighted_sentence_idx
+                .and_then(|idx| snapshot.sentences.get(idx))
+                .map(|text| text.as_str())
+                .unwrap_or("None");
+            let spoken = snapshot
+                .tts_current_sentence_text
+                .as_deref()
+                .unwrap_or("None");
+            ui.label(
+                RichText::new(format!("Highlighted: {highlighted}")).background_color(background),
+            );
+            ui.label(format!("Spoken: {spoken}"));
         });
     }
 

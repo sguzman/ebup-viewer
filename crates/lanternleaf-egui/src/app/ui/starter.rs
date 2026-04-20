@@ -493,7 +493,10 @@ impl LanternLeafApp {
             if let Some(url) = model.remote_url {
                 ui.label(format!("Remote sync: {}", url));
                 if model.last_remote_update_at > 0 {
-                    ui.label(format!("Last update: {} ms (epoch)", model.last_remote_update_at));
+                    ui.label(format!(
+                        "Last update: {} ms (epoch)",
+                        model.last_remote_update_at
+                    ));
                 } else {
                     ui.label("No remote updates received yet.");
                 }

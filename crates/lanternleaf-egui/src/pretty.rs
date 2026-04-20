@@ -41,7 +41,9 @@ pub struct PrettyCell {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrettyBlockKind {
-    Heading { level: u8 },
+    Heading {
+        level: u8,
+    },
     Paragraph,
     ListItem {
         depth: u8,
@@ -147,11 +149,7 @@ pub fn font_id_for(
     let is_code = style.code;
     let wants_bold = style.bold;
     let family = if is_code {
-        if wants_bold {
-            mono_bold
-        } else {
-            mono_regular
-        }
+        if wants_bold { mono_bold } else { mono_regular }
     } else if wants_bold {
         bold_family
     } else {
@@ -280,7 +278,9 @@ pub fn markdown_to_blocks(
                     s.is_link = true;
                     style_stack.push(s);
                 }
-                cmark::Tag::Image { dest_url, title, .. } => {
+                cmark::Tag::Image {
+                    dest_url, title, ..
+                } => {
                     pending_image_src = Some(dest_url.to_string());
                     pending_image_title = if title.is_empty() {
                         None
@@ -319,7 +319,9 @@ pub fn markdown_to_blocks(
                     current_kind = None;
                 }
                 cmark::TagEnd::Heading(_) => {
-                    let kind = current_kind.take().unwrap_or(PrettyBlockKind::Heading { level: 1 });
+                    let kind = current_kind
+                        .take()
+                        .unwrap_or(PrettyBlockKind::Heading { level: 1 });
                     finish_block_markdown(
                         &mut blocks,
                         &mut block_index,
@@ -373,7 +375,9 @@ pub fn markdown_to_blocks(
                 }
                 cmark::TagEnd::Image => {
                     // Flush any preceding spans so inline images don't discard surrounding text.
-                    let Some(src) = pending_image_src.take() else { continue };
+                    let Some(src) = pending_image_src.take() else {
+                        continue;
+                    };
                     let alt_text = pending_image_alt.trim();
                     let alt = if !alt_text.is_empty() {
                         Some(alt_text.to_string())
@@ -581,8 +585,10 @@ fn finish_block_markdown(
     image: Option<PrettyImage>,
     table: Option<Vec<Vec<PrettyCell>>>,
 ) {
-    if matches!(kind, PrettyBlockKind::Paragraph | PrettyBlockKind::Heading { .. })
-        && spans.iter().all(|s| s.text.trim().is_empty())
+    if matches!(
+        kind,
+        PrettyBlockKind::Paragraph | PrettyBlockKind::Heading { .. }
+    ) && spans.iter().all(|s| s.text.trim().is_empty())
     {
         spans.clear();
         *code = None;
@@ -638,7 +644,10 @@ pub fn html_to_blocks(
             .take(6)
             .map(|(tag, count)| format!("{tag}:{count}"))
             .collect();
-        warn!(tags = top.join(","), "HTML pretty parser encountered unsupported tags");
+        warn!(
+            tags = top.join(","),
+            "HTML pretty parser encountered unsupported tags"
+        );
     }
 
     debug!(
@@ -839,17 +848,24 @@ fn parse_scraper_table(
 ) -> Vec<Vec<PrettyCell>> {
     let mut rows = Vec::new();
     for tr in table.descendants() {
-        let Some(el) = tr.value().as_element() else { continue };
-        if el.name() != "tr" { continue; }
+        let Some(el) = tr.value().as_element() else {
+            continue;
+        };
+        if el.name() != "tr" {
+            continue;
+        }
         let mut row = Vec::new();
         for cell in tr.children() {
-            let Some(cell_el) = cell.value().as_element() else { continue };
+            let Some(cell_el) = cell.value().as_element() else {
+                continue;
+            };
             let name = cell_el.name();
             if name != "td" && name != "th" {
                 continue;
             }
             let header = name == "th";
-            let spans = collect_scraper_spans(cell, PrettyStyle::default(), images, link_color, span_count);
+            let spans =
+                collect_scraper_spans(cell, PrettyStyle::default(), images, link_color, span_count);
             row.push(PrettyCell { spans, header });
         }
         if !row.is_empty() {
@@ -872,7 +888,9 @@ fn parse_scraper_list(
     image_count: &mut usize,
 ) {
     for li in list.children() {
-        let Some(el) = li.value().as_element() else { continue };
+        let Some(el) = li.value().as_element() else {
+            continue;
+        };
         if el.name() != "li" {
             continue;
         }
@@ -905,7 +923,9 @@ fn parse_scraper_list(
 
         // Nested lists inside this list item.
         for nested in li.children() {
-            let Some(nested_el) = nested.value().as_element() else { continue };
+            let Some(nested_el) = nested.value().as_element() else {
+                continue;
+            };
             let nested_tag = nested_el.name();
             if nested_tag == "ul" || nested_tag == "ol" {
                 let nested_ordered = nested_tag == "ol";
@@ -1144,7 +1164,9 @@ fn collect_scraper_spans_inner(
 
 fn apply_inline_css(style_attr: &str, style: &mut PrettyStyle) {
     for decl in style_attr.split(';') {
-        let Some((key, value)) = decl.split_once(':') else { continue };
+        let Some((key, value)) = decl.split_once(':') else {
+            continue;
+        };
         let key = key.trim().to_ascii_lowercase();
         let value_raw = value.trim();
         let value_lower = value_raw.to_ascii_lowercase();
@@ -1321,10 +1343,26 @@ Paragraph with *italics* and **bold**, `code`, ~~strike~~.
 | a  | b  |
 "#;
         let blocks = markdown_to_blocks(md, &[], config::PrettyUiConfig::default());
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::Heading { level: 1 })));
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::HorizontalRule)));
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::ListItem { .. })));
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::Table)));
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::Heading { level: 1 }))
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::HorizontalRule))
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::ListItem { .. }))
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::Table))
+        );
 
         let para = blocks
             .iter()
@@ -1344,7 +1382,11 @@ Paragraph with *italics* and **bold**, `code`, ~~strike~~.
             local_path: "/tmp/img.png".to_string(),
         }];
         let blocks = markdown_to_blocks(md, &images, config::PrettyUiConfig::default());
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::Image)));
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::Image))
+        );
         let para_count = blocks
             .iter()
             .filter(|b| matches!(b.kind, PrettyBlockKind::Paragraph))
@@ -1367,17 +1409,44 @@ Paragraph with *italics* and **bold**, `code`, ~~strike~~.
             local_path: "/tmp/img.png".to_string(),
         }];
         let blocks = html_to_blocks(html, &images, config::PrettyUiConfig::default());
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::Heading { .. })));
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::ListItem { ordered: true, .. })));
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::HorizontalRule)));
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::Table)));
-        assert!(blocks.iter().any(|b| matches!(b.kind, PrettyBlockKind::Image)));
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::Heading { .. }))
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::ListItem { ordered: true, .. }))
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::HorizontalRule))
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::Table))
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|b| matches!(b.kind, PrettyBlockKind::Image))
+        );
 
         let para = blocks
             .iter()
-            .find(|b| matches!(b.kind, PrettyBlockKind::Paragraph) && b.spans.iter().any(|s| s.text.contains("World")))
+            .find(|b| {
+                matches!(b.kind, PrettyBlockKind::Paragraph)
+                    && b.spans.iter().any(|s| s.text.contains("World"))
+            })
             .expect("expected paragraph with styled span");
-        let styled = para.spans.iter().find(|s| s.text.contains("World")).unwrap();
+        let styled = para
+            .spans
+            .iter()
+            .find(|s| s.text.contains("World"))
+            .unwrap();
         assert!(styled.style.bold);
         assert!(styled.style.underline);
         assert_eq!(styled.style.color, Some(Color32::from_rgb(255, 0, 0)));

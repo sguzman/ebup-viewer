@@ -29,11 +29,17 @@ pub(crate) fn default_window_height() -> f32 {
 
 pub(crate) fn default_tts_model() -> String {
     #[cfg(unix)]
-    { "/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx".to_string() }
+    {
+        "/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx".to_string()
+    }
     #[cfg(windows)]
-    { "C:\\ProgramData\\LanternLeaf\\models\\en_US-amy-medium.onnx".to_string() }
+    {
+        "C:\\ProgramData\\LanternLeaf\\models\\en_US-amy-medium.onnx".to_string()
+    }
     #[cfg(not(any(unix, windows)))]
-    { "models/en_US-amy-medium.onnx".to_string() }
+    {
+        "models/en_US-amy-medium.onnx".to_string()
+    }
 }
 
 pub(crate) fn default_tts_speed() -> f32 {
@@ -46,11 +52,17 @@ pub(crate) fn default_tts_volume() -> f32 {
 
 pub(crate) fn default_tts_espeak_path() -> String {
     #[cfg(unix)]
-    { "/usr/share".to_string() }
+    {
+        "/usr/share".to_string()
+    }
     #[cfg(windows)]
-    { "C:\\Program Files\\eSpeak NG".to_string() }
+    {
+        "C:\\Program Files\\eSpeak NG".to_string()
+    }
     #[cfg(not(any(unix, windows)))]
-    { "espeak-data".to_string() }
+    {
+        "espeak-data".to_string()
+    }
 }
 
 pub(crate) fn default_tts_threads() -> usize {

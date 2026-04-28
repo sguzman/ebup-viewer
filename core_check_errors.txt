@@ -1,0 +1,1505 @@
+[1m[92m    Checking[0m lanternleaf-core v0.1.0 (/win/linux/Code/projects/lantern-leaf/crates/lanternleaf-core)
+[1m[91merror[E0433][0m[1m: cannot find module or crate `epub` in this scope[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:9:5
+  [1m[94m|[0m
+[1m[94m9[0m [1m[94m|[0m use epub::doc::EpubDoc;
+  [1m[94m|[0m     [1m[91m^^^^[0m [1m[91muse of unresolved module or unlinked crate `epub`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `epub`, use `cargo add epub` to add it to your `Cargo.toml`
+
+[1m[91merror[E0432][0m[1m: unresolved import `sha2`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/content_artifacts.rs:1:5
+  [1m[94m|[0m
+[1m[94m1[0m [1m[94m|[0m use sha2::{Digest, Sha256};
+  [1m[94m|[0m     [1m[91m^^^^[0m [1m[91muse of unresolved module or unlinked crate `sha2`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sha2`, use `cargo add sha2` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `rodio` in this scope[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:5:5
+  [1m[94m|[0m
+[1m[94m5[0m [1m[94m|[0m use rodio::buffer::SamplesBuffer;
+  [1m[94m|[0m     [1m[91m^^^^^[0m [1m[91muse of unresolved module or unlinked crate `rodio`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `rodio`, use `cargo add rodio` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `rodio` in this scope[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:6:5
+  [1m[94m|[0m
+[1m[94m6[0m [1m[94m|[0m use rodio::source::Zero;
+  [1m[94m|[0m     [1m[91m^^^^^[0m [1m[91muse of unresolved module or unlinked crate `rodio`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `rodio`, use `cargo add rodio` to add it to your `Cargo.toml`
+
+[1m[91merror[E0432][0m[1m: unresolved import `sha2`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/normalizer.rs:5:5
+  [1m[94m|[0m
+[1m[94m5[0m [1m[94m|[0m use sha2::{Digest, Sha256};
+  [1m[94m|[0m     [1m[91m^^^^[0m [1m[91muse of unresolved module or unlinked crate `sha2`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sha2`, use `cargo add sha2` to add it to your `Cargo.toml`
+
+[1m[91merror[E0432][0m[1m: unresolved import `rodio`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:7:5
+  [1m[94m|[0m
+[1m[94m7[0m [1m[94m|[0m use rodio::{Decoder, OutputStream, Sink, Source};
+  [1m[94m|[0m     [1m[91m^^^^^[0m [1m[91muse of unresolved module or unlinked crate `rodio`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `rodio`, use `cargo add rodio` to add it to your `Cargo.toml`
+
+[1m[91merror[E0432][0m[1m: unresolved import `sha2`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:9:5
+  [1m[94m|[0m
+[1m[94m9[0m [1m[94m|[0m use sha2::{Digest, Sha256};
+  [1m[94m|[0m     [1m[91m^^^^[0m [1m[91muse of unresolved module or unlinked crate `sha2`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sha2`, use `cargo add sha2` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find `blocking` in `reqwest`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/browser_tabs.rs:790:24
+    [1m[94m|[0m
+[1m[94m790[0m [1m[94m|[0m     response: reqwest::blocking::Response,
+    [1m[94m|[0m                        [1m[91m^^^^^^^^[0m [1m[91mcould not find `blocking` in `reqwest`[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0m/home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/reqwest-0.12.28/src/lib.rs:372:13
+    [1m[94m|[0m
+[1m[94m272[0m [1m[94m|[0m         #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m                  [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m...[0m
+[1m[94m372[0m [1m[94m|[0m     pub mod blocking;
+    [1m[94m|[0m             [1m[92m^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:400:22
+    [1m[94m|[0m
+[1m[94m400[0m [1m[94m|[0m     let run = crate::quack_check::run_pdf_to_text_with_cancel(
+    [1m[94m|[0m                      [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+    [1m[94m|[0m
+[1m[94m 22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m 23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m 24[0m [1m[94m|[0m pub mod quack_check;
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:507:28
+    [1m[94m|[0m
+[1m[94m507[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+    [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+    [1m[94m|[0m
+[1m[94m 22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m 23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m 24[0m [1m[94m|[0m pub mod quack_check;
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:698:28
+    [1m[94m|[0m
+[1m[94m698[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+    [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+    [1m[94m|[0m
+[1m[94m 22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m 23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m 24[0m [1m[94m|[0m pub mod quack_check;
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:743:28
+    [1m[94m|[0m
+[1m[94m743[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+    [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+    [1m[94m|[0m
+[1m[94m 22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m 23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m 24[0m [1m[94m|[0m pub mod quack_check;
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:783:28
+    [1m[94m|[0m
+[1m[94m783[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+    [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+    [1m[94m|[0m
+[1m[94m 22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m 23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m 24[0m [1m[94m|[0m pub mod quack_check;
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:809:28
+    [1m[94m|[0m
+[1m[94m809[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+    [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+    [1m[94m|[0m
+[1m[94m 22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m 23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m 24[0m [1m[94m|[0m pub mod quack_check;
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:992:28
+    [1m[94m|[0m
+[1m[94m992[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+    [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+    [1m[94m|[0m
+[1m[94m 22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m 23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m 24[0m [1m[94m|[0m pub mod quack_check;
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:998:17
+    [1m[94m|[0m
+[1m[94m998[0m [1m[94m|[0m         (crate::quack_check::policy::QualityTier::HighText, false) => "embedded_text",
+    [1m[94m|[0m                 [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+    [1m[94m|[0m
+[1m[94m 22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m 23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m 24[0m [1m[94m|[0m pub mod quack_check;
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:999:17
+    [1m[94m|[0m
+[1m[94m999[0m [1m[94m|[0m         (crate::quack_check::policy::QualityTier::MixedText, false) => "mixed_embedded_text",
+    [1m[94m|[0m                 [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+   [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+    [1m[94m|[0m
+[1m[94m 22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+    [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m 23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m 24[0m [1m[94m|[0m pub mod quack_check;
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1000:17
+     [1m[94m|[0m
+[1m[94m1000[0m [1m[94m|[0m         (crate::quack_check::policy::QualityTier::MixedText, true) => "mixed_text_with_ocr",
+     [1m[94m|[0m                 [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1001:17
+     [1m[94m|[0m
+[1m[94m1001[0m [1m[94m|[0m         (crate::quack_check::policy::QualityTier::Scan, true) => "ocr_scan",
+     [1m[94m|[0m                 [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1002:17
+     [1m[94m|[0m
+[1m[94m1002[0m [1m[94m|[0m         (crate::quack_check::policy::QualityTier::Scan, false) => "scan_without_ocr",
+     [1m[94m|[0m                 [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1003:17
+     [1m[94m|[0m
+[1m[94m1003[0m [1m[94m|[0m         (crate::quack_check::policy::QualityTier::HighText, true) => "high_text_with_ocr",
+     [1m[94m|[0m                 [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1021:28
+     [1m[94m|[0m
+[1m[94m1021[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+     [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1064:28
+     [1m[94m|[0m
+[1m[94m1064[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+     [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1088:28
+     [1m[94m|[0m
+[1m[94m1088[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+     [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1130:19
+     [1m[94m|[0m
+[1m[94m1130[0m [1m[94m|[0m     page: &crate::quack_check::probe::ProbePageStats,
+     [1m[94m|[0m                   [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1218:28
+     [1m[94m|[0m
+[1m[94m1218[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+     [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1282:28
+     [1m[94m|[0m
+[1m[94m1282[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+     [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1314:28
+     [1m[94m|[0m
+[1m[94m1314[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+     [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1542:19
+     [1m[94m|[0m
+[1m[94m1542[0m [1m[94m|[0m     page: &crate::quack_check::probe::ProbePageStats,
+     [1m[94m|[0m                   [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1702:21
+     [1m[94m|[0m
+[1m[94m1702[0m [1m[94m|[0m     sample: &crate::quack_check::probe::ProbeSampleStats,
+     [1m[94m|[0m                     [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2343:28
+     [1m[94m|[0m
+[1m[94m2343[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+     [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2434:28
+     [1m[94m|[0m
+[1m[94m2434[0m [1m[94m|[0m     report: Option<&crate::quack_check::report::JobReport>,
+     [1m[94m|[0m                            [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2489:16
+     [1m[94m|[0m
+[1m[94m2489[0m [1m[94m|[0m         crate::quack_check::policy::QualityTier::HighText => (
+     [1m[94m|[0m                [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2493:16
+     [1m[94m|[0m
+[1m[94m2493[0m [1m[94m|[0m         crate::quack_check::policy::QualityTier::MixedText => (
+     [1m[94m|[0m                [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2497:16
+     [1m[94m|[0m
+[1m[94m2497[0m [1m[94m|[0m         crate::quack_check::policy::QualityTier::Scan => (
+     [1m[94m|[0m                [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find `quack_check` in `crate`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:3973:61
+     [1m[94m|[0m
+[1m[94m3973[0m [1m[94m|[0m fn load_quack_check_report(job_dir: &Path) -> Result<crate::quack_check::report::JobReport> {
+     [1m[94m|[0m                                                             [1m[91m^^^^^^^^^^^[0m [1m[91mcould not find `quack_check` in the crate root[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0mcrates/lanternleaf-core/src/lib.rs:24:9
+     [1m[94m|[0m
+[1m[94m  22[0m [1m[94m|[0m #[cfg(not(target_arch = "wasm32"))]
+     [1m[94m|[0m          [1m[94m------------------------[0m [1m[94mthe item is gated here[0m
+[1m[94m  23[0m [1m[94m|[0m #[path = "../../../src/quack_check/mod.rs"]
+[1m[94m  24[0m [1m[94m|[0m pub mod quack_check;
+     [1m[94m|[0m         [1m[92m^^^^^^^^^^^[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:163:23
+    [1m[94m|[0m
+[1m[94m163[0m [1m[94m|[0m     let Ok(entries) = fs::read_dir(configured_root) else {
+    [1m[94m|[0m                       [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:186:27
+    [1m[94m|[0m
+[1m[94m186[0m [1m[94m|[0m         if let Err(err) = fs::rename(&path, &target) {
+    [1m[94m|[0m                           [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:244:21
+    [1m[94m|[0m
+[1m[94m244[0m [1m[94m|[0m     let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    [1m[94m|[0m                     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:245:20
+    [1m[94m|[0m
+[1m[94m245[0m [1m[94m|[0m     let metadata = fs::metadata(&canonical).ok()?;
+    [1m[94m|[0m                    [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:263:20
+    [1m[94m|[0m
+[1m[94m263[0m [1m[94m|[0m     let mut file = fs::File::open(&canonical).ok()?;
+    [1m[94m|[0m                    [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+[1m[96mhelp[0m: consider importing this struct
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs::File;[0m
+    [1m[94m|[0m
+[1m[96mhelp[0m: if you import `File`, refer to it directly
+    [1m[94m|[0m
+[1m[94m263[0m [91m- [0m    let mut file = [91mfs::[0mFile::open(&canonical).ok()?;
+[1m[94m263[0m [92m+ [0m    let mut file = File::open(&canonical).ok()?;
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:371:17
+    [1m[94m|[0m
+[1m[94m371[0m [1m[94m|[0m         let _ = fs::create_dir_all(parent);
+    [1m[94m|[0m                 [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:373:21
+    [1m[94m|[0m
+[1m[94m373[0m [1m[94m|[0m     let canonical = fs::canonicalize(source_path).unwrap_or_else(|_| source_path.to_path_buf());
+    [1m[94m|[0m                     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:375:23
+    [1m[94m|[0m
+[1m[94m375[0m [1m[94m|[0m     if let Err(err) = fs::write(&hint_path, payload) {
+    [1m[94m|[0m                       [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:392:5
+    [1m[94m|[0m
+[1m[94m392[0m [1m[94m|[0m     fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    [1m[94m|[0m     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:396:9
+    [1m[94m|[0m
+[1m[94m396[0m [1m[94m|[0m         fs::write(&path, trimmed).map_err(|err| err.to_string())?;
+    [1m[94m|[0m         [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:404:9
+    [1m[94m|[0m
+[1m[94m404[0m [1m[94m|[0m         fs::canonicalize(source_path).unwrap_or_else(|_| source_path.to_path_buf());
+    [1m[94m|[0m         [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:437:23
+    [1m[94m|[0m
+[1m[94m437[0m [1m[94m|[0m     let Ok(entries) = fs::read_dir(cache_root()) else {
+    [1m[94m|[0m                       [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:450:23
+    [1m[94m|[0m
+[1m[94m450[0m [1m[94m|[0m         let Ok(raw) = fs::read_to_string(&source_hint_path) else {
+    [1m[94m|[0m                       [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:462:26
+    [1m[94m|[0m
+[1m[94m462[0m [1m[94m|[0m     let metadata = match fs::metadata(path) {
+    [1m[94m|[0m                          [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:477:9
+    [1m[94m|[0m
+[1m[94m477[0m [1m[94m|[0m         fs::remove_file(path)
+    [1m[94m|[0m         [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:542:15
+    [1m[94m|[0m
+[1m[94m542[0m [1m[94m|[0m         match fs::remove_dir_all(path) {
+    [1m[94m|[0m               [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `thread` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:555:17
+    [1m[94m|[0m
+[1m[94m555[0m [1m[94m|[0m                 thread::sleep(Duration::from_millis(retry_in_ms));
+    [1m[94m|[0m                 [1m[91m^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `thread`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `thread`, use `cargo add thread` to add it to your `Cargo.toml`
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::thread;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:754:20
+    [1m[94m|[0m
+[1m[94m754[0m [1m[94m|[0m     let contents = fs::read_to_string(source_path).ok()?;
+    [1m[94m|[0m                    [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:779:14
+    [1m[94m|[0m
+[1m[94m779[0m [1m[94m|[0m             &fs::read_to_string(manifest.text_path).unwrap_or_default(),
+    [1m[94m|[0m              [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:790:41
+    [1m[94m|[0m
+[1m[94m790[0m [1m[94m|[0m         return preview_lines_from_text(&fs::read_to_string(source_path).unwrap_or_default());
+    [1m[94m|[0m                                         [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:812:41
+    [1m[94m|[0m
+[1m[94m812[0m [1m[94m|[0m         return preview_lines_from_text(&fs::read_to_string(source_path).unwrap_or_default());
+    [1m[94m|[0m                                         [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:877:5
+    [1m[94m|[0m
+[1m[94m877[0m [1m[94m|[0m     fs::read_to_string(tts_text_path)
+    [1m[94m|[0m     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:911:9
+    [1m[94m|[0m
+[1m[94m911[0m [1m[94m|[0m         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    [1m[94m|[0m         [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:918:5
+    [1m[94m|[0m
+[1m[94m918[0m [1m[94m|[0m     fs::write(path, encoded).map_err(|err| err.to_string())?;
+    [1m[94m|[0m     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m 26[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Instant` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:353:17
+    [1m[94m|[0m
+[1m[94m353[0m [1m[94m|[0m     let start = Instant::now();
+    [1m[94m|[0m                 [1m[91m^^^^^^^[0m [1m[91muse of undeclared type `Instant`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: struct `crate::session::settings::Instant` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this struct
+    [1m[94m|[0m
+[1m[94m  1[0m [92m+ use std::time::Instant;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:580:16
+    [1m[94m|[0m
+[1m[94m580[0m [1m[94m|[0m     let html = fs::read_to_string(path)
+    [1m[94m|[0m                [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m  1[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Instant` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1854:17
+     [1m[94m|[0m
+[1m[94m1854[0m [1m[94m|[0m     let start = Instant::now();
+     [1m[94m|[0m                 [1m[91m^^^^^^^[0m [1m[91muse of undeclared type `Instant`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mnote[0m: struct `crate::session::settings::Instant` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this struct
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::time::Instant;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Command` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1869:18
+     [1m[94m|[0m
+[1m[94m1869[0m [1m[94m|[0m     let output = Command::new("pandoc")
+     [1m[94m|[0m                  [1m[91m^^^^^^^[0m [1m[91muse of undeclared type `Command`[0m
+     [1m[94m|[0m
+[1m[96mhelp[0m: consider importing this struct
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::process::Command;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2029:16
+     [1m[94m|[0m
+[1m[94m2029[0m [1m[94m|[0m     let meta = fs::metadata(path)
+     [1m[94m|[0m                [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2056:16
+     [1m[94m|[0m
+[1m[94m2056[0m [1m[94m|[0m     let meta = fs::metadata(path)
+     [1m[94m|[0m                [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2115:26
+     [1m[94m|[0m
+[1m[94m2115[0m [1m[94m|[0m     let meta_str = match fs::read_to_string(&meta_path) {
+     [1m[94m|[0m                          [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2155:22
+     [1m[94m|[0m
+[1m[94m2155[0m [1m[94m|[0m     let text = match fs::read_to_string(&text_path) {
+     [1m[94m|[0m                      [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2196:26
+     [1m[94m|[0m
+[1m[94m2196[0m [1m[94m|[0m     let meta_str = match fs::read_to_string(&meta_path) {
+     [1m[94m|[0m                          [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2236:22
+     [1m[94m|[0m
+[1m[94m2236[0m [1m[94m|[0m     let text = match fs::read_to_string(&text_path) {
+     [1m[94m|[0m                      [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2312:9
+     [1m[94m|[0m
+[1m[94m2312[0m [1m[94m|[0m         fs::create_dir_all(parent)
+     [1m[94m|[0m         [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2316:5
+     [1m[94m|[0m
+[1m[94m2316[0m [1m[94m|[0m     fs::write(&text_path, text).with_context(|| {
+     [1m[94m|[0m     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2325:5
+     [1m[94m|[0m
+[1m[94m2325[0m [1m[94m|[0m     fs::write(&meta_path, meta_toml).with_context(|| {
+     [1m[94m|[0m     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2350:9
+     [1m[94m|[0m
+[1m[94m2350[0m [1m[94m|[0m         fs::create_dir_all(parent)
+     [1m[94m|[0m         [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2354:5
+     [1m[94m|[0m
+[1m[94m2354[0m [1m[94m|[0m     fs::write(&text_path, text).with_context(|| {
+     [1m[94m|[0m     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2393:5
+     [1m[94m|[0m
+[1m[94m2393[0m [1m[94m|[0m     fs::write(&meta_path, meta_toml).with_context(|| {
+     [1m[94m|[0m     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:3975:15
+     [1m[94m|[0m
+[1m[94m3975[0m [1m[94m|[0m     let raw = fs::read_to_string(&report_path).with_context(|| {
+     [1m[94m|[0m               [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:3990:17
+     [1m[94m|[0m
+[1m[94m3990[0m [1m[94m|[0m     let bytes = fs::read(path)
+     [1m[94m|[0m                 [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:4056:15
+     [1m[94m|[0m
+[1m[94m4056[0m [1m[94m|[0m     let raw = fs::read_to_string(config_path).with_context(|| {
+     [1m[94m|[0m               [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+     [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+     [1m[94m|[0m
+[1m[94m   1[0m [92m+ use std::fs;[0m
+     [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Instant` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:543:17
+    [1m[94m|[0m
+[1m[94m543[0m [1m[94m|[0m     let start = Instant::now();
+    [1m[94m|[0m                 [1m[91m^^^^^^^[0m [1m[91muse of undeclared type `Instant`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: struct `crate::session::settings::Instant` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this struct
+    [1m[94m|[0m
+[1m[94m  6[0m [92m+ use std::time::Instant;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:592:20
+    [1m[94m|[0m
+[1m[94m592[0m [1m[94m|[0m     let text_len = fs::read_to_string(&manifest.text_path)
+    [1m[94m|[0m                    [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m  6[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:615:16
+    [1m[94m|[0m
+[1m[94m615[0m [1m[94m|[0m     let data = fs::read_to_string(path)
+    [1m[94m|[0m                [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m  6[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:638:25
+    [1m[94m|[0m
+[1m[94m638[0m [1m[94m|[0m         let canonical = fs::canonicalize(&candidate).unwrap_or(candidate);
+    [1m[94m|[0m                         [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m  6[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:682:5
+    [1m[94m|[0m
+[1m[94m682[0m [1m[94m|[0m     fs::create_dir_all(&image_dir)
+    [1m[94m|[0m     [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m  6[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:699:13
+    [1m[94m|[0m
+[1m[94m699[0m [1m[94m|[0m             fs::create_dir_all(parent).with_context(|| {
+    [1m[94m|[0m             [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m  6[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `fs` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:704:13
+    [1m[94m|[0m
+[1m[94m704[0m [1m[94m|[0m             fs::write(&output, &bytes)
+    [1m[94m|[0m             [1m[91m^^[0m [1m[91muse of unresolved module or unlinked crate `fs`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `fs`, use `cargo add fs` to add it to your `Cargo.toml`
+    [1m[94m= [0m[1mnote[0m: module `crate::session::settings::fs` exists but is inaccessible
+[1m[96mhelp[0m: consider importing this module
+    [1m[94m|[0m
+[1m[94m  6[0m [92m+ use std::fs;[0m
+    [1m[94m|[0m
+
+[1m[33mwarning[0m[1m: unused imports: `parse_config` and `serialize_config`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/bookmarks_config.rs:1:32
+  [1m[94m|[0m
+[1m[94m1[0m [1m[94m|[0m use crate::config::{AppConfig, parse_config, serialize_config};
+  [1m[94m|[0m                                [1m[33m^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: unused imports: `debug` and `warn`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/bookmarks_config.rs:8:15
+  [1m[94m|[0m
+[1m[94m8[0m [1m[94m|[0m use tracing::{debug, warn};
+  [1m[94m|[0m               [1m[33m^^^^^[0m  [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `BROWSER_TABS_SUBDIR`, `BROWSER_TAB_ASSETS_SUBDIR`, `BROWSER_TAB_FETCH_USER_AGENT`, `BROWSER_TAB_HTML_FILE`, `BROWSER_TAB_MANIFEST_FILE`, `BROWSER_TAB_MANIFEST_VERSION`, `BROWSER_TAB_RAW_HTML_FILE`, `BROWSER_TAB_TEXT_FILE`, and `cache_root`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:2:5
+  [1m[94m|[0m
+[1m[94m2[0m [1m[94m|[0m     BROWSER_TAB_ASSETS_SUBDIR, BROWSER_TAB_FETCH_USER_AGENT, BROWSER_TAB_HTML_FILE,
+  [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m3[0m [1m[94m|[0m     BROWSER_TAB_MANIFEST_FILE, BROWSER_TAB_MANIFEST_VERSION, BROWSER_TAB_RAW_HTML_FILE,
+  [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m4[0m [1m[94m|[0m     BROWSER_TAB_TEXT_FILE, BROWSER_TABS_SUBDIR, cache_root,
+  [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused import: `std::time::Duration`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:22:5
+   [1m[94m|[0m
+[1m[94m22[0m [1m[94m|[0m use std::time::Duration;
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `debug`, `info`, and `warn`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:23:15
+   [1m[94m|[0m
+[1m[94m23[0m [1m[94m|[0m use tracing::{debug, info, warn};
+   [1m[94m|[0m               [1m[33m^^^^^[0m  [1m[33m^^^^[0m  [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused import: `trace`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:37:22
+   [1m[94m|[0m
+[1m[94m37[0m [1m[94m|[0m use tracing::{debug, trace, warn};
+   [1m[94m|[0m                      [1m[33m^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `debug`, `info`, and `warn`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/config/io.rs:7:15
+  [1m[94m|[0m
+[1m[94m7[0m [1m[94m|[0m use tracing::{debug, info, warn};
+  [1m[94m|[0m               [1m[33m^^^^^[0m  [1m[33m^^^^[0m  [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused import: `warn`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:18:21
+   [1m[94m|[0m
+[1m[94m18[0m [1m[94m|[0m use tracing::{info, warn};
+   [1m[94m|[0m                     [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `is_browser_tab_manifest` and `load_browser_tab_manifest`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:9:30
+  [1m[94m|[0m
+[1m[94m9[0m [1m[94m|[0m use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
+  [1m[94m|[0m                              [1m[33m^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `ensure_not_cancelled`, `load_source_content`, and `record_markdown_availability`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:35:5
+   [1m[94m|[0m
+[1m[94m35[0m [1m[94m|[0m     ensure_not_cancelled, is_epub, is_markdown, load_source_content, record_markdown_availability,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^[0m                        [1m[33m^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[91merror[E0425][0m[1m: cannot find function `rewrite_srcset_to_local` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:809:17
+    [1m[94m|[0m
+[1m[94m809[0m [1m[94m|[0m                 rewrite_srcset_to_local(raw, base_url, html_path, asset_lookup)
+    [1m[94m|[0m                 [1m[91m^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[91merror[E0425][0m[1m: cannot find function `rewrite_css_urls_to_local` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:818:17
+    [1m[94m|[0m
+[1m[94m818[0m [1m[94m|[0m                 rewrite_css_urls_to_local(css, base_url, html_path, asset_lookup)
+    [1m[94m|[0m                 [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[91merror[E0425][0m[1m: cannot find function `rewrite_css_urls_to_local` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:825:29
+    [1m[94m|[0m
+[1m[94m825[0m [1m[94m|[0m             let rewritten = rewrite_css_urls_to_local(css, base_url, html_path, asset_lookup);
+    [1m[94m|[0m                             [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Url` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:955:22
+    [1m[94m|[0m
+[1m[94m955[0m [1m[94m|[0m     if let Ok(url) = Url::parse(trimmed) {
+    [1m[94m|[0m                      [1m[91m^^^[0m [1m[91muse of undeclared type `Url`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Url` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:958:16
+    [1m[94m|[0m
+[1m[94m958[0m [1m[94m|[0m     let base = Url::parse(base_url).ok()?;
+    [1m[94m|[0m                [1m[91m^^^[0m [1m[91muse of undeclared type `Url`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Sha256` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:264:22
+    [1m[94m|[0m
+[1m[94m264[0m [1m[94m|[0m     let mut hasher = Sha256::new();
+    [1m[94m|[0m                      [1m[91m^^^^^^[0m [1m[91muse of undeclared type `Sha256`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Sha256` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:387:22
+    [1m[94m|[0m
+[1m[94m387[0m [1m[94m|[0m     let mut hasher = Sha256::new();
+    [1m[94m|[0m                      [1m[91m^^^^^^[0m [1m[91muse of undeclared type `Sha256`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `EpubDoc` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:709:26
+    [1m[94m|[0m
+[1m[94m709[0m [1m[94m|[0m         && let Ok(doc) = EpubDoc::new(source_path)
+    [1m[94m|[0m                          [1m[91m^^^^^^^[0m [1m[91muse of undeclared type `EpubDoc`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `EpubDoc` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:820:30
+    [1m[94m|[0m
+[1m[94m820[0m [1m[94m|[0m         && let Ok(mut doc) = EpubDoc::new(source_path)
+    [1m[94m|[0m                              [1m[91m^^^^^^^[0m [1m[91muse of undeclared type `EpubDoc`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `EpubDoc` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:901:19
+    [1m[94m|[0m
+[1m[94m901[0m [1m[94m|[0m     let mut doc = EpubDoc::new(source_path).ok()?;
+    [1m[94m|[0m                   [1m[91m^^^^^^^[0m [1m[91muse of undeclared type `EpubDoc`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `FilterType` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:909:39
+    [1m[94m|[0m
+[1m[94m909[0m [1m[94m|[0m     let thumb = image.resize(68, 100, FilterType::Triangle);
+    [1m[94m|[0m                                       [1m[91m^^^^^^^^^^[0m [1m[91muse of undeclared type `FilterType`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `JpegEncoder` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:914:23
+    [1m[94m|[0m
+[1m[94m914[0m [1m[94m|[0m     let mut encoder = JpegEncoder::new_with_quality(Cursor::new(&mut encoded), 80);
+    [1m[94m|[0m                       [1m[91m^^^^^^^^^^^[0m [1m[91muse of undeclared type `JpegEncoder`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `EpubDoc` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:593:9
+    [1m[94m|[0m
+[1m[94m593[0m [1m[94m|[0m         EpubDoc::new(path).with_context(|| format!("Failed to open EPUB at {}", path.display()))?;
+    [1m[94m|[0m         [1m[91m^^^^^^^[0m [1m[91muse of undeclared type `EpubDoc`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Html` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:646:15
+    [1m[94m|[0m
+[1m[94m646[0m [1m[94m|[0m     let doc = Html::parse_document(cleaned.as_ref());
+    [1m[94m|[0m               [1m[91m^^^^[0m [1m[91muse of undeclared type `Html`[0m
+    [1m[94m|[0m
+[1m[96mhelp[0m: there is an enum variant `crate::session::PrettyKind::Html`; try using the variant's enum
+    [1m[94m|[0m
+[1m[94m646[0m [91m- [0m    let doc = [91mHtml[0m::parse_document(cleaned.as_ref());
+[1m[94m646[0m [92m+ [0m    let doc = [92mcrate::session::PrettyKind[0m::parse_document(cleaned.as_ref());
+    [1m[94m|[0m
+
+[1m[91merror[E0689][0m[1m: can't call method `clamp` on ambiguous numeric type `{float}`[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:1752:10
+     [1m[94m|[0m
+[1m[94m1752[0m [1m[94m|[0m         .clamp(0.0, 1.0);
+     [1m[94m|[0m          [1m[91m^^^^^[0m
+
+[1m[91merror[E0277][0m[1m: the size for values of type `str` cannot be known at compilation time[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2115:9
+     [1m[94m|[0m
+[1m[94m2115[0m [1m[94m|[0m     let meta_str = match fs::read_to_string(&meta_path) {
+     [1m[94m|[0m         [1m[91m^^^^^^^^[0m [1m[91mdoesn't have a size known at compile-time[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: the trait `Sized` is not implemented for `str`
+     [1m[94m= [0m[1mnote[0m: all local variables must have a statically known size
+
+[1m[91merror[E0277][0m[1m: the size for values of type `str` cannot be known at compilation time[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2116:12
+     [1m[94m|[0m
+[1m[94m2116[0m [1m[94m|[0m         Ok(v) => v,
+     [1m[94m|[0m            [1m[91m^[0m [1m[91mdoesn't have a size known at compile-time[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: the trait `Sized` is not implemented for `str`
+     [1m[94m= [0m[1mnote[0m: all local variables must have a statically known size
+
+[1m[91merror[E0277][0m[1m: the size for values of type `str` cannot be known at compilation time[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2116:9
+     [1m[94m|[0m
+[1m[94m2116[0m [1m[94m|[0m         Ok(v) => v,
+     [1m[94m|[0m         [1m[91m^^^^^[0m [1m[91mdoesn't have a size known at compile-time[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: the trait `Sized` is not implemented for `str`
+[1m[92mnote[0m: required by a bound in `std::prelude::v1::Ok`
+    [1m[94m--> [0m/home/admin/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:557:17
+     [1m[94m|[0m
+[1m[94m 557[0m [1m[94m|[0m pub enum Result<T, E> {
+     [1m[94m|[0m                 [1m[92m^[0m [1m[92mrequired by this bound in `std::prelude::v1::Ok`[0m
+[1m[94m...[0m
+[1m[94m 561[0m [1m[94m|[0m     Ok(#[stable(feature = "rust1", since = "1.0.0")] T),
+     [1m[94m|[0m     [1m[94m--[0m [1m[94mrequired by a bound in this tuple variant[0m
+
+[1m[91merror[E0277][0m[1m: the size for values of type `str` cannot be known at compilation time[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2196:9
+     [1m[94m|[0m
+[1m[94m2196[0m [1m[94m|[0m     let meta_str = match fs::read_to_string(&meta_path) {
+     [1m[94m|[0m         [1m[91m^^^^^^^^[0m [1m[91mdoesn't have a size known at compile-time[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: the trait `Sized` is not implemented for `str`
+     [1m[94m= [0m[1mnote[0m: all local variables must have a statically known size
+
+[1m[91merror[E0277][0m[1m: the size for values of type `str` cannot be known at compilation time[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2197:12
+     [1m[94m|[0m
+[1m[94m2197[0m [1m[94m|[0m         Ok(v) => v,
+     [1m[94m|[0m            [1m[91m^[0m [1m[91mdoesn't have a size known at compile-time[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: the trait `Sized` is not implemented for `str`
+     [1m[94m= [0m[1mnote[0m: all local variables must have a statically known size
+
+[1m[91merror[E0277][0m[1m: the size for values of type `str` cannot be known at compilation time[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:2197:9
+     [1m[94m|[0m
+[1m[94m2197[0m [1m[94m|[0m         Ok(v) => v,
+     [1m[94m|[0m         [1m[91m^^^^^[0m [1m[91mdoesn't have a size known at compile-time[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: the trait `Sized` is not implemented for `str`
+[1m[92mnote[0m: required by a bound in `std::prelude::v1::Ok`
+    [1m[94m--> [0m/home/admin/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:557:17
+     [1m[94m|[0m
+[1m[94m 557[0m [1m[94m|[0m pub enum Result<T, E> {
+     [1m[94m|[0m                 [1m[92m^[0m [1m[92mrequired by this bound in `std::prelude::v1::Ok`[0m
+[1m[94m...[0m
+[1m[94m 561[0m [1m[94m|[0m     Ok(#[stable(feature = "rust1", since = "1.0.0")] T),
+     [1m[94m|[0m     [1m[94m--[0m [1m[94mrequired by a bound in this tuple variant[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Sha256` in this scope[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader/source_pipeline.rs:3992:22
+     [1m[94m|[0m
+[1m[94m3992[0m [1m[94m|[0m     let mut hasher = Sha256::new();
+     [1m[94m|[0m                      [1m[91m^^^^^^[0m [1m[91muse of undeclared type `Sha256`[0m
+
+[1m[91merror[E0277][0m[1m: the size for values of type `str` cannot be known at compilation time[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:691:36
+    [1m[94m|[0m
+[1m[94m691[0m [1m[94m|[0m     for (_idx, (id, resource_path, mime)) in entries.into_iter().enumerate() {
+    [1m[94m|[0m                                    [1m[91m^^^^[0m [1m[91mdoesn't have a size known at compile-time[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: the trait `Sized` is not implemented for `str`
+    [1m[94m= [0m[1mnote[0m: all local variables must have a statically known size
+
+[1m[91merror[E0277][0m[1m: the size for values of type `str` cannot be known at compilation time[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:691:5
+    [1m[94m|[0m
+[1m[94m691[0m [1m[94m|[0m [1m[91m/[0m     for (_idx, (id, resource_path, mime)) in entries.into_iter().enumerate() {
+[1m[94m692[0m [1m[94m|[0m [1m[91m|[0m         let Some((bytes, _)) = doc.get_resource(&id) else {
+[1m[94m693[0m [1m[94m|[0m [1m[91m|[0m             continue;
+[1m[94m694[0m [1m[94m|[0m [1m[91m|[0m         };
+[1m[94m...[0m   [1m[91m|[0m
+[1m[94m729[0m [1m[94m|[0m [1m[91m|[0m     }
+    [1m[94m|[0m [1m[91m|_____^[0m [1m[91mdoesn't have a size known at compile-time[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: within `(_, (_, _, str))`, the trait `Sized` is not implemented for `str`
+    [1m[94m= [0m[1mnote[0m: required because it appears within the type `(_, _, str)`
+    [1m[94m= [0m[1mnote[0m: required because it appears within the type `(_, (_, _, str))`
+[1m[92mnote[0m: required by an implicit `Sized` bound in `std::option::Option`
+   [1m[94m--> [0m/home/admin/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs:600:17
+    [1m[94m|[0m
+[1m[94m600[0m [1m[94m|[0m pub enum Option<T> {
+    [1m[94m|[0m                 [1m[92m^[0m [1m[92mrequired by the implicit `Sized` requirement on this type parameter in `Option`[0m
+
+[1m[91merror[E0277][0m[1m: the size for values of type `[u8]` cannot be known at compilation time[0m
+    [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:691:21
+     [1m[94m|[0m
+[1m[94m 691[0m [1m[94m|[0m     for (_idx, (id, resource_path, mime)) in entries.into_iter().enumerate() {
+     [1m[94m|[0m                     [1m[91m^^^^^^^^^^^^^[0m [1m[91mdoesn't have a size known at compile-time[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: within `std::path::Path`, the trait `Sized` is not implemented for `[u8]`
+[1m[92mnote[0m: required because it appears within the type `std::path::Path`
+    [1m[94m--> [0m/home/admin/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs:2327:12
+     [1m[94m|[0m
+[1m[94m2327[0m [1m[94m|[0m pub struct Path {
+     [1m[94m|[0m            [1m[92m^^^^[0m
+     [1m[94m= [0m[1mnote[0m: all local variables must have a statically known size
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `sonic_rs_sys` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:409:22
+    [1m[94m|[0m
+[1m[94m409[0m [1m[94m|[0m         let stream = sonic_rs_sys::sonicCreateStream(sample_rate as i32, channels as i32);
+    [1m[94m|[0m                      [1m[91m^^^^^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `sonic_rs_sys`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sonic_rs_sys`, use `cargo add sonic_rs_sys` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `sonic_rs_sys` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:410:9
+    [1m[94m|[0m
+[1m[94m410[0m [1m[94m|[0m         sonic_rs_sys::sonicSetSpeed(stream, speed);
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `sonic_rs_sys`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sonic_rs_sys`, use `cargo add sonic_rs_sys` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `sonic_rs_sys` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:411:9
+    [1m[94m|[0m
+[1m[94m411[0m [1m[94m|[0m         sonic_rs_sys::sonicWriteFloatToStream(stream, samples.as_ptr(), samples.len() as i32);
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `sonic_rs_sys`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sonic_rs_sys`, use `cargo add sonic_rs_sys` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `sonic_rs_sys` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:412:9
+    [1m[94m|[0m
+[1m[94m412[0m [1m[94m|[0m         sonic_rs_sys::sonicFlushStream(stream);
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `sonic_rs_sys`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sonic_rs_sys`, use `cargo add sonic_rs_sys` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `sonic_rs_sys` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:413:27
+    [1m[94m|[0m
+[1m[94m413[0m [1m[94m|[0m         let num_samples = sonic_rs_sys::sonicSamplesAvailable(stream);
+    [1m[94m|[0m                           [1m[91m^^^^^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `sonic_rs_sys`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sonic_rs_sys`, use `cargo add sonic_rs_sys` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `sonic_rs_sys` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:415:13
+    [1m[94m|[0m
+[1m[94m415[0m [1m[94m|[0m             sonic_rs_sys::sonicDestroyStream(stream);
+    [1m[94m|[0m             [1m[91m^^^^^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `sonic_rs_sys`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sonic_rs_sys`, use `cargo add sonic_rs_sys` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `sonic_rs_sys` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:419:9
+    [1m[94m|[0m
+[1m[94m419[0m [1m[94m|[0m         sonic_rs_sys::sonicReadFloatFromStream(
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `sonic_rs_sys`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sonic_rs_sys`, use `cargo add sonic_rs_sys` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `sonic_rs_sys` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:424:9
+    [1m[94m|[0m
+[1m[94m424[0m [1m[94m|[0m         sonic_rs_sys::sonicDestroyStream(stream);
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `sonic_rs_sys`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `sonic_rs_sys`, use `cargo add sonic_rs_sys` to add it to your `Cargo.toml`
+
+[1m[33mwarning[0m[1m: variable does not need to be mutable[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/browser_tabs.rs:257:13
+    [1m[94m|[0m
+[1m[94m257[0m [1m[94m|[0m         let mut builder = reqwest::Client::builder();
+    [1m[94m|[0m             [1m[94m----[0m[1m[33m^^^^^^^[0m
+    [1m[94m|[0m             [1m[94m|[0m
+    [1m[94m|[0m             [1m[94mhelp: remove this `mut`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: unused variable: `timeout_ms`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/browser_tabs.rs:252:32
+    [1m[94m|[0m
+[1m[94m252[0m [1m[94m|[0m     pub fn new(base_url: &str, timeout_ms: u64) -> Result<Self> {
+    [1m[94m|[0m                                [1m[33m^^^^^^^^^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_timeout_ms`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+[1mSome errors have detailed explanations: E0277, E0425, E0432, E0433, E0689.[0m
+[1mFor more information about an error, try `rustc --explain E0277`.[0m
+[1m[33mwarning[0m: `lanternleaf-core` (lib) generated 12 warnings
+[1m[91merror[0m: could not compile `lanternleaf-core` (lib) due to 119 previous errors; 12 warnings emitted

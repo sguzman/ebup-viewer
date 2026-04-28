@@ -1,0 +1,49 @@
+[1m[92m   Compiling[0m proc-macro2 v1.0.106
+[1m[92m   Compiling[0m quote v1.0.44
+[1m[92m   Compiling[0m syn v2.0.115
+[1m[92m   Compiling[0m serde_derive v1.0.228
+[1m[92m    Checking[0m serde v1.0.228
+[1m[92m    Checking[0m lanternleaf v0.1.0 (/win/linux/Code/projects/lantern-leaf)
+[1m[91merror[E0432][0m[1m: unresolved import `hound`[0m
+ [1m[94m--> [0msrc/tts_worker.rs:1:5
+  [1m[94m|[0m
+[1m[94m1[0m [1m[94m|[0m use hound::WavSpec;
+  [1m[94m|[0m     [1m[91m^^^^^[0m [1m[91muse of unresolved module or unlinked crate `hound`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `hound`, use `cargo add hound` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `piper_rs` in this scope[0m
+ [1m[94m--> [0msrc/tts_worker.rs:3:5
+  [1m[94m|[0m
+[1m[94m3[0m [1m[94m|[0m use piper_rs::synth::PiperSpeechSynthesizer;
+  [1m[94m|[0m     [1m[91m^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `piper_rs`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `piper_rs`, use `cargo add piper_rs` to add it to your `Cargo.toml`
+
+[1m[91merror[E0432][0m[1m: unresolved import `piper_rs`[0m
+ [1m[94m--> [0msrc/tts_worker.rs:2:5
+  [1m[94m|[0m
+[1m[94m2[0m [1m[94m|[0m use piper_rs::from_config_path;
+  [1m[94m|[0m     [1m[91m^^^^^^^^[0m [1m[91muse of unresolved module or unlinked crate `piper_rs`[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `piper_rs`, use `cargo add piper_rs` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `hound` in this scope[0m
+   [1m[94m--> [0msrc/tts_worker.rs:175:24
+    [1m[94m|[0m
+[1m[94m175[0m [1m[94m|[0m         sample_format: hound::SampleFormat::Int,
+    [1m[94m|[0m                        [1m[91m^^^^^[0m [1m[91muse of unresolved module or unlinked crate `hound`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `hound`, use `cargo add hound` to add it to your `Cargo.toml`
+
+[1m[91merror[E0433][0m[1m: cannot find module or crate `hound` in this scope[0m
+   [1m[94m--> [0msrc/tts_worker.rs:178:22
+    [1m[94m|[0m
+[1m[94m178[0m [1m[94m|[0m     let mut writer = hound::WavWriter::create(&temp_path, spec)?;
+    [1m[94m|[0m                      [1m[91m^^^^^[0m [1m[91muse of unresolved module or unlinked crate `hound`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: if you wanted to use a crate named `hound`, use `cargo add hound` to add it to your `Cargo.toml`
+
+[1mSome errors have detailed explanations: E0432, E0433.[0m
+[1mFor more information about an error, try `rustc --explain E0432`.[0m
+[1m[91merror[0m: could not compile `lanternleaf` (bin "lanternleaf") due to 5 previous errors

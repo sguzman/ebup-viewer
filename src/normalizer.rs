@@ -2,9 +2,11 @@ use crate::cache::normalized_dir;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -208,25 +210,33 @@ impl TextNormalizer {
     }
 
     pub fn load(path: &Path) -> Self {
-        match fs::read_to_string(path) {
-            Ok(contents) => match toml::from_str::<NormalizerFile>(&contents) {
-                Ok(file) => {
-                    let mut config = file.normalization;
-                    config
-                        .abbreviations
-                        .extend(load_external_abbreviations(path));
-                    tracing::info!(path = %path.display(), "Loaded text normalizer config");
-                    Self { config }
-                }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            match fs::read_to_string(path) {
+                Ok(contents) => match toml::from_str::<NormalizerFile>(&contents) {
+                    Ok(file) => {
+                        let mut config = file.normalization;
+                        config
+                            .abbreviations
+                            .extend(load_external_abbreviations(path));
+                        tracing::info!(path = %path.display(), "Loaded text normalizer config");
+                        Self { config }
+                    }
+                    Err(err) => {
+                        tracing::warn!(path = %path.display(), "Invalid normalizer config TOML: {err}");
+                        Self::default()
+                    }
+                },
                 Err(err) => {
-                    tracing::warn!(path = %path.display(), "Invalid normalizer config TOML: {err}");
+                    tracing::warn!(path = %path.display(), "Falling back to default normalizer config: {err}");
                     Self::default()
                 }
-            },
-            Err(err) => {
-                tracing::warn!(path = %path.display(), "Falling back to default normalizer config: {err}");
-                Self::default()
             }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = path;
+            Self::default()
         }
     }
 
@@ -258,10 +268,13 @@ impl TextNormalizer {
         }
 
         let plan = self.plan_page(display_sentences);
-        if let Some(parent) = cache_path.parent() {
-            let _ = fs::create_dir_all(parent);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(parent) = cache_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            self.write_page_plan_cache(&cache_path, page_idx, &plan);
         }
-        self.write_page_plan_cache(&cache_path, page_idx, &plan);
         plan
     }
 
@@ -311,8 +324,10 @@ impl TextNormalizer {
         };
 
         if let Some(parent) = page_cache_path.parent() {
+            #[cfg(not(target_arch = "wasm32"))]
             let _ = fs::create_dir_all(parent);
         }
+        #[cfg(not(target_arch = "wasm32"))]
         self.write_page_plan_cache(&page_cache_path, page_idx, &plan);
 
         plan
@@ -597,10 +612,17 @@ impl TextNormalizer {
 
     fn config_hash(&self) -> String {
         let serialized = toml::to_string(&self.config).unwrap_or_default();
-        let mut hasher = Sha256::new();
-        hasher.update(NORMALIZER_PIPELINE_REV.as_bytes());
-        hasher.update(serialized.as_bytes());
-        format!("{:x}", hasher.finalize())
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut hasher = Sha256::new();
+            hasher.update(NORMALIZER_PIPELINE_REV.as_bytes());
+            hasher.update(serialized.as_bytes());
+            format!("{:x}", hasher.finalize())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            format!("wasm-config-{}", serialized.len())
+        }
     }
 
     fn normalized_cache_path(
@@ -633,6 +655,7 @@ impl TextNormalizer {
         let source_hash = hash_sentence(sentence);
         let cache_path = self.normalized_sentence_cache_path(epub_path, &source_hash, config_hash);
 
+        #[cfg(not(target_arch = "wasm32"))]
         if let Ok(contents) = fs::read_to_string(&cache_path) {
             if let Ok(cached) = toml::from_str::<NormalizedSentenceCache>(&contents) {
                 if let Some(chunks) = cached.chunks {
@@ -669,6 +692,7 @@ impl TextNormalizer {
             normalized,
             chunks: Some(chunks.clone()),
         };
+        #[cfg(not(target_arch = "wasm32"))]
         self.write_normalized_sentence_cache(&cache_path, &cached);
 
         if chunks.is_empty() {
@@ -679,21 +703,28 @@ impl TextNormalizer {
     }
 
     fn write_normalized_sentence_cache(&self, cache_path: &Path, cached: &NormalizedSentenceCache) {
-        if let Some(parent) = cache_path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        match toml::to_string(cached) {
-            Ok(serialized) => {
-                if let Err(err) = fs::write(cache_path, serialized) {
-                    tracing::warn!(
-                        path = %cache_path.display(),
-                        "Failed to write normalized sentence cache: {err}"
-                    );
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(parent) = cache_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            match toml::to_string(cached) {
+                Ok(serialized) => {
+                    if let Err(err) = fs::write(cache_path, serialized) {
+                        tracing::warn!(
+                            path = %cache_path.display(),
+                            "Failed to write normalized sentence cache: {err}"
+                        );
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!("Failed to serialize normalized sentence cache: {err}");
                 }
             }
-            Err(err) => {
-                tracing::warn!("Failed to serialize normalized sentence cache: {err}");
-            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (cache_path, cached);
         }
     }
 
@@ -702,47 +733,61 @@ impl TextNormalizer {
         cache_path: &Path,
         page_idx: usize,
     ) -> Option<PageNormalization> {
-        let contents = fs::read_to_string(cache_path).ok()?;
-        if let Ok(cached) = toml::from_str::<PageNormalization>(&contents) {
-            tracing::debug!(
-                path = %cache_path.display(),
-                page = page_idx + 1,
-                "Loaded normalized page cache"
-            );
-            return Some(cached);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let contents = fs::read_to_string(cache_path).ok()?;
+            if let Ok(cached) = toml::from_str::<PageNormalization>(&contents) {
+                tracing::debug!(
+                    path = %cache_path.display(),
+                    page = page_idx + 1,
+                    "Loaded normalized page cache"
+                );
+                return Some(cached);
+            }
+            if let Ok(cached) = toml::from_str::<PageNormalizationCache>(&contents) {
+                let plan = cached.into_plan();
+                tracing::debug!(
+                    path = %cache_path.display(),
+                    page = page_idx + 1,
+                    "Loaded normalized page cache"
+                );
+                return Some(plan);
+            }
         }
-        if let Ok(cached) = toml::from_str::<PageNormalizationCache>(&contents) {
-            let plan = cached.into_plan();
-            tracing::debug!(
-                path = %cache_path.display(),
-                page = page_idx + 1,
-                "Loaded normalized page cache"
-            );
-            return Some(plan);
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (cache_path, page_idx);
         }
         None
     }
 
     fn write_page_plan_cache(&self, cache_path: &Path, page_idx: usize, plan: &PageNormalization) {
-        let serializable = PageNormalizationCache::from_plan(plan);
-        match toml::to_string(&serializable) {
-            Ok(serialized) => {
-                if let Err(err) = fs::write(cache_path, serialized) {
-                    tracing::warn!(
-                        path = %cache_path.display(),
-                        "Failed to write normalized page cache: {err}"
-                    );
-                } else {
-                    tracing::debug!(
-                        path = %cache_path.display(),
-                        page = page_idx + 1,
-                        "Stored normalized page cache"
-                    );
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let serializable = PageNormalizationCache::from_plan(plan);
+            match toml::to_string(&serializable) {
+                Ok(serialized) => {
+                    if let Err(err) = fs::write(cache_path, serialized) {
+                        tracing::warn!(
+                            path = %cache_path.display(),
+                            "Failed to write normalized page cache: {err}"
+                        );
+                    } else {
+                        tracing::debug!(
+                            path = %cache_path.display(),
+                            page = page_idx + 1,
+                            "Stored normalized page cache"
+                        );
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!("Failed to serialize normalized page cache: {err}");
                 }
             }
-            Err(err) => {
-                tracing::warn!("Failed to serialize normalized page cache: {err}");
-            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (cache_path, page_idx, plan);
         }
     }
 }
@@ -773,26 +818,34 @@ fn resolve_default_normalizer_path() -> PathBuf {
 
 fn load_external_abbreviations(normalizer_config_path: &Path) -> AbbreviationConfig {
     let path = resolve_abbreviations_path(normalizer_config_path);
-    let Ok(contents) = fs::read_to_string(&path) else {
-        return AbbreviationConfig::default();
-    };
-    match toml::from_str::<AbbreviationsFile>(&contents) {
-        Ok(file) => {
-            let merged = file.abbreviations.merged();
-            tracing::info!(
-                path = %path.display(),
-                count = merged.case.len() + merged.nocase.len(),
-                "Loaded external abbreviations config"
-            );
-            merged
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let Ok(contents) = fs::read_to_string(&path) else {
+            return AbbreviationConfig::default();
+        };
+        match toml::from_str::<AbbreviationsFile>(&contents) {
+            Ok(file) => {
+                let merged = file.abbreviations.merged();
+                tracing::info!(
+                    path = %path.display(),
+                    count = merged.case.len() + merged.nocase.len(),
+                    "Loaded external abbreviations config"
+                );
+                merged
+            }
+            Err(err) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    "Invalid abbreviations config TOML: {err}"
+                );
+                AbbreviationConfig::default()
+            }
         }
-        Err(err) => {
-            tracing::warn!(
-                path = %path.display(),
-                "Invalid abbreviations config TOML: {err}"
-            );
-            AbbreviationConfig::default()
-        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = path;
+        AbbreviationConfig::default()
     }
 }
 

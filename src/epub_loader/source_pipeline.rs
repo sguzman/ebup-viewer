@@ -9,17 +9,23 @@ use super::{
 use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
 use crate::cancellation::CancellationToken;
 use anyhow::{Context, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use epub::doc::EpubDoc;
 use once_cell::sync::Lazy;
 use regex::Regex;
+#[cfg(not(target_arch = "wasm32"))]
 use scraper::Html;
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use std::time::UNIX_EPOCH;
 use tracing::{info, warn};
@@ -41,6 +47,45 @@ static RE_STRIP_SCRIPT_STYLE: Lazy<Regex> = Lazy::new(|| {
 static RE_STRIP_HTML_COMMENTS: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?is)<!--.*?-->").expect("valid html comment regex"));
 
+pub(super) fn record_markdown_availability(path: &Path, has_structured_markdown: bool) {
+    let total = LOAD_COUNT_TOTAL.fetch_add(1, Ordering::Relaxed) + 1;
+    let with_markdown = if has_structured_markdown {
+        LOAD_COUNT_WITH_MARKDOWN.fetch_add(1, Ordering::Relaxed) + 1
+    } else {
+        LOAD_COUNT_WITH_MARKDOWN.load(Ordering::Relaxed)
+    };
+    if total % AVAILABILITY_LOG_EVERY == 0 {
+        let ext = path
+            .extension()
+            .and_then(|v| v.to_str())
+            .unwrap_or("<none>")
+            .to_ascii_lowercase();
+        let availability_pct = if total == 0 {
+            0.0
+        } else {
+            (with_markdown as f64 / total as f64) * 100.0
+        };
+        info!(
+            total_sources = total,
+            sources_with_markdown = with_markdown,
+            availability_pct = (availability_pct * 100.0).round() / 100.0,
+            latest_source_ext = %ext,
+            "Markdown availability summary"
+        );
+    }
+}
+
+pub(super) fn ensure_not_cancelled(
+    cancel: Option<&CancellationToken>,
+    stage: &'static str,
+) -> Result<()> {
+    if let Some(token) = cancel {
+        token.check_cancelled(stage)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn load_source_content(
     path: &Path,
     cancel: Option<&CancellationToken>,
@@ -229,6 +274,14 @@ pub(super) fn load_source_content(
     );
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn load_source_content(
+    _path: &Path,
+    _cancel: Option<&CancellationToken>,
+) -> Result<SourceContent> {
+    anyhow::bail!("Source loading not supported on WASM")
+}
+
 pub(super) fn source_type_label(path: &Path) -> &'static str {
     match path
         .extension()
@@ -331,6 +384,12 @@ fn is_pdf(path: &Path) -> bool {
     )
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) use native_pipeline::*;
+#[cfg(not(target_arch = "wasm32"))]
+mod native_pipeline {
+    use super::*;
+#[cfg(not(target_arch = "wasm32"))]
 fn load_pdf_with_quack_check(
     path: &Path,
     cancel: Option<&CancellationToken>,
@@ -1902,43 +1961,6 @@ fn load_with_pandoc(
     Ok(text)
 }
 
-pub(super) fn record_markdown_availability(path: &Path, has_structured_markdown: bool) {
-    let total = LOAD_COUNT_TOTAL.fetch_add(1, Ordering::Relaxed) + 1;
-    let with_markdown = if has_structured_markdown {
-        LOAD_COUNT_WITH_MARKDOWN.fetch_add(1, Ordering::Relaxed) + 1
-    } else {
-        LOAD_COUNT_WITH_MARKDOWN.load(Ordering::Relaxed)
-    };
-    if total % AVAILABILITY_LOG_EVERY == 0 {
-        let ext = path
-            .extension()
-            .and_then(|v| v.to_str())
-            .unwrap_or("<none>")
-            .to_ascii_lowercase();
-        let availability_pct = if total == 0 {
-            0.0
-        } else {
-            (with_markdown as f64 / total as f64) * 100.0
-        };
-        info!(
-            total_sources = total,
-            sources_with_markdown = with_markdown,
-            availability_pct = (availability_pct * 100.0).round() / 100.0,
-            latest_source_ext = %ext,
-            "Markdown availability summary"
-        );
-    }
-}
-
-pub(super) fn ensure_not_cancelled(
-    cancel: Option<&CancellationToken>,
-    stage: &'static str,
-) -> Result<()> {
-    if let Some(token) = cancel {
-        token.check_cancelled(stage)?;
-    }
-    Ok(())
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PandocCacheMeta {
@@ -4060,4 +4082,5 @@ fn quack_check_text_filename(config_path: &Path) -> Result<String> {
     } else {
         Ok(trimmed.to_string())
     }
+}
 }

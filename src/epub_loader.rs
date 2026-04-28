@@ -6,12 +6,15 @@
 use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
 use crate::cancellation::CancellationToken;
 use anyhow::{Context, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use epub::doc::EpubDoc;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashSet;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tracing::{info, warn};
 
@@ -29,10 +32,14 @@ static RE_HTML_SVG_IMAGE_HREF: Lazy<Regex> = Lazy::new(|| {
 #[path = "epub_loader/source_pipeline.rs"]
 mod source_pipeline;
 
+#[cfg(not(target_arch = "wasm32"))]
 use source_pipeline::{
     ensure_not_cancelled, is_epub, is_markdown, load_source_content, record_markdown_availability,
     source_type_label,
 };
+#[cfg(target_arch = "wasm32")]
+use source_pipeline::{is_epub, is_markdown, load_source_content, source_type_label};
+
 use ts_rs::TS;
 
 #[derive(Debug, Clone)]
@@ -420,11 +427,18 @@ pub struct PdfOcrPageReadingOrderDecision {
 }
 
 /// Load a supported source file and return plain text plus extracted image paths.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_book_content(path: &Path) -> Result<LoadedBook> {
     load_book_content_with_cancel(path, None)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_book_content(_path: &Path) -> Result<LoadedBook> {
+    anyhow::bail!("Book loading not supported on WASM")
+}
+
 /// Load a supported source file with an optional cooperative cancellation token.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_book_content_with_cancel(
     path: &Path,
     cancel: Option<&CancellationToken>,
@@ -509,6 +523,14 @@ pub fn load_book_content_with_cancel(
     })
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_book_content_with_cancel(
+    _path: &Path,
+    _cancel: Option<&CancellationToken>,
+) -> Result<LoadedBook> {
+    anyhow::bail!("Book loading not supported on WASM")
+}
+
 #[derive(Debug, Clone)]
 struct SourceContent {
     tts_text: String,
@@ -522,6 +544,7 @@ struct SourceContent {
     pdf_ocr_pipeline: Option<PdfOcrPipelineSummary>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_images(path: &Path) -> Result<Vec<BookImage>> {
     let start = Instant::now();
     if is_browser_tab_manifest(path) {
@@ -566,6 +589,13 @@ fn collect_images(path: &Path) -> Result<Vec<BookImage>> {
     Ok(Vec::new())
 }
 
+#[cfg(target_arch = "wasm32")]
+fn collect_images(_path: &Path) -> Result<Vec<BookImage>> {
+    Ok(vec![])
+}
+
+
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_browser_tab_assets(path: &Path) -> Result<Vec<BookImage>> {
     let manifest = load_browser_tab_manifest(path)
         .with_context(|| format!("Failed to load browser-tab manifest {}", path.display()))?;
@@ -594,6 +624,7 @@ fn collect_browser_tab_assets(path: &Path) -> Result<Vec<BookImage>> {
         .collect())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_markdown_images(path: &Path) -> Result<Vec<BookImage>> {
     let data = fs::read_to_string(path)
         .with_context(|| format!("Failed to read markdown file at {}", path.display()))?;
@@ -643,6 +674,7 @@ fn collect_markdown_images(path: &Path) -> Result<Vec<BookImage>> {
     Ok(images)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_epub_images(path: &Path) -> Result<Vec<BookImage>> {
     #[derive(Debug, Clone)]
     struct ExtractedImage {
@@ -821,6 +853,7 @@ fn collect_epub_images(path: &Path) -> Result<Vec<BookImage>> {
     Ok(images)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn normalize_epub_path_key(raw: &str) -> String {
     let trimmed = raw.trim().trim_matches('/');
     let mut out = String::with_capacity(trimmed.len());
@@ -834,6 +867,7 @@ fn normalize_epub_path_key(raw: &str) -> String {
     out
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn normalize_markdown_image_target(raw: &str) -> Option<&str> {
     let trimmed = raw.trim().trim_matches('<').trim_matches('>');
     if trimmed.is_empty() {
@@ -866,6 +900,7 @@ fn normalize_markdown_image_target(raw: &str) -> Option<&str> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn is_supported_image_mime(mime: &str) -> bool {
     matches!(
         mime.to_ascii_lowercase().as_str(),
@@ -879,6 +914,7 @@ fn is_supported_image_mime(mime: &str) -> bool {
     )
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn extension_from_mime(mime: &str) -> Option<&'static str> {
     match mime.to_ascii_lowercase().as_str() {
         "image/png" => Some("png"),
@@ -891,6 +927,7 @@ fn extension_from_mime(mime: &str) -> Option<&'static str> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn epub_resource_output_path(
     image_dir: &Path,
     resource_path: &Path,
@@ -909,7 +946,7 @@ fn epub_resource_output_path(
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::browser_tabs::{

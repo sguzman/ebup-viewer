@@ -1,6 +1,7 @@
 use super::models::AppConfig;
 use super::tables::ConfigTables;
 use serde::Deserialize;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::Path;
 use tracing::{debug, info, warn};
@@ -12,6 +13,7 @@ enum ConfigInput {
     Flat(AppConfig),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// Load configuration from the given path, falling back to defaults on error.
 pub fn load_config(path: &Path) -> AppConfig {
     let contents = match fs::read_to_string(path) {
@@ -38,6 +40,11 @@ pub fn load_config(path: &Path) -> AppConfig {
             AppConfig::default()
         }
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn load_config(_path: &Path) -> AppConfig {
+    AppConfig::default()
 }
 
 pub fn parse_config(contents: &str) -> Result<AppConfig, toml::de::Error> {

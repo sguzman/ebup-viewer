@@ -1,649 +1,709 @@
-//! Text-to-speech support using `piper-rs` with caching in `.cache`.
-//! Audio is generated per sentence and stored as WAV for reuse.
+#[cfg(not(target_arch = "wasm32"))]
+mod native {
+    use anyhow::{Context, Result};
+    use rodio::buffer::SamplesBuffer;
+    use rodio::source::Zero;
+    use rodio::{Decoder, OutputStream, Sink, Source};
+    use serde::{Deserialize, Serialize};
+    use sha2::{Digest, Sha256};
+    use std::env;
+    use std::fs::{self, File};
+    use std::io::{BufRead, BufReader, BufWriter, Write};
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Stdio};
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+        mpsc,
+    };
+    use std::thread;
+    use tracing::{debug, info, warn};
 
-use anyhow::{Context, Result};
-use rodio::buffer::SamplesBuffer;
-use rodio::source::Zero;
-use rodio::{Decoder, OutputStream, Sink, Source};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::env;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, AtomicUsize, Ordering},
-    mpsc,
-};
-use std::thread;
-use tracing::{debug, info, warn};
+    #[derive(Clone)]
+    pub struct TtsEngine {
+        model_path: PathBuf,
+        espeak_root: PathBuf,
+        worker_pool: Arc<Mutex<Option<WorkerPoolState>>>,
+        prepare_generation: Arc<AtomicU64>,
+    }
 
-#[derive(Clone)]
-pub struct TtsEngine {
-    model_path: PathBuf,
-    espeak_root: PathBuf,
-    worker_pool: Arc<Mutex<Option<WorkerPoolState>>>,
-    prepare_generation: Arc<AtomicU64>,
-}
-
-impl TtsEngine {
-    pub fn new(model_path: PathBuf, espeak_path: PathBuf) -> Result<Self> {
-        let espeak_path = sanitize_espeak_root(espeak_path);
-        if env::var_os("PIPER_ESPEAKNG_DATA_DIRECTORY").is_none() {
-            // Safe because we set a deterministic value early in process startup.
-            unsafe {
-                env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", &espeak_path);
+    impl TtsEngine {
+        pub fn new(model_path: PathBuf, espeak_path: PathBuf) -> Result<Self> {
+            let espeak_path = sanitize_espeak_root(espeak_path);
+            if env::var_os("PIPER_ESPEAKNG_DATA_DIRECTORY").is_none() {
+                // Safe because we set a deterministic value early in process startup.
+                unsafe {
+                    env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", &espeak_path);
+                }
             }
-        }
-        info!(
-            model = %model_path.display(),
-            espeak_root = %espeak_path.display(),
-            "Initializing TTS engine"
-        );
-        Ok(Self {
-            model_path,
-            espeak_root: espeak_path,
-            worker_pool: Arc::new(Mutex::new(None)),
-            prepare_generation: Arc::new(AtomicU64::new(1)),
-        })
-    }
-
-    pub fn cancel_preparation(&self) {
-        self.prepare_generation.fetch_add(1, Ordering::SeqCst);
-    }
-
-    /// Play a list of audio files sequentially; returns a sink to control playback.
-    pub fn play_files(
-        &self,
-        files: &[PathBuf],
-        pause_after: std::time::Duration,
-        speed: f32,
-        volume: f32,
-        start_paused: bool,
-    ) -> Result<TtsPlayback> {
-        let (_stream, handle) = OutputStream::try_default().context("Opening audio output")?;
-        let sink = Sink::try_new(&handle).context("Creating sink")?;
-        let mut playback = TtsPlayback {
-            _stream,
-            sink,
-            sentence_durations: Vec::new(),
-        };
-        playback.set_volume(volume);
-        if start_paused {
-            playback.pause();
+            info!(
+                model = %model_path.display(),
+                espeak_root = %espeak_path.display(),
+                "Initializing TTS engine"
+            );
+            Ok(Self {
+                model_path,
+                espeak_root: espeak_path,
+                worker_pool: Arc::new(Mutex::new(None)),
+                prepare_generation: Arc::new(AtomicU64::new(1)),
+            })
         }
 
-        info!(
-            count = files.len(),
-            pause_ms = pause_after.as_millis(),
-            volume,
-            start_paused,
-            speed,
-            "Starting TTS playback"
-        );
-        playback.append_files(files, pause_after, speed)?;
-        if !start_paused {
-            playback.play();
-        }
-        Ok(playback)
-    }
-
-    /// Prepare a batch of sentences concurrently using a thread pool.
-    pub fn prepare_batch(
-        &self,
-        cache_root: PathBuf,
-        sentences: Vec<String>,
-        start_idx: usize,
-        threads: usize,
-        progress_log_interval: std::time::Duration,
-    ) -> Result<Vec<(PathBuf, std::time::Duration)>> {
-        let progress_log_interval =
-            progress_log_interval.max(std::time::Duration::from_millis(100));
-        let generation = self.prepare_generation.load(Ordering::Acquire);
-        info!(
-            sentence_count = sentences.len(),
-            start_idx,
-            threads,
-            progress_log_interval_secs = progress_log_interval.as_secs_f32(),
-            "Preparing TTS batch"
-        );
-
-        struct PendingJob {
-            offset: usize,
-            path: PathBuf,
-            result_rx: mpsc::Receiver<Result<()>>,
+        pub fn cancel_preparation(&self) {
+            self.prepare_generation.fetch_add(1, Ordering::SeqCst);
         }
 
-        let threads = threads.max(1);
-        let pool = self.ensure_worker_pool(threads)?;
-        let started_at = std::time::Instant::now();
-        let total = sentences.len().saturating_sub(start_idx);
-        let mut collected: Vec<Option<(PathBuf, std::time::Duration)>> = vec![None; total];
-        let mut pending: Vec<PendingJob> = Vec::new();
-        let mut cached_hits = 0usize;
-        let mut pending_total = 0usize;
-        let mut remaining = sentences.into_iter().skip(start_idx).enumerate();
-        let max_in_flight = threads.max(1);
-        let mut next_progress_log = started_at + progress_log_interval;
-        loop {
-            if self.prepare_generation.load(Ordering::Acquire) != generation {
-                info!("Cancelled TTS batch preparation");
-                return Err(anyhow::anyhow!("TTS batch preparation cancelled"));
+        pub fn play_files(
+            &self,
+            files: &[PathBuf],
+            pause_after: std::time::Duration,
+            speed: f32,
+            volume: f32,
+            start_paused: bool,
+        ) -> Result<TtsPlayback> {
+            let (_stream, handle) = OutputStream::try_default().context("Opening audio output")?;
+            let sink = Sink::try_new(&handle).context("Creating sink")?;
+            let mut playback = TtsPlayback {
+                _stream,
+                sink,
+                sentence_durations: Vec::new(),
+            };
+            playback.set_volume(volume);
+            if start_paused {
+                playback.pause();
             }
 
-            while pending.len() < max_in_flight {
-                let Some((offset, sentence)) = remaining.next() else {
-                    break;
-                };
-                let normalized = normalize_sentence(&sentence);
-                let path = cache_path(&cache_root, &self.model_path, &normalized);
-                if path.exists() {
-                    let dur = sentence_duration(&path);
-                    collected[offset] = Some((path, dur));
-                    cached_hits += 1;
-                    continue;
+            info!(
+                count = files.len(),
+                pause_ms = pause_after.as_millis(),
+                volume,
+                start_paused,
+                speed,
+                "Starting TTS playback"
+            );
+            playback.append_files(files, pause_after, speed)?;
+            if !start_paused {
+                playback.play();
+            }
+            Ok(playback)
+        }
+
+        pub fn prepare_batch(
+            &self,
+            cache_root: PathBuf,
+            sentences: Vec<String>,
+            start_idx: usize,
+            threads: usize,
+            progress_log_interval: std::time::Duration,
+        ) -> Result<Vec<(PathBuf, std::time::Duration)>> {
+            let progress_log_interval =
+                progress_log_interval.max(std::time::Duration::from_millis(100));
+            let generation = self.prepare_generation.load(Ordering::Acquire);
+            info!(
+                sentence_count = sentences.len(),
+                start_idx,
+                threads,
+                progress_log_interval_secs = progress_log_interval.as_secs_f32(),
+                "Preparing TTS batch"
+            );
+
+            struct PendingJob {
+                offset: usize,
+                path: PathBuf,
+                result_rx: mpsc::Receiver<Result<()>>,
+            }
+
+            let threads = threads.max(1);
+            let pool = self.ensure_worker_pool(threads)?;
+            let started_at = std::time::Instant::now();
+            let total = sentences.len().saturating_sub(start_idx);
+            let mut collected: Vec<Option<(PathBuf, std::time::Duration)>> = vec![None; total];
+            let mut pending: Vec<PendingJob> = Vec::new();
+            let mut cached_hits = 0usize;
+            let mut pending_total = 0usize;
+            let mut remaining = sentences.into_iter().skip(start_idx).enumerate();
+            let max_in_flight = threads.max(1);
+            let mut next_progress_log = started_at + progress_log_interval;
+            loop {
+                if self.prepare_generation.load(Ordering::Acquire) != generation {
+                    info!("Cancelled TTS batch preparation");
+                    return Err(anyhow::anyhow!("TTS batch preparation cancelled"));
                 }
 
-                if let Some(parent) = path.parent() {
-                    if let Err(err) = fs::create_dir_all(parent) {
-                        warn!("Failed to create TTS cache dir: {err}");
-                        return Err(err.into());
-                    }
-                }
-
-                let (result_tx, result_rx) = mpsc::channel();
-                pool.dispatch(normalized, path.clone(), result_tx)?;
-                pending_total += 1;
-                pending.push(PendingJob {
-                    offset,
-                    path,
-                    result_rx,
-                });
-            }
-
-            if pending.is_empty() && remaining.len() == 0 {
-                break;
-            }
-
-            let mut made_progress = false;
-            let mut idx = 0usize;
-            while idx < pending.len() {
-                match pending[idx].result_rx.try_recv() {
-                    Ok(Ok(())) => {
-                        let job = pending.swap_remove(idx);
-                        let dur = sentence_duration(&job.path);
-                        collected[job.offset] = Some((job.path, dur));
-                        made_progress = true;
+                while pending.len() < max_in_flight {
+                    let Some((offset, sentence)) = remaining.next() else {
+                        break;
+                    };
+                    let normalized = normalize_sentence(&sentence);
+                    let path = cache_path(&cache_root, &self.model_path, &normalized);
+                    if path.exists() {
+                        let dur = sentence_duration(&path);
+                        collected[offset] = Some((path, dur));
+                        cached_hits += 1;
                         continue;
                     }
-                    Ok(Err(err)) => {
-                        warn!("Failed to synthesize sentence: {err:#}");
-                        return Err(err);
+
+                    if let Some(parent) = path.parent() {
+                        if let Err(err) = fs::create_dir_all(parent) {
+                            warn!("Failed to create TTS cache dir: {err}");
+                            return Err(err.into());
+                        }
                     }
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        let path = pending[idx].path.clone();
-                        return Err(anyhow::anyhow!(
-                            "TTS worker channel closed before finishing: {}",
-                            path.display()
-                        ));
-                    }
-                    Err(mpsc::TryRecvError::Empty) => {}
+
+                    let (result_tx, result_rx) = mpsc::channel();
+                    pool.dispatch(normalized, path.clone(), result_tx)?;
+                    pending_total += 1;
+                    pending.push(PendingJob {
+                        offset,
+                        path,
+                        result_rx,
+                    });
                 }
-                idx += 1;
-            }
 
-            let now = std::time::Instant::now();
-            if now >= next_progress_log {
-                let synthesized_done = pending_total.saturating_sub(pending.len());
-                let completed = cached_hits + synthesized_done;
-                info!(
-                    completed,
-                    total,
-                    cached_hits,
-                    synthesized_done,
-                    remaining = total.saturating_sub(completed),
-                    "TTS batch progress"
-                );
-                next_progress_log = now + progress_log_interval;
-            }
-
-            if !made_progress {
-                let until_log =
-                    next_progress_log.saturating_duration_since(std::time::Instant::now());
-                let sleep_for = until_log.min(std::time::Duration::from_millis(50));
-                thread::sleep(if sleep_for.is_zero() {
-                    std::time::Duration::from_millis(10)
-                } else {
-                    sleep_for
-                });
-            }
-        }
-
-        let collected: Vec<(PathBuf, std::time::Duration)> =
-            collected.into_iter().flatten().collect();
-        info!(
-            completed = collected.len(),
-            total,
-            cached_hits,
-            synthesized = pending_total,
-            elapsed_ms = started_at.elapsed().as_millis(),
-            "Prepared TTS batch"
-        );
-        if collected.len() != total {
-            warn!(
-                expected = total,
-                actual = collected.len(),
-                "Prepared batch size does not match requested sentence range"
-            );
-        } else {
-            debug!(count = collected.len(), "Prepared TTS batch");
-        }
-        Ok(collected)
-    }
-
-    fn ensure_worker_pool(&self, threads: usize) -> Result<Arc<WorkerPool>> {
-        let mut guard = self.worker_pool.lock().unwrap();
-        let rebuild = match guard.as_ref() {
-            Some(state) => state.threads != threads,
-            None => true,
-        };
-        if rebuild {
-            let pool = WorkerPool::new(threads, &self.model_path, &self.espeak_root)?;
-            *guard = Some(WorkerPoolState {
-                threads,
-                pool: Arc::new(pool),
-            });
-        }
-        Ok(guard.as_ref().unwrap().pool.clone())
-    }
-}
-
-pub struct TtsPlayback {
-    _stream: OutputStream,
-    sink: Sink,
-    sentence_durations: Vec<std::time::Duration>,
-}
-
-impl TtsPlayback {
-    pub fn pause(&self) {
-        debug!("Pausing playback");
-        self.sink.pause();
-    }
-
-    pub fn play(&self) {
-        debug!("Resuming playback");
-        self.sink.play();
-    }
-
-    pub fn is_paused(&self) -> bool {
-        self.sink.is_paused()
-    }
-
-    pub fn stop(self) {
-        self.sink.stop();
-        // stream dropped automatically
-    }
-
-    pub fn set_volume(&self, volume: f32) {
-        self.sink.set_volume(volume.max(0.0));
-    }
-
-    pub fn append_files(
-        &mut self,
-        files: &[PathBuf],
-        pause_after: std::time::Duration,
-        speed: f32,
-    ) -> Result<Vec<std::time::Duration>> {
-        let speed = if speed <= f32::EPSILON { 1.0 } else { speed };
-        let mut appended_durations = Vec::with_capacity(files.len());
-        for file in files {
-            let reader = BufReader::new(File::open(file)?);
-            let source = Decoder::new(reader)?;
-            if (speed - 1.0).abs() <= f32::EPSILON {
-                let dur = source
-                    .total_duration()
-                    .unwrap_or_else(|| sentence_duration(file));
-                appended_durations.push(dur);
-                self.sink.append(source);
-            } else {
-                let channels = source.channels() as u16;
-                let sample_rate = source.sample_rate();
-                let samples: Vec<f32> = source.convert_samples().collect();
-                let stretched = time_stretch(&samples, sample_rate, channels, speed)
-                    .context("Time-stretching audio")?;
-                let dur = std::time::Duration::from_secs_f64(
-                    stretched.len() as f64 / (sample_rate as f64 * channels as f64),
-                );
-                appended_durations.push(dur);
-                let buffer = SamplesBuffer::new(channels, sample_rate, stretched);
-                self.sink.append(buffer);
-            }
-            if pause_after > std::time::Duration::ZERO {
-                let silence = Zero::<f32>::new(1, 48_000).take_duration(pause_after);
-                self.sink.append(silence);
-            }
-        }
-        self.sentence_durations
-            .extend(appended_durations.iter().copied());
-        Ok(appended_durations)
-    }
-
-    pub fn sentence_durations(&self) -> &[std::time::Duration] {
-        &self.sentence_durations
-    }
-
-    pub fn queued_sources(&self) -> usize {
-        self.sink.len()
-    }
-}
-
-fn cache_path(base: &Path, model_path: &Path, sentence: &str) -> PathBuf {
-    let mut hasher = Sha256::new();
-    hasher.update(model_path.as_os_str().to_string_lossy().as_bytes());
-    hasher.update(sentence.as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
-    base.join(format!("tts-{hash}.wav"))
-}
-
-fn normalize_sentence(sentence: &str) -> String {
-    let mut out = String::with_capacity(sentence.len());
-    let mut prev_ws = false;
-
-    for ch in sentence.trim().chars() {
-        if ch.is_whitespace() {
-            if !prev_ws {
-                out.push(' ');
-                prev_ws = true;
-            }
-        } else {
-            out.push(ch);
-            prev_ws = false;
-        }
-    }
-
-    out
-}
-
-/// Piper expects the parent directory that contains `espeak-ng-data/phonindex`.
-/// Users often point directly at `.../espeak-ng-data`; trim that to avoid
-/// duplicated segments like `/espeak-ng-data/espeak-ng-data/phonindex`.
-fn sanitize_espeak_root(path: PathBuf) -> PathBuf {
-    if path
-        .file_name()
-        .map(|n| n == "espeak-ng-data")
-        .unwrap_or(false)
-    {
-        if let Some(parent) = path.parent() {
-            debug!(
-                original = %path.display(),
-                sanitized = %parent.display(),
-                "Trimming espeak-ng-data suffix"
-            );
-            return parent.to_path_buf();
-        }
-    }
-    path
-}
-
-fn sentence_duration(path: &Path) -> std::time::Duration {
-    let file = match File::open(path) {
-        Ok(f) => f,
-        Err(_) => return std::time::Duration::from_secs(1),
-    };
-    let reader = BufReader::new(file);
-    Decoder::new(reader)
-        .ok()
-        .and_then(|d| d.total_duration())
-        .unwrap_or(std::time::Duration::from_secs(1))
-}
-
-fn time_stretch(samples: &[f32], sample_rate: u32, channels: u16, speed: f32) -> Result<Vec<f32>> {
-    if (speed - 1.0).abs() <= f32::EPSILON {
-        return Ok(samples.to_vec());
-    }
-
-    let mut out_buf: Vec<f32> = Vec::new();
-    unsafe {
-        let stream = sonic_rs_sys::sonicCreateStream(sample_rate as i32, channels as i32);
-        sonic_rs_sys::sonicSetSpeed(stream, speed);
-        sonic_rs_sys::sonicWriteFloatToStream(stream, samples.as_ptr(), samples.len() as i32);
-        sonic_rs_sys::sonicFlushStream(stream);
-        let num_samples = sonic_rs_sys::sonicSamplesAvailable(stream);
-        if num_samples <= 0 {
-            sonic_rs_sys::sonicDestroyStream(stream);
-            anyhow::bail!("Sonic error: no samples available after time-stretch");
-        }
-        out_buf.reserve_exact(num_samples as usize);
-        sonic_rs_sys::sonicReadFloatFromStream(
-            stream,
-            out_buf.spare_capacity_mut().as_mut_ptr().cast(),
-            num_samples,
-        );
-        sonic_rs_sys::sonicDestroyStream(stream);
-        out_buf.set_len(num_samples as usize);
-    }
-    Ok(out_buf)
-}
-
-#[derive(Serialize)]
-struct WorkerRequest {
-    text: String,
-    path: String,
-}
-
-#[derive(Serialize)]
-struct WorkerShutdown {
-    shutdown: bool,
-}
-
-#[derive(Deserialize)]
-struct WorkerResponse {
-    ok: bool,
-    error: Option<String>,
-}
-
-struct WorkerPoolState {
-    threads: usize,
-    pool: Arc<WorkerPool>,
-}
-
-struct WorkerPool {
-    workers: Vec<WorkerHandle>,
-    next: AtomicUsize,
-}
-
-struct WorkerHandle {
-    tx: mpsc::Sender<Job>,
-}
-
-enum Job {
-    Synthesize {
-        sentence: String,
-        path: PathBuf,
-        result_tx: mpsc::Sender<Result<()>>,
-    },
-    Shutdown,
-}
-
-impl WorkerPool {
-    fn new(threads: usize, model_path: &Path, espeak_root: &Path) -> Result<Self> {
-        let mut workers = Vec::with_capacity(threads);
-        for _ in 0..threads {
-            let (tx, rx) = mpsc::channel::<Job>();
-            let model_path = model_path.to_path_buf();
-            let espeak_root = espeak_root.to_path_buf();
-            thread::spawn(move || worker_loop(rx, model_path, espeak_root));
-            workers.push(WorkerHandle { tx });
-        }
-        Ok(Self {
-            workers,
-            next: AtomicUsize::new(0),
-        })
-    }
-
-    fn dispatch(
-        &self,
-        sentence: String,
-        path: PathBuf,
-        result_tx: mpsc::Sender<Result<()>>,
-    ) -> Result<()> {
-        let idx = self.next.fetch_add(1, Ordering::Relaxed) % self.workers.len();
-        self.workers[idx]
-            .tx
-            .send(Job::Synthesize {
-                sentence,
-                path,
-                result_tx,
-            })
-            .map_err(|err| anyhow::anyhow!("TTS worker channel closed: {err}"))
-    }
-}
-
-impl Drop for WorkerPool {
-    fn drop(&mut self) {
-        for worker in &self.workers {
-            let _ = worker.tx.send(Job::Shutdown);
-        }
-    }
-}
-
-fn worker_loop(rx: mpsc::Receiver<Job>, model_path: PathBuf, espeak_root: PathBuf) {
-    let child = spawn_worker(&model_path, &espeak_root);
-    let mut child = match child {
-        Ok(child) => child,
-        Err(err) => {
-            let err_msg = format!("{err:#}");
-            warn!("Failed to spawn TTS worker: {err_msg}");
-            for job in rx {
-                if let Job::Synthesize { result_tx, .. } = job {
-                    let _ = result_tx.send(Err(anyhow::anyhow!(err_msg.clone())));
-                }
-            }
-            return;
-        }
-    };
-
-    let mut stdin = BufWriter::new(child.stdin.take().unwrap());
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
-    let mut line = String::new();
-
-    for job in rx {
-        match job {
-            Job::Synthesize {
-                sentence,
-                path,
-                result_tx,
-            } => {
-                let request = WorkerRequest {
-                    text: sentence,
-                    path: path.to_string_lossy().to_string(),
-                };
-                if let Err(err) = send_request(&mut stdin, &request) {
-                    let _ = result_tx.send(Err(err));
+                if pending.is_empty() && remaining.len() == 0 {
                     break;
                 }
-                match read_response(&mut stdout, &mut line) {
-                    Ok(()) => {
-                        let _ = result_tx.send(Ok(()));
+
+                let mut made_progress = false;
+                let mut idx = 0usize;
+                while idx < pending.len() {
+                    match pending[idx].result_rx.try_recv() {
+                        Ok(Ok(())) => {
+                            let job = pending.swap_remove(idx);
+                            let dur = sentence_duration(&job.path);
+                            collected[job.offset] = Some((job.path, dur));
+                            made_progress = true;
+                            continue;
+                        }
+                        Ok(Err(err)) => {
+                            warn!("Failed to synthesize sentence: {err:#}");
+                            return Err(err);
+                        }
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            let path = pending[idx].path.clone();
+                            return Err(anyhow::anyhow!(
+                                "TTS worker channel closed before finishing: {}",
+                                path.display()
+                            ));
+                        }
+                        Err(mpsc::TryRecvError::Empty) => {}
                     }
-                    Err(err) => {
+                    idx += 1;
+                }
+
+                let now = std::time::Instant::now();
+                if now >= next_progress_log {
+                    let synthesized_done = pending_total.saturating_sub(pending.len());
+                    let completed = cached_hits + synthesized_done;
+                    info!(
+                        completed,
+                        total,
+                        cached_hits,
+                        synthesized_done,
+                        remaining = total.saturating_sub(completed),
+                        "TTS batch progress"
+                    );
+                    next_progress_log = now + progress_log_interval;
+                }
+
+                if !made_progress {
+                    let until_log =
+                        next_progress_log.saturating_duration_since(std::time::Instant::now());
+                    let sleep_for = until_log.min(std::time::Duration::from_millis(50));
+                    thread::sleep(if sleep_for.is_zero() {
+                        std::time::Duration::from_millis(10)
+                    } else {
+                        sleep_for
+                    });
+                }
+            }
+
+            let collected: Vec<(PathBuf, std::time::Duration)> =
+                collected.into_iter().flatten().collect();
+            info!(
+                completed = collected.len(),
+                total,
+                cached_hits,
+                synthesized = pending_total,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                "Prepared TTS batch"
+            );
+            if collected.len() != total {
+                warn!(
+                    expected = total,
+                    actual = collected.len(),
+                    "Prepared batch size does not match requested sentence range"
+                );
+            } else {
+                debug!(count = collected.len(), "Prepared TTS batch");
+            }
+            Ok(collected)
+        }
+
+        fn ensure_worker_pool(&self, threads: usize) -> Result<Arc<WorkerPool>> {
+            let mut guard = self.worker_pool.lock().unwrap();
+            let rebuild = match guard.as_ref() {
+                Some(state) => state.threads != threads,
+                None => true,
+            };
+            if rebuild {
+                let pool = WorkerPool::new(threads, &self.model_path, &self.espeak_root)?;
+                *guard = Some(WorkerPoolState {
+                    threads,
+                    pool: Arc::new(pool),
+                });
+            }
+            Ok(guard.as_ref().unwrap().pool.clone())
+        }
+    }
+
+    pub struct TtsPlayback {
+        _stream: OutputStream,
+        sink: Sink,
+        sentence_durations: Vec<std::time::Duration>,
+    }
+
+    impl TtsPlayback {
+        pub fn pause(&self) {
+            debug!("Pausing playback");
+            self.sink.pause();
+        }
+
+        pub fn play(&self) {
+            debug!("Resuming playback");
+            self.sink.play();
+        }
+
+        pub fn is_paused(&self) -> bool {
+            self.sink.is_paused()
+        }
+
+        pub fn stop(self) {
+            self.sink.stop();
+        }
+
+        pub fn set_volume(&self, volume: f32) {
+            self.sink.set_volume(volume.max(0.0));
+        }
+
+        pub fn append_files(
+            &mut self,
+            files: &[PathBuf],
+            pause_after: std::time::Duration,
+            speed: f32,
+        ) -> Result<Vec<std::time::Duration>> {
+            let speed = if speed <= f32::EPSILON { 1.0 } else { speed };
+            let mut appended_durations = Vec::with_capacity(files.len());
+            for file in files {
+                let reader = BufReader::new(File::open(file)?);
+                let source = Decoder::new(reader)?;
+                if (speed - 1.0).abs() <= f32::EPSILON {
+                    let dur = source
+                        .total_duration()
+                        .unwrap_or_else(|| sentence_duration(file));
+                    appended_durations.push(dur);
+                    self.sink.append(source);
+                } else {
+                    let channels = source.channels() as u16;
+                    let sample_rate = source.sample_rate();
+                    let samples: Vec<f32> = source.convert_samples().collect();
+                    let stretched = time_stretch(&samples, sample_rate, channels, speed)
+                        .context("Time-stretching audio")?;
+                    let dur = std::time::Duration::from_secs_f64(
+                        stretched.len() as f64 / (sample_rate as f64 * channels as f64),
+                    );
+                    appended_durations.push(dur);
+                    let buffer = SamplesBuffer::new(channels, sample_rate, stretched);
+                    self.sink.append(buffer);
+                }
+                if pause_after > std::time::Duration::ZERO {
+                    let silence = Zero::<f32>::new(1, 48_000).take_duration(pause_after);
+                    self.sink.append(silence);
+                }
+            }
+            self.sentence_durations
+                .extend(appended_durations.iter().copied());
+            Ok(appended_durations)
+        }
+
+        pub fn sentence_durations(&self) -> &[std::time::Duration] {
+            &self.sentence_durations
+        }
+
+        pub fn queued_sources(&self) -> usize {
+            self.sink.len()
+        }
+    }
+
+    fn cache_path(base: &Path, model_path: &Path, sentence: &str) -> PathBuf {
+        let mut hasher = Sha256::new();
+        hasher.update(model_path.as_os_str().to_string_lossy().as_bytes());
+        hasher.update(sentence.as_bytes());
+        let hash = format!("{:x}", hasher.finalize());
+        base.join(format!("tts-{hash}.wav"))
+    }
+
+    fn normalize_sentence(sentence: &str) -> String {
+        let mut out = String::with_capacity(sentence.len());
+        let mut prev_ws = false;
+
+        for ch in sentence.trim().chars() {
+            if ch.is_whitespace() {
+                if !prev_ws {
+                    out.push(' ');
+                    prev_ws = true;
+                }
+            } else {
+                out.push(ch);
+                prev_ws = false;
+            }
+        }
+
+        out
+    }
+
+    fn sanitize_espeak_root(path: PathBuf) -> PathBuf {
+        if path
+            .file_name()
+            .map(|n| n == "espeak-ng-data")
+            .unwrap_or(false)
+        {
+            if let Some(parent) = path.parent() {
+                debug!(
+                    original = %path.display(),
+                    sanitized = %parent.display(),
+                    "Trimming espeak-ng-data suffix"
+                );
+                return parent.to_path_buf();
+            }
+        }
+        path
+    }
+
+    fn sentence_duration(path: &Path) -> std::time::Duration {
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(_) => return std::time::Duration::from_secs(1),
+        };
+        let reader = BufReader::new(file);
+        Decoder::new(reader)
+            .ok()
+            .and_then(|d| d.total_duration())
+            .unwrap_or(std::time::Duration::from_secs(1))
+    }
+
+    fn time_stretch(samples: &[f32], sample_rate: u32, channels: u16, speed: f32) -> Result<Vec<f32>> {
+        if (speed - 1.0).abs() <= f32::EPSILON {
+            return Ok(samples.to_vec());
+        }
+
+        let mut out_buf: Vec<f32> = Vec::new();
+        unsafe {
+            let stream = sonic_rs_sys::sonicCreateStream(sample_rate as i32, channels as i32);
+            sonic_rs_sys::sonicSetSpeed(stream, speed);
+            sonic_rs_sys::sonicWriteFloatToStream(stream, samples.as_ptr(), samples.len() as i32);
+            sonic_rs_sys::sonicFlushStream(stream);
+            let num_samples = sonic_rs_sys::sonicSamplesAvailable(stream);
+            if num_samples <= 0 {
+                sonic_rs_sys::sonicDestroyStream(stream);
+                anyhow::bail!("Sonic error: no samples available after time-stretch");
+            }
+            out_buf.reserve_exact(num_samples as usize);
+            sonic_rs_sys::sonicReadFloatFromStream(
+                stream,
+                out_buf.spare_capacity_mut().as_mut_ptr().cast(),
+                num_samples,
+            );
+            sonic_rs_sys::sonicDestroyStream(stream);
+            out_buf.set_len(num_samples as usize);
+        }
+        Ok(out_buf)
+    }
+
+    #[derive(serde::Serialize)]
+    struct WorkerRequest {
+        text: String,
+        path: String,
+    }
+
+    #[derive(serde::Serialize)]
+    struct WorkerShutdown {
+        shutdown: bool,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct WorkerResponse {
+        ok: bool,
+        error: Option<String>,
+    }
+
+    struct WorkerPoolState {
+        threads: usize,
+        pool: Arc<WorkerPool>,
+    }
+
+    struct WorkerPool {
+        workers: Vec<WorkerHandle>,
+        next: AtomicUsize,
+    }
+
+    struct WorkerHandle {
+        tx: mpsc::Sender<Job>,
+    }
+
+    enum Job {
+        Synthesize {
+            sentence: String,
+            path: PathBuf,
+            result_tx: mpsc::Sender<Result<()>>,
+        },
+        Shutdown,
+    }
+
+    impl WorkerPool {
+        fn new(threads: usize, model_path: &Path, espeak_root: &Path) -> Result<Self> {
+            let mut workers = Vec::with_capacity(threads);
+            for _ in 0..threads {
+                let (tx, rx) = mpsc::channel::<Job>();
+                let model_path = model_path.to_path_buf();
+                let espeak_root = espeak_root.to_path_buf();
+                thread::spawn(move || worker_loop(rx, model_path, espeak_root));
+                workers.push(WorkerHandle { tx });
+            }
+            Ok(Self {
+                workers,
+                next: AtomicUsize::new(0),
+            })
+        }
+
+        fn dispatch(
+            &self,
+            sentence: String,
+            path: PathBuf,
+            result_tx: mpsc::Sender<Result<()>>,
+        ) -> Result<()> {
+            let idx = self.next.fetch_add(1, Ordering::Relaxed) % self.workers.len();
+            self.workers[idx]
+                .tx
+                .send(Job::Synthesize {
+                    sentence,
+                    path,
+                    result_tx,
+                })
+                .map_err(|err| anyhow::anyhow!("TTS worker channel closed: {err}"))
+        }
+    }
+
+    impl Drop for WorkerPool {
+        fn drop(&mut self) {
+            for worker in &self.workers {
+                let _ = worker.tx.send(Job::Shutdown);
+            }
+        }
+    }
+
+    fn worker_loop(rx: mpsc::Receiver<Job>, model_path: PathBuf, espeak_root: PathBuf) {
+        let child = spawn_worker(&model_path, &espeak_root);
+        let mut child = match child {
+            Ok(child) => child,
+            Err(err) => {
+                let err_msg = format!("{err:#}");
+                warn!("Failed to spawn TTS worker: {err_msg}");
+                for job in rx {
+                    if let Job::Synthesize { result_tx, .. } = job {
+                        let _ = result_tx.send(Err(anyhow::anyhow!(err_msg.clone())));
+                    }
+                }
+                return;
+            }
+        };
+
+        let mut stdin = BufWriter::new(child.stdin.take().unwrap());
+        let mut stdout = BufReader::new(child.stdout.take().unwrap());
+        let mut line = String::new();
+
+        for job in rx {
+            match job {
+                Job::Synthesize {
+                    sentence,
+                    path,
+                    result_tx,
+                } => {
+                    let request = WorkerRequest {
+                        text: sentence,
+                        path: path.to_string_lossy().to_string(),
+                    };
+                    if let Err(err) = send_request(&mut stdin, &request) {
                         let _ = result_tx.send(Err(err));
                         break;
                     }
+                    match read_response(&mut stdout, &mut line) {
+                        Ok(()) => {
+                            let _ = result_tx.send(Ok(()));
+                        }
+                        Err(err) => {
+                            let _ = result_tx.send(Err(err));
+                            break;
+                        }
+                    }
+                }
+                Job::Shutdown => {
+                    let _ = send_request(&mut stdin, &WorkerShutdown { shutdown: true });
+                    break;
                 }
             }
-            Job::Shutdown => {
-                let _ = send_request(&mut stdin, &WorkerShutdown { shutdown: true });
-                break;
+        }
+
+        let _ = child.wait();
+    }
+
+    fn spawn_worker_with_exe(
+        exe: &Path,
+        model_path: &Path,
+        espeak_root: &Path,
+    ) -> Result<std::process::Child> {
+        Command::new(exe)
+            .arg("--tts-worker")
+            .arg("--model")
+            .arg(model_path)
+            .arg("--espeak")
+            .arg(espeak_root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .with_context(|| {
+                format!(
+                    "Starting TTS worker process (exe={}, model={}, espeak={})",
+                    exe.display(),
+                    model_path.display(),
+                    espeak_root.display()
+                )
+            })
+    }
+
+    fn spawn_worker(model_path: &Path, espeak_root: &Path) -> Result<std::process::Child> {
+        let exe = env::current_exe().context("Finding current executable")?;
+        match spawn_worker_with_exe(&exe, model_path, espeak_root) {
+            Ok(child) => Ok(child),
+            Err(primary_err) => {
+                #[cfg(target_os = "linux")]
+                {
+                    let proc_self_exe = Path::new("/proc/self/exe");
+                    warn!(
+                        primary_exe = %exe.display(),
+                        fallback_exe = %proc_self_exe.display(),
+                        "Primary TTS worker spawn failed; retrying via /proc/self/exe: {primary_err:#}"
+                    );
+                    if proc_self_exe.exists() {
+                        return spawn_worker_with_exe(proc_self_exe, model_path, espeak_root)
+                            .with_context(|| {
+                                format!(
+                                    "Fallback worker spawn via {} failed after primary error: {primary_err:#}",
+                                    proc_self_exe.display()
+                                )
+                            });
+                    }
+                }
+                Err(primary_err)
             }
         }
     }
 
-    let _ = child.wait();
-}
-
-fn spawn_worker_with_exe(
-    exe: &Path,
-    model_path: &Path,
-    espeak_root: &Path,
-) -> Result<std::process::Child> {
-    Command::new(exe)
-        .arg("--tts-worker")
-        .arg("--model")
-        .arg(model_path)
-        .arg("--espeak")
-        .arg(espeak_root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .with_context(|| {
-            format!(
-                "Starting TTS worker process (exe={}, model={}, espeak={})",
-                exe.display(),
-                model_path.display(),
-                espeak_root.display()
-            )
-        })
-}
-
-fn spawn_worker(model_path: &Path, espeak_root: &Path) -> Result<std::process::Child> {
-    let exe = env::current_exe().context("Finding current executable")?;
-    match spawn_worker_with_exe(&exe, model_path, espeak_root) {
-        Ok(child) => Ok(child),
-        Err(primary_err) => {
-            #[cfg(target_os = "linux")]
-            {
-                let proc_self_exe = Path::new("/proc/self/exe");
-                warn!(
-                    primary_exe = %exe.display(),
-                    fallback_exe = %proc_self_exe.display(),
-                    "Primary TTS worker spawn failed; retrying via /proc/self/exe: {primary_err:#}"
-                );
-                if proc_self_exe.exists() {
-                    return spawn_worker_with_exe(proc_self_exe, model_path, espeak_root)
-                        .with_context(|| {
-                            format!(
-                                "Fallback worker spawn via {} failed after primary error: {primary_err:#}",
-                                proc_self_exe.display()
-                            )
-                        });
-                }
-            }
-            Err(primary_err)
-        }
-    }
-}
-
-fn send_request<T: Serialize>(
-    stdin: &mut BufWriter<std::process::ChildStdin>,
-    request: &T,
-) -> Result<()> {
-    let payload = serde_json::to_string(request).context("Encoding worker request")?;
-    stdin.write_all(payload.as_bytes())?;
-    stdin.write_all(b"\n")?;
-    stdin.flush()?;
-    Ok(())
-}
-
-fn read_response(
-    stdout: &mut BufReader<std::process::ChildStdout>,
-    line: &mut String,
-) -> Result<()> {
-    line.clear();
-    let read = stdout.read_line(line)?;
-    if read == 0 {
-        anyhow::bail!("Worker process closed its stdout");
-    }
-    let response: WorkerResponse =
-        serde_json::from_str(line.trim()).context("Decoding worker response")?;
-    if response.ok {
+    fn send_request<T: serde::Serialize>(
+        stdin: &mut BufWriter<std::process::ChildStdin>,
+        request: &T,
+    ) -> Result<()> {
+        let payload = serde_json::to_string(request).context("Encoding worker request")?;
+        stdin.write_all(payload.as_bytes())?;
+        stdin.write_all(b"\n")?;
+        stdin.flush()?;
         Ok(())
-    } else {
-        let msg = response
-            .error
-            .unwrap_or_else(|| "Unknown worker error".to_string());
-        Err(anyhow::anyhow!(msg))
+    }
+
+    fn read_response(
+        stdout: &mut BufReader<std::process::ChildStdout>,
+        line: &mut String,
+    ) -> Result<()> {
+        line.clear();
+        let read = stdout.read_line(line)?;
+        if read == 0 {
+            anyhow::bail!("Worker process closed its stdout");
+        }
+        let response: WorkerResponse =
+            serde_json::from_str(line.trim()).context("Decoding worker response")?;
+        if response.ok {
+            Ok(())
+        } else {
+            let msg = response
+                .error
+                .unwrap_or_else(|| "Unknown worker error".to_string());
+            Err(anyhow::anyhow!(msg))
+        }
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::*;
+
+#[cfg(target_arch = "wasm32")]
+mod wasm_stub {
+    use anyhow::Result;
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+
+    #[derive(Clone)]
+    pub struct TtsEngine;
+
+    impl TtsEngine {
+        pub fn new(_model_path: PathBuf, _espeak_path: PathBuf) -> Result<Self> {
+            Ok(Self)
+        }
+
+        pub fn cancel_preparation(&self) {}
+
+        pub fn play_files(
+            &self,
+            _files: &[PathBuf],
+            _pause_after: Duration,
+            _speed: f32,
+            _volume: f32,
+            _start_paused: bool,
+        ) -> Result<TtsPlayback> {
+            Ok(TtsPlayback)
+        }
+
+        pub fn prepare_batch(
+            &self,
+            _cache_root: PathBuf,
+            _sentences: Vec<String>,
+            _start_idx: usize,
+            _threads: usize,
+            _progress_log_interval: Duration,
+        ) -> Result<Vec<(PathBuf, Duration)>> {
+            Ok(Vec::new())
+        }
+    }
+
+    pub struct TtsPlayback;
+
+    impl TtsPlayback {
+        pub fn pause(&self) {}
+        pub fn play(&self) {}
+        pub fn is_paused(&self) -> bool { true }
+        pub fn stop(self) {}
+        pub fn set_volume(&self, _volume: f32) {}
+        pub fn append_files(
+            &mut self,
+            _files: &[PathBuf],
+            _pause_after: Duration,
+            _speed: f32,
+        ) -> Result<Vec<Duration>> {
+            Ok(Vec::new())
+        }
+        pub fn sentence_durations(&self) -> &[Duration] { &[] }
+        pub fn queued_sources(&self) -> usize { 0 }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub use wasm_stub::*;

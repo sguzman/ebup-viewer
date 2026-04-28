@@ -241,6 +241,7 @@ pub struct BrowsrClient {
     base_url: String,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone)]
 pub struct BrowsrBlockingClient {
     client: reqwest::blocking::Client,
@@ -253,8 +254,12 @@ impl BrowsrClient {
         if normalized.is_empty() {
             return Err(anyhow!("browsr base URL is empty"));
         }
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(timeout_ms.max(250)))
+        let mut builder = reqwest::Client::builder();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            builder = builder.timeout(Duration::from_millis(timeout_ms.max(250)));
+        }
+        let client = builder
             .build()
             .context("failed to build browsr reqwest client")?;
         Ok(Self {
@@ -515,6 +520,7 @@ impl BrowsrClient {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl BrowsrBlockingClient {
     pub fn new(base_url: &str, timeout_ms: u64) -> Result<Self> {
         let normalized = base_url.trim().trim_end_matches('/').to_string();
@@ -833,7 +839,7 @@ fn truncate_body(body: &str) -> String {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use std::io::{Read, Write};

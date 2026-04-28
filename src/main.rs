@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 //! Legacy binary shim.
 //!
 //! The desktop GUI now runs through the egui application crate.
@@ -14,3 +16,6 @@ fn main() {
     eprintln!("The legacy iced desktop UI has been decommissioned.");
     eprintln!("Run `cargo run -p lanternleaf-egui` to launch LanternLeaf.");
 }
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}

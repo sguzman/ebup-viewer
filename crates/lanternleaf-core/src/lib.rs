@@ -4,6 +4,7 @@ pub mod browser_tabs;
 pub mod cache;
 #[path = "../../../src/cache_service.rs"]
 pub mod cache_service;
+#[cfg(not(target_arch = "wasm32"))]
 #[path = "../../../src/calibre.rs"]
 pub mod calibre;
 #[path = "../../../src/cancellation.rs"]
@@ -18,6 +19,7 @@ pub mod epub_loader;
 pub mod normalizer;
 #[path = "../../../src/pagination.rs"]
 pub mod pagination;
+#[cfg(not(target_arch = "wasm32"))]
 #[path = "../../../src/quack_check/mod.rs"]
 pub mod quack_check;
 pub mod session;
@@ -25,5 +27,6 @@ pub mod session;
 pub mod text_utils;
 #[path = "../../../src/tts.rs"]
 pub mod tts;
+#[cfg(not(target_arch = "wasm32"))]
 #[path = "../../../src/workspace.rs"]
 pub mod workspace;

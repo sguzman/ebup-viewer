@@ -9,9 +9,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{PDF_CANVAS_TEXTURE_SIZE, PDF_TEXT_TEXTURE_SIZE};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::constants::{PDF_CANVAS_TEXTURE_SIZE, PDF_TEXT_TEXTURE_SIZE};
+#[cfg(not(target_arch = "wasm32"))]
 use eframe::egui::ColorImage;
+#[cfg(not(target_arch = "wasm32"))]
 use pdfium_auto::bind_bundled;
+#[cfg(not(target_arch = "wasm32"))]
 use pdfium_render::prelude::*;
 
 const CACHE_CAPACITY: usize = 32;
@@ -44,6 +48,7 @@ pub struct NativePdfRenderer {
     eviction_events: Vec<NativeRenderEviction>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl NativePdfRenderer {
     pub fn new() -> Result<Self, NativePdfRendererError> {
         let pdfium = bind_bundled()?;
@@ -145,6 +150,33 @@ impl NativePdfRenderer {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+impl NativePdfRenderer {
+    pub fn new() -> Result<Self, NativePdfRendererError> {
+        Err(NativePdfRendererError::PageIndexOutOfBounds(0)) // Dummy
+    }
+
+    pub fn render_canvas(
+        &mut self,
+        _source_path: &Path,
+        _page_index: usize,
+    ) -> Result<RenderOutcome, NativePdfRendererError> {
+        Err(NativePdfRendererError::PageIndexOutOfBounds(0))
+    }
+
+    pub fn render_text_layer(
+        &mut self,
+        _source_path: &Path,
+        _page_index: usize,
+    ) -> Result<RenderOutcome, NativePdfRendererError> {
+        Err(NativePdfRendererError::PageIndexOutOfBounds(0))
+    }
+
+    pub fn drain_eviction_events(&mut self) -> Vec<NativeRenderEviction> {
+        Vec::new()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) enum RenderTarget {
     Canvas,
@@ -152,6 +184,7 @@ pub(crate) enum RenderTarget {
 }
 
 impl RenderTarget {
+    #[cfg(not(target_arch = "wasm32"))]
     fn render_dimensions(&self, page: &PdfPage) -> RenderDimensions {
         let max_size = match self {
             RenderTarget::Canvas => PDF_CANVAS_TEXTURE_SIZE,
@@ -181,7 +214,10 @@ impl RenderTarget {
 }
 
 pub struct RenderOutcome {
+    #[cfg(not(target_arch = "wasm32"))]
     pub image: ColorImage,
+    #[cfg(target_arch = "wasm32")]
+    pub image: (),
     pub duration: Duration,
     pub cache_hit: bool,
 }
@@ -241,6 +277,7 @@ impl Hash for RenderCacheKey {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Copy, Clone, Debug)]
 struct RenderDimensions {
     width: Pixels,

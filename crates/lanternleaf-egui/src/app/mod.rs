@@ -112,6 +112,49 @@ pub(crate) fn run() {
     );
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn run_wasm(canvas_id: &str) -> Result<(), wasm_bindgen::JsValue> {
+    use wasm_bindgen::JsCast;
+
+    // Redirect tracing to the browser console
+    tracing_wasm::set_as_global_default();
+
+    let canvas_id = canvas_id.to_owned();
+    wasm_bindgen_futures::spawn_local(async move {
+        let app_config = config::AppConfig::default(); // In WASM we might need to fetch this or use defaults
+        let bootstrap_config = bootstrap_config_from_app_config(&app_config);
+        let normalizer = normalizer::TextNormalizer::load_default();
+        let runtime = AppRuntime::with_bootstrap_config(&bootstrap_config);
+
+        let runner = eframe::WebRunner::new();
+        runner
+            .start(
+                &canvas_id,
+                eframe::WebOptions::default(),
+                Box::new(move |cc| {
+                    // Tracing guard is not used in WASM the same way
+                    // We'll pass a dummy or handle it differently if needed
+                    // For now, let's just use a simple approach
+                    
+                    // We need a dummy tracing guard or change the struct
+                    // Actually, let's just make it work for now.
+                    
+                    // We'll need to modify LanternLeafApp::new to handle WASM tracing guard
+                    Box::new(LanternLeafApp::new_wasm(
+                        cc,
+                        runtime,
+                        app_config,
+                        normalizer,
+                    )) as Box<dyn eframe::App>
+                }),
+            )
+            .await
+            .expect("failed to start eframe");
+    });
+
+    Ok(())
+}
+
 struct SingleInstanceLock {
     path: PathBuf,
     _file: fs::File,
@@ -228,6 +271,7 @@ fn is_pid_running(pid: u32) -> bool {
 
 struct LanternLeafApp {
     runtime: AppRuntime,
+    #[cfg(not(target_arch = "wasm32"))]
     _tracing_guard: tracing_appender::non_blocking::WorkerGuard,
     fonts_configured: bool,
     status_log: Vec<StatusLogEntry>,
@@ -633,6 +677,7 @@ fn decode_pretty_image(
 
 impl LanternLeafApp {
     const OVERLAY_EVICTION_SNACK_DURATION: Duration = Duration::from_secs(5);
+    #[cfg(not(target_arch = "wasm32"))]
     fn new(
         cc: &eframe::CreationContext<'_>,
         runtime: AppRuntime,
@@ -736,6 +781,99 @@ impl LanternLeafApp {
             starter_browser_window_id_input: String::new(),
         };
         app.load_pinned_timeline_entries();
+        app
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn new_wasm(
+        cc: &eframe::CreationContext<'_>,
+        runtime: AppRuntime,
+        app_config: config::AppConfig,
+        normalizer: normalizer::TextNormalizer,
+    ) -> Self {
+        let fonts_configured = setup_egui_fonts(&cc.egui_ctx, &app_config);
+        
+        let url = app_config.remote_url.clone().unwrap_or_else(|| "http://127.0.0.1:3030".to_string());
+        let persistence_service: Arc<dyn PersistenceService> = Arc::new(RemotePersistenceService::new(url));
+        let persistence = Arc::new(PersistenceLifecycle::new(persistence_service));
+        
+        let cache_service: Arc<dyn cache_service::CacheService> = Arc::new(cache_service::FilesystemCacheService);
+        let config_service: Arc<dyn config_service::ConfigService> = Arc::new(config_service::FilesystemConfigService);
+        
+        let effect_context = EffectContext::with_services(
+            app_config.clone(),
+            normalizer.clone(),
+            Arc::clone(&persistence),
+            Arc::clone(&cache_service),
+            PathBuf::new(),
+            Arc::clone(&config_service),
+        );
+        let effect_session = Arc::clone(&effect_context.session);
+        let effect_dispatcher = EffectDispatcher::new(effect_context, Some(cc.egui_ctx.clone()));
+        persistence.start_sync_thread(effect_dispatcher.event_tx());
+
+        let mut app = Self {
+            runtime,
+            fonts_configured,
+            status_log: Vec::new(),
+            show_safe_quit_modal: false,
+            show_reader_confirm_modal: false,
+            pending_search_focus: false,
+            last_plan: None,
+            auto_scroll_state: AutoScrollState::default(),
+            text_only_override: None,
+            text_only_toggle_pending: false,
+            anchor_diagnostics: AnchorDiagnostics::default(),
+            overlay_diagnostics: OverlayDiagnostics::default(),
+            audio_diagnostics: AudioDiagnostics::default(),
+            tts_runtime: TtsRuntime::new(normalizer.clone()),
+            last_tts_runtime_event: None,
+            theme_override: None,
+            pending_theme_mode: None,
+            theme_patch_pending: false,
+            persistence,
+            cache_service,
+            effect_session,
+            tts_session_source: None,
+            persistence_logged: false,
+            last_reader_source: None,
+            last_reader_snapshot: None,
+            effect_dispatcher,
+            shell_state: ShellState::default(),
+            layout_policy: LayoutPolicy::default(),
+            settings_trace_events: Vec::new(),
+            settings_trace_next_id: 0,
+            persistence_trace_events: Vec::new(),
+            persistence_trace_next_id: 0,
+            regression_snapshots: Vec::new(),
+            regression_snapshot_next_id: 0,
+            overlay_pressure_focus: false,
+            scheduler_events: Vec::new(),
+            pdf_render_state: PdfRenderState::default(),
+            pdf_renderer: None,
+            current_pdf_path: None,
+            pretty_page_cache_key: None,
+            pretty_page_cache_blocks: Vec::new(),
+            thumbnail_cache: ThumbnailCache::new(),
+            pretty_image_cache: PrettyImageCache::new(),
+            sentence_scroll_offset: None,
+            overlay_eviction_warning_at: None,
+            timeline_history: Vec::new(),
+            pinned_timeline_entries: Vec::new(),
+            starter_open_path_input: String::new(),
+            starter_clipboard_text_input: String::new(),
+            starter_calibre_query: String::new(),
+            starter_calibre_force_refresh: false,
+            starter_calibre_sort: CalibreSort::Title,
+            starter_calibre_view: Vec::new(),
+            starter_calibre_last_query: String::new(),
+            starter_calibre_last_sort: CalibreSort::Title,
+            starter_calibre_last_count: 0,
+            starter_browser_tab_query: String::new(),
+            starter_browser_tabs_force_refresh: false,
+            starter_browser_tab_id_input: String::new(),
+            starter_browser_window_id_input: String::new(),
+        };
         app
     }
 

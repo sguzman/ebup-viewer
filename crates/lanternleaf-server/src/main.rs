@@ -127,6 +127,7 @@ async fn serve(port: u16, bind: &str, web_dist: &str) -> anyhow::Result<()> {
     let api = Router::new()
         .route("/api/v1/ws", get(ws_handler))
         .route("/api/v1/tts/audio/:batch_id/:audio_idx", get(get_tts_audio))
+        .route("/api/v1/debug/web_dist", get(debug_web_dist))
         .with_state(state.clone());
 
     // Serve the web client from the same origin.
@@ -169,16 +170,102 @@ async fn serve(port: u16, bind: &str, web_dist: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Serialize)]
+struct WebDistDebug {
+    web_dist_abs: String,
+    index_exists: bool,
+    index_bytes: u64,
+    index_hash_fnv64: String,
+    index_first_line: String,
+    js_files: Vec<String>,
+    wasm_files: Vec<String>,
+}
+
+async fn debug_web_dist(State(_state): State<AppState>) -> impl IntoResponse {
+    // We can't borrow web_dist_path from here directly without threading it through state.
+    // Instead, re-resolve from CWD/workspace using the same default. This endpoint is best-effort
+    // and mainly used to prove what dist the server is serving.
+    let web_dist = std::env::var("LANTERNLEAF_WEB_DIST").unwrap_or_else(|_| "crates/lanternleaf-web/dist".to_string());
+    let web_dist_path = {
+        let path = PathBuf::from(&web_dist);
+        if path.is_absolute() {
+            path
+        } else {
+            let root = lanternleaf_core::workspace::workspace_root_from_cwd()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            root.join(path)
+        }
+    };
+
+    let index_path = web_dist_path.join("index.html");
+    let mut index_first_line = String::new();
+    let mut index_hash = 0u64;
+    let mut index_bytes = 0u64;
+    let index_exists = tokio::fs::try_exists(&index_path).await.unwrap_or(false);
+    if index_exists {
+        if let Ok(bytes) = tokio::fs::read(&index_path).await {
+            index_bytes = bytes.len() as u64;
+            index_hash = fnv1a64(&bytes);
+            index_first_line = bytes
+                .split(|b| *b == b'\n')
+                .next()
+                .map(|l| String::from_utf8_lossy(l).to_string())
+                .unwrap_or_default();
+        }
+    }
+
+    let mut js_files = Vec::new();
+    let mut wasm_files = Vec::new();
+    if let Ok(mut dir) = tokio::fs::read_dir(&web_dist_path).await {
+        while let Ok(Some(entry)) = dir.next_entry().await {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".js") {
+                js_files.push(name);
+            } else if name.ends_with(".wasm") {
+                wasm_files.push(name);
+            }
+        }
+    }
+    js_files.sort();
+    wasm_files.sort();
+
+    let payload = WebDistDebug {
+        web_dist_abs: web_dist_path.display().to_string(),
+        index_exists,
+        index_bytes,
+        index_hash_fnv64: format!("0x{index_hash:016x}"),
+        index_first_line,
+        js_files,
+        wasm_files,
+    };
+    axum::Json(payload)
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in bytes {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
 async fn serve_index_html(index_path: PathBuf) -> Response {
     // If the user forgot to build the web client, returning a hard 404 is confusing.
     // Provide a small HTML help page instead.
     if tokio::fs::try_exists(&index_path).await.unwrap_or(false) {
         match tokio::fs::read(&index_path).await {
             Ok(bytes) => {
+                let index_hash = fnv1a64(&bytes);
                 let mut resp: Response = bytes.into_response();
                 resp.headers_mut().insert(
                     axum::http::header::CONTENT_TYPE,
                     axum::http::HeaderValue::from_static("text/html"),
+                );
+                resp.headers_mut().insert(
+                    axum::http::HeaderName::from_static("x-lanternleaf-index-fnv64"),
+                    axum::http::HeaderValue::from_str(&format!("0x{:016x}", index_hash))
+                        .unwrap_or_else(|_| axum::http::HeaderValue::from_static("invalid")),
                 );
                 return resp;
             }

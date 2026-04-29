@@ -16,6 +16,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{debug, info, trace, warn};
 
 use clap::{Parser, Subcommand};
@@ -153,7 +154,13 @@ async fn serve(port: u16, bind: &str, web_dist: &str) -> anyhow::Result<()> {
     let app = Router::new()
         .merge(api)
         .route("/", get(move || serve_index_html(index_path_for_handler.clone())))
-        .fallback_service(web);
+        .fallback_service(web)
+        // Dev-friendly: avoid browser caching static assets while we're iterating on the web client.
+        // This prevents "it still shows the old thin client" when the JS filename stays cached.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store, max-age=0"),
+        ));
 
     let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;

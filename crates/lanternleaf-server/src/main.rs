@@ -94,13 +94,35 @@ async fn serve(port: u16, bind: &str, web_dist: &str) -> anyhow::Result<()> {
         tts_batches: Arc::new(Mutex::new(HashMap::new())),
     };
 
+    let web_dist_path = {
+        let path = PathBuf::from(web_dist);
+        if path.is_absolute() {
+            path
+        } else {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(path)
+        }
+    };
+    let web_dist_exists = web_dist_path.exists();
+    info!(
+        web_dist = web_dist,
+        web_dist_abs = %web_dist_path.display(),
+        web_dist_exists,
+        "Configured web asset directory"
+    );
+    if !web_dist_exists {
+        warn!(
+            web_dist_abs = %web_dist_path.display(),
+            "Web asset directory does not exist; run `cd crates/lanternleaf-web && trunk build`"
+        );
+    }
+
     let api = Router::new()
         .route("/api/v1/ws", get(ws_handler))
         .route("/api/v1/tts/audio/:batch_id/:audio_idx", get(get_tts_audio))
         .with_state(state.clone());
 
     // Serve the web client from the same origin.
-    let web = ServeDir::new(web_dist);
+    let web = ServeDir::new(&web_dist_path).append_index_html_on_directories(true);
 
     let app = Router::new().merge(api).fallback_service(web);
 

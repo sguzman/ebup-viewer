@@ -22,10 +22,15 @@
   <body>
     <canvas id="lanternleaf_canvas"></canvas>
     <script type="module">
-      import init, { start } from "./lanternleaf_web.js";
-      await init();
-      start("lanternleaf_canvas");
+      // Trunk injects the wasm-bindgen module loader and exposes bindings on
+      // `window.wasmBindings`, then fires `TrunkApplicationStarted`.
+      window.addEventListener("TrunkApplicationStarted", () => {
+        if (!window.wasmBindings || !window.wasmBindings.start) {
+          console.error("Missing wasm bindings; did Trunk fail to initialize?");
+          return;
+        }
+        window.wasmBindings.start("lanternleaf_canvas");
+      });
     </script>
   </body>
 </html>
-

@@ -1,0 +1,12 @@
+[package]
+name = "lanternleaf-web"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+lanternleaf-egui = { path = "../lanternleaf-egui" }
+wasm-bindgen = "0.2"
+

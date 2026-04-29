@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LanternLeaf</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #111;
+      }
+      #lanternleaf_canvas {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="lanternleaf_canvas"></canvas>
+    <script type="module">
+      import init, { start } from "./lanternleaf_web.js";
+      await init();
+      start("lanternleaf_canvas");
+    </script>
+  </body>
+</html>
+

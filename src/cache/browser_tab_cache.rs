@@ -856,6 +856,17 @@ fn rewrite_srcset_to_local(
         .join(", ")
 }
 
+#[cfg(target_arch = "wasm32")]
+fn rewrite_srcset_to_local(
+    raw: &str,
+    _base_url: &str,
+    _source_path: &Path,
+    _asset_lookup: &HashMap<String, BrowserTabAsset>,
+) -> String {
+    // WASM builds don't currently rewrite browser-tab bundles.
+    raw.to_string()
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn rewrite_css_urls_to_local(
     css: &str,
@@ -881,6 +892,16 @@ fn rewrite_css_urls_to_local(
             format!("url(\"{rewritten}\")")
         })
         .into_owned()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn rewrite_css_urls_to_local(
+    css: &str,
+    _base_url: &str,
+    _source_path: &Path,
+    _asset_lookup: &HashMap<String, BrowserTabAsset>,
+) -> String {
+    css.to_string()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -943,6 +964,7 @@ fn fetch_browser_tab_asset(
     Some(asset)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn resolve_browser_tab_url(raw: &str, base_url: &str) -> Option<String> {
     let trimmed = decode_html_entities(raw);
     let trimmed = trimmed.trim().trim_matches('\'').trim_matches('"');
@@ -957,6 +979,16 @@ fn resolve_browser_tab_url(raw: &str, base_url: &str) -> Option<String> {
     }
     let base = Url::parse(base_url).ok()?;
     base.join(trimmed).ok().map(|value| value.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn resolve_browser_tab_url(raw: &str, _base_url: &str) -> Option<String> {
+    let trimmed = decode_html_entities(raw);
+    let trimmed = trimmed.trim().trim_matches('\'').trim_matches('"');
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 #[cfg(not(target_arch = "wasm32"))]

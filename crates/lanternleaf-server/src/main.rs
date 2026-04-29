@@ -57,9 +57,12 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // Default to `info` logging unless the user overrides via `RUST_LOG=...`.
+    // Without this, `EnvFilter::from_default_env()` defaults to a very restrictive filter,
+    // and important diagnostics (like web-dist existence) disappear.
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     let args = Args::parse();
     match args.command.unwrap_or(Commands::Serve {
@@ -94,12 +97,16 @@ async fn serve(port: u16, bind: &str, web_dist: &str) -> anyhow::Result<()> {
         tts_batches: Arc::new(Mutex::new(HashMap::new())),
     };
 
+    // Resolve web asset dir relative to the workspace root, not process CWD.
+    // `cargo run`/systemd/etc can change CWD, and a relative web-dist would silently break.
     let web_dist_path = {
         let path = PathBuf::from(web_dist);
         if path.is_absolute() {
             path
         } else {
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(path)
+            let root = lanternleaf_core::workspace::workspace_root_from_cwd()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            root.join(path)
         }
     };
     let web_dist_exists = web_dist_path.exists();
@@ -122,15 +129,89 @@ async fn serve(port: u16, bind: &str, web_dist: &str) -> anyhow::Result<()> {
         .with_state(state.clone());
 
     // Serve the web client from the same origin.
+    // Use an explicit `/` route so even if directory-index behavior changes, `/` works.
+    let index_path = web_dist_path.join("index.html");
+    if let Ok(index_html) = std::fs::read_to_string(&index_path) {
+        if index_html.contains("lanternleaf_web.js") {
+            // This is a common failure mode when the user forgot to rerun `trunk build`:
+            // the old index referenced a non-existent fixed JS filename instead of Trunk's
+            // fingerprinted output.
+            warn!(
+                index_path = %index_path.display(),
+                "Web dist/index.html looks stale (references `lanternleaf_web.js`); rerun `cd crates/lanternleaf-web && trunk build`"
+            );
+        }
+    } else {
+        warn!(
+            index_path = %index_path.display(),
+            "Missing dist/index.html; run `cd crates/lanternleaf-web && trunk build`"
+        );
+    }
     let web = ServeDir::new(&web_dist_path).append_index_html_on_directories(true);
 
-    let app = Router::new().merge(api).fallback_service(web);
+    let index_path_for_handler = index_path.clone();
+    let app = Router::new()
+        .merge(api)
+        .route("/", get(move || serve_index_html(index_path_for_handler.clone())))
+        .fallback_service(web);
 
     let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!(addr = %addr, web_dist, "LanternLeaf server listening");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn serve_index_html(index_path: PathBuf) -> Response {
+    // If the user forgot to build the web client, returning a hard 404 is confusing.
+    // Provide a small HTML help page instead.
+    if tokio::fs::try_exists(&index_path).await.unwrap_or(false) {
+        match tokio::fs::read(&index_path).await {
+            Ok(bytes) => {
+                let mut resp: Response = bytes.into_response();
+                resp.headers_mut().insert(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static("text/html"),
+                );
+                return resp;
+            }
+            Err(err) => {
+                warn!(index_path = %index_path.display(), "Failed to read index.html: {err}");
+            }
+        }
+    }
+
+    let body = format!(
+        r#"<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LanternLeaf - Web Assets Missing</title>
+    <style>
+      body {{ font-family: ui-sans-serif, system-ui, sans-serif; padding: 24px; line-height: 1.4; }}
+      code, pre {{ background: #f5f5f5; padding: 2px 4px; border-radius: 4px; }}
+      pre {{ padding: 12px; overflow: auto; }}
+    </style>
+  </head>
+  <body>
+    <h1>LanternLeaf web assets missing</h1>
+    <p>The server is running, but it could not find <code>index.html</code> at:</p>
+    <pre>{}</pre>
+    <p>Build the web client with:</p>
+    <pre>cd crates/lanternleaf-web
+trunk build</pre>
+    <p>Then restart the server with <code>--web-dist crates/lanternleaf-web/dist</code>.</p>
+  </body>
+</html>"#,
+        index_path.display()
+    );
+    let mut resp: Response = body.into_response();
+    resp.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("text/html"),
+    );
+    resp
 }
 
 fn default_config_path() -> PathBuf {

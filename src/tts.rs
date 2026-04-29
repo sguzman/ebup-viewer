@@ -4,7 +4,6 @@ mod native {
     use rodio::buffer::SamplesBuffer;
     use rodio::source::Zero;
     use rodio::{Decoder, OutputStream, Sink, Source};
-    use serde::{Deserialize, Serialize};
     use sha2::{Digest, Sha256};
     use std::env;
     use std::fs::{self, File};

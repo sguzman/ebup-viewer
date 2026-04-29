@@ -11,7 +11,6 @@ mod bookmarks_config;
 #[path = "cache/browser_tab_cache.rs"]
 mod browser_tab_cache;
 #[path = "cache/content_artifacts.rs"]
-#[cfg(not(target_arch = "wasm32"))]
 mod content_artifacts;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -23,8 +22,9 @@ use image::codecs::jpeg::JpegEncoder;
 #[cfg(not(target_arch = "wasm32"))]
 use image::imageops::FilterType;
 #[cfg(not(target_arch = "wasm32"))]
-use sha2::{Digest, Sha256};
 use crate::config::AppConfig;
+#[cfg(not(target_arch = "wasm32"))]
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
@@ -387,9 +387,18 @@ pub fn persist_pdf_ocr_alignment_artifact(source_path: &Path, artifact: &PdfOcrA
     content_artifacts::persist_pdf_ocr_alignment_artifact(source_path, artifact)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_pdf_ocr_alignment_artifact(_source_path: &Path, _artifact: &PdfOcrAlignmentArtifact) {
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn load_pdf_ocr_alignment_artifact(source_path: &Path) -> Option<PdfOcrAlignmentArtifact> {
     content_artifacts::load_pdf_ocr_alignment_artifact(source_path)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn load_pdf_ocr_alignment_artifact(_source_path: &Path) -> Option<PdfOcrAlignmentArtifact> {
+    None
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -400,9 +409,21 @@ pub fn persist_pdf_render_precomputed_state(
     content_artifacts::persist_pdf_render_precomputed_state(source_path, artifact)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_pdf_render_precomputed_state(
+    _source_path: &Path,
+    _artifact: &PdfRenderPrecomputedState,
+) {
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn load_pdf_render_precomputed_state(source_path: &Path) -> Option<PdfRenderPrecomputedState> {
     content_artifacts::load_pdf_render_precomputed_state(source_path)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn load_pdf_render_precomputed_state(_source_path: &Path) -> Option<PdfRenderPrecomputedState> {
+    None
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -416,6 +437,10 @@ pub fn remember_source_path(source_path: &Path) {
     if let Err(err) = fs::write(&hint_path, payload) {
         warn!(path = %hint_path.display(), "Failed to persist source path hint: {err}");
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn remember_source_path(_source_path: &Path) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -441,7 +466,16 @@ pub fn persist_clipboard_text_source(text: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
+pub fn persist_clipboard_text_source(_text: &str) -> Result<PathBuf, String> {
+    Err("Clipboard source not supported on WASM".to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn delete_recent_source_and_cache(_source_path: &Path) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn delete_recent_source_and_cache(source_path: &Path) -> Result<(), String> {
     let canonical_source =
@@ -1860,53 +1894,4 @@ sentence_text = "legacy bookmark entry"
         let _ = fs::remove_dir_all(&dir);
     }
 }
-#[cfg(target_arch = "wasm32")]
-pub fn remember_source_path(_source_path: &Path) {}
 
-#[cfg(target_arch = "wasm32")]
-pub fn persist_clipboard_text_source(_text: &str) -> Result<PathBuf, String> {
-    Err("Not supported on WASM".into())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn persist_pdf_render_precomputed_state(
-    _source_path: &Path,
-    _artifact: &PdfRenderPrecomputedState,
-) {
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn load_pdf_render_precomputed_state(_source_path: &Path) -> Option<PdfRenderPrecomputedState> {
-    None
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn persist_pdf_ocr_alignment_artifact(_source_path: &Path, _artifact: &PdfOcrAlignmentArtifact) {
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn load_pdf_ocr_alignment_artifact(_source_path: &Path) -> Option<PdfOcrAlignmentArtifact> {
-    None
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn persist_pdf_sync_meta(
-    _source_path: &Path,
-    _pdf_geometry_mode: crate::epub_loader::PdfGeometryMode,
-    _pdf_runtime_policy: crate::epub_loader::PdfRuntimePolicy,
-) {
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn persist_dual_view_artifacts(
-    _source_path: &Path,
-    _reading_markdown: &str,
-    _reading_html: &str,
-    _tts_text: &str,
-) {
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn delete_recent_source_and_cache(_source_path: &Path) -> Result<(), String> {
-    Ok(())
-}

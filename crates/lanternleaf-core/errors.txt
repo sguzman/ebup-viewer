@@ -1,0 +1,187 @@
+[1m[92m    Checking[0m lanternleaf-core v0.1.0 (/win/linux/Code/projects/lantern-leaf/crates/lanternleaf-core)
+[1m[33mwarning[0m[1m: unused imports: `parse_config` and `serialize_config`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/bookmarks_config.rs:1:32
+  [1m[94m|[0m
+[1m[94m1[0m [1m[94m|[0m use crate::config::{AppConfig, parse_config, serialize_config};
+  [1m[94m|[0m                                [1m[33m^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^[0m
+  [1m[94m|[0m
+  [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: unused imports: `debug` and `warn`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/bookmarks_config.rs:8:15
+  [1m[94m|[0m
+[1m[94m8[0m [1m[94m|[0m use tracing::{debug, warn};
+  [1m[94m|[0m               [1m[33m^^^^^[0m  [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `BROWSER_TABS_SUBDIR`, `BROWSER_TAB_ASSETS_SUBDIR`, `BROWSER_TAB_FETCH_USER_AGENT`, `BROWSER_TAB_HTML_FILE`, `BROWSER_TAB_MANIFEST_FILE`, `BROWSER_TAB_MANIFEST_VERSION`, `BROWSER_TAB_RAW_HTML_FILE`, `BROWSER_TAB_TEXT_FILE`, and `cache_root`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:2:5
+  [1m[94m|[0m
+[1m[94m2[0m [1m[94m|[0m     BROWSER_TAB_ASSETS_SUBDIR, BROWSER_TAB_FETCH_USER_AGENT, BROWSER_TAB_HTML_FILE,
+  [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m3[0m [1m[94m|[0m     BROWSER_TAB_MANIFEST_FILE, BROWSER_TAB_MANIFEST_VERSION, BROWSER_TAB_RAW_HTML_FILE,
+  [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m4[0m [1m[94m|[0m     BROWSER_TAB_TEXT_FILE, BROWSER_TABS_SUBDIR, cache_root,
+  [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused import: `std::time::Duration`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:22:5
+   [1m[94m|[0m
+[1m[94m22[0m [1m[94m|[0m use std::time::Duration;
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `debug`, `info`, and `warn`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:23:15
+   [1m[94m|[0m
+[1m[94m23[0m [1m[94m|[0m use tracing::{debug, info, warn};
+   [1m[94m|[0m               [1m[33m^^^^^[0m  [1m[33m^^^^[0m  [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `debug` and `warn`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/content_artifacts.rs:6:15
+  [1m[94m|[0m
+[1m[94m6[0m [1m[94m|[0m use tracing::{debug, warn};
+  [1m[94m|[0m               [1m[33m^^^^^[0m  [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `CONTENT_LAYOUT_VERSION_FILE`, `CONTENT_LAYOUT_VERSION`, `CONTENT_READING_HTML_FILE`, `CONTENT_READING_MARKDOWN_FILE`, and `CONTENT_TTS_TEXT_FILE`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/content_artifacts.rs:10:5
+   [1m[94m|[0m
+[1m[94m10[0m [1m[94m|[0m     CONTENT_LAYOUT_VERSION, CONTENT_LAYOUT_VERSION_FILE, CONTENT_READING_HTML_FILE,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m11[0m [1m[94m|[0m     CONTENT_READING_MARKDOWN_FILE, CONTENT_TTS_TEXT_FILE, hash_dir,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused import: `std::io::Cursor`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:31:5
+   [1m[94m|[0m
+[1m[94m31[0m [1m[94m|[0m use std::io::Cursor;
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused import: `std::io::Read`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:32:5
+   [1m[94m|[0m
+[1m[94m32[0m [1m[94m|[0m use std::io::Read;
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `Duration` and `UNIX_EPOCH`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:37:17
+   [1m[94m|[0m
+[1m[94m37[0m [1m[94m|[0m use std::time::{Duration, UNIX_EPOCH};
+   [1m[94m|[0m                 [1m[33m^^^^^^^^[0m  [1m[33m^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `debug`, `trace`, and `warn`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache.rs:38:15
+   [1m[94m|[0m
+[1m[94m38[0m [1m[94m|[0m use tracing::{debug, trace, warn};
+   [1m[94m|[0m               [1m[33m^^^^^[0m  [1m[33m^^^^^[0m  [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `debug`, `info`, and `warn`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/config/io.rs:7:15
+  [1m[94m|[0m
+[1m[94m7[0m [1m[94m|[0m use tracing::{debug, info, warn};
+  [1m[94m|[0m               [1m[33m^^^^^[0m  [1m[33m^^^^[0m  [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `hash_dir`, `is_browser_tab_manifest`, and `load_browser_tab_manifest`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:6:20
+  [1m[94m|[0m
+[1m[94m6[0m [1m[94m|[0m use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest};
+  [1m[94m|[0m                    [1m[33m^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused import: `Context`[0m
+ [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:8:14
+  [1m[94m|[0m
+[1m[94m8[0m [1m[94m|[0m use anyhow::{Context, Result};
+  [1m[94m|[0m              [1m[33m^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused import: `std::collections::HashSet`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:13:5
+   [1m[94m|[0m
+[1m[94m13[0m [1m[94m|[0m use std::collections::HashSet;
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `info` and `warn`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:19:15
+   [1m[94m|[0m
+[1m[94m19[0m [1m[94m|[0m use tracing::{info, warn};
+   [1m[94m|[0m               [1m[33m^^^^[0m  [1m[33m^^^^[0m
+
+[1m[33mwarning[0m[1m: unused imports: `is_epub`, `is_markdown`, `load_source_content`, and `source_type_label`[0m
+  [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/epub_loader.rs:45:23
+   [1m[94m|[0m
+[1m[94m45[0m [1m[94m|[0m use source_pipeline::{is_epub, is_markdown, load_source_content, source_type_label};
+   [1m[94m|[0m                       [1m[33m^^^^^^^[0m  [1m[33m^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^^^[0m  [1m[33m^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: unused import: `Path`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/tts.rs:650:21
+    [1m[94m|[0m
+[1m[94m650[0m [1m[94m|[0m     use std::path::{Path, PathBuf};
+    [1m[94m|[0m                     [1m[33m^^^^[0m
+
+[1m[91merror[E0425][0m[1m: cannot find function `rewrite_srcset_to_local` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:809:17
+    [1m[94m|[0m
+[1m[94m809[0m [1m[94m|[0m                 rewrite_srcset_to_local(raw, base_url, html_path, asset_lookup)
+    [1m[94m|[0m                 [1m[91m^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[91merror[E0425][0m[1m: cannot find function `rewrite_css_urls_to_local` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:818:17
+    [1m[94m|[0m
+[1m[94m818[0m [1m[94m|[0m                 rewrite_css_urls_to_local(css, base_url, html_path, asset_lookup)
+    [1m[94m|[0m                 [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[91merror[E0425][0m[1m: cannot find function `rewrite_css_urls_to_local` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:825:29
+    [1m[94m|[0m
+[1m[94m825[0m [1m[94m|[0m             let rewritten = rewrite_css_urls_to_local(css, base_url, html_path, asset_lookup);
+    [1m[94m|[0m                             [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mnot found in this scope[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Url` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:955:22
+    [1m[94m|[0m
+[1m[94m955[0m [1m[94m|[0m     if let Ok(url) = Url::parse(trimmed) {
+    [1m[94m|[0m                      [1m[91m^^^[0m [1m[91muse of undeclared type `Url`[0m
+
+[1m[91merror[E0433][0m[1m: cannot find type `Url` in this scope[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/cache/browser_tab_cache.rs:958:16
+    [1m[94m|[0m
+[1m[94m958[0m [1m[94m|[0m     let base = Url::parse(base_url).ok()?;
+    [1m[94m|[0m                [1m[91m^^^[0m [1m[91muse of undeclared type `Url`[0m
+
+[1m[33mwarning[0m[1m: variable does not need to be mutable[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/browser_tabs.rs:258:13
+    [1m[94m|[0m
+[1m[94m258[0m [1m[94m|[0m         let mut builder = reqwest::Client::builder();
+    [1m[94m|[0m             [1m[94m----[0m[1m[33m^^^^^^^[0m
+    [1m[94m|[0m             [1m[94m|[0m
+    [1m[94m|[0m             [1m[94mhelp: remove this `mut`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: unused variable: `timeout_ms`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/browser_tabs.rs:253:32
+    [1m[94m|[0m
+[1m[94m253[0m [1m[94m|[0m     pub fn new(base_url: &str, timeout_ms: u64) -> Result<Self> {
+    [1m[94m|[0m                                [1m[33m^^^^^^^^^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_timeout_ms`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: unused variable: `parent`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/normalizer.rs:326:21
+    [1m[94m|[0m
+[1m[94m326[0m [1m[94m|[0m         if let Some(parent) = page_cache_path.parent() {
+    [1m[94m|[0m                     [1m[33m^^^^^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_parent`[0m
+
+[1m[33mwarning[0m[1m: unused variable: `cache_path`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/normalizer.rs:656:13
+    [1m[94m|[0m
+[1m[94m656[0m [1m[94m|[0m         let cache_path = self.normalized_sentence_cache_path(epub_path, &source_hash, config_hash);
+    [1m[94m|[0m             [1m[33m^^^^^^^^^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_cache_path`[0m
+
+[1m[33mwarning[0m[1m: unused variable: `cached`[0m
+   [1m[94m--> [0mcrates/lanternleaf-core/src/../../../src/normalizer.rs:691:13
+    [1m[94m|[0m
+[1m[94m691[0m [1m[94m|[0m         let cached = NormalizedSentenceCache {
+    [1m[94m|[0m             [1m[33m^^^^^^[0m [1m[33mhelp: if this is intentional, prefix it with an underscore: `_cached`[0m
+
+[1mSome errors have detailed explanations: E0425, E0433.[0m
+[1mFor more information about an error, try `rustc --explain E0425`.[0m
+[1m[33mwarning[0m: `lanternleaf-core` (lib) generated 23 warnings
+[1m[91merror[0m: could not compile `lanternleaf-core` (lib) due to 5 previous errors; 23 warnings emitted

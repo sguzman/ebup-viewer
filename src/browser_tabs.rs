@@ -243,6 +243,7 @@ pub struct BrowsrClient {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone)]
+#[cfg(not(target_arch = "wasm32"))]
 pub struct BrowsrBlockingClient {
     client: reqwest::blocking::Client,
     base_url: String,
@@ -521,6 +522,7 @@ impl BrowsrClient {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 impl BrowsrBlockingClient {
     pub fn new(base_url: &str, timeout_ms: u64) -> Result<Self> {
         let normalized = base_url.trim().trim_end_matches('/').to_string();
@@ -786,6 +788,7 @@ async fn parse_json_response<T: for<'de> Deserialize<'de>>(
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_json_response_blocking<T: for<'de> Deserialize<'de>>(
     response: reqwest::blocking::Response,
 ) -> Result<T> {

@@ -84,196 +84,6 @@ pub(super) fn ensure_not_cancelled(
     }
     Ok(())
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(super) fn load_source_content(
-    path: &Path,
-    cancel: Option<&CancellationToken>,
-) -> Result<SourceContent> {
-    let start = Instant::now();
-    ensure_not_cancelled(cancel, "load_source_text_start")?;
-    if is_browser_tab_manifest(path) {
-        if let Err(err) = crate::cache::rehydrate_browser_tab_manifest_assets(path) {
-            warn!(path = %path.display(), "Browser-tab asset rehydrate failed: {err}");
-        }
-        let manifest = load_browser_tab_manifest(path)
-            .with_context(|| format!("Failed to load browser-tab manifest {}", path.display()))?;
-        let tts_text = fs::read_to_string(&manifest.text_path).with_context(|| {
-            format!(
-                "Failed to read browser-tab text {}",
-                manifest.text_path.display()
-            )
-        })?;
-        let html = fs::read_to_string(&manifest.html_path).with_context(|| {
-            format!(
-                "Failed to read browser-tab html {}",
-                manifest.html_path.display()
-            )
-        })?;
-        let wrapped_html = wrap_browser_tab_html(&html, &manifest.url);
-        info!(
-            path = %path.display(),
-            tab_id = manifest.tab_id,
-            url = %manifest.url,
-            html_truncated = manifest.html_truncated,
-            text_truncated = manifest.text_truncated,
-            "Loaded browser-tab dual-view payload"
-        );
-        return Ok(SourceContent {
-            tts_text: if tts_text.trim().is_empty() {
-                "No textual content found in this browser tab.".to_string()
-            } else {
-                tts_text
-            },
-            reading_markdown: None,
-            reading_html: Some(wrapped_html),
-            has_structured_markdown: true,
-            pdf_geometry_mode: None,
-            pdf_sync_strategy: None,
-            pdf_classification: None,
-            pdf_runtime_policy: None,
-            pdf_ocr_pipeline: None,
-        });
-    }
-
-    if is_text_file(path) {
-        info!(path = %path.display(), "Loading plain text content");
-        let data = fs::read_to_string(path)
-            .with_context(|| format!("Failed to read {}", path.display()))?;
-        let tts_text = if data.trim().is_empty() {
-            "No textual content found in this file.".to_string()
-        } else {
-            data
-        };
-        info!(
-            total_chars = tts_text.len(),
-            "Finished loading plain text content"
-        );
-        return Ok(SourceContent {
-            tts_text,
-            reading_markdown: None,
-            reading_html: None,
-            has_structured_markdown: false,
-            pdf_geometry_mode: None,
-            pdf_sync_strategy: None,
-            pdf_classification: None,
-            pdf_runtime_policy: None,
-            pdf_ocr_pipeline: None,
-        });
-    }
-
-    if is_pdf(path) {
-        return load_pdf_with_quack_check(path, cancel);
-    }
-
-    if is_native_html_source(path) {
-        let html = load_native_pretty_html(path, cancel)?;
-        let reading_html = if html.trim().is_empty() {
-            None
-        } else {
-            Some(html)
-        };
-        let reading_html_chars = reading_html.as_deref().map(|v| v.len()).unwrap_or(0);
-        let (tts_text, tts_text_source) = if is_epub(path) && reading_html.is_some() {
-            let extracted = extract_tts_text_from_html(reading_html.as_deref().unwrap_or(""));
-            if html_extract_seems_too_small(&extracted) {
-                warn!(
-                    path = %path.display(),
-                    reading_html_chars,
-                    extracted_chars = extracted.len(),
-                    tts_text_source = "pandoc_plain_fallback",
-                    "EPUB HTML->text extraction produced too little text; falling back to pandoc plain-text"
-                );
-                (load_with_pandoc(path, "plain", cancel)?, "pandoc_plain")
-            } else {
-                (extracted, "epub_html_extract")
-            }
-        } else {
-            (load_with_pandoc(path, "plain", cancel)?, "pandoc_plain")
-        };
-        let has_pretty = reading_html
-            .as_deref()
-            .map(|v| !v.trim().is_empty())
-            .unwrap_or(false);
-        let tts_text_chars = tts_text.len();
-        let result = SourceContent {
-            tts_text,
-            reading_markdown: None,
-            reading_html,
-            has_structured_markdown: has_pretty,
-            pdf_geometry_mode: None,
-            pdf_sync_strategy: None,
-            pdf_classification: None,
-            pdf_runtime_policy: None,
-            pdf_ocr_pipeline: None,
-        };
-        info!(
-            path = %path.display(),
-            stage = "native_html_dual_convert",
-            tts_text_source,
-            tts_text_chars,
-            reading_html_chars,
-            elapsed_ms = start.elapsed().as_millis(),
-            has_structured_markdown = result.has_structured_markdown,
-            "Completed source conversion stage"
-        );
-        return Ok(result);
-    }
-
-    if is_pandoc_dual_source(path) {
-        let tts_text = load_with_pandoc(path, "plain", cancel)?;
-        let markdown = load_with_pandoc(path, "gfm-raw_html-raw_attribute", cancel)?;
-        let reading_markdown = if markdown.trim().is_empty() {
-            None
-        } else {
-            Some(markdown)
-        };
-        let has_pretty = reading_markdown.is_some();
-        let result = SourceContent {
-            tts_text,
-            reading_markdown,
-            reading_html: None,
-            has_structured_markdown: has_pretty,
-            pdf_geometry_mode: None,
-            pdf_sync_strategy: None,
-            pdf_classification: None,
-            pdf_runtime_policy: None,
-            pdf_ocr_pipeline: None,
-        };
-        info!(
-            path = %path.display(),
-            stage = "pandoc_dual_convert",
-            elapsed_ms = start.elapsed().as_millis(),
-            has_structured_markdown = result.has_structured_markdown,
-            "Completed source conversion stage"
-        );
-        return Ok(result);
-    }
-
-    if is_markdown(path) {
-        ensure_not_cancelled(cancel, "before_markdown_read")?;
-        let data = fs::read_to_string(path)
-            .with_context(|| format!("Failed to read markdown file at {}", path.display()))?;
-        let tts_text = markdown_to_plain_text(&data);
-        return Ok(SourceContent {
-            tts_text,
-            reading_markdown: Some(data),
-            reading_html: None,
-            has_structured_markdown: true,
-            pdf_geometry_mode: None,
-            pdf_sync_strategy: None,
-            pdf_classification: None,
-            pdf_runtime_policy: None,
-            pdf_ocr_pipeline: None,
-        });
-    }
-
-    anyhow::bail!(
-        "Unsupported source format for {}. Supported source types are .txt, .md, .markdown, .pdf, .html, .doc, .docx, and .epub.",
-        path.display(),
-    );
-}
-
 #[cfg(target_arch = "wasm32")]
 pub(super) fn load_source_content(
     _path: &Path,
@@ -281,6 +91,195 @@ pub(super) fn load_source_content(
 ) -> Result<SourceContent> {
     anyhow::bail!("Source loading not supported on WASM")
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn load_source_content(
+    path: &Path,
+    cancel: Option<&CancellationToken>,
+) -> Result<SourceContent> {
+        let start = Instant::now();
+        ensure_not_cancelled(cancel, "load_source_text_start")?;
+        if is_browser_tab_manifest(path) {
+            if let Err(err) = crate::cache::rehydrate_browser_tab_manifest_assets(path) {
+                warn!(path = %path.display(), "Browser-tab asset rehydrate failed: {err}");
+            }
+            let manifest = load_browser_tab_manifest(path)
+                .with_context(|| format!("Failed to load browser-tab manifest {}", path.display()))?;
+            let tts_text = fs::read_to_string(&manifest.text_path).with_context(|| {
+                format!(
+                    "Failed to read browser-tab text {}",
+                    manifest.text_path.display()
+                )
+            })?;
+            let html = fs::read_to_string(&manifest.html_path).with_context(|| {
+                format!(
+                    "Failed to read browser-tab html {}",
+                    manifest.html_path.display()
+                )
+            })?;
+            let wrapped_html = wrap_browser_tab_html(&html, &manifest.url);
+            info!(
+                path = %path.display(),
+                tab_id = manifest.tab_id,
+                url = %manifest.url,
+                html_truncated = manifest.html_truncated,
+                text_truncated = manifest.text_truncated,
+                "Loaded browser-tab dual-view payload"
+            );
+            return Ok(SourceContent {
+                tts_text: if tts_text.trim().is_empty() {
+                    "No textual content found in this browser tab.".to_string()
+                } else {
+                    tts_text
+                },
+                reading_markdown: None,
+                reading_html: Some(wrapped_html),
+                has_structured_markdown: true,
+                pdf_geometry_mode: None,
+                pdf_sync_strategy: None,
+                pdf_classification: None,
+                pdf_runtime_policy: None,
+                pdf_ocr_pipeline: None,
+            });
+        }
+
+        if is_text_file(path) {
+            info!(path = %path.display(), "Loading plain text content");
+            let data = fs::read_to_string(path)
+                .with_context(|| format!("Failed to read {}", path.display()))?;
+            let tts_text = if data.trim().is_empty() {
+                "No textual content found in this file.".to_string()
+            } else {
+                data
+            };
+            info!(
+                total_chars = tts_text.len(),
+                "Finished loading plain text content"
+            );
+            return Ok(SourceContent {
+                tts_text,
+                reading_markdown: None,
+                reading_html: None,
+                has_structured_markdown: false,
+                pdf_geometry_mode: None,
+                pdf_sync_strategy: None,
+                pdf_classification: None,
+                pdf_runtime_policy: None,
+                pdf_ocr_pipeline: None,
+            });
+        }
+
+        if is_pdf(path) {
+            return load_pdf_with_quack_check(path, cancel);
+        }
+
+        if is_native_html_source(path) {
+            let html = load_native_pretty_html(path, cancel)?;
+            let reading_html = if html.trim().is_empty() {
+                None
+            } else {
+                Some(html)
+            };
+            let reading_html_chars = reading_html.as_deref().map(|v| v.len()).unwrap_or(0);
+            let (tts_text, tts_text_source) = if is_epub(path) && reading_html.is_some() {
+                let extracted = extract_tts_text_from_html(reading_html.as_deref().unwrap_or(""));
+                if html_extract_seems_too_small(&extracted) {
+                    warn!(
+                        path = %path.display(),
+                        reading_html_chars,
+                        extracted_chars = extracted.len(),
+                        tts_text_source = "pandoc_plain_fallback",
+                        "EPUB HTML->text extraction produced too little text; falling back to pandoc plain-text"
+                    );
+                    (load_with_pandoc(path, "plain", cancel)?, "pandoc_plain")
+                } else {
+                    (extracted, "epub_html_extract")
+                }
+            } else {
+                (load_with_pandoc(path, "plain", cancel)?, "pandoc_plain")
+            };
+            let has_pretty = reading_html
+                .as_deref()
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            let tts_text_chars = tts_text.len();
+            let result = SourceContent {
+                tts_text,
+                reading_markdown: None,
+                reading_html,
+                has_structured_markdown: has_pretty,
+                pdf_geometry_mode: None,
+                pdf_sync_strategy: None,
+                pdf_classification: None,
+                pdf_runtime_policy: None,
+                pdf_ocr_pipeline: None,
+            };
+            info!(
+                path = %path.display(),
+                stage = "native_html_dual_convert",
+                tts_text_source,
+                tts_text_chars,
+                reading_html_chars,
+                elapsed_ms = start.elapsed().as_millis(),
+                has_structured_markdown = result.has_structured_markdown,
+                "Completed source conversion stage"
+            );
+            return Ok(result);
+        }
+
+        if is_pandoc_dual_source(path) {
+            let tts_text = load_with_pandoc(path, "plain", cancel)?;
+            let markdown = load_with_pandoc(path, "gfm-raw_html-raw_attribute", cancel)?;
+            let reading_markdown = if markdown.trim().is_empty() {
+                None
+            } else {
+                Some(markdown)
+            };
+            let has_pretty = reading_markdown.is_some();
+            let result = SourceContent {
+                tts_text,
+                reading_markdown,
+                reading_html: None,
+                has_structured_markdown: has_pretty,
+                pdf_geometry_mode: None,
+                pdf_sync_strategy: None,
+                pdf_classification: None,
+                pdf_runtime_policy: None,
+                pdf_ocr_pipeline: None,
+            };
+            info!(
+                path = %path.display(),
+                stage = "pandoc_dual_convert",
+                elapsed_ms = start.elapsed().as_millis(),
+                has_structured_markdown = result.has_structured_markdown,
+                "Completed source conversion stage"
+            );
+            return Ok(result);
+        }
+
+        if is_markdown(path) {
+            ensure_not_cancelled(cancel, "before_markdown_read")?;
+            let data = fs::read_to_string(path)
+                .with_context(|| format!("Failed to read markdown file at {}", path.display()))?;
+            let tts_text = markdown_to_plain_text(&data);
+            return Ok(SourceContent {
+                tts_text,
+                reading_markdown: Some(data),
+                reading_html: None,
+                has_structured_markdown: true,
+                pdf_geometry_mode: None,
+                pdf_sync_strategy: None,
+                pdf_classification: None,
+                pdf_runtime_policy: None,
+                pdf_ocr_pipeline: None,
+            });
+        }
+
+        anyhow::bail!(
+            "Unsupported source format for {}. Supported source types are .txt, .md, .markdown, .pdf, .html, .doc, .docx, and .epub.",
+            path.display(),
+        );
+    }
 
 pub(super) fn source_type_label(path: &Path) -> &'static str {
     match path
@@ -384,11 +383,6 @@ fn is_pdf(path: &Path) -> bool {
     )
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(super) use native_pipeline::*;
-#[cfg(not(target_arch = "wasm32"))]
-mod native_pipeline {
-    use super::*;
 #[cfg(not(target_arch = "wasm32"))]
 fn load_pdf_with_quack_check(
     path: &Path,
@@ -545,7 +539,8 @@ fn load_pdf_with_quack_check(
     })
 }
 
-pub(super) fn resolve_pdf_dual_view_content(
+#[cfg(not(target_arch = "wasm32"))]
+pub fn resolve_pdf_dual_view_content(
     transcript_text: &str,
     markdown: &str,
     report: Option<&crate::quack_check::report::JobReport>,
@@ -616,6 +611,7 @@ pub(super) fn resolve_pdf_dual_view_content(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn load_native_pretty_html(path: &Path, cancel: Option<&CancellationToken>) -> Result<String> {
     if is_epub(path) {
         return load_epub_native_html(path, cancel);
@@ -683,6 +679,7 @@ fn load_epub_native_html(path: &Path, cancel: Option<&CancellationToken>) -> Res
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn extract_tts_text_from_html(html: &str) -> String {
     // Remove non-content nodes that would otherwise pollute the TTS transcript.
     let cleaned = RE_STRIP_SCRIPT_STYLE.replace_all(html, " ");
@@ -714,6 +711,7 @@ fn extract_tts_text_from_html(html: &str) -> String {
     out.trim().to_string()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn html_extract_seems_too_small(extracted: &str) -> bool {
     // Heuristic: if we only extracted a tiny amount of text, it is likely boilerplate
     // and we should fall back to pandoc plain-text for that file.
@@ -738,6 +736,7 @@ struct PdfTranscriptNormalizationState {
     trace_notes: Vec<String>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn frequent_boundary_lines(
     report: Option<&crate::quack_check::report::JobReport>,
     first: bool,
@@ -848,6 +847,7 @@ fn is_probable_margin_or_sidenote_line(line: &str) -> bool {
     word_count <= 4 && digit_or_punct * 2 >= trimmed.chars().count().max(1)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn normalize_pdf_text_for_reader_with_summary(
     input: &str,
     report: Option<&crate::quack_check::report::JobReport>,
@@ -1016,7 +1016,8 @@ fn normalize_pdf_text_for_reader_with_summary(
     (out.trim().to_string(), summary)
 }
 
-pub(super) fn normalize_pdf_text_for_reader(input: &str) -> String {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn normalize_pdf_text_for_reader(input: &str) -> String {
     normalize_pdf_text_for_reader_with_summary(input, None).0
 }
 
@@ -1354,6 +1355,7 @@ fn derive_pdf_ocr_pipeline_summary(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn classify_pdf_runtime(
     report: Option<&crate::quack_check::report::JobReport>,
     transcript_text: &str,
@@ -1890,6 +1892,7 @@ fn describe_page_distribution(pages: &[PdfPageClassificationSummary]) -> String 
         .join(",")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn load_with_pandoc(
     path: &Path,
     target: &str,
@@ -3977,6 +3980,7 @@ mod tests {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn load_quack_check_report(job_dir: &Path) -> Result<crate::quack_check::report::JobReport> {
     let report_path = job_dir.join("final").join("report.json");
     let raw = fs::read_to_string(&report_path).with_context(|| {
@@ -3993,6 +3997,7 @@ fn load_quack_check_report(job_dir: &Path) -> Result<crate::quack_check::report:
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn hash_file(path: &Path) -> Result<String> {
     let bytes = fs::read(path)
         .with_context(|| format!("Failed to read file for hashing: {}", path.display()))?;
@@ -4001,6 +4006,7 @@ fn hash_file(path: &Path) -> Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn pandoc_filter_path() -> Result<PathBuf> {
     let relative = PathBuf::from(PANDOC_FILTER_REL_PATH);
     if relative.exists() {
@@ -4019,6 +4025,7 @@ fn pandoc_filter_path() -> Result<PathBuf> {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn quack_check_config_path() -> Result<PathBuf> {
     if let Some(value) = std::env::var_os("QUACK_CHECK_CONFIG") {
         let candidate = PathBuf::from(value);
@@ -4048,7 +4055,8 @@ fn quack_check_config_path() -> Result<PathBuf> {
     );
 }
 
-pub(super) fn project_root() -> PathBuf {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn project_root() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for ancestor in manifest_dir.ancestors() {
         let candidate = ancestor.to_path_buf();
@@ -4059,6 +4067,7 @@ pub(super) fn project_root() -> PathBuf {
     manifest_dir
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn quack_check_text_filename(config_path: &Path) -> Result<String> {
     let raw = fs::read_to_string(config_path).with_context(|| {
         format!(
@@ -4083,4 +4092,29 @@ fn quack_check_text_filename(config_path: &Path) -> Result<String> {
         Ok(trimmed.to_string())
     }
 }
+
+
+#[cfg(target_arch = "wasm32")]
+fn load_pdf_with_quack_check(_path: &Path, _cancel: Option<&CancellationToken>) -> Result<SourceContent> {
+    Err(anyhow::anyhow!("PDF quack-check not supported on WASM"))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_native_pretty_html(_path: &Path, _cancel: Option<&CancellationToken>) -> Result<String> {
+    Err(anyhow::anyhow!("Native HTML loading not supported on WASM"))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn extract_tts_text_from_html(_html: &str) -> String {
+    String::new()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn html_extract_seems_too_small(_text: &str) -> bool {
+    false
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_with_pandoc(_path: &Path, _target: &str, _cancel: Option<&CancellationToken>) -> Result<String> {
+    Err(anyhow::anyhow!("Pandoc not supported on WASM"))
 }

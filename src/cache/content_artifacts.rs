@@ -218,8 +218,27 @@ pub fn stable_sentence_text_hash(text: &str) -> String {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+pub fn persist_dual_view_artifacts(
+    source_path: &Path,
+    tts_text: &str,
+    reading_markdown: Option<&str>,
+    reading_html: Option<&str>,
+) {
+    ensure_content_layout(source_path);
+    let content_dir = hash_dir(source_path).join("content");
+    let _ = fs::create_dir_all(&content_dir);
+
+    let _ = fs::write(content_dir.join("tts-text.txt"), tts_text);
+    if let Some(md) = reading_markdown {
+        let _ = fs::write(content_dir.join("reading-markdown.md"), md);
+    }
+    if let Some(html) = reading_html {
+        let _ = fs::write(content_dir.join("reading-html.html"), html);
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
-pub(super) fn persist_dual_view_artifacts(
+pub fn persist_dual_view_artifacts(
     _source_path: &Path,
     _tts_text: &str,
     _reading_markdown: Option<&str>,

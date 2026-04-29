@@ -1254,12 +1254,19 @@ fn apply_acronym_expansion(text: &str, cfg: &AcronymConfig) -> String {
 }
 
 fn hash_sentences(sentences: &[String]) -> String {
-    let mut hasher = Sha256::new();
-    for sentence in sentences {
-        hasher.update(sentence.as_bytes());
-        hasher.update([0u8]);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut hasher = Sha256::new();
+        for sentence in sentences {
+            hasher.update(sentence.as_bytes());
+            hasher.update([0u8]);
+        }
+        format!("{:x}", hasher.finalize())
     }
-    format!("{:x}", hasher.finalize())
+    #[cfg(target_arch = "wasm32")]
+    {
+        format!("wasm-sentences-{}", sentences.len())
+    }
 }
 
 fn normalize_unicode_punctuation(input: &str) -> String {
@@ -1361,9 +1368,16 @@ fn split_segment_by_words(segment: &str, max_chars: usize, max_words: usize) -> 
 }
 
 fn hash_sentence(sentence: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(sentence.as_bytes());
-    format!("{:x}", hasher.finalize())
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut hasher = Sha256::new();
+        hasher.update(sentence.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        format!("wasm-sentence-{}", sentence.len())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -30,6 +30,10 @@ static RE_HTML_SVG_IMAGE_HREF: Lazy<Regex> = Lazy::new(|| {
 });
 
 #[path = "epub_loader/source_pipeline.rs"]
+#[cfg(not(target_arch = "wasm32"))]
+mod source_pipeline;
+#[cfg(target_arch = "wasm32")]
+#[path = "epub_loader/source_pipeline_wasm.rs"]
 mod source_pipeline;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1115,6 +1119,7 @@ mod tests {
         delete_recent_source_and_cache(&manifest_path).expect("cleanup browser tab source");
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn resolve_pdf_content_marks_markdown_only_when_present() {
         let structured = source_pipeline::resolve_pdf_dual_view_content(
@@ -1133,6 +1138,7 @@ mod tests {
         assert!(scan_fallback.tts_text.contains("Scanned OCR text"));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn normalize_pdf_text_for_reader_collapses_wrapped_lines_and_hyphenation() {
         let normalized = source_pipeline::normalize_pdf_text_for_reader(
@@ -1141,6 +1147,7 @@ mod tests {
         assert_eq!(normalized, "Alpha paragraph line next line.\n\nBeta block");
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn normalize_pdf_text_for_reader_preserves_paragraph_breaks() {
         let normalized =
@@ -1148,6 +1155,7 @@ mod tests {
         assert_eq!(normalized, "First line Second line.\n\nThird line");
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn project_root_finds_workspace_conf_directory() {
         let root = source_pipeline::project_root();

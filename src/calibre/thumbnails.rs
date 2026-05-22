@@ -12,8 +12,7 @@ use tracing::{debug, info};
 
 use super::{
     CalibreBook, CalibreConfig, THUMB_FETCH_TIMEOUT, THUMB_HEIGHT, THUMB_WIDTH,
-    cache_store::calibre_thumb_dir, effective_password, effective_username, sanitized_library_url,
-    sanitized_server_urls,
+    cache_store::calibre_thumb_dir, effective_password, effective_username, server_base_url,
 };
 
 pub(super) fn hydrate_book_thumbnails(
@@ -247,13 +246,13 @@ fn calibre_thumbnail_path(config: &CalibreConfig, book_id: u64) -> PathBuf {
 
 fn thumbnail_scope_key(config: &CalibreConfig) -> String {
     let mut hasher = Sha256::new();
-    if let Some(url) = sanitized_library_url(config) {
+    if let Some(url) = server_base_url(config) {
         hasher.update(url.as_bytes());
     }
     if let Some(path) = config.state_path.as_ref().or(config.library_path.as_ref()) {
         hasher.update(path.to_string_lossy().as_bytes());
     }
-    for url in sanitized_server_urls(config) {
+    for url in &config.server_urls {
         hasher.update(url.as_bytes());
     }
     let digest = format!("{:x}", hasher.finalize());
@@ -262,13 +261,11 @@ fn thumbnail_scope_key(config: &CalibreConfig) -> String {
 
 fn cover_server_urls(config: &CalibreConfig) -> Vec<String> {
     let mut out = Vec::new();
-    if let Some(raw) = sanitized_library_url(config)
-        && let Some(base) = normalize_server_base_url(&raw)
-    {
+    if let Some(base) = server_base_url(config) {
         out.push(base);
     }
-    for raw in sanitized_server_urls(config) {
-        if let Some(base) = normalize_server_base_url(&raw)
+    for raw in &config.server_urls {
+        if let Some(base) = normalize_server_base_url(raw)
             && !out.iter().any(|known| known == &base)
         {
             out.push(base);

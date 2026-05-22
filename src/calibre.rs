@@ -23,8 +23,6 @@ const THUMB_PREFETCH_LIMIT: usize = 200;
 const THUMB_PREFETCH_BUDGET: Duration = Duration::from_secs(2);
 const THUMB_CACHED_PREFETCH_BUDGET: Duration = Duration::from_secs(4);
 const THUMB_FETCH_TIMEOUT: Duration = Duration::from_millis(350);
-const CALIBRE_DB_TIMEOUT_SECS: u64 = 15;
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct CalibreConfig {
@@ -273,32 +271,45 @@ pub fn ensure_thumbnail_for_book(
     thumbnails::ensure_thumbnail_for_book(config, book, allow_remote_fetch)
 }
 
-fn sanitized_server_urls(config: &CalibreConfig) -> Vec<String> {
-    let mut urls = Vec::new();
-    for raw in &config.server_urls {
-        let url = raw.trim().trim_end_matches('/').to_string();
-        if url.starts_with("http://") || url.starts_with("https://") {
-            if !urls.iter().any(|u| u == &url) {
-                urls.push(url);
-            }
-        }
-    }
-    if urls.is_empty() {
-        vec![
-            "http://127.0.0.1:8080".to_string(),
-            "http://localhost:8080".to_string(),
-        ]
-    } else {
-        urls
-    }
-}
-
-fn sanitized_library_url(config: &CalibreConfig) -> Option<String> {
+pub fn server_base_url(config: &CalibreConfig) -> Option<String> {
     config
         .library_url
         .as_ref()
-        .map(|v| v.trim().to_string())
+        .map(|v| v.trim())
         .filter(|v| v.starts_with("http://") || v.starts_with("https://"))
+        .map(|v| {
+            v.split('#')
+                .next()
+                .unwrap_or(v)
+                .trim_end_matches('/')
+                .to_string()
+        })
+}
+
+pub fn library_id(config: &CalibreConfig) -> Option<String> {
+    config
+        .library_url
+        .as_ref()
+        .map(|v| v.trim())
+        .and_then(|v| v.split('#').nth(1))
+        .map(|v| v.to_string())
+}
+
+pub fn build_http_client(config: &CalibreConfig) -> Result<reqwest::blocking::Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let (Some(user), Some(pass)) = (effective_username(config), effective_password(config)) {
+        let auth = format!("{user}:{pass}");
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(auth.as_bytes());
+        if let Ok(val) = reqwest::header::HeaderValue::from_str(&format!("Basic {b64}")) {
+            headers.insert(reqwest::header::AUTHORIZATION, val);
+        }
+    }
+    reqwest::blocking::Client::builder()
+        .default_headers(headers)
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(Into::into)
 }
 
 fn effective_username(config: &CalibreConfig) -> Option<String> {

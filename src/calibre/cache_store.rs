@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{
     CALIBRE_CACHE_FILE, CALIBRE_CACHE_REV, CALIBRE_DOWNLOAD_SUBDIR, CALIBRE_THUMB_SUBDIR,
-    CalibreBook, CalibreConfig, sanitized_library_url, sanitized_server_urls,
+    CalibreBook, CalibreConfig, server_base_url,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -73,12 +73,12 @@ pub(super) fn cache_signature(config: &CalibreConfig) -> String {
     let mut hasher = Sha256::new();
     hasher.update(CALIBRE_CACHE_REV.as_bytes());
     hasher.update(config.calibredb_bin.as_bytes());
-    if let Some(url) = sanitized_library_url(config) {
+    if let Some(url) = server_base_url(config) {
         hasher.update(url.as_bytes());
         hasher.update([0u8]);
     }
-    for url in sanitized_server_urls(config) {
-        hasher.update(url.as_bytes());
+    for url in &config.server_urls {
+        hasher.update(url.trim().trim_end_matches('/').as_bytes());
         hasher.update([0u8]);
     }
     if let Some(path) = &config.state_path {

@@ -4,14 +4,14 @@ enabled = true
 
 # Chunkr-compatible calibre fields.
 library_path = "/drive/calibre/en_nonfiction"
-library_url = "http://127.0.0.1:8081/#en_nonfiction"
+library_url = "http://192.168.0.113:8083/#en_nonfiction"
 state_path = ""
 
 # Calibre CLI binary.
 calibredb_bin = "calibredb"
 
 # Legacy/extra server URL list (optional).
-server_urls = ["http://127.0.0.1:8081", "http://localhost:8081"]
+server_urls = ["http://192.168.0.113:8083"]
 server_username = ""
 server_password = ""
 

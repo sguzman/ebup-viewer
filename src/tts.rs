@@ -611,6 +611,13 @@ fn spawn_worker(model_path: &Path, espeak_root: &Path) -> Result<std::process::C
                         });
                 }
             }
+            #[cfg(not(target_os = "linux"))]
+            {
+                warn!(
+                    primary_exe = %exe.display(),
+                    "Primary TTS worker spawn failed: {primary_err:#}"
+                );
+            }
             Err(primary_err)
         }
     }

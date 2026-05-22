@@ -23,7 +23,14 @@ pub(crate) fn default_window_height() -> f32 {
 }
 
 pub(crate) fn default_tts_model() -> String {
-    "/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx".to_string()
+    #[cfg(target_os = "windows")]
+    {
+        "C:\\Users\\Salvador Guzman\\Music\\models\\piper\\en-US\\female\\en_US-amy-medium.onnx".to_string()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx".to_string()
+    }
 }
 
 pub(crate) fn default_tts_speed() -> f32 {
@@ -35,7 +42,14 @@ pub(crate) fn default_tts_volume() -> f32 {
 }
 
 pub(crate) fn default_tts_espeak_path() -> String {
-    "/usr/share".to_string()
+    #[cfg(target_os = "windows")]
+    {
+        "C:\\Program Files\\eSpeak NG".to_string()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "/usr/share".to_string()
+    }
 }
 
 pub(crate) fn default_tts_threads() -> usize {

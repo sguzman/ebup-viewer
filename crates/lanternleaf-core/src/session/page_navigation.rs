@@ -85,19 +85,55 @@ impl ReaderSession {
         normalizer: &normalizer::TextNormalizer,
         preserve_global_idx: Option<usize>,
     ) {
-        self.pages = pagination::paginate(
-            &self.tts_text,
-            self.config.font_size,
-            self.config.lines_per_page,
-        );
-        if self.pages.is_empty() {
-            self.pages.push(String::new());
+        // For EPUB pretty view we render the entire concatenated HTML stream, so keep the
+        // canonical TTS/page text in the same "single-page" coordinate space. Otherwise,
+        // the UI can show full-book HTML while the TTS cursor/indices are paginated against
+        // a different slice of the book, making audio/highlight appear desynced.
+        let is_epub = self
+            .source_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("epub"))
+            .unwrap_or(false);
+        let epub_pretty_single_page = is_epub
+            && self.config.native_html_pretty_enabled
+            && self
+                .reading_html
+                .as_ref()
+                .is_some_and(|html| !html.trim().is_empty());
+        if epub_pretty_single_page {
+            self.pages = vec![self.tts_text.clone()];
+            tracing::debug!(
+                path = %self.source_path.display(),
+                owner = "tts_text",
+                pages = self.pages.len(),
+                mode = "epub_pretty_single_page",
+                tts_chars = self.tts_text.len(),
+                "Repaginated canonical text as a single page for EPUB HTML pretty rendering"
+            );
+        } else {
+            self.pages = pagination::paginate(
+                &self.tts_text,
+                self.config.font_size,
+                self.config.lines_per_page,
+            );
+            if self.pages.is_empty() {
+                self.pages.push(String::new());
+            }
         }
         self.markdown_pages = self
             .reading_markdown
             .as_ref()
             .map(|markdown| {
-                pagination::paginate(markdown, self.config.font_size, self.config.lines_per_page)
+                if epub_pretty_single_page {
+                    vec![markdown.clone()]
+                } else {
+                    pagination::paginate(
+                        markdown,
+                        self.config.font_size,
+                        self.config.lines_per_page,
+                    )
+                }
             })
             .unwrap_or_default();
         if !self.markdown_pages.is_empty() && self.markdown_pages.len() < self.pages.len() {

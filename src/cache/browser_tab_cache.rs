@@ -7,11 +7,16 @@ use crate::browser_tabs::{BrowserTab, BrowserTabBundleCapture, BrowserTabSnapsho
 use anyhow::Result as AnyhowResult;
 use once_cell::sync::Lazy;
 use regex::Regex;
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest::Url;
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, REFERER, USER_AGENT};
+#[cfg(not(target_arch = "wasm32"))]
 use scraper::{ElementRef, Html, Selector};
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -94,6 +99,7 @@ pub struct BrowserTabAsset {
     pub kind: String,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn persist_browser_tab_source(
     snapshot: &BrowserTabSnapshot,
     tab: Option<&BrowserTab>,
@@ -176,6 +182,15 @@ pub fn persist_browser_tab_source(
     Ok(manifest_path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_browser_tab_source(
+    _snapshot: &BrowserTabSnapshot,
+    _tab: Option<&BrowserTab>,
+) -> std::result::Result<PathBuf, String> {
+    Err("Persistence not supported on WASM".to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn persist_browser_tab_bundle_source(
     bundle: &BrowserTabBundleCapture,
     tab: Option<&BrowserTab>,
@@ -294,6 +309,14 @@ pub fn persist_browser_tab_bundle_source(
     Ok(manifest_path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_browser_tab_bundle_source(
+    _bundle: &BrowserTabBundleCapture,
+    _tab: Option<&BrowserTab>,
+) -> std::result::Result<PathBuf, String> {
+    Err("Persistence not supported on WASM".to_string())
+}
+
 #[derive(Debug, Clone)]
 struct PersistedBundleAsset {
     source_url: String,
@@ -310,6 +333,7 @@ struct PreparedBrowserTabBundle {
     assets: Vec<BrowserTabAsset>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn prepare_browser_tab_bundle(
     html: &str,
     base_url: &str,
@@ -338,6 +362,16 @@ fn prepare_browser_tab_bundle(
     })
 }
 
+#[cfg(target_arch = "wasm32")]
+fn prepare_browser_tab_bundle(
+    _html: &str,
+    _base_url: &str,
+    _asset_dir: &Path,
+) -> AnyhowResult<PreparedBrowserTabBundle> {
+    anyhow::bail!("Bundle preparation not supported on WASM")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn focus_browser_tab_html(raw_html: &str, page_url: &str) -> String {
     let document = Html::parse_document(raw_html);
     let head_styles = collect_browser_tab_head_nodes(&document, "style, link[rel~='stylesheet']");
@@ -404,11 +438,13 @@ fn focus_browser_tab_html(raw_html: &str, page_url: &str) -> String {
     )
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct BrowserTabCandidate {
     html: String,
     text_len: usize,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn select_browser_tab_candidate(
     document: &Html,
     selector_raw: &str,
@@ -428,6 +464,7 @@ fn select_browser_tab_candidate(
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn refine_browser_tab_element<'a>(element: ElementRef<'a>) -> ElementRef<'a> {
     let parent_len = browser_tab_element_text_len(&element);
     let best_child = element
@@ -445,6 +482,7 @@ fn refine_browser_tab_element<'a>(element: ElementRef<'a>) -> ElementRef<'a> {
     element
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn refine_browser_tab_article_candidate(element: ElementRef<'_>) -> Option<BrowserTabCandidate> {
     let parent_len = browser_tab_element_text_len(&element);
     let children = element
@@ -483,6 +521,7 @@ fn refine_browser_tab_article_candidate(element: ElementRef<'_>) -> Option<Brows
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn browser_tab_open_tag(element: &ElementRef<'_>) -> String {
     let mut out = format!("<{}", element.value().name());
     for (name, value) in element.value().attrs() {
@@ -496,6 +535,7 @@ fn browser_tab_open_tag(element: &ElementRef<'_>) -> String {
     out
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn browser_tab_child_is_noise(element: &ElementRef<'_>) -> bool {
     let tag = element.value().name();
     if matches!(tag, "nav" | "aside" | "footer" | "button") {
@@ -544,6 +584,7 @@ fn browser_tab_child_is_noise(element: &ElementRef<'_>) -> bool {
             || lower.contains("you have been granted access"))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn browser_tab_element_text_len(element: &ElementRef<'_>) -> usize {
     element
         .text()
@@ -555,6 +596,7 @@ fn browser_tab_element_text_len(element: &ElementRef<'_>) -> usize {
         .len()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_browser_tab_title(document: &Html) -> Option<String> {
     let selector = Selector::parse("title").ok()?;
     document
@@ -563,6 +605,7 @@ fn collect_browser_tab_title(document: &Html) -> Option<String> {
         .map(|element| element.text().collect::<String>().trim().to_string())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_browser_tab_attr(document: &Html, selector_raw: &str, attr: &str) -> Option<String> {
     let selector = Selector::parse(selector_raw).ok()?;
     document
@@ -572,6 +615,7 @@ fn collect_browser_tab_attr(document: &Html, selector_raw: &str, attr: &str) -> 
         .map(str::to_string)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_browser_tab_head_nodes(document: &Html, selector_raw: &str) -> String {
     let selector = match Selector::parse(selector_raw) {
         Ok(selector) => selector,
@@ -603,6 +647,7 @@ fn browser_tab_text_from_html(html: &str) -> String {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn inline_browser_tab_stylesheets(
     html: &str,
     base_url: &str,
@@ -661,6 +706,7 @@ fn parse_html_attrs(tag: &str) -> HashMap<String, String> {
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_browser_tab_html_assets(
     html: &str,
     base_url: &str,
@@ -704,6 +750,7 @@ fn collect_browser_tab_html_assets(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn rewrite_css_urls_for_import(
     css: &str,
     stylesheet_url: &str,
@@ -781,6 +828,7 @@ fn rewrite_browser_tab_bundle_html(
         .into_owned()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn rewrite_srcset_to_local(
     raw: &str,
     base_url: &str,
@@ -808,6 +856,18 @@ fn rewrite_srcset_to_local(
         .join(", ")
 }
 
+#[cfg(target_arch = "wasm32")]
+fn rewrite_srcset_to_local(
+    raw: &str,
+    _base_url: &str,
+    _source_path: &Path,
+    _asset_lookup: &HashMap<String, BrowserTabAsset>,
+) -> String {
+    // WASM builds don't currently rewrite browser-tab bundles.
+    raw.to_string()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn rewrite_css_urls_to_local(
     css: &str,
     base_url: &str,
@@ -834,6 +894,17 @@ fn rewrite_css_urls_to_local(
         .into_owned()
 }
 
+#[cfg(target_arch = "wasm32")]
+fn rewrite_css_urls_to_local(
+    css: &str,
+    _base_url: &str,
+    _source_path: &Path,
+    _asset_lookup: &HashMap<String, BrowserTabAsset>,
+) -> String {
+    css.to_string()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn fetch_stylesheet_text(
     client: &reqwest::blocking::Client,
     stylesheet_url: &str,
@@ -849,6 +920,7 @@ fn fetch_stylesheet_text(
     Some((stylesheet_url.to_string(), css))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn fetch_browser_tab_asset(
     raw: &str,
     base_url: &str,
@@ -892,6 +964,7 @@ fn fetch_browser_tab_asset(
     Some(asset)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn resolve_browser_tab_url(raw: &str, base_url: &str) -> Option<String> {
     let trimmed = decode_html_entities(raw);
     let trimmed = trimmed.trim().trim_matches('\'').trim_matches('"');
@@ -908,6 +981,17 @@ fn resolve_browser_tab_url(raw: &str, base_url: &str) -> Option<String> {
     base.join(trimmed).ok().map(|value| value.to_string())
 }
 
+#[cfg(target_arch = "wasm32")]
+fn resolve_browser_tab_url(raw: &str, _base_url: &str) -> Option<String> {
+    let trimmed = decode_html_entities(raw);
+    let trimmed = trimmed.trim().trim_matches('\'').trim_matches('"');
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn browser_tab_request<'a>(
     client: &'a reqwest::blocking::Client,
     url: &'a str,
@@ -938,6 +1022,7 @@ fn parse_srcset_urls(raw: &str) -> Vec<String> {
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn browser_tab_asset_output_path(
     asset_dir: &Path,
     raw_url: &str,
@@ -1070,6 +1155,7 @@ fn escape_html_attr(raw: &str) -> String {
         .replace('>', "&gt;")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_browser_tab_manifest(source_path: &Path) -> Option<BrowserTabSourceManifest> {
     if !is_browser_tab_manifest(source_path) {
         return None;
@@ -1086,6 +1172,12 @@ pub fn load_browser_tab_manifest(source_path: &Path) -> Option<BrowserTabSourceM
     Some(manifest)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_browser_tab_manifest(_source_path: &Path) -> Option<BrowserTabSourceManifest> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn rehydrate_browser_tab_manifest_assets(
     source_path: &Path,
 ) -> std::result::Result<(), String> {
@@ -1127,6 +1219,13 @@ pub fn rehydrate_browser_tab_manifest_assets(
         "Rehydrated browser-tab cache bundle from stored snapshot"
     );
     Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn rehydrate_browser_tab_manifest_assets(
+    _source_path: &Path,
+) -> std::result::Result<(), String> {
+    Err("Not supported on WASM".to_string())
 }
 
 pub fn is_browser_tab_manifest(source_path: &Path) -> bool {

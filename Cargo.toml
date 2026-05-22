@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = [".", "crates/lanternleaf-core"]
+members = [".", "crates/lanternleaf-core", "crates/lanternleaf-app", "crates/lanternleaf-egui"]
 resolver = "2"
 
 [dependencies]
@@ -14,8 +14,9 @@ serde_json = "1"
 piper-rs = "0.1.9"
 hound = "3.5"
 lanternleaf-core = { path = "crates/lanternleaf-core" }
-eframe = "0.31.0"
-egui = "0.31.0"
+lanternleaf-app = { path = "crates/lanternleaf-app" }
+lanternleaf-egui = { path = "crates/lanternleaf-egui" }
 
 [patch.crates-io]
 espeak-rs-sys = { path = "vendor/espeak-rs-sys" }
+pdfium-auto = { path = "vendor/pdfium-auto" }

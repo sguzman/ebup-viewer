@@ -23,7 +23,7 @@ pub use document_loading::{
 
 const BASE_WPM: f64 = 170.0;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, TS)]
 #[ts(export)]
 pub struct PanelState {
     pub show_settings: bool,
@@ -41,7 +41,7 @@ pub enum TtsPlaybackState {
     Paused,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderSettingsView {
     pub theme: config::ThemeMode,
@@ -63,9 +63,10 @@ pub struct ReaderSettingsView {
     pub time_remaining_display: config::TimeRemainingDisplay,
     pub tts_speed: f32,
     pub tts_volume: f32,
+    pub pretty: config::PrettyUiConfig,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderTtsView {
     pub state: TtsPlaybackState,
@@ -76,7 +77,7 @@ pub struct ReaderTtsView {
     pub progress_pct: f64,
 }
 
-#[derive(Debug, Clone, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
 #[ts(export)]
 pub struct ReaderSettingsPatch {
     #[ts(optional)]
@@ -117,7 +118,7 @@ pub struct ReaderSettingsPatch {
     pub tts_volume: Option<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderStats {
     pub page_index: usize,
@@ -138,7 +139,7 @@ pub struct ReaderStats {
     pub sentences_read_up_to_current_position: usize,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderSnapshot {
     pub source_path: String,
@@ -162,6 +163,7 @@ pub struct ReaderSnapshot {
     pub tts_text_page: String,
     pub reading_markdown_page: Option<String>,
     pub reading_html_page: Option<String>,
+    pub tts_current_sentence_text: Option<String>,
     pub page_text: String,
     pub sentences: Vec<String>,
     pub canonical_sentences: Vec<String>,
@@ -177,7 +179,7 @@ pub struct ReaderSnapshot {
     pub panels: PanelState,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ReaderImageRef {
     pub raw_path: String,
@@ -194,7 +196,7 @@ pub enum PrettyKind {
     Pdf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum SessionCommand {
     GetSnapshot,
     NextPage,
@@ -259,6 +261,56 @@ pub struct ReaderSession {
     current_plan: Option<normalizer::PageNormalization>,
 }
 
+impl ReaderSession {
+    /// Lightweight constructor for test-only sessions without IO.
+    pub fn from_pages_for_test(
+        source_path: PathBuf,
+        source_name: String,
+        pages: Vec<String>,
+        raw_page_sentences: Vec<Vec<String>>,
+    ) -> Self {
+        let tts_text = pages.join("\n\n");
+        let page_word_counts: Vec<usize> = pages
+            .iter()
+            .map(|page| page.split_whitespace().count())
+            .collect();
+        let page_sentence_counts: Vec<usize> = raw_page_sentences.iter().map(Vec::len).collect();
+
+        Self {
+            source_path,
+            source_name,
+            tts_text,
+            reading_markdown: None,
+            reading_html: None,
+            has_structured_markdown: false,
+            pdf_geometry_mode: None,
+            pdf_sync_strategy: None,
+            pdf_classification: None,
+            pdf_runtime_policy: None,
+            pdf_ocr_alignment: None,
+            pdf_ocr_pipeline: None,
+            images: Vec::new(),
+            config: config::AppConfig::default(),
+            pages,
+            markdown_pages: Vec::new(),
+            raw_page_sentences,
+            sentence_anchor_maps: Vec::new(),
+            page_word_counts,
+            page_sentence_counts,
+            current_page: 0,
+            highlighted_display_idx: Some(0),
+            highlighted_audio_idx: None,
+            text_only_mode: false,
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            selected_search_match: None,
+            tts_state: TtsPlaybackState::Paused,
+            current_plan_page: None,
+            current_plan: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct SessionImage {
     raw_path: String,
@@ -289,7 +341,7 @@ fn maybe_log_mapping_summary(path: &Path) {
     const SUMMARY_EVERY: usize = 128;
     let telemetry = mapping_telemetry();
     let lookups = telemetry.lookups.load(Ordering::Relaxed);
-    if lookups == 0 || !lookups.is_multiple_of(SUMMARY_EVERY) {
+    if lookups == 0 || lookups % SUMMARY_EVERY != 0 {
         return;
     }
     let summary_idx = lookups / SUMMARY_EVERY;
@@ -632,23 +684,19 @@ fn build_pdf_ocr_alignment_artifact(
         .into_iter()
         .map(|location| (location.sentence_idx, location))
         .collect();
-    let previous_alignment_map: HashMap<(usize, String), crate::cache::PdfOcrSentenceAlignment> =
-        previous_artifact
-            .as_ref()
-            .map(|artifact| {
-                artifact
-                    .alignments
-                    .iter()
-                    .cloned()
-                    .map(|alignment| {
-                        (
-                            (alignment.sentence_idx, alignment.sentence_text_hash.clone()),
-                            alignment,
-                        )
-                    })
-                    .collect()
+    let previous_alignment_map = if let Some(ref art) = previous_artifact {
+        art.alignments
+            .iter()
+            .map(|alignment| {
+                (
+                    (alignment.sentence_idx, alignment.sentence_text_hash.clone()),
+                    alignment.clone(),
+                )
             })
-            .unwrap_or_default();
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let source_kind = derive_pdf_ocr_source_kind(classification);
     let mut alignments = Vec::with_capacity(sentences.len());
     let mut rect_mapped = 0usize;
@@ -809,7 +857,7 @@ fn build_pdf_ocr_alignment_artifact(
     };
 
     crate::cache::PdfOcrAlignmentArtifact {
-        version: 0,
+        version: crate::cache::PDF_OCR_ALIGNMENT_VERSION,
         quality_class,
         source_kind,
         sentence_count: sentences.len(),
@@ -1079,6 +1127,13 @@ impl ReaderSession {
         } else {
             None
         };
+        let tts_current_sentence_text = tts
+            .current_sentence_idx
+            .and_then(|audio_idx| {
+                let audio_sentences = self.current_audio_sentences(normalizer);
+                audio_sentences.get(audio_idx).cloned()
+            })
+            .filter(|value| !value.trim().is_empty());
         let source_is_pdf = self
             .source_path
             .extension()
@@ -1126,6 +1181,7 @@ impl ReaderSession {
             tts_text_page: tts_text_page.clone(),
             reading_markdown_page,
             reading_html_page,
+            tts_current_sentence_text,
             page_text: tts_text_page,
             sentences,
             canonical_sentences,
@@ -1528,9 +1584,7 @@ fn count_markdown_anchors(markdown: &str) -> usize {
 }
 
 fn count_html_anchors(html: &str) -> usize {
-    const TAGS: [&str; 13] = [
-        "<section",
-        "<article",
+    const TAGS: [&str; 11] = [
         "<h1",
         "<h2",
         "<h3",
@@ -1547,6 +1601,226 @@ fn count_html_anchors(html: &str) -> usize {
     TAGS.iter()
         .map(|tag| lower.match_indices(tag).count())
         .sum()
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContentBlockKind {
+    Heading,
+    Paragraph,
+    ListItem,
+    Image,
+    Link,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ContentBlock {
+    kind: ContentBlockKind,
+    text: String,
+}
+
+#[cfg(test)]
+fn markdown_to_content_blocks(markdown: &str) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+    let mut paragraph = Vec::new();
+
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            continue;
+        }
+
+        if let Some(stripped) = trimmed.strip_prefix('#') {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            let heading = stripped.trim_start_matches('#').trim();
+            if !heading.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Heading,
+                    text: heading.to_string(),
+                });
+            }
+            continue;
+        }
+
+        if let Some(item) = trimmed
+            .strip_prefix("- ")
+            .or_else(|| trimmed.strip_prefix("* "))
+        {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            blocks.push(ContentBlock {
+                kind: ContentBlockKind::ListItem,
+                text: item.trim().to_string(),
+            });
+            continue;
+        }
+
+        if trimmed.starts_with("![") {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            let alt = trimmed
+                .trim_start_matches("![")
+                .split(']')
+                .next()
+                .unwrap_or_default()
+                .trim();
+            blocks.push(ContentBlock {
+                kind: ContentBlockKind::Image,
+                text: alt.to_string(),
+            });
+            continue;
+        }
+
+        if trimmed.starts_with('[') && trimmed.contains("](") && trimmed.ends_with(')') {
+            if !paragraph.is_empty() {
+                blocks.push(ContentBlock {
+                    kind: ContentBlockKind::Paragraph,
+                    text: paragraph.join(" "),
+                });
+                paragraph.clear();
+            }
+            let text = trimmed
+                .trim_start_matches('[')
+                .split("](")
+                .next()
+                .unwrap_or_default()
+                .trim();
+            blocks.push(ContentBlock {
+                kind: ContentBlockKind::Link,
+                text: text.to_string(),
+            });
+            continue;
+        }
+
+        paragraph.push(trimmed.to_string());
+    }
+
+    if !paragraph.is_empty() {
+        blocks.push(ContentBlock {
+            kind: ContentBlockKind::Paragraph,
+            text: paragraph.join(" "),
+        });
+    }
+
+    tracing::debug!(
+        blocks = blocks.len(),
+        headings = blocks
+            .iter()
+            .filter(|b| b.kind == ContentBlockKind::Heading)
+            .count(),
+        paragraphs = blocks
+            .iter()
+            .filter(|b| b.kind == ContentBlockKind::Paragraph)
+            .count(),
+        "Converted markdown to content blocks"
+    );
+    blocks
+}
+
+#[cfg(test)]
+fn html_to_content_blocks(html: &str) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+
+    for tag in ["h1", "h2", "h3", "h4", "h5", "h6"] {
+        blocks.extend(extract_tag_blocks(html, tag, ContentBlockKind::Heading));
+    }
+    blocks.extend(extract_tag_blocks(html, "p", ContentBlockKind::Paragraph));
+    blocks.extend(extract_tag_blocks(html, "li", ContentBlockKind::ListItem));
+    blocks.extend(extract_tag_blocks(html, "a", ContentBlockKind::Link));
+    blocks.extend(extract_img_blocks(html));
+
+    tracing::debug!(
+        blocks = blocks.len(),
+        headings = blocks
+            .iter()
+            .filter(|b| b.kind == ContentBlockKind::Heading)
+            .count(),
+        paragraphs = blocks
+            .iter()
+            .filter(|b| b.kind == ContentBlockKind::Paragraph)
+            .count(),
+        "Converted html to content blocks"
+    );
+    blocks
+}
+
+#[cfg(test)]
+fn extract_tag_blocks(html: &str, tag: &str, kind: ContentBlockKind) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+    let mut remainder = html;
+    let open_tag = format!("<{}", tag);
+    let close_tag = format!("</{}>", tag);
+
+    while let Some(start) = remainder.find(&open_tag) {
+        let after_open = &remainder[start..];
+        let Some(end_open) = after_open.find('>') else {
+            break;
+        };
+        let after = &after_open[end_open + 1..];
+        let Some(end_close) = after.find(&close_tag) else {
+            break;
+        };
+        let inner = after[..end_close].trim();
+        if !inner.is_empty() {
+            blocks.push(ContentBlock {
+                kind,
+                text: inner.to_string(),
+            });
+        }
+        remainder = &after[end_close + close_tag.len()..];
+    }
+
+    blocks
+}
+
+#[cfg(test)]
+fn extract_img_blocks(html: &str) -> Vec<ContentBlock> {
+    let mut blocks = Vec::new();
+    let mut remainder = html;
+
+    while let Some(start) = remainder.find("<img") {
+        let after = &remainder[start + 4..];
+        let Some(end) = after.find('>') else {
+            break;
+        };
+        let tag = &after[..end];
+        let alt = tag
+            .split("alt=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .unwrap_or("");
+        blocks.push(ContentBlock {
+            kind: ContentBlockKind::Image,
+            text: alt.trim().to_string(),
+        });
+        remainder = &after[end + 1..];
+    }
+
+    blocks
 }
 
 fn proportional_anchor_map(sentence_count: usize, anchor_count: usize) -> Vec<Option<usize>> {
@@ -1596,8 +1870,7 @@ fn proportional_html_anchor_map(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use crate::session::TtsPlaybackState;
 
     fn build_test_session(page_sentences: &[&[&str]]) -> ReaderSession {
         let pages: Vec<String> = page_sentences
@@ -1662,11 +1935,15 @@ mod tests {
     }
 
     fn unique_pdf_source_path() -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be after epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!("lanternleaf_pdf_sync_session_{nanos}.pdf"))
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let count = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "lanternleaf_pdf_sync_session_{}_{}.pdf",
+            std::process::id(),
+            count
+        ));
+        p
     }
 
     #[test]
@@ -2093,9 +2370,38 @@ mod tests {
     }
 
     #[test]
+    fn markdown_to_content_blocks_tracks_basic_kinds() {
+        let markdown = "# Title\n\nParagraph one.\n\n- Item one\n\n![Alt text](img.png)\n\n[Link](https://example.com)";
+        let blocks = markdown_to_content_blocks(markdown);
+        let kinds: Vec<ContentBlockKind> = blocks.iter().map(|b| b.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ContentBlockKind::Heading,
+                ContentBlockKind::Paragraph,
+                ContentBlockKind::ListItem,
+                ContentBlockKind::Image,
+                ContentBlockKind::Link
+            ]
+        );
+    }
+
+    #[test]
     fn html_anchor_count_detects_structural_elements() {
         let html = "<section><h1>A</h1><p>One</p><ul><li>x</li><li>y</li></ul><img src=\"a.png\"/></section>";
-        assert_eq!(count_html_anchors(html), 6);
+        assert_eq!(count_html_anchors(html), 5);
+    }
+
+    #[test]
+    fn html_to_content_blocks_extracts_expected_kinds() {
+        let html = "<h1>Title</h1><p>Body</p><ul><li>A</li></ul><a href=\"/a\">Link</a><img alt=\"Cover\" src=\"c.png\"/>";
+        let blocks = html_to_content_blocks(html);
+        let has_kind = |kind| blocks.iter().any(|b| b.kind == kind);
+        assert!(has_kind(ContentBlockKind::Heading));
+        assert!(has_kind(ContentBlockKind::Paragraph));
+        assert!(has_kind(ContentBlockKind::ListItem));
+        assert!(has_kind(ContentBlockKind::Link));
+        assert!(has_kind(ContentBlockKind::Image));
     }
 
     #[test]

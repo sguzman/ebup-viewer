@@ -1,4 +1,6 @@
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
@@ -18,7 +20,7 @@ const CONTENT_PDF_SENTENCE_MAP_FILE: &str = "content/pdf-sentence-map.toml";
 const CONTENT_PDF_OCR_ALIGNMENT_FILE: &str = "content/pdf-ocr-alignment.toml";
 const CONTENT_PDF_RENDER_PRECOMPUTE_FILE: &str = "content/pdf-render-precompute.toml";
 const PDF_SYNC_META_CLASSIFICATION_VERSION: u32 = 3;
-const PDF_OCR_ALIGNMENT_VERSION: u32 = 2;
+pub const PDF_OCR_ALIGNMENT_VERSION: u32 = 2;
 const PDF_RENDER_PRECOMPUTE_VERSION: u32 = 1;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -173,12 +175,17 @@ pub struct PdfOcrAlignmentArtifact {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct PdfSentencePageHint {
+    pub page_idx: Option<usize>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct PdfRenderPrecomputedState {
     pub version: u32,
     #[serde(default)]
     pub page_texts: Vec<String>,
     #[serde(default)]
-    pub sentence_page_hints: Vec<Option<usize>>,
+    pub sentence_page_hints: Vec<PdfSentencePageHint>,
     #[serde(default)]
     pub source: String,
 }
@@ -198,71 +205,48 @@ struct PdfRenderPrecomputedEnvelope {
     artifact: PdfRenderPrecomputedState,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn stable_sentence_text_hash(text: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text.trim().as_bytes());
     format!("{:x}", hasher.finalize())
 }
 
-pub(super) fn persist_dual_view_artifacts(
+#[cfg(target_arch = "wasm32")]
+pub fn stable_sentence_text_hash(text: &str) -> String {
+    format!("{:x}", text.len())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn persist_dual_view_artifacts(
     source_path: &Path,
     tts_text: &str,
     reading_markdown: Option<&str>,
     reading_html: Option<&str>,
 ) {
     ensure_content_layout(source_path);
-    let tts_path = hash_dir(source_path).join(CONTENT_TTS_TEXT_FILE);
-    if let Some(parent) = tts_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    match fs::write(&tts_path, tts_text) {
-        Ok(()) => {
-            debug!(
-                path = %tts_path.display(),
-                chars = tts_text.len(),
-                "Persisted cached tts_text artifact"
-            );
-        }
-        Err(err) => warn!(path = %tts_path.display(), "Failed to persist tts_text artifact: {err}"),
-    }
+    let content_dir = hash_dir(source_path).join("content");
+    let _ = fs::create_dir_all(&content_dir);
 
-    let markdown_path = hash_dir(source_path).join(CONTENT_READING_MARKDOWN_FILE);
-    match reading_markdown {
-        Some(markdown) => match fs::write(&markdown_path, markdown) {
-            Ok(()) => debug!(
-                path = %markdown_path.display(),
-                chars = markdown.len(),
-                "Persisted cached reading_markdown artifact"
-            ),
-            Err(err) => warn!(
-                path = %markdown_path.display(),
-                "Failed to persist reading_markdown artifact: {err}"
-            ),
-        },
-        None => {
-            let _ = fs::remove_file(&markdown_path);
-        }
+    let _ = fs::write(content_dir.join("tts-text.txt"), tts_text);
+    if let Some(md) = reading_markdown {
+        let _ = fs::write(content_dir.join("reading-markdown.md"), md);
     }
-
-    let html_path = hash_dir(source_path).join(CONTENT_READING_HTML_FILE);
-    match reading_html {
-        Some(html) => match fs::write(&html_path, html) {
-            Ok(()) => debug!(
-                path = %html_path.display(),
-                chars = html.len(),
-                "Persisted cached reading_html artifact"
-            ),
-            Err(err) => warn!(
-                path = %html_path.display(),
-                "Failed to persist reading_html artifact: {err}"
-            ),
-        },
-        None => {
-            let _ = fs::remove_file(&html_path);
-        }
+    if let Some(html) = reading_html {
+        let _ = fs::write(content_dir.join("reading-html.html"), html);
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_dual_view_artifacts(
+    _source_path: &Path,
+    _tts_text: &str,
+    _reading_markdown: Option<&str>,
+    _reading_html: Option<&str>,
+) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn persist_sentence_anchor_map(
     source_path: &Path,
     page: usize,
@@ -300,6 +284,15 @@ pub(super) fn persist_sentence_anchor_map(
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn persist_sentence_anchor_map(
+    _source_path: &Path,
+    _page: usize,
+    _anchors: &[Option<usize>],
+) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn load_sentence_anchor_map(
     source_path: &Path,
     page: usize,
@@ -323,6 +316,18 @@ pub(super) fn load_sentence_anchor_map(
     )
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn load_sentence_anchor_map(
+    _source_path: &Path,
+    _page: usize,
+) -> Option<Vec<Option<usize>>> {
+    None
+}
+
+
+
+
+
 pub(super) fn tts_dir(source_path: &Path) -> PathBuf {
     hash_dir(source_path).join("tts")
 }
@@ -331,6 +336,7 @@ pub(super) fn normalized_dir(source_path: &Path) -> PathBuf {
     hash_dir(source_path).join("normalized")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn persist_pdf_sync_meta(
     source_path: &Path,
     pdf_geometry_mode: PdfGeometryMode,
@@ -370,6 +376,17 @@ pub(super) fn persist_pdf_sync_meta(
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn persist_pdf_sync_meta(
+    _source_path: &Path,
+    _pdf_geometry_mode: PdfGeometryMode,
+    _pdf_sync_strategy: PdfSyncStrategy,
+    _pdf_classification: Option<&PdfClassificationSummary>,
+    _pdf_runtime_policy: Option<&PdfRuntimePolicySummary>,
+) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn load_pdf_sync_meta(source_path: &Path) -> Option<PdfSyncMeta> {
     let meta_path = hash_dir(source_path).join(CONTENT_PDF_SYNC_META_FILE);
     let raw = match fs::read_to_string(&meta_path) {
@@ -417,6 +434,12 @@ pub(super) fn load_pdf_sync_meta(source_path: &Path) -> Option<PdfSyncMeta> {
     Some(parsed)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn load_pdf_sync_meta(_source_path: &Path) -> Option<PdfSyncMeta> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn persist_pdf_sentence_map(source_path: &Path, locations: &[PdfSentenceLocation]) {
     ensure_content_layout(source_path);
     let map_path = hash_dir(source_path).join(CONTENT_PDF_SENTENCE_MAP_FILE);
@@ -462,6 +485,11 @@ pub(super) fn persist_pdf_sentence_map(source_path: &Path, locations: &[PdfSente
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn persist_pdf_sentence_map(_source_path: &Path, _locations: &[PdfSentenceLocation]) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn load_pdf_sentence_map(source_path: &Path) -> Option<Vec<PdfSentenceLocation>> {
     let map_path = hash_dir(source_path).join(CONTENT_PDF_SENTENCE_MAP_FILE);
     let raw = match fs::read_to_string(&map_path) {
@@ -493,6 +521,12 @@ pub(super) fn load_pdf_sentence_map(source_path: &Path) -> Option<Vec<PdfSentenc
     Some(parsed.locations)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn load_pdf_sentence_map(_source_path: &Path) -> Option<Vec<PdfSentenceLocation>> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn persist_pdf_ocr_alignment_artifact(
     source_path: &Path,
     artifact: &PdfOcrAlignmentArtifact,
@@ -530,6 +564,14 @@ pub(super) fn persist_pdf_ocr_alignment_artifact(
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn persist_pdf_ocr_alignment_artifact(
+    _source_path: &Path,
+    _artifact: &PdfOcrAlignmentArtifact,
+) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn load_pdf_ocr_alignment_artifact(
     source_path: &Path,
 ) -> Option<PdfOcrAlignmentArtifact> {
@@ -575,6 +617,14 @@ pub(super) fn load_pdf_ocr_alignment_artifact(
     Some(parsed.artifact)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn load_pdf_ocr_alignment_artifact(
+    _source_path: &Path,
+) -> Option<PdfOcrAlignmentArtifact> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn persist_pdf_render_precomputed_state(
     source_path: &Path,
     artifact: &PdfRenderPrecomputedState,
@@ -590,6 +640,7 @@ pub(super) fn persist_pdf_render_precomputed_state(
             ..artifact.clone()
         },
     };
+    println!("DEBUG: persisting precompute to path: {}", path.display());
     match toml::to_string(&envelope) {
         Ok(serialized) => match fs::write(&path, serialized) {
             Ok(()) => debug!(
@@ -610,6 +661,14 @@ pub(super) fn persist_pdf_render_precomputed_state(
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn persist_pdf_render_precomputed_state(
+    _source_path: &Path,
+    _artifact: &PdfRenderPrecomputedState,
+) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn load_pdf_render_precomputed_state(
     source_path: &Path,
 ) -> Option<PdfRenderPrecomputedState> {
@@ -628,6 +687,14 @@ pub(super) fn load_pdf_render_precomputed_state(
     Some(parsed.artifact)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn load_pdf_render_precomputed_state(
+    _source_path: &Path,
+) -> Option<PdfRenderPrecomputedState> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn ensure_content_layout(source_path: &Path) {
     let hash_root = hash_dir(source_path);
     let version_path = hash_root.join(CONTENT_LAYOUT_VERSION_FILE);
@@ -673,6 +740,7 @@ fn ensure_content_layout(source_path: &Path) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn migrate_legacy_content_files(hash_root: &Path) {
     let legacy_plain = hash_root.join("source-plain.txt");
     let new_plain = hash_root.join(CONTENT_TTS_TEXT_FILE);

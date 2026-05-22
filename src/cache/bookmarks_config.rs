@@ -1,6 +1,8 @@
 use crate::config::{AppConfig, parse_config, serialize_config};
 use crate::epub_loader::PdfOcrGeometryQualityClass;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
@@ -81,6 +83,7 @@ fn bookmark_path(source_path: &Path) -> PathBuf {
     hash_dir(source_path).join("bookmark.toml")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn load_bookmark(source_path: &Path) -> Option<Bookmark> {
     let path = bookmark_path(source_path);
     let data = match fs::read_to_string(&path) {
@@ -112,6 +115,12 @@ pub(super) fn load_bookmark(source_path: &Path) -> Option<Bookmark> {
     })
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn load_bookmark(_source_path: &Path) -> Option<Bookmark> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn save_bookmark(source_path: &Path, bookmark: &Bookmark) {
     let path = bookmark_path(source_path);
     if let Some(parent) = path.parent() {
@@ -143,6 +152,11 @@ pub(super) fn save_bookmark(source_path: &Path, bookmark: &Bookmark) {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn save_bookmark(_source_path: &Path, _bookmark: &Bookmark) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn load_epub_config(source_path: &Path) -> Option<AppConfig> {
     let path = hash_dir(source_path).join("config.toml");
     let data = match fs::read_to_string(&path) {
@@ -167,6 +181,12 @@ pub(super) fn load_epub_config(source_path: &Path) -> Option<AppConfig> {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) fn load_epub_config(_source_path: &Path) -> Option<AppConfig> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn save_epub_config(source_path: &Path, config: &AppConfig) {
     let dir = hash_dir(source_path);
     let path = dir.join("config.toml");
@@ -180,4 +200,8 @@ pub(super) fn save_epub_config(source_path: &Path, config: &AppConfig) {
             debug!(path = %path.display(), "Persisted EPUB config");
         }
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(super) fn save_epub_config(_source_path: &Path, _config: &AppConfig) {
 }

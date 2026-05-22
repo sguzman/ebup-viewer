@@ -13,20 +13,29 @@ mod browser_tab_cache;
 #[path = "cache/content_artifacts.rs"]
 mod content_artifacts;
 
-use crate::config::AppConfig;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::workspace::workspace_root_from_cwd;
+#[cfg(not(target_arch = "wasm32"))]
 use epub::doc::EpubDoc;
+#[cfg(not(target_arch = "wasm32"))]
 use image::codecs::jpeg::JpegEncoder;
+#[cfg(not(target_arch = "wasm32"))]
 use image::imageops::FilterType;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::config::AppConfig;
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::io::Cursor;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+#[cfg(not(target_arch = "wasm32"))]
 use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 pub const CACHE_DIR: &str = ".cache";
 const CACHE_APP_SUBDIR: &str = "lantern-leaf";
@@ -64,10 +73,9 @@ pub use browser_tab_cache::{
     rehydrate_browser_tab_manifest_assets,
 };
 pub use content_artifacts::{
-    PdfOcrAlignmentArtifact, PdfOcrBlockGeometry, PdfOcrLineGeometry, PdfOcrPageAlignmentBucket,
-    PdfOcrPageGeometry, PdfOcrSentenceAlignment, PdfOcrTokenGeometry, PdfRenderPrecomputedState,
-    PdfSentenceLocation,
-    stable_sentence_text_hash,
+    PDF_OCR_ALIGNMENT_VERSION, PdfOcrAlignmentArtifact, PdfOcrBlockGeometry, PdfOcrLineGeometry,
+    PdfOcrPageAlignmentBucket, PdfOcrPageGeometry, PdfOcrSentenceAlignment, PdfOcrTokenGeometry,
+    PdfRenderPrecomputedState, PdfSentenceLocation, PdfSentencePageHint, stable_sentence_text_hash,
 };
 
 #[derive(Debug, Clone)]
@@ -81,16 +89,46 @@ pub struct RecentBook {
     pub browser_window_id: Option<u64>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn cache_root() -> PathBuf {
-    let configured_root = std::env::var_os(CACHE_DIR_ENV)
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| PathBuf::from(CACHE_DIR));
+    let workspace_root = workspace_root_from_cwd();
+    let configured_root = resolve_configured_cache_root(workspace_root.as_deref());
     let app_root = app_cache_root(&configured_root);
     ensure_cache_layout(&configured_root, &app_root);
+    trace!(
+        cache_root = %app_root.display(),
+        cache_config_root = %configured_root.display(),
+        workspace = ?workspace_root,
+        "Resolved LanternLeaf cache directory"
+    );
     app_root
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn cache_root() -> PathBuf {
+    PathBuf::from("/virtual/cache")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn resolve_configured_cache_root(workspace_root: Option<&Path>) -> PathBuf {
+    if let Some(value) = std::env::var_os(CACHE_DIR_ENV).map(PathBuf::from) {
+        if value.is_absolute() {
+            return value;
+        }
+        if let Some(root) = workspace_root {
+            return root.join(value);
+        }
+        return value;
+    }
+
+    if let Some(root) = workspace_root {
+        root.join(CACHE_DIR)
+    } else {
+        PathBuf::from(CACHE_DIR)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn app_cache_root(configured_root: &Path) -> PathBuf {
     if configured_root
         .file_name()
@@ -103,6 +141,7 @@ fn app_cache_root(configured_root: &Path) -> PathBuf {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn ensure_cache_layout(configured_root: &Path, app_root: &Path) {
     CACHE_LAYOUT_INIT.get_or_init(|| {
         if let Err(err) = fs::create_dir_all(app_root) {
@@ -116,6 +155,10 @@ fn ensure_cache_layout(configured_root: &Path, app_root: &Path) {
     });
 }
 
+#[cfg(target_arch = "wasm32")]
+fn ensure_cache_layout(_configured_root: &Path, _app_root: &Path) {}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn migrate_legacy_cache_layout(configured_root: &Path, app_root: &Path) {
     if configured_root == app_root {
         return;
@@ -154,6 +197,7 @@ fn migrate_legacy_cache_layout(configured_root: &Path, app_root: &Path) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn should_migrate_legacy_cache_entry(name: &str, is_dir: bool) -> bool {
     matches!(
         name,
@@ -168,31 +212,52 @@ fn should_migrate_legacy_cache_entry(name: &str, is_dir: bool) -> bool {
         || (is_dir && is_sha256_dir_name(name))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn is_sha256_dir_name(name: &str) -> bool {
     name.len() == 64 && name.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 /// Load the cached bookmark for a given EPUB path, if present.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_bookmark(epub_path: &Path) -> Option<Bookmark> {
     bookmarks_config::load_bookmark(epub_path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_bookmark(_epub_path: &Path) -> Option<Bookmark> {
+    None
+}
+
 /// Persist the current bookmark for a given EPUB path. Errors are ignored to
 /// keep the UI responsive.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_bookmark(epub_path: &Path, bookmark: &Bookmark) {
     bookmarks_config::save_bookmark(epub_path, bookmark)
 }
 
-pub fn hash_dir(epub_path: &Path) -> PathBuf {
-    let hash = source_content_hash(epub_path).unwrap_or_else(|| {
-        // Fallback for unreadable paths keeps cache functions non-fatal.
-        let mut hasher = Sha256::new();
-        hasher.update(epub_path.as_os_str().to_string_lossy().as_bytes());
-        format!("{:x}", hasher.finalize())
-    });
-    cache_root().join(hash)
+#[cfg(target_arch = "wasm32")]
+pub fn save_bookmark(_epub_path: &Path, _bookmark: &Bookmark) {
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn source_hash(path: &Path) -> String {
+    source_content_hash(path).unwrap_or_else(|| {
+        let mut hasher = Sha256::new();
+        hasher.update(path.as_os_str().to_string_lossy().as_bytes());
+        format!("{:x}", hasher.finalize())
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn source_hash(path: &Path) -> String {
+    format!("{:x}", path.to_string_lossy().len())
+}
+
+pub fn hash_dir(epub_path: &Path) -> PathBuf {
+    cache_root().join(source_hash(epub_path))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn source_content_hash(path: &Path) -> Option<String> {
     let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let metadata = fs::metadata(&canonical).ok()?;
@@ -239,6 +304,7 @@ fn source_content_hash(path: &Path) -> Option<String> {
     Some(digest)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn persist_dual_view_artifacts(
     source_path: &Path,
     tts_text: &str,
@@ -253,6 +319,15 @@ pub fn persist_dual_view_artifacts(
     )
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_dual_view_artifacts(
+    _source_path: &Path,
+    _tts_text: &str,
+    _reading_markdown: Option<&str>,
+    _reading_html: Option<&str>,
+) {
+}
+
 pub fn persist_sentence_anchor_map(source_path: &Path, page: usize, anchors: &[Option<usize>]) {
     content_artifacts::persist_sentence_anchor_map(source_path, page, anchors)
 }
@@ -261,6 +336,7 @@ pub fn load_sentence_anchor_map(source_path: &Path, page: usize) -> Option<Vec<O
     content_artifacts::load_sentence_anchor_map(source_path, page)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn persist_pdf_sync_meta(
     source_path: &Path,
     pdf_geometry_mode: crate::epub_loader::PdfGeometryMode,
@@ -277,26 +353,55 @@ pub fn persist_pdf_sync_meta(
     )
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_pdf_sync_meta(source_path: &Path) -> Option<content_artifacts::PdfSyncMeta> {
     content_artifacts::load_pdf_sync_meta(source_path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_pdf_sync_meta(_source_path: &Path) -> Option<content_artifacts::PdfSyncMeta> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn persist_pdf_sentence_map(source_path: &Path, locations: &[PdfSentenceLocation]) {
     content_artifacts::persist_pdf_sentence_map(source_path, locations)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_pdf_sentence_map(_source_path: &Path, _locations: &[PdfSentenceLocation]) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_pdf_sentence_map(source_path: &Path) -> Option<Vec<PdfSentenceLocation>> {
     content_artifacts::load_pdf_sentence_map(source_path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_pdf_sentence_map(_source_path: &Path) -> Option<Vec<PdfSentenceLocation>> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn persist_pdf_ocr_alignment_artifact(source_path: &Path, artifact: &PdfOcrAlignmentArtifact) {
     content_artifacts::persist_pdf_ocr_alignment_artifact(source_path, artifact)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_pdf_ocr_alignment_artifact(_source_path: &Path, _artifact: &PdfOcrAlignmentArtifact) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_pdf_ocr_alignment_artifact(source_path: &Path) -> Option<PdfOcrAlignmentArtifact> {
     content_artifacts::load_pdf_ocr_alignment_artifact(source_path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_pdf_ocr_alignment_artifact(_source_path: &Path) -> Option<PdfOcrAlignmentArtifact> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn persist_pdf_render_precomputed_state(
     source_path: &Path,
     artifact: &PdfRenderPrecomputedState,
@@ -304,10 +409,24 @@ pub fn persist_pdf_render_precomputed_state(
     content_artifacts::persist_pdf_render_precomputed_state(source_path, artifact)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_pdf_render_precomputed_state(
+    _source_path: &Path,
+    _artifact: &PdfRenderPrecomputedState,
+) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_pdf_render_precomputed_state(source_path: &Path) -> Option<PdfRenderPrecomputedState> {
     content_artifacts::load_pdf_render_precomputed_state(source_path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_pdf_render_precomputed_state(_source_path: &Path) -> Option<PdfRenderPrecomputedState> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn remember_source_path(source_path: &Path) {
     let hint_path = hash_dir(source_path).join(SOURCE_PATH_FILE);
     if let Some(parent) = hint_path.parent() {
@@ -320,6 +439,11 @@ pub fn remember_source_path(source_path: &Path) {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn remember_source_path(_source_path: &Path) {
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn persist_clipboard_text_source(text: &str) -> Result<PathBuf, String> {
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
     let trimmed = normalized.trim();
@@ -342,6 +466,17 @@ pub fn persist_clipboard_text_source(text: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn persist_clipboard_text_source(_text: &str) -> Result<PathBuf, String> {
+    Err("Clipboard source not supported on WASM".to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn delete_recent_source_and_cache(_source_path: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn delete_recent_source_and_cache(source_path: &Path) -> Result<(), String> {
     let canonical_source =
         fs::canonicalize(source_path).unwrap_or_else(|_| source_path.to_path_buf());
@@ -376,6 +511,7 @@ pub fn delete_recent_source_and_cache(source_path: &Path) -> Result<(), String> 
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn delete_recent_entry_dirs_for_source(source_path: &Path) -> Result<(), String> {
     let Ok(entries) = fs::read_dir(cache_root()) else {
         return Ok(());
@@ -401,6 +537,7 @@ fn delete_recent_entry_dirs_for_source(source_path: &Path) -> Result<(), String>
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn delete_path_if_present(path: &Path) -> Result<(), String> {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
@@ -455,6 +592,7 @@ fn delete_path_if_present(path: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn delete_dir_if_present(path: &Path) -> Result<(), String> {
     match remove_dir_all_with_retries(path) {
         Ok(()) => {
@@ -479,6 +617,7 @@ fn delete_dir_if_present(path: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn remove_dir_all_with_retries(path: &Path) -> Result<(), std::io::Error> {
     const MAX_RETRIES: u32 = 4;
     for attempt in 0..=MAX_RETRIES {
@@ -503,6 +642,7 @@ fn remove_dir_all_with_retries(path: &Path) -> Result<(), std::io::Error> {
     unreachable!("retry loop always returns on success or terminal error");
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn resolve_existing_recent_source_path(source_path: &Path) -> Option<PathBuf> {
     if source_path.as_os_str().is_empty() {
         return None;
@@ -536,6 +676,9 @@ fn resolve_existing_recent_source_path(source_path: &Path) -> Option<PathBuf> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn list_recent_books(limit: usize) -> Vec<RecentBook> {
     let Ok(entries) = fs::read_dir(cache_root()) else {
         return Vec::new();
@@ -596,14 +739,33 @@ pub fn list_recent_books(limit: usize) -> Vec<RecentBook> {
     }
     books
 }
+
+#[cfg(target_arch = "wasm32")]
+pub fn list_recent_books(_limit: usize) -> Vec<RecentBook> {
+    Vec::new()
+}
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn tts_dir(epub_path: &Path) -> PathBuf {
     content_artifacts::tts_dir(epub_path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn tts_dir(_epub_path: &Path) -> PathBuf {
+    PathBuf::from("/virtual/tts")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn normalized_dir(epub_path: &Path) -> PathBuf {
     content_artifacts::normalized_dir(epub_path)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn normalized_dir(_epub_path: &Path) -> PathBuf {
+    PathBuf::from("/virtual/normalized")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn infer_recent_title(source_path: &Path) -> String {
     if let Some(manifest) = load_browser_tab_manifest(source_path) {
         let trimmed = manifest.title.trim();
@@ -665,6 +827,7 @@ fn infer_recent_title(source_path: &Path) -> String {
         .to_string()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn infer_recent_snippet(source_path: &Path, display_title: &str) -> String {
     let preview_lines = infer_recent_preview_lines(source_path);
     if preview_lines.is_empty() {
@@ -687,6 +850,7 @@ fn infer_recent_snippet(source_path: &Path, display_title: &str) -> String {
     truncate_preview_line(&context_parts.join(" "), 640)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn infer_clipboard_recent_title(source_path: &Path) -> Option<String> {
     let contents = fs::read_to_string(source_path).ok()?;
     let first_non_empty_line = contents.lines().find_map(|line| {
@@ -710,6 +874,7 @@ fn infer_clipboard_recent_title(source_path: &Path) -> Option<String> {
     Some(format!("{truncated}..."))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn infer_recent_preview_lines(source_path: &Path) -> Vec<String> {
     if let Some(manifest) = load_browser_tab_manifest(source_path) {
         return preview_lines_from_text(
@@ -770,6 +935,7 @@ fn infer_recent_preview_lines(source_path: &Path) -> Vec<String> {
     Vec::new()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn preview_lines_from_text(text: &str) -> Vec<String> {
     text.lines()
         .filter_map(|line| {
@@ -784,10 +950,12 @@ fn preview_lines_from_text(text: &str) -> Vec<String> {
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn normalize_preview_line(line: &str) -> String {
     line.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn truncate_preview_line(line: &str, max_chars: usize) -> String {
     let char_count = line.chars().count();
     if char_count <= max_chars {
@@ -801,6 +969,8 @@ fn truncate_preview_line(line: &str, max_chars: usize) -> String {
     format!("{truncated}...")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 fn infer_pdf_recent_title(source_path: &Path) -> Option<String> {
     let preview_lines = preview_lines_from_text(&cached_recent_pdf_text(source_path)?);
     let first_line = preview_lines
@@ -809,6 +979,7 @@ fn infer_pdf_recent_title(source_path: &Path) -> Option<String> {
     Some(truncate_preview_line(&first_line, 96))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn cached_recent_pdf_text(source_path: &Path) -> Option<String> {
     let tts_text_path = hash_dir(source_path).join(CONTENT_TTS_TEXT_FILE);
     fs::read_to_string(tts_text_path)
@@ -816,6 +987,7 @@ fn cached_recent_pdf_text(source_path: &Path) -> Option<String> {
         .filter(|text| !text.trim().is_empty())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn infer_recent_thumbnail(source_path: &Path) -> Option<PathBuf> {
     if is_browser_tab_manifest(source_path) {
         return None;
@@ -841,6 +1013,7 @@ fn infer_recent_thumbnail(source_path: &Path) -> Option<PathBuf> {
     Some(thumb_path)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn write_thumbnail_file(path: &Path, raw_image: &[u8]) -> Result<(), String> {
     let image = image::load_from_memory(raw_image).map_err(|err| err.to_string())?;
     let thumb = image.resize(68, 100, FilterType::Triangle);
@@ -856,15 +1029,26 @@ fn write_thumbnail_file(path: &Path, raw_image: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn load_epub_config(epub_path: &Path) -> Option<AppConfig> {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_epub_config(epub_path: &Path) -> Option<crate::config::AppConfig> {
     bookmarks_config::load_epub_config(epub_path)
 }
 
-pub fn save_epub_config(epub_path: &Path, config: &AppConfig) {
+#[cfg(target_arch = "wasm32")]
+pub fn load_epub_config(_epub_path: &Path) -> Option<crate::config::AppConfig> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn save_epub_config(epub_path: &Path, config: &crate::config::AppConfig) {
     bookmarks_config::save_epub_config(epub_path, config)
 }
 
-#[cfg(test)]
+#[cfg(target_arch = "wasm32")]
+pub fn save_epub_config(_epub_path: &Path, _config: &crate::config::AppConfig) {
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::browser_tabs::{
@@ -878,12 +1062,16 @@ mod tests {
     fn unique_source_path(ext: &str) -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let pid = std::process::id();
-        cache_root()
-            .join("test-sources")
-            .join(format!("cache-test-{pid}-{nanos}.{ext}"))
+            .unwrap_or_default()
+            .as_nanos();
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "lanternleaf_test_source_{}_{}.{}",
+            std::process::id(),
+            nanos,
+            ext
+        ));
+        p
     }
 
     fn write_source_file(path: &Path) {
@@ -1270,7 +1458,7 @@ sentence_text = "legacy bookmark entry"
         let loaded = load_pdf_ocr_alignment_artifact(&source)
             .expect("pdf ocr alignment artifact should load");
 
-        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.version, 2);
         assert_eq!(loaded.quality_class, artifact.quality_class);
         assert_eq!(loaded.source_kind, artifact.source_kind);
         assert_eq!(loaded.mapped_sentence_count, artifact.mapped_sentence_count);
@@ -1287,7 +1475,11 @@ sentence_text = "legacy bookmark entry"
         let artifact = PdfRenderPrecomputedState {
             version: 0,
             page_texts: vec!["Page one".to_string(), "Page two".to_string()],
-            sentence_page_hints: vec![Some(0), Some(1), None],
+            sentence_page_hints: vec![
+                PdfSentencePageHint { page_idx: Some(0) },
+                PdfSentencePageHint { page_idx: Some(1) },
+                PdfSentencePageHint { page_idx: None },
+            ],
             source: "native_python_backend".to_string(),
         };
 
@@ -1529,10 +1721,10 @@ sentence_text = "legacy bookmark entry"
         fs::remove_file(&source).expect("remove source file");
 
         let recents = list_recent_books(20);
-        assert!(recents.is_empty());
+        assert!(!recents.iter().any(|r| r.source_path == source));
         assert!(
             !cache_path.exists(),
-            "stale recent cache dir should be pruned when source is missing"
+            "Cache directory should have been pruned for missing source"
         );
     }
 
@@ -1702,3 +1894,4 @@ sentence_text = "legacy bookmark entry"
         let _ = fs::remove_dir_all(&dir);
     }
 }
+

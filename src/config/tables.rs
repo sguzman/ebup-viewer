@@ -1,5 +1,7 @@
 use super::defaults;
-use super::models::{AppConfig, FontFamily, FontWeight, HighlightColor, LogLevel, ThemeMode};
+use super::models::{
+    AppConfig, FontFamily, FontWeight, HighlightColor, LogLevel, PrettyUiConfig, ThemeMode,
+};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
@@ -31,6 +33,7 @@ impl From<ConfigTables> for AppConfig {
             font_family: tables.appearance.font_family,
             font_weight: tables.appearance.font_weight,
             font_size: tables.appearance.font_size,
+            chrome_font_scale: tables.ui.chrome_font_scale,
             line_spacing: tables.appearance.line_spacing,
             word_spacing: tables.appearance.word_spacing,
             letter_spacing: tables.appearance.letter_spacing,
@@ -64,6 +67,7 @@ impl From<ConfigTables> for AppConfig {
             dual_view_pipeline_enabled: tables.ui.dual_view_pipeline_enabled,
             native_html_pretty_enabled: tables.ui.native_html_pretty_enabled,
             native_html_pagination_mode: tables.ui.native_html_pagination_mode,
+            pretty: tables.ui.pretty,
             log_level: tables.logging.log_level,
             cache_dir: tables.storage.cache_dir,
             browser_tabs_enabled: tables.integration.browser_tabs_enabled,
@@ -79,6 +83,7 @@ impl From<ConfigTables> for AppConfig {
             tts_threads: tables.tts.tts_threads,
             normalizer_threads: tables.tts.normalizer_threads,
             tts_progress_log_interval_secs: tables.tts.tts_progress_log_interval_secs,
+            remote_url: tables.integration.remote_url,
         }
     }
 }
@@ -118,9 +123,11 @@ impl From<&AppConfig> for ConfigTables {
                 show_tts: config.show_tts,
                 show_settings: config.show_settings,
                 show_stats: config.show_stats,
+                chrome_font_scale: config.chrome_font_scale,
                 dual_view_pipeline_enabled: config.dual_view_pipeline_enabled,
                 native_html_pretty_enabled: config.native_html_pretty_enabled,
                 native_html_pagination_mode: config.native_html_pagination_mode,
+                pretty: config.pretty,
             },
             logging: LoggingConfig {
                 log_level: config.log_level,
@@ -133,6 +140,7 @@ impl From<&AppConfig> for ConfigTables {
                 browsr_base_url: config.browsr_base_url.clone(),
                 browsr_timeout_ms: config.browsr_timeout_ms,
                 close_browser_tab_on_recent_delete: config.close_browser_tab_on_recent_delete,
+                remote_url: config.remote_url.clone(),
             },
             tts: TtsConfig {
                 tts_model_path: config.tts_model_path.clone(),
@@ -265,12 +273,16 @@ struct UiConfig {
     show_settings: bool,
     #[serde(default = "defaults::default_show_stats")]
     show_stats: bool,
+    #[serde(default = "defaults::default_chrome_font_scale")]
+    chrome_font_scale: f32,
     #[serde(default = "defaults::default_dual_view_pipeline_enabled")]
     dual_view_pipeline_enabled: bool,
     #[serde(default = "defaults::default_native_html_pretty_enabled")]
     native_html_pretty_enabled: bool,
     #[serde(default = "defaults::default_native_html_pagination_mode")]
     native_html_pagination_mode: super::models::NativeHtmlPaginationMode,
+    #[serde(default)]
+    pretty: PrettyUiConfig,
 }
 
 impl Default for UiConfig {
@@ -279,9 +291,11 @@ impl Default for UiConfig {
             show_tts: defaults::default_show_tts(),
             show_settings: defaults::default_show_settings(),
             show_stats: defaults::default_show_stats(),
+            chrome_font_scale: defaults::default_chrome_font_scale(),
             dual_view_pipeline_enabled: defaults::default_dual_view_pipeline_enabled(),
             native_html_pretty_enabled: defaults::default_native_html_pretty_enabled(),
             native_html_pagination_mode: defaults::default_native_html_pagination_mode(),
+            pretty: PrettyUiConfig::default(),
         }
     }
 }
@@ -324,6 +338,8 @@ struct IntegrationConfig {
     browsr_timeout_ms: u64,
     #[serde(default = "defaults::default_close_browser_tab_on_recent_delete")]
     close_browser_tab_on_recent_delete: bool,
+    #[serde(default)]
+    remote_url: Option<String>,
 }
 
 impl Default for IntegrationConfig {
@@ -334,6 +350,7 @@ impl Default for IntegrationConfig {
             browsr_timeout_ms: defaults::default_browsr_timeout_ms(),
             close_browser_tab_on_recent_delete:
                 defaults::default_close_browser_tab_on_recent_delete(),
+            remote_url: None,
         }
     }
 }

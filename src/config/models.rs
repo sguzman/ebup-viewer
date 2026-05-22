@@ -9,6 +9,8 @@ pub struct AppConfig {
     pub theme: ThemeMode,
     #[serde(default = "crate::config::defaults::default_font_size")]
     pub font_size: u32,
+    #[serde(default = "crate::config::defaults::default_chrome_font_scale")]
+    pub chrome_font_scale: f32,
     #[serde(default = "crate::config::defaults::default_line_spacing")]
     pub line_spacing: f32,
     #[serde(default = "crate::config::defaults::default_margin_horizontal")]
@@ -57,6 +59,8 @@ pub struct AppConfig {
     pub native_html_pretty_enabled: bool,
     #[serde(default = "crate::config::defaults::default_native_html_pagination_mode")]
     pub native_html_pagination_mode: NativeHtmlPaginationMode,
+    #[serde(default)]
+    pub pretty: PrettyUiConfig,
     #[serde(default = "crate::config::defaults::default_day_highlight")]
     pub day_highlight: HighlightColor,
     #[serde(default = "crate::config::defaults::default_night_highlight")]
@@ -105,6 +109,8 @@ pub struct AppConfig {
     pub key_toggle_stats: String,
     #[serde(default = "crate::config::defaults::default_key_toggle_tts")]
     pub key_toggle_tts: String,
+    #[serde(default)]
+    pub remote_url: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -112,6 +118,7 @@ impl Default for AppConfig {
         AppConfig {
             theme: ThemeMode::Night,
             font_size: crate::config::defaults::default_font_size(),
+            chrome_font_scale: crate::config::defaults::default_chrome_font_scale(),
             line_spacing: crate::config::defaults::default_line_spacing(),
             margin_horizontal: crate::config::defaults::default_margin_horizontal(),
             margin_vertical: crate::config::defaults::default_margin_vertical(),
@@ -140,6 +147,7 @@ impl Default for AppConfig {
             ),
             native_html_pagination_mode:
                 crate::config::defaults::default_native_html_pagination_mode(),
+            pretty: PrettyUiConfig::default(),
             day_highlight: crate::config::defaults::default_day_highlight(),
             night_highlight: crate::config::defaults::default_night_highlight(),
             log_level: crate::config::defaults::default_log_level(),
@@ -166,6 +174,92 @@ impl Default for AppConfig {
             key_toggle_settings: crate::config::defaults::default_key_toggle_settings(),
             key_toggle_stats: crate::config::defaults::default_key_toggle_stats(),
             key_toggle_tts: crate::config::defaults::default_key_toggle_tts(),
+            remote_url: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, serde::Serialize, PartialEq, TS)]
+#[ts(export)]
+pub struct PrettyUiConfig {
+    #[serde(default = "crate::config::defaults::default_pretty_enabled")]
+    pub enabled: bool,
+    #[serde(default = "crate::config::defaults::default_pretty_base_font_scale")]
+    pub base_font_scale: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_heading_scale_h1")]
+    pub heading_scale_h1: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_heading_scale_h2")]
+    pub heading_scale_h2: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_heading_scale_h3")]
+    pub heading_scale_h3: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_heading_scale_h4")]
+    pub heading_scale_h4: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_heading_scale_h5")]
+    pub heading_scale_h5: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_heading_scale_h6")]
+    pub heading_scale_h6: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_paragraph_spacing")]
+    pub paragraph_spacing: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_block_spacing")]
+    pub block_spacing: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_list_indent")]
+    pub list_indent: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_list_item_spacing")]
+    pub list_item_spacing: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_hr_thickness")]
+    pub hr_thickness: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_hr_margin")]
+    pub hr_margin: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_code_font_scale")]
+    pub code_font_scale: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_code_bg_alpha")]
+    pub code_bg_alpha: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_code_border_alpha")]
+    pub code_border_alpha: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_link_color")]
+    pub link_color: HighlightColor,
+    #[serde(default = "crate::config::defaults::default_pretty_image_max_width_pct")]
+    pub image_max_width_pct: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_image_max_height_px")]
+    pub image_max_height_px: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_image_cache_max_entries")]
+    pub image_cache_max_entries: usize,
+    #[serde(default = "crate::config::defaults::default_pretty_table_cell_padding")]
+    pub table_cell_padding: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_table_border_alpha")]
+    pub table_border_alpha: f32,
+    #[serde(default = "crate::config::defaults::default_pretty_table_stripe_alpha")]
+    pub table_stripe_alpha: f32,
+}
+
+impl Default for PrettyUiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: crate::config::defaults::default_pretty_enabled(),
+            base_font_scale: crate::config::defaults::default_pretty_base_font_scale(),
+            heading_scale_h1: crate::config::defaults::default_pretty_heading_scale_h1(),
+            heading_scale_h2: crate::config::defaults::default_pretty_heading_scale_h2(),
+            heading_scale_h3: crate::config::defaults::default_pretty_heading_scale_h3(),
+            heading_scale_h4: crate::config::defaults::default_pretty_heading_scale_h4(),
+            heading_scale_h5: crate::config::defaults::default_pretty_heading_scale_h5(),
+            heading_scale_h6: crate::config::defaults::default_pretty_heading_scale_h6(),
+            paragraph_spacing: crate::config::defaults::default_pretty_paragraph_spacing(),
+            block_spacing: crate::config::defaults::default_pretty_block_spacing(),
+            list_indent: crate::config::defaults::default_pretty_list_indent(),
+            list_item_spacing: crate::config::defaults::default_pretty_list_item_spacing(),
+            hr_thickness: crate::config::defaults::default_pretty_hr_thickness(),
+            hr_margin: crate::config::defaults::default_pretty_hr_margin(),
+            code_font_scale: crate::config::defaults::default_pretty_code_font_scale(),
+            code_bg_alpha: crate::config::defaults::default_pretty_code_bg_alpha(),
+            code_border_alpha: crate::config::defaults::default_pretty_code_border_alpha(),
+            link_color: crate::config::defaults::default_pretty_link_color(),
+            image_max_width_pct: crate::config::defaults::default_pretty_image_max_width_pct(),
+            image_max_height_px: crate::config::defaults::default_pretty_image_max_height_px(),
+            image_cache_max_entries:
+                crate::config::defaults::default_pretty_image_cache_max_entries(),
+            table_cell_padding: crate::config::defaults::default_pretty_table_cell_padding(),
+            table_border_alpha: crate::config::defaults::default_pretty_table_border_alpha(),
+            table_stripe_alpha: crate::config::defaults::default_pretty_table_stripe_alpha(),
         }
     }
 }
@@ -311,7 +405,7 @@ impl std::fmt::Display for FontWeight {
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, TS)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, PartialEq, TS)]
 #[ts(export)]
 pub struct HighlightColor {
     pub r: f32,

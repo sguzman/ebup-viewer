@@ -2,6 +2,11 @@ pub(crate) fn default_font_size() -> u32 {
     22
 }
 
+pub(crate) fn default_chrome_font_scale() -> f32 {
+    // Keep the main app chrome compact even if the reader font is large.
+    0.62
+}
+
 pub(crate) fn default_line_spacing() -> f32 {
     1.2
 }
@@ -23,13 +28,17 @@ pub(crate) fn default_window_height() -> f32 {
 }
 
 pub(crate) fn default_tts_model() -> String {
-    #[cfg(target_os = "windows")]
-    {
-        "C:\\Users\\Salvador Guzman\\Music\\models\\piper\\en-US\\female\\en_US-amy-medium.onnx".to_string()
-    }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(unix)]
     {
         "/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx".to_string()
+    }
+    #[cfg(windows)]
+    {
+        "C:\\Users\\Salvador Guzman\\Music\\models\\piper\\en-US\\female\\en_US-hfc_female-medium.onnx".to_string()
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        "models/en_US-amy-medium.onnx".to_string()
     }
 }
 
@@ -42,13 +51,17 @@ pub(crate) fn default_tts_volume() -> f32 {
 }
 
 pub(crate) fn default_tts_espeak_path() -> String {
-    #[cfg(target_os = "windows")]
+    #[cfg(unix)]
+    {
+        "/usr/share".to_string()
+    }
+    #[cfg(windows)]
     {
         "C:\\Program Files\\eSpeak NG".to_string()
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(unix, windows)))]
     {
-        "/usr/share".to_string()
+        "espeak-data".to_string()
     }
 }
 
@@ -89,6 +102,107 @@ pub(crate) fn default_native_html_pretty_enabled() -> bool {
 
 pub(crate) fn default_native_html_pagination_mode() -> crate::config::NativeHtmlPaginationMode {
     crate::config::NativeHtmlPaginationMode::SentenceWindow
+}
+
+pub(crate) fn default_pretty_enabled() -> bool {
+    true
+}
+
+pub(crate) fn default_pretty_base_font_scale() -> f32 {
+    0.9
+}
+
+pub(crate) fn default_pretty_heading_scale_h1() -> f32 {
+    1.7
+}
+
+pub(crate) fn default_pretty_heading_scale_h2() -> f32 {
+    1.45
+}
+
+pub(crate) fn default_pretty_heading_scale_h3() -> f32 {
+    1.25
+}
+
+pub(crate) fn default_pretty_heading_scale_h4() -> f32 {
+    1.1
+}
+
+pub(crate) fn default_pretty_heading_scale_h5() -> f32 {
+    1.0
+}
+
+pub(crate) fn default_pretty_heading_scale_h6() -> f32 {
+    0.95
+}
+
+pub(crate) fn default_pretty_paragraph_spacing() -> f32 {
+    6.0
+}
+
+pub(crate) fn default_pretty_block_spacing() -> f32 {
+    10.0
+}
+
+pub(crate) fn default_pretty_list_indent() -> f32 {
+    20.0
+}
+
+pub(crate) fn default_pretty_list_item_spacing() -> f32 {
+    4.0
+}
+
+pub(crate) fn default_pretty_hr_thickness() -> f32 {
+    1.0
+}
+
+pub(crate) fn default_pretty_hr_margin() -> f32 {
+    10.0
+}
+
+pub(crate) fn default_pretty_code_font_scale() -> f32 {
+    0.9
+}
+
+pub(crate) fn default_pretty_code_bg_alpha() -> f32 {
+    0.08
+}
+
+pub(crate) fn default_pretty_code_border_alpha() -> f32 {
+    0.18
+}
+
+pub(crate) fn default_pretty_link_color() -> crate::config::HighlightColor {
+    crate::config::HighlightColor {
+        r: 0.30,
+        g: 0.55,
+        b: 0.95,
+        a: 1.0,
+    }
+}
+
+pub(crate) fn default_pretty_image_max_width_pct() -> f32 {
+    95.0
+}
+
+pub(crate) fn default_pretty_image_max_height_px() -> f32 {
+    520.0
+}
+
+pub(crate) fn default_pretty_image_cache_max_entries() -> usize {
+    128
+}
+
+pub(crate) fn default_pretty_table_cell_padding() -> f32 {
+    6.0
+}
+
+pub(crate) fn default_pretty_table_border_alpha() -> f32 {
+    0.16
+}
+
+pub(crate) fn default_pretty_table_stripe_alpha() -> f32 {
+    0.05
 }
 
 pub(crate) fn default_day_highlight() -> crate::config::HighlightColor {

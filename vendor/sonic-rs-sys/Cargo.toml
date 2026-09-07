@@ -11,46 +11,42 @@
 
 [package]
 edition = "2021"
-name = "espeak-rs-sys"
+name = "sonic-rs-sys"
 version = "0.1.9"
+authors = []
 build = "build.rs"
 include = [
-    "espeak-ng/CMakeLists.txt",
-    "espeak-ng/vim/",
-    "espeak-ng/cmake/",
-    "espeak-ng/phsource/",
-    "espeak-ng/tests/",
-    "espeak-ng/src/",
-    "espeak-ng/espeak-ng-data/",
-    "espeak-ng/dictsource/**",
-    "espeak-ng/espeak-ng.pc.in",
+    "sonic/*.c",
+    "sonic/*.h",
+    "sonic/Makefile",
     "src/*.rs",
     "build.rs",
-    "wrapper.h",
-    "!espeak-ng/dictsource/extra/**",
-    "!espeak-ng/dictsource/fo_list",
-    "!espeak-ng/src/windows/Debug/*.wav",
 ]
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "Rust bindings to espeak-ng"
+description = "Rust bindings to sonic rate boost library"
+homepage = "https://github.com/thewh1teagle/piper-rs"
 readme = false
+keywords = [
+    "FFI",
+    "sonic",
+    "audio",
+    "tts",
+    "speech",
+]
+categories = [
+    "external-ffi-bindings",
+    "api-bindings",
+]
 license = "MIT"
 repository = "https://github.com/thewh1teagle/piper-rs"
 resolver = "1"
 
 [lib]
-name = "espeak_rs_sys"
+name = "sonic_rs_sys"
 path = "src/lib.rs"
 
-[build-dependencies.cmake]
-version = "0.1"
-
-[build-dependencies.glob]
-version = "0.3.1"
-
-[features]
-compile-espeak-intonations = []
-default = []
+[build-dependencies.cc]
+version = "1.0.79"

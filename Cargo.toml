@@ -20,3 +20,4 @@ lanternleaf-egui = { path = "crates/lanternleaf-egui" }
 [patch.crates-io]
 espeak-rs-sys = { path = "vendor/espeak-rs-sys" }
 pdfium-auto = { path = "vendor/pdfium-auto" }
+sonic-rs-sys = { path = "vendor/sonic-rs-sys" }

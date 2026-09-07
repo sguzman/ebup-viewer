@@ -1,0 +1,57 @@
+name: windows-baseline
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  native-workspace:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check workspace
+        run: cargo check --workspace
+
+      - name: Build workspace
+        run: cargo build --workspace
+
+      - name: Test workspace
+        run: cargo test --workspace
+
+      - name: Native launch smoke
+        if: always()
+        shell: pwsh
+        run: |
+          $binary = Join-Path $pwd "target\debug\lanternleaf.exe"
+          if (-not (Test-Path $binary)) {
+            throw "Expected native binary was not produced: $binary"
+          }
+          $process = Start-Process -FilePath $binary -PassThru
+          try {
+            Start-Sleep -Seconds 8
+            if ($process.HasExited) {
+              if ($process.ExitCode -ne 0) {
+                throw "Native egui process exited during launch smoke with code $($process.ExitCode)"
+              }
+              Write-Host "Native egui process started and exited cleanly with code 0 during the launch smoke."
+              return
+            }
+            Write-Host "Native egui process remained running for the launch smoke."
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }

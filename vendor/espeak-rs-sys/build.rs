@@ -153,6 +153,7 @@ fn main() {
     let espeak_dst = out_dir.join("espeak-ng");
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("Failed to get CARGO_MANIFEST_DIR");
     let espeak_src = Path::new(&manifest_dir).join("espeak-ng");
+
     let build_shared_libs = false;
 
     let build_shared_libs = std::env::var("ESPEAK_BUILD_SHARED_LIBS")
@@ -183,27 +184,7 @@ fn main() {
             .to_string(),
     );
 
-    // Bindings
-    let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
-        .clang_arg(format!("-I{}", espeak_dst.display()))
-        .clang_arg(format!(
-            "-I{}",
-            espeak_dst.join("src").join("include").display()
-        ))
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .generate()
-        .expect("Failed to generate bindings");
-
-    // Write the generated bindings to an output file
-    let bindings_path = out_dir.join("bindings.rs");
-    bindings
-        .write_to_file(bindings_path)
-        .expect("Failed to write bindings");
-    println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=./espeak-ng");
-
-    debug_log!("Bindings Created");
 
     // Build with Cmake
 

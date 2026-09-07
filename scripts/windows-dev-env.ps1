@@ -11,18 +11,20 @@ function Add-PathIfPresent([string]$Path) {
     }
 }
 
+$scoopRoot = if ($env:SCOOP) { $env:SCOOP } else { Join-Path $env:USERPROFILE 'scoop' }
+Add-PathIfPresent (Join-Path $scoopRoot 'shims')
 Add-PathIfPresent (Join-Path $env:USERPROFILE '.cargo\bin')
-Add-PathIfPresent (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links')
-Add-PathIfPresent (Join-Path $env:ProgramFiles 'CMake\bin')
-Add-PathIfPresent (Join-Path $env:ProgramFiles 'Pandoc')
-Add-PathIfPresent (Join-Path $env:LOCALAPPDATA 'Pandoc')
 
-$pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
-$vswhereCandidates = @(
-    (Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'),
-    (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe')
-)
-$vswhere = $vswhereCandidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
+$vswhereCommand = Get-Command 'vswhere.exe' -ErrorAction SilentlyContinue
+$vswhere = if ($vswhereCommand) { $vswhereCommand.Source } else { $null }
+if (-not $vswhere) {
+    $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+    $vswhereCandidates = @(
+        (Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe')
+    )
+    $vswhere = $vswhereCandidates | Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } | Select-Object -First 1
+}
 if (-not $vswhere) { throw 'Visual Studio locator (vswhere.exe) is missing. Run .\deps.ps1.' }
 
 $installPath = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

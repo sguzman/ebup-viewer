@@ -6,7 +6,8 @@ param(
     [int] $MaxPolls = 0,
     [switch] $TestMode,
     [string] $TerminalStateFile,
-    [switch] $AllowRepoStateFallback
+    [switch] $AllowRepoStateFallback,
+    [switch] $Rearm
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,17 @@ if ([string]::IsNullOrWhiteSpace($TerminalStateFile)) {
     $TerminalStateFile = Join-Path $stateRoot "$GoalId.terminal"
 }
 $ackFile = "$TerminalStateFile.ack"
+
+if ($Rearm) {
+    $stateParent = Split-Path -Parent $TerminalStateFile
+    New-Item -ItemType Directory -Path $stateParent -Force | Out-Null
+    foreach ($stalePath in @($TerminalStateFile, $ackFile)) {
+        if (Test-Path -LiteralPath $stalePath) {
+            Remove-Item -LiteralPath $stalePath -Force
+        }
+    }
+    Write-Output "WATCH_REARMED|$GoalId"
+}
 
 function Get-RepoTerminalState {
     $doneDir = Join-Path $repo 'docs\work\done'

@@ -21,9 +21,15 @@ Does not normally own:
 - maintaining philosophy/roadmaps;
 - manually starting a goal-completion watcher.
 
-The desired human loop is short:
+The desired initial human loop is short:
 
-`pull accepted main -> reset/start one Codex Goal -> give the standard one-line invocation -> leave it alone -> receive a terminal desktop notification after the branch is pushed -> tell ChatGPT the goal finished/blocked`.
+`pull accepted main -> start one Codex Goal session -> give the standard one-line invocation -> leave it alone -> receive a terminal desktop notification after the branch is pushed -> tell ChatGPT the attempt finished/blocked`.
+
+If director review requires correction after that Codex Goal session has terminated:
+
+`pull correction on main -> start a fresh Codex Goal session -> continue the SAME repository goal ID/branch/report lineage -> receive the next attempt notification -> tell ChatGPT`.
+
+A new Codex Goal session does **not** imply a new repository macro-goal number.
 
 ## ChatGPT / director, architect, integrator
 
@@ -63,6 +69,8 @@ The prior one-small-prompt-per-pass workflow created too much human/agent turnar
 
 LanternLeaf uses **macro-goals**.
 
+A macro-goal is a durable semantic work unit, not a Codex Goal UI session. One macro-goal may span multiple worker sessions and director correction attempts.
+
 A macro-goal:
 
 - has one coherent outcome;
@@ -99,21 +107,27 @@ Only the goal in `ready/` is authorized to begin.
 ## Goal lifecycle
 
 1. ChatGPT writes/updates project docs and the next macro-goal on `main`.
-2. Human pulls `main`, resets/starts one Codex Goal for that numbered macro-goal, and gives the standard repository invocation.
-3. Codex moves `ready -> active`, creates `codex/<id>-<slug>`, and launches the detached Windows goal watcher.
+2. Human pulls `main`, starts one Codex Goal session for that numbered repository macro-goal, and gives the standard repository invocation.
+3. Codex moves `ready -> active`, creates `codex/<id>-<slug>`, and launches the detached Windows goal watcher for execution attempt A1.
 4. Codex executes all authorized passes without requiring a new prompt for ordinary retries/fixes.
 5. Codex writes `reports/<id>.md`, moves the goal to `done` or `blocked`, commits, and pushes the terminal branch.
 6. After the push succeeds, Codex calls `scripts/signal-codex-goal-terminal.ps1` for that goal/state.
-7. The detached watcher emits one terminal Windows notification, acknowledges the signal, and exits; notification failure is non-fatal.
+7. The detached watcher emits one terminal Windows notification for A1, acknowledges the signal, and exits; notification failure is non-fatal.
 8. Codex restores the shared checkout to `main`.
 9. ChatGPT reviews the already-pushed branch/report directly.
-10. ChatGPT may write `reviews/<id>.md`, request a bounded correction, or integrate accepted commits.
-11. ChatGPT updates current status/roadmaps and queues the next goal.
-12. Human pulls accepted `main` and runs runtime verification only when requested.
+10. If accepted, ChatGPT integrates the candidate, updates current status/roadmaps, and queues the next repository goal.
+11. If revision/correctable rejection is required, ChatGPT writes `reviews/<id>.md`, reopens the **same** goal to `ready/`, and preserves the goal ID plus branch/report lineage.
+12. Because the prior Codex Goal session has terminalized, the human pulls the correction and starts a **fresh Codex Goal session** for the same repository goal.
+13. The correction session reads current `main` governance/review, continues the existing branch, launches `scripts/codex-goal-notify.ps1 -Rearm`, executes attempt A2, appends report history, and terminalizes/pushes again.
+14. Return to director review. Repeat attempts until accepted, blocked on a true unresolved decision, or the goal is explicitly abandoned/superseded.
+15. Human runs runtime verification only when requested.
 
 The post-push `.git/lanternleaf-goal-state/<id>.terminal` sentinel is the normal notification trigger. This makes the alert mean that the implementation is already remotely inspectable and prevents checkout restoration from racing the watcher.
 
 Notification is best-effort workflow UX. It must not alter whether a product goal passes or fails.
+
+`done` is terminal for the current execution attempt, not necessarily an absorbing terminal state for the repository macro-goal. Director correction may cycle the same goal `done -> ready -> active` in a new Codex Goal session.
+
 ## Parallelism inside a goal
 
 Multiple things may be worked in the same goal when they support one outcome and have explicit boundaries.

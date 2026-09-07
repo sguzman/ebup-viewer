@@ -60,6 +60,8 @@ use lanternleaf_app::{
     tracing::init_tracing,
     tts_runtime::{TtsRuntime, TtsRuntimeEvent},
 };
+#[cfg(windows)]
+use lanternleaf_core::tts::WindowsVoiceDescriptor;
 use lanternleaf_core::{
     cache, cache_service, config, config_service,
     epub_loader::{PdfGeometryMode, PdfOcrGeometryQualityClass, PdfSyncStrategy},
@@ -79,8 +81,12 @@ pub enum NativeRunError {
 impl fmt::Display for NativeRunError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::LockIo(err) => write!(f, "failed to acquire the LanternLeaf instance lock: {err}"),
-            Self::AlreadyRunning => write!(f, "another LanternLeaf egui instance is already running"),
+            Self::LockIo(err) => {
+                write!(f, "failed to acquire the LanternLeaf instance lock: {err}")
+            }
+            Self::AlreadyRunning => {
+                write!(f, "another LanternLeaf egui instance is already running")
+            }
             Self::Eframe(err) => write!(f, "failed to start the LanternLeaf egui shell: {err}"),
         }
     }
@@ -165,16 +171,13 @@ pub fn run_wasm(canvas_id: &str) -> Result<(), wasm_bindgen::JsValue> {
                     // Tracing guard is not used in WASM the same way
                     // We'll pass a dummy or handle it differently if needed
                     // For now, let's just use a simple approach
-                    
+
                     // We need a dummy tracing guard or change the struct
                     // Actually, let's just make it work for now.
-                    
+
                     // We'll need to modify LanternLeafApp::new to handle WASM tracing guard
                     Box::new(LanternLeafApp::new_wasm(
-                        cc,
-                        runtime,
-                        app_config,
-                        normalizer,
+                        cc, runtime, app_config, normalizer,
                     )) as Box<dyn eframe::App>
                 }),
             )
@@ -362,6 +365,10 @@ struct LanternLeafApp {
     starter_browser_tabs_force_refresh: bool,
     starter_browser_tab_id_input: String,
     starter_browser_window_id_input: String,
+    #[cfg(windows)]
+    windows_voice_catalog: Vec<WindowsVoiceDescriptor>,
+    #[cfg(windows)]
+    windows_voice_catalog_error: Option<String>,
 }
 
 struct StarterViewModel<'a> {
@@ -809,6 +816,10 @@ impl LanternLeafApp {
             starter_browser_tabs_force_refresh: false,
             starter_browser_tab_id_input: String::new(),
             starter_browser_window_id_input: String::new(),
+            #[cfg(windows)]
+            windows_voice_catalog: Vec::new(),
+            #[cfg(windows)]
+            windows_voice_catalog_error: None,
         };
         app.load_pinned_timeline_entries();
         app
@@ -822,14 +833,20 @@ impl LanternLeafApp {
         normalizer: normalizer::TextNormalizer,
     ) -> Self {
         let fonts_configured = setup_egui_fonts(&cc.egui_ctx, &app_config);
-        
-        let url = app_config.remote_url.clone().unwrap_or_else(|| "http://127.0.0.1:3030".to_string());
-        let persistence_service: Arc<dyn PersistenceService> = Arc::new(RemotePersistenceService::new(url));
+
+        let url = app_config
+            .remote_url
+            .clone()
+            .unwrap_or_else(|| "http://127.0.0.1:3030".to_string());
+        let persistence_service: Arc<dyn PersistenceService> =
+            Arc::new(RemotePersistenceService::new(url));
         let persistence = Arc::new(PersistenceLifecycle::new(persistence_service));
-        
-        let cache_service: Arc<dyn cache_service::CacheService> = Arc::new(cache_service::FilesystemCacheService);
-        let config_service: Arc<dyn config_service::ConfigService> = Arc::new(config_service::FilesystemConfigService);
-        
+
+        let cache_service: Arc<dyn cache_service::CacheService> =
+            Arc::new(cache_service::FilesystemCacheService);
+        let config_service: Arc<dyn config_service::ConfigService> =
+            Arc::new(config_service::FilesystemConfigService);
+
         let effect_context = EffectContext::with_services(
             app_config.clone(),
             normalizer.clone(),
@@ -1616,6 +1633,67 @@ impl LanternLeafApp {
                         },
                         "tts_volume",
                     );
+                }
+                ui.horizontal(|ui| {
+                    ui.label("TTS backend");
+                    let mut backend = settings.tts_backend;
+                    egui::ComboBox::from_id_source("tts-backend")
+                        .selected_text(format!("{:?}", backend))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut backend, config::TtsBackend::Piper, "Piper");
+                            ui.selectable_value(&mut backend, config::TtsBackend::Windows, "Windows");
+                        });
+                    if backend != settings.tts_backend {
+                        self.apply_reader_settings_patch(
+                            ReaderSettingsPatch { tts_backend: Some(backend), ..Default::default() },
+                            "tts_backend",
+                        );
+                    }
+                });
+                if settings.tts_backend == config::TtsBackend::Windows {
+                    #[cfg(windows)]
+                    {
+                        if ui.button("Refresh Windows voice catalog").clicked() {
+                            match lanternleaf_core::tts::enumerate_windows_voices() {
+                                Ok(voices) => {
+                                    self.windows_voice_catalog = voices;
+                                    self.windows_voice_catalog_error = None;
+                                }
+                                Err(err) => {
+                                    self.windows_voice_catalog_error = Some(format!("{err:#}"));
+                                }
+                            }
+                        }
+                        if let Some(error) = &self.windows_voice_catalog_error {
+                            ui.colored_label(Color32::RED, error);
+                        }
+                    }
+                    let mut voice_id = settings.windows_voice_id.clone().unwrap_or_default();
+                    ui.horizontal(|ui| {
+                        ui.label("Windows voice ID");
+                        if ui.text_edit_singleline(&mut voice_id).lost_focus() {
+                            self.apply_reader_settings_patch(
+                                ReaderSettingsPatch {
+                                    windows_voice_id: Some(if voice_id.trim().is_empty() { String::new() } else { voice_id }),
+                                    ..Default::default()
+                                },
+                                "windows_voice_id",
+                            );
+                        }
+                    });
+                    #[cfg(windows)]
+                    let voice_catalog = self.windows_voice_catalog.clone();
+                    #[cfg(windows)]
+                    for voice in &voice_catalog {
+                        let selected = settings.windows_voice_id.as_deref() == Some(voice.id.as_str());
+                        if ui.selectable_label(selected, format!("{} ({})", voice.display_name, voice.language)).clicked() {
+                            self.apply_reader_settings_patch(
+                                ReaderSettingsPatch { windows_voice_id: Some(voice.id.clone()), ..Default::default() },
+                                "windows_voice_catalog_selection",
+                            );
+                        }
+                    }
+                    ui.small("Leave blank to use the Windows default voice. Voice IDs can be copied from the Windows voice catalog probe.");
                 }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {

@@ -35,6 +35,10 @@ pub struct AppConfig {
     pub letter_spacing: u32,
     #[serde(default = "crate::config::defaults::default_tts_model")]
     pub tts_model_path: String,
+    #[serde(default)]
+    pub tts_backend: TtsBackend,
+    #[serde(default)]
+    pub windows_voice_id: Option<String>,
     #[serde(default = "crate::config::defaults::default_tts_speed")]
     pub tts_speed: f32,
     #[serde(default = "crate::config::defaults::default_tts_volume")]
@@ -131,6 +135,8 @@ impl Default for AppConfig {
             word_spacing: 0,
             letter_spacing: 0,
             tts_model_path: crate::config::defaults::default_tts_model(),
+            tts_backend: TtsBackend::Piper,
+            windows_voice_id: None,
             tts_speed: crate::config::defaults::default_tts_speed(),
             tts_volume: crate::config::defaults::default_tts_volume(),
             tts_espeak_path: crate::config::defaults::default_tts_espeak_path(),
@@ -177,6 +183,15 @@ impl Default for AppConfig {
             remote_url: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, serde::Serialize, PartialEq, Eq, Default, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum TtsBackend {
+    #[default]
+    Piper,
+    Windows,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, serde::Serialize, PartialEq, TS)]

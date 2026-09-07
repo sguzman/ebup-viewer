@@ -163,6 +163,8 @@ struct TtsPlaybackPlan {
     progress_log_interval: Duration,
     model_path: PathBuf,
     espeak_path: PathBuf,
+    backend: config::TtsBackend,
+    windows_voice_id: Option<String>,
 }
 
 #[derive(Default)]
@@ -549,6 +551,8 @@ impl TtsRuntime {
             ),
             model_path: PathBuf::from(reader.config.tts_model_path.clone()),
             espeak_path: PathBuf::from(reader.config.tts_espeak_path.clone()),
+            backend: reader.config.tts_backend,
+            windows_voice_id: reader.config.windows_voice_id.clone(),
         })
     }
 }
@@ -603,19 +607,23 @@ fn run_tts_runtime_loop(
         }
 
         if ctx.mode == TtsRuntimeMode::Real && engine.is_none() {
-            let built_engine =
-                match tts::TtsEngine::new(plan.model_path.clone(), plan.espeak_path.clone()) {
-                    Ok(engine) => engine,
-                    Err(err) => {
-                        transition_tts_runtime_to_paused(
-                            &ctx,
-                            runtime_request_id,
-                            "reader_tts_runtime_error",
-                            &format!("Failed to initialize Piper TTS engine: {err}"),
-                        );
-                        break;
-                    }
-                };
+            let built_engine = match tts::TtsEngine::new(
+                plan.model_path.clone(),
+                plan.espeak_path.clone(),
+                plan.backend,
+                plan.windows_voice_id.clone(),
+            ) {
+                Ok(engine) => engine,
+                Err(err) => {
+                    transition_tts_runtime_to_paused(
+                        &ctx,
+                        runtime_request_id,
+                        "reader_tts_runtime_error",
+                        &format!("Failed to initialize Piper TTS engine: {err}"),
+                    );
+                    break;
+                }
+            };
             engine = Some(built_engine);
         }
 
@@ -911,6 +919,8 @@ fn collect_tts_playback_plan(
         ),
         model_path: PathBuf::from(reader.config.tts_model_path.clone()),
         espeak_path: PathBuf::from(reader.config.tts_espeak_path.clone()),
+        backend: reader.config.tts_backend,
+        windows_voice_id: reader.config.windows_voice_id.clone(),
     })
 }
 
@@ -1291,6 +1301,8 @@ fn patch_has_tts_fields(patch: &session::ReaderSettingsPatch) -> bool {
         || patch.tts_volume.is_some()
         || patch.pause_after_sentence.is_some()
         || patch.auto_scroll_tts.is_some()
+        || patch.tts_backend.is_some()
+        || patch.windows_voice_id.is_some()
 }
 
 fn panels_snapshot(panels: &Mutex<session::PanelState>) -> session::PanelState {

@@ -22,6 +22,8 @@ impl ReaderSession {
             time_remaining_display: self.config.time_remaining_display,
             tts_speed: self.config.tts_speed,
             tts_volume: self.config.tts_volume,
+            tts_backend: self.config.tts_backend,
+            windows_voice_id: self.config.windows_voice_id.clone(),
             pretty: self.config.pretty,
         }
     }
@@ -113,6 +115,14 @@ impl ReaderSession {
         }
         if let Some(tts_volume) = patch.tts_volume {
             self.config.tts_volume = tts_volume.clamp(0.0, 2.0);
+        }
+        if let Some(tts_backend) = patch.tts_backend {
+            self.config.tts_backend = tts_backend;
+        }
+        if patch.windows_voice_id.is_some() {
+            self.config.windows_voice_id = patch
+                .windows_voice_id
+                .and_then(|value| (!value.trim().is_empty()).then_some(value));
         }
 
         if repaginate {

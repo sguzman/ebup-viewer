@@ -90,9 +90,9 @@ function Ensure-Rust {
     }
     $targets = @(& rustup.exe target list --installed)
     if ($targets -notcontains $deps.rust.target) {
-        if ($CheckOnly) { throw 'Missing Rust target: x86_64-pc-windows-msvc' }
-        & rustup.exe target add x86_64-pc-windows-msvc
-        if ($LASTEXITCODE -ne 0) { throw 'rustup failed to add x86_64-pc-windows-msvc.' }
+        if ($CheckOnly) { throw "Missing Rust target: $($deps.rust.target)" }
+        & rustup.exe target add $deps.rust.target
+        if ($LASTEXITCODE -ne 0) { throw "rustup failed to add $($deps.rust.target)." }
     }
 }
 

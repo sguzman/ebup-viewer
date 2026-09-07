@@ -290,6 +290,15 @@ fn period_is_domain_tld(chars: &[char], dot_idx: usize) -> bool {
 static ABBREVIATION_TOKENS: Lazy<AbbreviationTokenSet> = Lazy::new(load_abbreviation_tokens);
 
 fn load_abbreviation_tokens() -> AbbreviationTokenSet {
+    let normalizer_path = resolve_normalizer_config_path();
+    let abbreviations_path = resolve_abbreviations_config_path(&normalizer_path);
+    load_abbreviation_tokens_from_paths(&normalizer_path, &abbreviations_path)
+}
+
+fn load_abbreviation_tokens_from_paths(
+    normalizer_path: &PathBuf,
+    abbreviations_path: &PathBuf,
+) -> AbbreviationTokenSet {
     let mut out_nocase = HashSet::new();
     let mut out_case = HashSet::new();
     let mut out_regex = Vec::new();
@@ -297,8 +306,7 @@ fn load_abbreviation_tokens() -> AbbreviationTokenSet {
         out_nocase.insert(default.to_string());
     }
 
-    let normalizer_path = resolve_normalizer_config_path();
-    if let Ok(contents) = fs::read_to_string(&normalizer_path)
+    if let Ok(contents) = fs::read_to_string(normalizer_path)
         && let Ok(file) = toml::from_str::<NormalizerFile>(&contents)
     {
         let merged = file.normalization.abbreviations.merged();
@@ -321,8 +329,7 @@ fn load_abbreviation_tokens() -> AbbreviationTokenSet {
         }
     }
 
-    let abbreviations_path = resolve_abbreviations_config_path(&normalizer_path);
-    if let Ok(contents) = fs::read_to_string(&abbreviations_path)
+    if let Ok(contents) = fs::read_to_string(abbreviations_path)
         && let Ok(file) = toml::from_str::<AbbreviationsFile>(&contents)
     {
         let merged = file.abbreviations.merged();
@@ -506,16 +513,12 @@ struct AbbreviationTokenSet {
 #[cfg(test)]
 mod tests {
     use super::{
-        AbbreviationTokenSet, load_abbreviation_tokens, split_sentences,
+        load_abbreviation_tokens_from_paths, AbbreviationTokenSet, load_abbreviation_tokens,
+        split_sentences,
         split_sentences_with_abbreviations,
     };
-    use std::sync::{Mutex, OnceLock};
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     #[test]
     fn does_not_split_common_abbreviations() {
@@ -566,7 +569,6 @@ mod tests {
 
     #[test]
     fn loads_external_abbreviation_tokens() {
-        let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after epoch")
@@ -575,15 +577,7 @@ mod tests {
         std::fs::write(&path, "[abbreviations.nocase]\n\"pp.\" = \"pages\"\n")
             .expect("abbreviations config should be written");
 
-        // SAFETY: test-only, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::set_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH", &path);
-        }
-        let tokens = load_abbreviation_tokens();
-        // SAFETY: test-only cleanup, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::remove_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH");
-        }
+        let tokens = load_abbreviation_tokens_from_paths(&PathBuf::new(), &path);
 
         assert!(tokens.nocase.contains("pp."));
         let _ = std::fs::remove_file(&path);

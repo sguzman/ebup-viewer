@@ -61,7 +61,7 @@ static CACHE_LAYOUT_INIT: OnceLock<()> = OnceLock::new();
 #[derive(Clone)]
 struct SourceDigestEntry {
     len: u64,
-    modified_unix_secs: u64,
+    modified_unix_nanos: u128,
     digest: String,
 }
 
@@ -92,7 +92,10 @@ pub struct RecentBook {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn cache_root() -> PathBuf {
     let workspace_root = workspace_root_from_cwd();
-    let configured_root = resolve_configured_cache_root(workspace_root.as_deref());
+    let configured_root = resolve_configured_cache_root(
+        workspace_root.as_deref(),
+        std::env::var_os(CACHE_DIR_ENV).as_deref(),
+    );
     let app_root = app_cache_root(&configured_root);
     ensure_cache_layout(&configured_root, &app_root);
     trace!(
@@ -110,8 +113,11 @@ pub fn cache_root() -> PathBuf {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn resolve_configured_cache_root(workspace_root: Option<&Path>) -> PathBuf {
-    if let Some(value) = std::env::var_os(CACHE_DIR_ENV).map(PathBuf::from) {
+fn resolve_configured_cache_root(
+    workspace_root: Option<&Path>,
+    env_override: Option<&std::ffi::OsStr>,
+) -> PathBuf {
+    if let Some(value) = env_override.map(PathBuf::from) {
         if value.is_absolute() {
             return value;
         }
@@ -262,17 +268,17 @@ fn source_content_hash(path: &Path) -> Option<String> {
     let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let metadata = fs::metadata(&canonical).ok()?;
     let len = metadata.len();
-    let modified_unix_secs = metadata
+    let modified_unix_nanos = metadata
         .modified()
         .ok()
         .and_then(|ts| ts.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
 
     let cache = CONTENT_DIGEST_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(guard) = cache.lock() {
         if let Some(entry) = guard.get(&canonical) {
-            if entry.len == len && entry.modified_unix_secs == modified_unix_secs {
+            if entry.len == len && entry.modified_unix_nanos == modified_unix_nanos {
                 return Some(entry.digest.clone());
             }
         }
@@ -295,7 +301,7 @@ fn source_content_hash(path: &Path) -> Option<String> {
             canonical,
             SourceDigestEntry {
                 len,
-                modified_unix_secs,
+                modified_unix_nanos,
                 digest: digest.clone(),
             },
         );
@@ -1056,10 +1062,14 @@ mod tests {
     };
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
     fn unique_source_path(ext: &str) -> PathBuf {
+        let counter = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -1068,7 +1078,7 @@ mod tests {
         p.push(format!(
             "lanternleaf_test_source_{}_{}.{}",
             std::process::id(),
-            nanos,
+            format!("{nanos}_{counter}"),
             ext
         ));
         p
@@ -1079,8 +1089,9 @@ mod tests {
             fs::create_dir_all(parent).expect("create parent dir");
         }
         let payload = format!(
-            "cache-test-payload-{}-{}",
+            "cache-test-payload-{}-{}-{}",
             std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_nanos())
@@ -1097,8 +1108,6 @@ mod tests {
 
     #[test]
     fn cache_root_uses_env_override_when_present() {
-        let key = CACHE_DIR_ENV;
-        let previous = std::env::var_os(key);
         let override_path = std::env::temp_dir().join(format!(
             "lanternleaf_cache_root_override_{}_{}",
             std::process::id(),
@@ -1108,26 +1117,12 @@ mod tests {
                 .unwrap_or(0)
         ));
 
-        // SAFETY: test-scoped environment mutation; restored before return.
-        unsafe {
-            std::env::set_var(key, &override_path);
-        }
-        assert_eq!(cache_root(), override_path.join(CACHE_APP_SUBDIR));
-
-        match previous {
-            Some(value) => {
-                // SAFETY: test-scoped environment mutation restore.
-                unsafe {
-                    std::env::set_var(key, value);
-                }
-            }
-            None => {
-                // SAFETY: test-scoped environment mutation restore.
-                unsafe {
-                    std::env::remove_var(key);
-                }
-            }
-        }
+        let configured_root = resolve_configured_cache_root(
+            None,
+            Some(override_path.as_os_str()),
+        );
+        assert_eq!(configured_root, override_path);
+        assert_eq!(app_cache_root(&configured_root), override_path.join(CACHE_APP_SUBDIR));
     }
 
     #[test]
@@ -1894,4 +1889,3 @@ sentence_text = "legacy bookmark entry"
         let _ = fs::remove_dir_all(&dir);
     }
 }
-

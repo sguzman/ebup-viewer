@@ -660,7 +660,7 @@ fn can_repair_pdf_paragraph_punctuation(
     report: Option<&crate::quack_check::report::JobReport>,
 ) -> bool {
     let trimmed = paragraph.trim_end();
-    if trimmed.len() < 24 {
+    if trimmed.len() < 12 || trimmed.split_whitespace().count() < 2 {
         return false;
     }
     let last = match trimmed.chars().last() {
@@ -741,11 +741,6 @@ fn normalize_pdf_text_for_reader_with_summary(
             state.dropped_noise_line_count += 1;
             continue;
         }
-        if is_probable_margin_or_sidenote_line(trimmed) {
-            state.margin_sidenote_suppression_count += 1;
-            state.dropped_noise_line_count += 1;
-            continue;
-        }
         if trimmed.starts_with('[')
             && trimmed.ends_with(']')
             && trimmed[1..trimmed.len() - 1]
@@ -753,6 +748,11 @@ fn normalize_pdf_text_for_reader_with_summary(
                 .all(|ch| ch.is_ascii_digit())
         {
             state.footnote_marker_adjustment_count += 1;
+            state.dropped_noise_line_count += 1;
+            continue;
+        }
+        if is_probable_margin_or_sidenote_line(trimmed) {
+            state.margin_sidenote_suppression_count += 1;
             state.dropped_noise_line_count += 1;
             continue;
         }
@@ -1043,6 +1043,7 @@ fn classify_page_reading_order(
     } else if page.mixed_text_image_suspected
         && page.image_coverage_ratio >= 0.2
         && page.line_count <= 18
+        && page.line_count > 10
         && page.char_count > 120
     {
         reasons.push("image_bands_interrupt_body_order".to_string());
@@ -1063,6 +1064,13 @@ fn classify_page_reading_order(
         reasons.push("dense_short_lines_support_columnar_layout".to_string());
         confidence = 0.82;
         PdfOcrPageLayoutClass::StrongTwoColumn
+    } else if page.digit_ratio >= 0.06
+        && page.short_line_ratio >= 0.3
+        && (page.last_line.chars().any(|ch| ch.is_ascii_digit()) || page.last_line.contains('['))
+    {
+        reasons.push("bottom_band_looks_like_footnotes_or_citations".to_string());
+        confidence = 0.69;
+        PdfOcrPageLayoutClass::BottomFootnoteBand
     } else if page.short_line_ratio >= 0.42
         && page.repeated_line_ratio <= 0.12
         && page.block_coherence >= 0.6
@@ -1071,13 +1079,6 @@ fn classify_page_reading_order(
         reasons.push("short_edge_lines_suggest_margin_sidenotes".to_string());
         confidence = 0.67;
         PdfOcrPageLayoutClass::OuterMarginSidenotes
-    } else if page.digit_ratio >= 0.06
-        && page.short_line_ratio >= 0.3
-        && (page.last_line.chars().any(|ch| ch.is_ascii_digit()) || page.last_line.contains('['))
-    {
-        reasons.push("bottom_band_looks_like_footnotes_or_citations".to_string());
-        confidence = 0.69;
-        PdfOcrPageLayoutClass::BottomFootnoteBand
     } else if page.block_coherence >= 0.72
         && page.coordinate_sanity >= 0.68
         && page.reading_order_stability >= 0.68
@@ -1272,10 +1273,12 @@ fn classify_pdf_runtime(
                 "sampled_pages_have_no_usable_text".to_string(),
             ],
         )
-    } else if hidden_overlay_signal >= 0.40
-        || invisible_text_signal >= 0.35
-        || stacked_duplicate_signal >= 0.30
-        || (full_page_raster_ratio >= 0.35 && hidden_overlay_count as f32 / sampled >= 0.25)
+    } else if hidden_overlay_signal >= 0.75
+        || invisible_text_signal >= 0.75
+        || stacked_duplicate_signal >= 0.50
+        || (full_page_raster_ratio >= 0.35
+            && hidden_overlay_count as f32 / sampled >= 0.25
+            && hidden_overlay_signal >= 0.75)
     {
         (
             PdfDocumentClass::HiddenOcrOverlay,
@@ -1305,6 +1308,8 @@ fn classify_pdf_runtime(
         && trust_diagnostics.block_coherence >= 0.72
         && trust_diagnostics.coordinate_sanity >= 0.65
         && trust_diagnostics.reading_order_stability >= 0.65
+        && feature_summary.repeated_header_ratio < 0.50
+        && feature_summary.repeated_footer_ratio < 0.50
     {
         (
             PdfDocumentClass::EmbeddedClean,
@@ -1389,7 +1394,7 @@ fn classify_pdf_runtime(
             PdfOcrRecommendation::RequiredForText
         }
         PdfDocumentClass::ImageOnlyNoText => {
-            if report.decision.do_ocr && transcript_text.trim().is_empty() {
+            if !report.decision.do_ocr && transcript_text.trim().is_empty() {
                 PdfOcrRecommendation::UnlikelyToHelp
             } else {
                 PdfOcrRecommendation::RequiredForText
@@ -1482,12 +1487,26 @@ fn classify_pdf_sample_page(
             && page.short_line_ratio <= 0.60);
     let looks_scan = page.full_page_raster_suspected
         || (page.image_coverage_ratio >= 0.82 && page.char_count <= 140);
+    let looks_strong_scan = looks_scan
+        && page.full_page_raster_suspected
+        && page.block_coherence <= 0.18
+        && page.reading_order_stability <= 0.12;
 
     let (class, confidence, reasons) = if page.char_count == 0 {
         (
             PdfPageClass::ImageOnlyNoText,
             0.99,
             vec!["no_extracted_text_detected".to_string()],
+        )
+    } else if looks_strong_scan {
+        (
+            PdfPageClass::ScanWithWeakOcr,
+            0.79,
+            vec![
+                "full_page_raster_or_high_image_coverage_detected".to_string(),
+                "text_density_is_too_thin_for_embedded_sync".to_string(),
+                "geometry_is_too_weak_to_treat_sparse_text_as_an_overlay".to_string(),
+            ],
         )
     } else if looks_hidden_overlay {
         let mut reasons = vec![
@@ -1622,8 +1641,8 @@ fn derive_pdf_trust_diagnostics(
             .pages
             .iter()
             .any(|page| page.stacked_duplicate_text_suspected);
-    let ocr_replace_confidence = ((sample.full_page_raster_page_ratio * 0.35)
-        + (sample.hidden_text_layer_page_ratio * 0.35)
+    let ocr_replace_confidence = ((sample.full_page_raster_page_ratio * 0.55)
+        + (sample.hidden_text_layer_page_ratio * 0.25)
         + (sample.invisible_text_layer_page_ratio * 0.2)
         + (sample.stacked_duplicate_text_page_ratio * 0.1))
         .clamp(0.0, 1.0);
@@ -2549,19 +2568,21 @@ mod tests {
         };
         let transcript_text = if matches!(fixture.document_class, PdfDocumentClass::ImageOnlyNoText)
         {
-            ""
+            String::new()
         } else {
-            "Fixture transcript text."
+            let target_chars = fixture.sample.avg_chars_per_page as usize
+                * fixture.pages.len().max(1);
+            "Fixture transcript text. ".repeat((target_chars / 25).max(1))
         };
-        let classification = classify_pdf_runtime(Some(&report), transcript_text, "")
+        let classification = classify_pdf_runtime(Some(&report), &transcript_text, "")
             .unwrap_or_else(|| panic!("classification should exist for fixture {}", fixture.id));
         let (geometry_mode, sync_strategy) =
-            derive_pdf_runtime_metadata(Some(&classification), Some(&report), transcript_text, "");
+            derive_pdf_runtime_metadata(Some(&classification), Some(&report), &transcript_text, "");
         let policy = derive_pdf_runtime_policy(
             Some(&classification),
             geometry_mode,
             sync_strategy,
-            transcript_text,
+            &transcript_text,
         );
         (classification, policy)
     }
@@ -2790,7 +2811,8 @@ mod tests {
     #[test]
     fn pdf_cache_roundtrip_preserves_chunk_page_ranges_and_meta() {
         let path = unique_pdf_path();
-        fs::write(&path, b"pdf").expect("write source");
+        fs::write(&path, format!("pdf-cache-test:{}", path.display()))
+            .expect("write source");
         let signature = pdf_signature(&path, "cfg", "transcript.txt").expect("signature");
         let report = sample_report();
 

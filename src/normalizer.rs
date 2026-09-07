@@ -1416,13 +1416,7 @@ impl PageNormalizationCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     #[test]
     fn strips_superscript_and_expands_abbreviation() {
@@ -1435,7 +1429,6 @@ mod tests {
 
     #[test]
     fn loads_external_abbreviations_file_for_expansion() {
-        let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after epoch")
@@ -1452,15 +1445,7 @@ mod tests {
         )
         .expect("abbreviations config should be written");
 
-        // SAFETY: test-only, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::set_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH", &abbreviations_path);
-        }
         let normalizer = TextNormalizer::load(&normalizer_path);
-        // SAFETY: test-only cleanup, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::remove_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH");
-        }
 
         let plan = normalizer.plan_page(&["See pp. 10.".to_string()]);
         assert!(
@@ -1475,7 +1460,6 @@ mod tests {
 
     #[test]
     fn external_case_sensitive_abbreviation_only_matches_exact_case() {
-        let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after epoch")
@@ -1492,15 +1476,7 @@ mod tests {
         )
         .expect("abbreviations config should be written");
 
-        // SAFETY: test-only, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::set_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH", &abbreviations_path);
-        }
         let normalizer = TextNormalizer::load(&normalizer_path);
-        // SAFETY: test-only cleanup, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::remove_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH");
-        }
 
         let upper = normalizer.plan_page(&["US. policy".to_string()]);
         let lower = normalizer.plan_page(&["us. policy".to_string()]);
@@ -1526,7 +1502,6 @@ mod tests {
 
     #[test]
     fn external_regex_abbreviation_expands_page_number_pattern() {
-        let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after epoch")
@@ -1543,15 +1518,7 @@ mod tests {
         )
         .expect("abbreviations config should be written");
 
-        // SAFETY: test-only, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::set_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH", &abbreviations_path);
-        }
         let normalizer = TextNormalizer::load(&normalizer_path);
-        // SAFETY: test-only cleanup, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::remove_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH");
-        }
 
         let plan = normalizer.plan_page(&["See p. 169. now.".to_string()]);
         assert!(
@@ -1566,7 +1533,6 @@ mod tests {
 
     #[test]
     fn regex_page_rule_takes_precedence_over_literal_p_rule() {
-        let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after epoch")
@@ -1583,15 +1549,7 @@ mod tests {
         )
         .expect("abbreviations config should be written");
 
-        // SAFETY: test-only, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::set_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH", &abbreviations_path);
-        }
         let normalizer = TextNormalizer::load(&normalizer_path);
-        // SAFETY: test-only cleanup, guarded by a process-wide mutex to avoid env var races.
-        unsafe {
-            std::env::remove_var("LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH");
-        }
 
         let plan = normalizer.plan_page(&["See p. 169. and p. 8.".to_string()]);
         let joined = plan.audio_sentences.join(" ");

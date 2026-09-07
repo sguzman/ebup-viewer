@@ -38,21 +38,42 @@ The current source pipeline uses Pandoc for:
 
 Until that ingestion architecture changes, Pandoc is a runtime/development prerequisite for those source types.
 
-Goal 0002 adds a repository-owned prerequisite diagnostic and makes Pandoc test behavior deterministic.
+Hosted Windows CI provisions Pandoc before source-ingestion tests.
 
 ## Build baseline
 
-The expected Windows baseline after Goal 0001 is:
+Hosted Windows CI has verified:
 
 ```powershell
 cargo check --workspace
 cargo build --workspace
 ```
 
-GitHub Actions has verified these commands with the supported MSVC environment.
+Goal 0004 Stage A makes the full workspace test gate independent of renderer capability so it can also become an authoritative required CI result.
 
-## Interactive launch
+## Interactive launch and hosted runner limits
 
-Do not infer GUI health from a code-0 process exit.
+Native startup errors are observable and nonzero.
 
-As of the Goal 0001 review, native startup errors may be discarded by the current egui entrypoint. Goal 0002 is responsible for making startup failure observable before interactive launch becomes an accepted baseline signal.
+Goal 0003 proved the GitHub-hosted `windows-latest` environment is not a valid interactive-renderer test machine for the current egui shell:
+
+- the glow/OpenGL path exposes only OpenGL 1.1 and cannot satisfy the required OpenGL 2.0+ context;
+- a bounded WGPU experiment found no suitable adapter;
+- the experiment was reverted.
+
+This must not be interpreted as a normal-Windows application failure.
+
+Policy:
+
+- hosted build/test verification remains required;
+- hosted renderer capability probing may classify the runner as unsupported;
+- actual interactive window verification requires a real graphics-capable Windows environment;
+- do not weaken an app launch check until early exit becomes success merely to make hosted CI green.
+
+## Native Windows TTS
+
+The selected implementation API is WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer`.
+
+It is suitable for hosted non-GUI verification because synthesis returns an audio stream and does not require the egui graphics path or physical audio playback.
+
+Windows TTS runtime audio output still uses LanternLeaf's shared Rodio playback path after synthesis.

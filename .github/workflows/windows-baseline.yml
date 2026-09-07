@@ -30,3 +30,24 @@ jobs:
 
       - name: Test workspace
         run: cargo test --workspace
+
+      - name: Native launch smoke
+        if: always()
+        shell: pwsh
+        run: |
+          $binary = Join-Path $pwd "target\debug\lanternleaf.exe"
+          if (-not (Test-Path $binary)) {
+            throw "Expected native binary was not produced: $binary"
+          }
+          $process = Start-Process -FilePath $binary -PassThru
+          try {
+            Start-Sleep -Seconds 8
+            if ($process.HasExited) {
+              throw "Native egui process exited during launch smoke with code $($process.ExitCode)"
+            }
+            Write-Host "Native egui process remained running for the launch smoke."
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }

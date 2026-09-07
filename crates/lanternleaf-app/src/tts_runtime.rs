@@ -619,7 +619,7 @@ fn run_tts_runtime_loop(
                         &ctx,
                         runtime_request_id,
                         "reader_tts_runtime_error",
-                        &format!("Failed to initialize Piper TTS engine: {err}"),
+                        &format!("Failed to initialize {:?} TTS backend: {err}", plan.backend),
                     );
                     break;
                 }
@@ -708,7 +708,7 @@ fn run_tts_runtime_loop(
                     &ctx,
                     runtime_request_id,
                     "reader_tts_runtime_error",
-                    &format!("Failed to start Piper playback: {err}"),
+                    &format!("Failed to start {:?} TTS playback: {err}", plan.backend),
                 );
                 break;
             }
@@ -1291,6 +1291,8 @@ fn should_sync_tts_after_reader_command(command: &session::SessionCommand) -> bo
                 || patch.pause_after_sentence.is_some()
                 || patch.tts_speed.is_some()
                 || patch.tts_volume.is_some()
+                || patch.tts_backend.is_some()
+                || patch.windows_voice_id.is_some()
         }
         _ => true,
     }
@@ -1415,6 +1417,92 @@ mod tests {
                 .iter()
                 .any(|event| event.kind == TtsRuntimeEventKind::Completed
                     || event.kind == TtsRuntimeEventKind::Cancelled)
+        );
+    }
+
+    #[test]
+    fn backend_and_voice_settings_are_active_resync_changes() {
+        assert!(should_sync_tts_after_reader_command(
+            &session::SessionCommand::ApplySettings {
+                patch: session::ReaderSettingsPatch {
+                    tts_backend: Some(config::TtsBackend::Windows),
+                    ..Default::default()
+                }
+            }
+        ));
+        assert!(should_sync_tts_after_reader_command(
+            &session::SessionCommand::ApplySettings {
+                patch: session::ReaderSettingsPatch {
+                    windows_voice_id: Some("voice-id".to_string()),
+                    ..Default::default()
+                }
+            }
+        ));
+        assert!(!should_sync_tts_after_reader_command(
+            &session::SessionCommand::ApplySettings {
+                patch: session::ReaderSettingsPatch {
+                    theme: Some(config::ThemeMode::Day),
+                    ..Default::default()
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn active_backend_switch_preserves_cursor_and_replaces_request() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let runtime = TtsRuntime::new_with_mode(normalizer, TtsRuntimeMode::Simulated);
+        runtime.set_session(Some(build_test_session(&[&["A.", "B."]])));
+        let started = runtime
+            .apply_command(TtsCommand::Play)
+            .expect("play snapshot");
+        let before_idx = started.tts.current_sentence_idx;
+        let _ = runtime.collect_events();
+
+        let after = runtime
+            .apply_command(TtsCommand::ApplySettings {
+                patch: session::ReaderSettingsPatch {
+                    tts_backend: Some(config::TtsBackend::Windows),
+                    ..Default::default()
+                },
+            })
+            .expect("backend patch snapshot");
+        assert_eq!(after.tts.current_sentence_idx, before_idx);
+        assert_eq!(after.settings.tts_backend, config::TtsBackend::Windows);
+        assert!(
+            runtime
+                .collect_events()
+                .iter()
+                .any(|event| event.kind == TtsRuntimeEventKind::Cancelled)
+        );
+    }
+
+    #[test]
+    fn active_voice_switch_preserves_cursor_and_replaces_request() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let runtime = TtsRuntime::new_with_mode(normalizer, TtsRuntimeMode::Simulated);
+        runtime.set_session(Some(build_test_session(&[&["A.", "B."]])));
+        let started = runtime
+            .apply_command(TtsCommand::Play)
+            .expect("play snapshot");
+        let before_idx = started.tts.current_sentence_idx;
+        let _ = runtime.collect_events();
+
+        let after = runtime
+            .apply_command(TtsCommand::ApplySettings {
+                patch: session::ReaderSettingsPatch {
+                    windows_voice_id: Some("voice-id".to_string()),
+                    ..Default::default()
+                },
+            })
+            .expect("voice patch snapshot");
+        assert_eq!(after.tts.current_sentence_idx, before_idx);
+        assert_eq!(after.settings.windows_voice_id.as_deref(), Some("voice-id"));
+        assert!(
+            runtime
+                .collect_events()
+                .iter()
+                .any(|event| event.kind == TtsRuntimeEventKind::Cancelled)
         );
     }
 }

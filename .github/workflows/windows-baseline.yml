@@ -45,6 +45,9 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace
 
+      - name: Windows TTS probe with diagnostics
+        run: cargo test -p lanternleaf-core --test windows_tts -- --nocapture
+
   hosted-renderer-probe:
     needs: native-workspace
     runs-on: windows-latest

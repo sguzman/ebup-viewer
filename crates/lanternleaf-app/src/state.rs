@@ -568,6 +568,8 @@ mod tests {
                 time_remaining_display: config::TimeRemainingDisplay::Adaptive,
                 tts_speed: 1.0,
                 tts_volume: 1.0,
+                tts_backend: config::TtsBackend::Piper,
+                windows_voice_id: None,
                 pretty: config::PrettyUiConfig::default(),
             },
             tts: session::ReaderTtsView {

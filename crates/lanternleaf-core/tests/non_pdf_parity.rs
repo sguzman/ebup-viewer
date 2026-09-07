@@ -20,6 +20,16 @@ fn temp_path(extension: &str) -> PathBuf {
     std::env::temp_dir().join(format!("lanternleaf-0006-{stamp}.{extension}"))
 }
 
+fn copy_to_temp_source(path: &Path) -> PathBuf {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("txt");
+    let target = temp_path(extension);
+    fs::copy(path, &target).expect("copy representative source to temporary test path");
+    target
+}
+
 fn pandoc_available() -> bool {
     Command::new("pandoc").arg("--version").output().is_ok()
 }
@@ -114,11 +124,7 @@ fn crc32(data: &[u8]) -> u32 {
     !crc
 }
 
-fn assert_session_contract(
-    path: &Path,
-    expected_kind: session::PrettyKind,
-    config: &AppConfig,
-) -> Option<session::ReaderSession> {
+fn assert_session_contract(path: &Path, expected_kind: session::PrettyKind, config: &AppConfig) {
     let normalizer = TextNormalizer::load_default();
     let mut reader =
         session::load_session_for_source(path.to_path_buf(), config, &normalizer).unwrap();
@@ -135,6 +141,43 @@ fn assert_session_contract(
         initial.canonical_sentences.len()
     );
     let canonical = initial.canonical_sentences.clone();
+    let canonical_text = canonical.join(" ");
+    match expected_kind {
+        session::PrettyKind::Markdown => {
+            for raw_syntax in [
+                "# LanternLeaf",
+                "**Emphasis**",
+                "- The list",
+                "](https",
+                "![",
+            ] {
+                assert!(
+                    !canonical_text.contains(raw_syntax),
+                    "Markdown canonical text leaked source syntax: {raw_syntax:?}"
+                );
+            }
+        }
+        session::PrettyKind::Html => {
+            for raw_noise in [
+                "<html",
+                "<p>",
+                "</p>",
+                "console.log",
+                "this must not become speech",
+                "body {",
+                "href=",
+                "src=",
+                "xmlns=",
+                "media-type=",
+            ] {
+                assert!(
+                    !canonical_text.contains(raw_noise),
+                    "HTML/EPUB canonical text leaked source noise: {raw_noise:?}"
+                );
+            }
+        }
+        session::PrettyKind::None | session::PrettyKind::Pdf => {}
+    }
     reader.apply_command(
         session::SessionCommand::SearchSetQuery {
             query: "repeated".into(),
@@ -144,6 +187,29 @@ fn assert_session_contract(
     );
     let searched = reader.snapshot(session::PanelState::default(), &normalizer);
     assert!(!searched.search_matches.is_empty());
+    assert_eq!(searched.selected_search_match, Some(0));
+    let first_match = searched.search_matches[0];
+    reader.apply_command(
+        session::SessionCommand::SearchNext,
+        session::PanelState::default(),
+        &normalizer,
+    );
+    let next = reader.snapshot(session::PanelState::default(), &normalizer);
+    assert!(next.search_matches.len() >= 2);
+    assert_eq!(next.selected_search_match, Some(1));
+    assert_eq!(next.highlighted_sentence_idx, Some(next.search_matches[1]));
+    assert_ne!(next.search_matches[1], first_match);
+    reader.apply_command(
+        session::SessionCommand::SearchPrev,
+        session::PanelState::default(),
+        &normalizer,
+    );
+    let previous = reader.snapshot(session::PanelState::default(), &normalizer);
+    assert_eq!(previous.selected_search_match, Some(0));
+    assert_eq!(
+        previous.highlighted_sentence_idx,
+        Some(previous.search_matches[0])
+    );
     reader.apply_command(
         session::SessionCommand::SentenceClick { sentence_idx: 0 },
         session::PanelState::default(),
@@ -174,7 +240,7 @@ fn assert_session_contract(
         session::load_session_for_source(path.to_path_buf(), config, &normalizer).unwrap();
     assert_eq!(reopened.to_bookmark().sentence_idx, bookmark.sentence_idx);
     assert!(lanternleaf_core::cache::delete_recent_source_and_cache(path).is_ok());
-    Some(reader)
+    assert!(lanternleaf_core::cache::delete_recent_source_and_cache(path).is_ok());
 }
 
 #[test]
@@ -186,15 +252,16 @@ fn representative_non_pdf_sources_preserve_session_and_canonical_contracts() {
     let html = fixture("representative.html");
     let epub = build_epub_fixture();
     let cases = [
-        (&txt, session::PrettyKind::None),
-        (&md, session::PrettyKind::Markdown),
+        (copy_to_temp_source(&txt), session::PrettyKind::None),
+        (copy_to_temp_source(&md), session::PrettyKind::Markdown),
     ];
     for (path, kind) in cases {
-        let _ = assert_session_contract(path, kind, &config);
+        assert_session_contract(&path, kind, &config);
     }
     if pandoc_available() {
-        let _ = assert_session_contract(&html, session::PrettyKind::Html, &config);
-        let _ = assert_session_contract(&epub, session::PrettyKind::Html, &config);
+        let html = copy_to_temp_source(&html);
+        assert_session_contract(&html, session::PrettyKind::Html, &config);
+        assert_session_contract(&epub, session::PrettyKind::Html, &config);
     } else {
         eprintln!("skipping HTML/EPUB session assertions because Pandoc is unavailable");
     }

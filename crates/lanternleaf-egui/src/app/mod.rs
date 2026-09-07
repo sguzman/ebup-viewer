@@ -23,7 +23,7 @@ use crate::helpers::{
     app_config_path, bootstrap_config_from_app_config, format_combo, workspace_root_from_cwd,
 };
 use eframe::{
-    HardwareAcceleration, NativeOptions, Renderer,
+    HardwareAcceleration, NativeOptions,
     egui::{
         self, Button, CollapsingHeader, Color32, ColorImage, Context, FontData, FontDefinitions,
         FontFamily, RichText, Slider, TextStyle, TextureHandle, Ui, Vec2, Visuals,
@@ -118,13 +118,6 @@ pub fn run() -> Result<(), NativeRunError> {
     ) {
         options.hardware_acceleration = HardwareAcceleration::Off;
         info!("Using software eframe rendering selected by LANTERNLEAF_EFRAME_HARDWARE_ACCELERATION");
-    }
-    if matches!(
-        std::env::var("LANTERNLEAF_EFRAME_RENDERER").as_deref(),
-        Ok("wgpu")
-    ) {
-        options.renderer = Renderer::Wgpu;
-        info!("Using the WGPU eframe renderer selected by LANTERNLEAF_EFRAME_RENDERER");
     }
     options.viewport.inner_size = Some(egui::vec2(
         app_config.window_width as f32,

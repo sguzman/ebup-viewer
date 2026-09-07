@@ -45,7 +45,7 @@ jobs:
       - name: Native launch smoke
         shell: pwsh
         env:
-          LANTERNLEAF_EFRAME_RENDERER: wgpu
+          LANTERNLEAF_EFRAME_HARDWARE_ACCELERATION: off
         run: |
           $binary = Join-Path $pwd "target\debug\lanternleaf.exe"
           if (-not (Test-Path $binary)) {

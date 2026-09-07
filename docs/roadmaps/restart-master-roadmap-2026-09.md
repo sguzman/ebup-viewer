@@ -30,7 +30,7 @@ Correction attempts reuse the repository goal ID, re-arm the detached watcher, p
 
 ## Gate 2 — Non-PDF reader/TTS parity
 
-**STATUS: AUTOMATED PARITY COMPLETE — GOAL 0007 PREPARES REAL-DESKTOP SIGNOFF**
+**STATUS: AUTOMATED PARITY COMPLETE — REPO-NATIVE REAL-DESKTOP SIGNOFF PENDING**
 
 Goal 0006 re-proved current Rust-native behavior for:
 
@@ -56,7 +56,13 @@ Accepted automated evidence covers:
 
 Gate 2 still requires a bounded real-Windows manual signoff for visible/interactive behavior that hosted GPU-less CI cannot prove.
 
-Goal 0007 does **not** add new reader features. It creates a prebuilt Windows QA bundle and minimizes the maintainer's setup burden.
+Goal 0007's downloadable QA-bundle approach was technically valid but rejected as human-workflow friction.
+
+The replacement is repo-native:
+
+`git pull -> .\qa.ps1`
+
+with `deps.ps1` as the checked-in idempotent Windows dependency/bootstrap contract. Ordinary QA must not require downloading CI artifacts.
 
 Gate 2 exit:
 

@@ -1,94 +1,78 @@
 # LanternLeaf Restart Master Roadmap — September 2026
 
-This is the active restart roadmap. It does not erase older detailed roadmaps; it orders them against the current Windows/native-egui restart.
+This is the active restart roadmap. It orders the existing detailed roadmaps against the current Windows/native-egui restart.
 
-Roadmap state is evidence-driven. Completion means accepted implementation plus validation, not old checkbox history.
+Roadmap state is evidence-driven. Completion means accepted implementation plus validation, not historical checkbox state.
 
 ## Gate 0 — Recover trustworthy baseline
 
 **STATUS: COMPLETE**
 
-Goals 0001-0003 repaired the build/test substrate and deterministic core/PDF failures.
+Goals 0001-0005 established:
 
-Goal 0004 completed the final CI topology correction.
-
-Authoritative hosted Windows evidence now proves:
-
-- prerequisites provision;
-- `cargo check --workspace`;
-- `cargo build --workspace`;
-- normal-parallel `cargo test --workspace`.
-
-The hosted renderer probe is a separate capability channel and truthfully reports the known graphics limitation without blocking required CI.
-
-Interactive GUI launch remains a later real-machine verification item, not a Gate 0 blocker.
+- reproducible Windows MSVC/Pandoc CI;
+- green workspace check/build/normal-parallel tests;
+- truthful separation of hosted renderer capability from required CI;
+- deterministic cache/test isolation;
+- repaired bounded PDF core contracts.
 
 ## Gate 1 — TTS backend boundary + Windows TTS
 
-**STATUS: IMPLEMENTED IN GOAL 0004; CORRECTNESS CLOSURE IN GOAL 0005**
+**STATUS: COMPLETE AT ARCHITECTURE / SYNTHESIS LAYER**
 
-Goal 0004 implemented:
+Accepted flow:
 
 `canonical sentence -> backend synthesis -> cached WAV -> shared Rodio/Sonic playback -> session progression`
 
-with:
+Verified:
 
 - Piper retained as default;
-- WinRT Windows voice discovery;
-- selected/default Windows voice synthesis;
-- backend-aware sentence cache;
-- shared playback;
-- config/runtime/UI backend and voice controls.
+- WinRT Windows voice discovery and stable selected/default identity;
+- backend-aware cache identity;
+- active backend/voice resynchronization;
+- Windows WAV synthesis and shared Rodio decode;
+- green Windows CI.
 
-Director review identified two correctness holes that must close before Gate 1 is called complete:
-
-- active backend/voice settings changes do not currently force immediate TTS resynchronization;
-- the implicit Windows-default cache identity does not resolve to the actual current default voice ID.
-
-Goal 0005 fixes these plus backend-specific initialization/error-message cleanup and stronger WAV decode evidence.
-
-Gate 1 exit:
-
-- backend/voice changes during active speech rebuild safely from canonical state;
-- cache identity uses the actual synthesis voice/model identity;
-- Piper-only initialization stays Piper-only;
-- Windows synthesized output is explicitly proven readable by the shared decoder path;
-- required Windows CI stays green.
+Interactive speaker/UI comfort is intentionally part of Gate 2 reader parity rather than reopening Gate 1.
 
 ## Workflow UX — automatic macro-goal completion notification
 
-**STATUS: ACTIVE IN GOAL 0005**
+**STATUS: IMPLEMENTED / CI-COVERED**
 
-From Goal 0005 onward, Codex owns launching a detached Windows watcher.
-
-The human should receive exactly one terminal desktop notification when the repo goal reaches `done/` or `blocked/`, with no extra command and no intermediate-turn spam.
-
-Notification failure must never alter product-goal correctness.
+Codex launches a detached watcher on Windows. After the terminal branch is pushed, Codex signals a checkout-safe `.git` sentinel; the watcher notifies Completed/Blocked exactly once and exits. Notification failure is non-fatal.
 
 ## Gate 2 — Non-PDF reader/TTS parity
 
-**NEXT MAJOR PRODUCT GATE AFTER GOAL 0005**
+**STATUS: ACTIVE — GOAL 0006**
 
-Verify/fix:
+Goal 0006 re-proves current native behavior for:
 
-- EPUB;
 - TXT;
 - Markdown;
 - HTML;
-- sentence mapping;
-- click-to-play;
-- highlight;
-- auto-scroll/jump;
-- search;
-- bookmarks/config/cache;
-- close/cancel semantics;
-- Piper/Windows backend switching on representative text sources.
+- EPUB.
 
-Exit: representative non-PDF documents are comfortable and deterministic on Windows.
+Required parity domains:
+
+- canonical `tts_text` and sentence ownership;
+- pretty/text-only projection consistency;
+- sentence click/highlight/navigation;
+- TTS play/pause/play-from/prev/next/repeat/cancellation;
+- search;
+- auto-scroll/jump mapping contracts;
+- persistence/bookmark/cache reopen;
+- deterministic representative fixtures;
+- Piper/Windows backend neutrality at reader-state level.
+
+Old HTML/EPUB migration checkboxes are not proof. Goal 0006 builds a new parity matrix from current Rust tests and runtime evidence.
+
+Gate 2 exit requires automated parity evidence plus a bounded real-Windows manual QA signoff for the interaction/fidelity pieces that cannot be honestly proven on hosted GPU-less CI.
 
 ## Gate 3 — Native PDF visual stability
 
-Focus on:
+**NEXT AFTER GATE 2**
+
+Focus:
 
 - page raster;
 - texture cache;
@@ -97,15 +81,10 @@ Focus on:
 - memory/performance;
 - stable rendering independent of TTS.
 
-Exit: PDFs are visually usable before synchronization complexity is layered on top.
-
 ## Gate 4 — PDF text, TTS, and highlight synchronization
 
-The bounded classifier/OCR/reading-order/cache contracts exposed by baseline tests were repaired in Goal 0003.
+After visual stability:
 
-Later full synchronization work covers:
-
-- extraction;
 - canonical sentence/page mapping;
 - geometry confidence;
 - overlay lifecycle;
@@ -114,14 +93,11 @@ Later full synchronization work covers:
 - OCR/degraded modes;
 - regression corpus.
 
-Exit: representative text PDFs maintain reliable speech/highlight position; poor PDFs degrade explicitly rather than drift silently.
-
 ## Gate 5 — Format expansion and ingestion cleanup
 
-- HTML hardening if still incomplete;
-- DOCX/Word ingestion;
+- DOCX/Word hardening;
 - common source/document boundaries;
-- fixtures and format-level regression tests.
+- format-level regression tests beyond the Gate 2 reader families.
 
 ## Gate 6 — Ergonomics, performance, packaging
 
@@ -136,14 +112,10 @@ Exit: representative text PDFs maintain reliable speech/highlight position; poor
 
 ChatGPT may compress several related passes into one macro-goal when doing so removes needless human/Codex round trips without opening architectural ambiguity.
 
-Detailed older subsystem roadmaps remain useful beneath these gates, especially:
+Detailed older subsystem roadmaps remain subordinate evidence, especially:
 
-- `egui-migration-master-roadmap.md`;
-- `egui-state-and-runtime-roadmap.md`;
 - `egui-reader-rendering-roadmap.md`;
 - `egui-tts-audio-and-playback-roadmap.md`;
-- `egui-native-pdf-roadmap.md`;
 - `egui-testing-and-parity-roadmap.md`;
-- `pdf-type-and-text-layer-classification-roadmap.md`;
-- `pdf-ocr-geometry-aware-alignment-roadmap.md`;
-- `native-pdf-rendering-and-text-sync-roadmap.md`.
+- `native-html-epub-rendering-and-tts-sync-roadmap.md`;
+- PDF roadmaps for later Gates 3/4.

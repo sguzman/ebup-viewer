@@ -1,164 +1,115 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-07 after director review of Goal 0004
+Updated: 2026-09-07 after director review of Goal 0005
 
-This file contains verified or explicitly bounded evidence only. Roadmap checkboxes and historical parity claims are not accepted as current proof.
+This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
 ## Workspace / architecture
 
 **VERIFIED PRESENT**
 
-- Rust workspace contains root package plus `lanternleaf-core`, `lanternleaf-app`, and `lanternleaf-egui`.
-- Root `src/main.rs` dispatches TTS worker mode and otherwise calls the native egui application.
-- Native Rust + egui remains the authoritative desktop architecture.
-- The obsolete active Tauri/React/Playwright migration workflow has been removed.
+- Native Rust + `eframe`/`egui` is the authoritative desktop architecture.
+- Workspace contains the root package plus `lanternleaf-core`, `lanternleaf-app`, and `lanternleaf-egui`.
+- Tauri/React/WebView remains historical reference only.
 
-## Gate 0 / Windows baseline
+## Gate 0 — Windows baseline
 
 **COMPLETE**
 
-Authoritative hosted Windows run `34146382188` passed:
+Authoritative hosted Windows run `34150175084` passed:
 
 - prerequisite setup;
 - `cargo check --workspace`;
 - `cargo build --workspace`;
-- normal-parallel `cargo test --workspace`.
+- normal-parallel `cargo test --workspace`;
+- the uncaptured Windows TTS diagnostic probe.
 
-Observed test results in that run include:
+Observed current test summaries include core unit tests at 170 passed / 0 failed and all remaining workspace suites green.
 
-- core unit tests: 168 passed / 0 failed;
-- Windows TTS integration test: 1 passed / 0 failed;
-- app/runtime integration suites: green.
+The hosted renderer check remains a separate capability probe and truthfully classifies the GitHub-hosted graphics limitation instead of blocking required build/test evidence.
 
-The renderer check is now a separate capability probe and no longer blocks required build/test evidence.
+## Gate 1 — TTS backend boundary + Windows TTS
 
-## Egui shell
+**IMPLEMENTATION COMPLETE; INTERACTIVE AUDIO PARITY MOVES TO GATE 2**
 
-**STARTUP ERROR BOUNDARY VERIFIED; HOSTED-GPU RUNTIME VERIFICATION UNSUPPORTED**
+The active TTS architecture is:
 
-Native startup errors are observable and nonzero.
+`canonical sentence -> selected synthesis backend -> cached WAV -> shared Rodio/Sonic playback -> canonical session progression`
 
-The hosted renderer probe truthfully classifies the GitHub-hosted Windows environment as unavailable when it exposes only unsupported OpenGL/no-adapter capability. This is separate from product correctness.
+Goal 0005 closed the two correctness defects found after Goal 0004:
 
-Interactive real-desktop GUI verification remains pending.
+- backend/voice setting changes during active speech now force TTS runtime resynchronization while preserving the canonical cursor;
+- implicit Windows-default synthesis resolves the actual Windows default voice ID before cache identity and synthesis.
 
-## TXT / Markdown / HTML ingestion
+Additional verified properties:
 
-**RUST-LAYER SMOKE PRESENT; END-TO-END READER/TTS UNVERIFIED**
+- Piper remains the default backend;
+- Piper/eSpeak environment initialization runs only for Piper;
+- Windows uses WinRT `SpeechSynthesizer`;
+- missing configured Windows voice IDs remain actionable errors;
+- synthesized Windows WAVs decode through the shared Rodio decoder;
+- backend-specific runtime diagnostics no longer falsely label every engine as Piper.
 
-- Repository fixtures have explicit LF normalization.
-- TXT and Markdown ingestion smoke exists.
-- HTML tests pass when Pandoc is provisioned.
-- Pandoc remains a current prerequisite for HTML canonical-text and DOC/DOCX conversion paths.
+Hosted Windows evidence from run `34150175084`:
 
-## TTS architecture
+- `windows_tts_voice_count=3`;
+- default voice resolved to the installed David voice ID;
+- `windows_tts_synthesis=synthesized`;
+- Rodio decoder verification passed.
 
-**BACKEND-NEUTRAL SENTENCE SYNTHESIS IMPLEMENTED; CORRECTNESS FOLLOW-UP REQUIRED**
+Real speaker playback, egui voice selection, and long-running reader comfort remain interactive Gate 2 verification.
 
-Goal 0004 implemented:
+## Goal-completion notifications
 
-`canonical sentence -> selected backend -> cached WAV -> shared Rodio/Sonic playback -> canonical session progression`
+**IMPLEMENTED AND HARDENED IN DIRECTOR REVIEW**
 
-Piper remains the default backend.
+Goal 0005 created the detached Windows watcher. Director review found that its direct repository-state fallback assumed un-slugged goal filenames (`0005.md`) even though real files are named like `0005-tts-correctness-and-goal-notify.md`.
 
-Shared playback still owns:
+The permanent protocol is now:
 
-- Rodio audio output;
-- Sonic speed transformation;
-- volume;
-- pause/resume/stop;
-- pause-after-sentence;
-- sentence timing/progression.
+1. Codex launches the detached watcher when the goal becomes active;
+2. Codex completes, commits, and pushes the terminal implementation branch;
+3. after push succeeds, Codex calls `scripts/signal-codex-goal-terminal.ps1`;
+4. that helper writes `.git/lanternleaf-goal-state/<id>.terminal` and waits briefly for watcher acknowledgment;
+5. the watcher emits exactly one Completed/Blocked notification and exits;
+6. Codex restores the checkout to `main` regardless of notification delivery success.
 
-## Piper TTS
+The sentinel is outside the checked-out tree, so checkout restoration cannot race away the terminal signal. Windows CI now tests the watcher/signal scripts. Repository-state fallback remains available for diagnostics and understands slugged goal filenames.
 
-**PRESERVED / BUILDS AND TESTS GREEN; INTERACTIVE AUDIO UNVERIFIED IN RESTART**
+Actual toast visibility is desktop-session behavior and remains best-effort; notification failure never changes product-goal correctness.
 
-Piper keeps its model/eSpeak worker-pool and sentence-cache behavior.
+## Non-PDF reader
 
-Director review found one small ownership leak: `TtsEngine::new` still performs Piper/eSpeak environment setup even when the selected backend is Windows. Goal 0005 must isolate that initialization to Piper.
+**PARTIAL / GOAL 0006 ACTIVE**
 
-## Native Windows TTS
+Current Rust ingestion smoke exists for TXT, Markdown, and HTML. EPUB/HTML native-pretty paths and extensive historical tests/code also exist.
 
-**IMPLEMENTED WITH WINRT; SENTENCE-WAV PATH PRESENT; INTERACTIVE PLAYBACK UNVERIFIED**
+However current accepted parity evidence is incomplete:
 
-Goal 0004 added WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer` support:
+- the repository source-ingestion corpus is tiny;
+- there is no representative current EPUB fixture in `tests/fixtures/source-ingestion/`;
+- existing app integration tests mostly use synthetic snapshots rather than real source -> session -> TTS flows;
+- old native-HTML/EPUB roadmap checkmarks are historical claims, not restart-era evidence;
+- interactive pretty/text toggling, click-to-play, auto-scroll, search, and persistence have not been revalidated across all non-PDF source families.
 
-- installed voice enumeration;
-- stable configured voice IDs;
-- default-voice fallback;
-- sentence WAV synthesis;
-- backend-aware cache identity;
-- egui backend/voice controls.
+Goal 0006 builds a current Rust-native parity matrix and representative corpus for TXT, Markdown, HTML, and EPUB.
 
-The pushed report records a local Windows probe with three installed voices and a non-empty synthesized WAV.
+## PDF
 
-Hosted CI executed the Windows TTS test successfully, but the passing test captures stdout and may return early when no usable hosted voice exists; therefore the hosted log does not independently prove the runner synthesized speech.
+**CORE CONTRACT SET REPAIRED; INTERACTIVE VISUAL/TTS WORK STILL PENDING**
 
-### Known Goal-0004 correctness defects
+Goal 0003 repaired the bounded deterministic PDF classifier/OCR/reading-order/cache failures exposed by the baseline.
 
-Director review found two material follow-ups:
+Native page rendering, viewport/zoom behavior, and PDF TTS/highlight synchronization remain later Gate 3/4 work.
 
-1. `patch_has_tts_fields` recognizes backend/voice changes, but `should_sync_tts_after_reader_command` does not include `tts_backend` or `windows_voice_id`. Changing backend/voice during active playback can therefore leave the current request running on the old backend instead of rebuilding immediately.
-2. the implicit Windows-default cache identity is currently the literal `windows:default`, not the actual resolved default voice ID. If the OS default voice changes, stale cached speech can be reused under the same identity.
+## Calibre and browser/import integrations
 
-Goal 0005 begins by fixing both.
+**PRESENT BUT RESTART-ERA PARITY UNVERIFIED**
 
-### Additional hardening
-
-- Make runtime error strings backend-neutral where they still say Piper.
-- Make the Windows TTS test explicitly decode synthesized WAV through the same decoder assumptions used by shared playback.
-- Expose hosted voice-count/synthesis evidence with `--nocapture` or equivalent diagnostics.
-- Avoid further growth of the large egui `app/mod.rs`; extract the new Windows voice/settings helpers where practical.
-
-## PDF classification / OCR / text contracts
-
-**BOUNDED GOAL-0003 CONTRACT SET REPAIRED**
-
-Goal 0003 repaired the deterministic classifier/OCR/reading-order/cache contract failures exposed by the restart baseline.
-
-The targeted source-pipeline PDF suite reports 17 passed.
-
-These repairs do not prove full interactive PDF quality.
-
-## PDF rendering
-
-**PARTIAL / INTERACTIVE RUNTIME UNVERIFIED**
-
-Native egui PDF modules compile. Page raster/viewport/zoom/render behavior has not yet been revalidated interactively in the restart.
-
-## PDF TTS / highlight synchronization
-
-**PARTIAL / KNOWN QUALITY AREA**
-
-Historical work is extensive, but the user reports native PDF rendering + TTS + highlight synchronization was never completed satisfactorily.
-
-Interactive verification and later Gate 3/4 work remain pending.
-
-## Calibre integration
-
-**PRESENT BUT UNVERIFIED**
-
-Implementation exists and compiles. Restart-era runtime behavior has not yet been exercised.
-
-## Browser/import integrations
-
-**PRESENT BUT UNVERIFIED**
-
-Historical parity is not assumed.
-
-## Goal completion notifications
-
-**REQUESTED / GOAL 0005 BOOTSTRAPS IMPLEMENTATION**
-
-From Goal 0005 forward, the human should not manually start a watcher.
-
-The repository protocol now requires Codex on Windows to automatically launch a detached watcher that emits one desktop notification only when the repository macro-goal reaches `done/` or `blocked/`.
-
-Notification failure is non-fatal workflow UX.
+They are not part of Goal 0006 unless a directly shared reader defect requires a bounded fix.
 
 ## Historical Tauri / React / WebView implementation
 
 **HISTORICAL / OBSOLETE AS PRODUCTION TARGET**
 
-It remains useful as behavioral evidence only.
+It may be consulted for behavioral evidence only.

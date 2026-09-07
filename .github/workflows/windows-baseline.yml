@@ -33,6 +33,10 @@ jobs:
         shell: pwsh
         run: ./scripts/windows-dev-check.ps1
 
+      - name: Test Codex goal notification workflow
+        shell: pwsh
+        run: ./scripts/test-codex-goal-notify.ps1
+
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 

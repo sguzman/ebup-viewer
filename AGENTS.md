@@ -53,25 +53,27 @@ The human maintainer must not need to remember a second command merely to learn 
 
 On Windows, Codex is responsible for launching the repository-owned goal watcher automatically for each macro-goal.
 
-Once `scripts/codex-goal-notify.ps1` exists, Codex must:
+Normal terminal-notification protocol:
 
-1. move the authorized goal `ready -> active`;
-2. start the watcher as an independent/detached Windows process for that goal ID/branch;
-3. continue the macro-goal normally;
-4. move the goal to `done/` or `blocked/` only at the real terminal state;
-5. allow the watcher to emit the Windows desktop notification and exit;
-6. then complete the ordinary report/push/checkout-restoration handoff.
+1. after moving `ready -> active`, launch `scripts/codex-goal-notify.ps1` as an independent/detached Windows process for the current goal ID;
+2. execute the goal normally;
+3. write the report and move the goal to `done/` or `blocked/` only at its real terminal state;
+4. commit and push the terminal implementation branch;
+5. only after the push succeeds, call `scripts/signal-codex-goal-terminal.ps1` with the goal ID and terminal state;
+6. let the signal helper wait briefly for the watcher acknowledgment;
+7. restore the shared checkout to `main` even if notification delivery/acknowledgment failed.
+
+The `.git/lanternleaf-goal-state/<id>.terminal` sentinel is the normal notification trigger. It is intentionally outside the checked-out tree so switching the shared checkout back to `main` cannot erase the terminal signal.
+
+The watcher may support repository-state fallback for diagnostics/tests, including slugged goal filenames such as `0006-non-pdf-reader-parity.md`, but ordinary Codex handoff must use the post-push sentinel protocol.
 
 The watcher is workflow UX, not a correctness gate:
 
 - notification failure must never make an otherwise-correct product goal fail;
-- Codex should record watcher startup/failure in the report when material;
-- do not make the human manually start the watcher;
+- Codex should record watcher startup/signal/ack failure in the report when material;
+- do not make the human manually start or signal the watcher;
 - do not notify on intermediate Codex turns/passes;
-- notify only on the repository macro-goal reaching `done` or `blocked`.
-
-Goal 0005 is the bootstrap goal that creates/tests this watcher. Because the script does not exist at the instant 0005 begins, Goal 0005 must implement it first and then launch it for its own remaining lifecycle if practical. Goal 0006 onward must launch it during normal goal activation.
-
+- notify only after the terminal implementation branch has been pushed, so ChatGPT can inspect it immediately.
 ## Scope discipline
 
 - Implement only the authorized macro-goal.
@@ -99,14 +101,15 @@ Unless a goal says otherwise, Codex should:
 1. start from `main` and fast-forward it;
 2. create/switch to the branch named by the goal, normally `codex/<goal-id>-<slug>`;
 3. move the goal from `ready/` to `active/`;
-4. launch the repository goal watcher on Windows when available;
+4. launch the repository goal watcher on Windows;
 5. execute all authorized passes;
 6. run the required validation;
 7. write `docs/work/reports/<goal-id>.md`;
 8. move the goal to `done/` only if acceptance passes, otherwise `blocked/`;
-9. commit and push the result;
-10. switch the shared checkout back to `main` without merging the implementation branch;
-11. verify `git branch --show-current`.
+9. commit and push the terminal result;
+10. signal the pushed terminal state with `scripts/signal-codex-goal-terminal.ps1` (notification failure remains non-fatal);
+11. switch the shared checkout back to `main` without merging the implementation branch;
+12. verify `git branch --show-current`.
 
 ChatGPT reviews the pushed branch directly and integrates accepted work into `main`.
 

@@ -82,18 +82,18 @@ Unless overridden by the goal, Codex:
 1. fast-forwards `main`;
 2. creates/switches to `codex/<id>-<slug>`;
 3. moves the goal `ready -> active`;
-4. on Windows, launches `scripts/codex-goal-notify.ps1` as a detached process when the script exists;
+4. on Windows, launches `scripts/codex-goal-notify.ps1` as a detached process for the goal ID;
 5. performs all authorized passes;
 6. validates;
 7. writes `reports/<id>.md`;
 8. moves the goal to `done` or `blocked`;
-9. commits/pushes;
-10. switches the shared checkout back to `main` without merging.
+9. commits and pushes the terminal branch;
+10. after push succeeds, calls `scripts/signal-codex-goal-terminal.ps1 -GoalId <id> -RepoRoot <repo> -State <done|blocked>`;
+11. restores the shared checkout to `main` without merging.
 
-The watcher should emit exactly one terminal notification for `done` or `blocked` and then exit. Its failure is non-fatal and should not change the macro-goal result.
+The signal helper writes a checkout-safe terminal sentinel under `.git/lanternleaf-goal-state/` and waits briefly for the watcher acknowledgment. The watcher emits exactly one terminal notification and exits. Missing toast/ack is non-fatal.
 
 ChatGPT reviews and integrates directly from GitHub.
-
 ## Human invocation
 
 The preferred human instruction to Codex is short:

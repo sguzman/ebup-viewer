@@ -18,9 +18,12 @@ Does not normally own:
 - carrying Codex patches/reports back to ChatGPT;
 - reviewing diffs;
 - merging implementation branches;
-- maintaining philosophy/roadmaps.
+- maintaining philosophy/roadmaps;
+- manually starting a goal-completion watcher.
 
-The desired human loop is short: pull accepted `main`, launch the authorized repo goal, perform any requested local runtime test, report the observation.
+The desired human loop is short:
+
+`pull accepted main -> reset/start one Codex Goal -> give the standard one-line invocation -> leave it alone -> receive a terminal desktop notification -> tell ChatGPT the goal finished/blocked`.
 
 ## ChatGPT / director, architect, integrator
 
@@ -49,7 +52,8 @@ Owns:
 - adding relevant regression tests;
 - writing a durable report;
 - pushing its branch;
-- returning the shared checkout to `main`.
+- returning the shared checkout to `main`;
+- automatically launching the repository-owned terminal goal watcher on Windows once that watcher exists.
 
 Codex does not own project philosophy, product scope, priority ordering, or cross-subsystem architecture unless the macro-goal explicitly delegates a bounded design decision.
 
@@ -95,13 +99,17 @@ Only the goal in `ready/` is authorized to begin.
 ## Goal lifecycle
 
 1. ChatGPT writes/updates project docs and the next macro-goal on `main`.
-2. Human pulls `main` and launches Codex against the repository.
-3. Codex moves `ready -> active`, creates `codex/<id>-<slug>`, and executes all authorized passes.
-4. Codex writes `reports/<id>.md`, moves the goal to `done` or `blocked`, commits/pushes, and restores the checkout to `main`.
-5. ChatGPT reviews the pushed branch/report directly.
-6. ChatGPT may write `reviews/<id>.md`, request a bounded correction, or integrate accepted commits.
-7. ChatGPT updates current status/roadmaps and queues the next goal.
-8. Human pulls accepted `main` and runs runtime verification only when requested.
+2. Human pulls `main`, resets/starts one Codex Goal for that numbered macro-goal, and gives the standard repository invocation.
+3. Codex moves `ready -> active`, creates `codex/<id>-<slug>`, and automatically launches the Windows goal watcher when available.
+4. Codex executes all authorized passes without requiring a new prompt for ordinary retries/fixes.
+5. Codex writes `reports/<id>.md`, moves the goal to `done` or `blocked`, commits/pushes, and restores the checkout to `main`.
+6. The detached watcher emits one terminal Windows notification and exits.
+7. ChatGPT reviews the pushed branch/report directly.
+8. ChatGPT may write `reviews/<id>.md`, request a bounded correction, or integrate accepted commits.
+9. ChatGPT updates current status/roadmaps and queues the next goal.
+10. Human pulls accepted `main` and runs runtime verification only when requested.
+
+Notification is best-effort workflow UX. It must not alter whether a product goal passes or fails.
 
 ## Parallelism inside a goal
 

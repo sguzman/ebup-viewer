@@ -6,57 +6,68 @@ Roadmap state is evidence-driven. Completion means accepted implementation plus 
 
 ## Gate 0 — Recover trustworthy baseline
 
-**STATUS: IMPLEMENTATION REPAIRS COMPLETE; FINAL HOSTED TEST PROOF MOVED INTO GOAL 0004 STAGE A**
+**STATUS: COMPLETE**
 
-Goals 0001-0003 completed the substantive recovery work:
+Goals 0001-0003 repaired the build/test substrate and deterministic core/PDF failures.
 
-- removed libclang/bindgen blockers;
-- established reproducible MSVC/Pandoc hosted setup;
-- made native startup errors observable;
-- removed parallel environment/cache races;
-- made source fixtures cross-platform deterministic;
-- removed obsolete Tauri/React CI;
-- repaired the bounded PDF contract failures exposed by the baseline.
+Goal 0004 completed the final CI topology correction.
 
-Goal 0003 also proved a hard hosted-runner renderer limitation:
+Authoritative hosted Windows evidence now proves:
 
-- glow sees only OpenGL 1.1;
-- a bounded WGPU experiment found no suitable adapter;
-- the experiment was reverted.
+- prerequisites provision;
+- `cargo check --workspace`;
+- `cargo build --workspace`;
+- normal-parallel `cargo test --workspace`.
 
-The remaining Gate 0 issue is CI topology, not product behavior: the known-host-limited renderer smoke currently prevents the hosted workspace tests from running.
+The hosted renderer probe is a separate capability channel and truthfully reports the known graphics limitation without blocking required CI.
 
-Goal 0004 Stage A separates those evidence channels and obtains the final required Windows build/test result.
-
-Gate 0 exit:
-
-- required Windows check/build/tests are green;
-- hosted renderer capability is classified honestly as unsupported when applicable;
-- interactive GUI launch remains a separate real-machine verification item rather than a fake hosted pass.
+Interactive GUI launch remains a later real-machine verification item, not a Gate 0 blocker.
 
 ## Gate 1 — TTS backend boundary + Windows TTS
 
-**STATUS: ACTIVE — GOAL 0004**
+**STATUS: IMPLEMENTED IN GOAL 0004; CORRECTNESS CLOSURE IN GOAL 0005**
 
-Preserve Piper while making sentence-audio synthesis backend-neutral.
-
-Director architecture:
+Goal 0004 implemented:
 
 `canonical sentence -> backend synthesis -> cached WAV -> shared Rodio/Sonic playback -> session progression`
 
-Goal 0004 adds native Windows TTS using WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer` with:
+with:
 
-- installed voice discovery;
-- stable voice-ID selection;
-- sentence-to-WAV synthesis;
-- backend-aware cache identity;
-- shared pause/resume/stop/speed/volume semantics;
-- backend/voice UI settings;
-- Windows-hosted synthesis tests that do not require a graphics or audio device.
+- Piper retained as default;
+- WinRT Windows voice discovery;
+- selected/default Windows voice synthesis;
+- backend-aware sentence cache;
+- shared playback;
+- config/runtime/UI backend and voice controls.
 
-Exit: the same reader/TTS runtime can prepare and play sentence audio from both Piper and Windows backends without format-specific or UI-specific playback state.
+Director review identified two correctness holes that must close before Gate 1 is called complete:
+
+- active backend/voice settings changes do not currently force immediate TTS resynchronization;
+- the implicit Windows-default cache identity does not resolve to the actual current default voice ID.
+
+Goal 0005 fixes these plus backend-specific initialization/error-message cleanup and stronger WAV decode evidence.
+
+Gate 1 exit:
+
+- backend/voice changes during active speech rebuild safely from canonical state;
+- cache identity uses the actual synthesis voice/model identity;
+- Piper-only initialization stays Piper-only;
+- Windows synthesized output is explicitly proven readable by the shared decoder path;
+- required Windows CI stays green.
+
+## Workflow UX — automatic macro-goal completion notification
+
+**STATUS: ACTIVE IN GOAL 0005**
+
+From Goal 0005 onward, Codex owns launching a detached Windows watcher.
+
+The human should receive exactly one terminal desktop notification when the repo goal reaches `done/` or `blocked/`, with no extra command and no intermediate-turn spam.
+
+Notification failure must never alter product-goal correctness.
 
 ## Gate 2 — Non-PDF reader/TTS parity
+
+**NEXT MAJOR PRODUCT GATE AFTER GOAL 0005**
 
 Verify/fix:
 
@@ -70,7 +81,8 @@ Verify/fix:
 - auto-scroll/jump;
 - search;
 - bookmarks/config/cache;
-- close/cancel semantics.
+- close/cancel semantics;
+- Piper/Windows backend switching on representative text sources.
 
 Exit: representative non-PDF documents are comfortable and deterministic on Windows.
 

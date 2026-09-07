@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-07 after director review of Goal 0003
+Updated: 2026-09-07 after director review of Goal 0004
 
 This file contains verified or explicitly bounded evidence only. Roadmap checkboxes and historical parity claims are not accepted as current proof.
 
@@ -13,57 +13,34 @@ This file contains verified or explicitly bounded evidence only. Roadmap checkbo
 - Native Rust + egui remains the authoritative desktop architecture.
 - The obsolete active Tauri/React/Playwright migration workflow has been removed.
 
-## Windows build
+## Gate 0 / Windows baseline
 
-**VERIFIED WORKING IN WINDOWS HOSTED CI / LOCAL TOOLCHAIN INCOMPLETE**
+**COMPLETE**
 
-The hosted Windows workflow successfully provisions:
+Authoritative hosted Windows run `34146382188` passed:
 
-- MSVC;
-- CMake;
-- Pandoc;
-- stable Rust.
-
-It then successfully runs:
-
+- prerequisite setup;
 - `cargo check --workspace`;
-- `cargo build --workspace`.
+- `cargo build --workspace`;
+- normal-parallel `cargo test --workspace`.
 
-The maintainer machine still lacks the Visual Studio/MSVC C/C++ workload and Pandoc. `scripts/windows-dev-check.ps1` reports those missing prerequisites explicitly.
+Observed test results in that run include:
+
+- core unit tests: 168 passed / 0 failed;
+- Windows TTS integration test: 1 passed / 0 failed;
+- app/runtime integration suites: green.
+
+The renderer check is now a separate capability probe and no longer blocks required build/test evidence.
 
 ## Egui shell
 
 **STARTUP ERROR BOUNDARY VERIFIED; HOSTED-GPU RUNTIME VERIFICATION UNSUPPORTED**
 
-Native startup errors are no longer discarded. The root process exits nonzero on `eframe::run_native` failure and emits actionable diagnostics.
+Native startup errors are observable and nonzero.
 
-Goal 0003 proved the current hosted `windows-latest` environment cannot validate the shipped renderer:
+The hosted renderer probe truthfully classifies the GitHub-hosted Windows environment as unavailable when it exposes only unsupported OpenGL/no-adapter capability. This is separate from product correctness.
 
-- the glow path sees only an OpenGL 1.1 context and fails because egui/eframe requires OpenGL 2.0+;
-- a bounded eframe 0.26.2 WGPU experiment also found no suitable WGPU adapter;
-- the experiment was reverted, so no unverified renderer migration remains in `main`.
-
-This is an environment capability boundary, not evidence that the app fails on a normal Windows desktop.
-
-The next CI shape must therefore separate:
-
-1. required non-interactive Windows build/test verification; and
-2. renderer-capability/runtime verification that requires a real graphics-capable Windows environment.
-
-Do not mark hosted renderer failure as application launch success.
-
-## Test isolation
-
-**REPAIRED IN GOAL 0003; FULL HOSTED WORKSPACE RUN STILL PENDING CI TOPOLOGY FIX**
-
-Goal 0003 removed process-global environment mutation from cache/normalizer/text-utils tests and made test source/cache identities collision-resistant under parallel execution.
-
-Local normal-parallel core tests reached:
-
-- 165 passed;
-- 2 failed only because local Pandoc is unavailable.
-
-The hosted workflow provisions Pandoc, but its workspace test step did not execute because the renderer smoke failed first. Goal 0004 Stage A must decouple those gates and obtain the authoritative hosted full-workspace result.
+Interactive real-desktop GUI verification remains pending.
 
 ## TXT / Markdown / HTML ingestion
 
@@ -74,33 +51,65 @@ The hosted workflow provisions Pandoc, but its workspace test step did not execu
 - HTML tests pass when Pandoc is provisioned.
 - Pandoc remains a current prerequisite for HTML canonical-text and DOC/DOCX conversion paths.
 
+## TTS architecture
+
+**BACKEND-NEUTRAL SENTENCE SYNTHESIS IMPLEMENTED; CORRECTNESS FOLLOW-UP REQUIRED**
+
+Goal 0004 implemented:
+
+`canonical sentence -> selected backend -> cached WAV -> shared Rodio/Sonic playback -> canonical session progression`
+
+Piper remains the default backend.
+
+Shared playback still owns:
+
+- Rodio audio output;
+- Sonic speed transformation;
+- volume;
+- pause/resume/stop;
+- pause-after-sentence;
+- sentence timing/progression.
+
 ## Piper TTS
 
-**IMPLEMENTED / BUILDS ON WINDOWS / RESTART-ERA AUDIO UNVERIFIED**
+**PRESERVED / BUILDS AND TESTS GREEN; INTERACTIVE AUDIO UNVERIFIED IN RESTART**
 
-Current TTS design is Piper-specific at the synthesis-engine boundary but already has a reusable product shape:
+Piper keeps its model/eSpeak worker-pool and sentence-cache behavior.
 
-- canonical reader sentences are prepared in batches;
-- sentence audio is cached as WAV;
-- Rodio owns playback;
-- Sonic owns playback speed transformation;
-- volume, pause/resume, stop, and sentence progression are runtime-level behaviors.
-
-This shape will be preserved while the synthesis backend becomes explicit.
+Director review found one small ownership leak: `TtsEngine::new` still performs Piper/eSpeak environment setup even when the selected backend is Windows. Goal 0005 must isolate that initialization to Piper.
 
 ## Native Windows TTS
 
-**NOT IMPLEMENTED**
+**IMPLEMENTED WITH WINRT; SENTENCE-WAV PATH PRESENT; INTERACTIVE PLAYBACK UNVERIFIED**
 
-Goal 0004 is the active implementation goal.
+Goal 0004 added WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer` support:
 
-Director-selected API direction:
+- installed voice enumeration;
+- stable configured voice IDs;
+- default-voice fallback;
+- sentence WAV synthesis;
+- backend-aware cache identity;
+- egui backend/voice controls.
 
-- use WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer`;
-- enumerate installed voices through `AllVoices`;
-- identify voices by Windows voice ID;
-- synthesize each canonical sentence to the API's WAV speech stream;
-- feed those WAVs into the existing shared cache/playback pipeline rather than creating a separate OS-owned playback state machine.
+The pushed report records a local Windows probe with three installed voices and a non-empty synthesized WAV.
+
+Hosted CI executed the Windows TTS test successfully, but the passing test captures stdout and may return early when no usable hosted voice exists; therefore the hosted log does not independently prove the runner synthesized speech.
+
+### Known Goal-0004 correctness defects
+
+Director review found two material follow-ups:
+
+1. `patch_has_tts_fields` recognizes backend/voice changes, but `should_sync_tts_after_reader_command` does not include `tts_backend` or `windows_voice_id`. Changing backend/voice during active playback can therefore leave the current request running on the old backend instead of rebuilding immediately.
+2. the implicit Windows-default cache identity is currently the literal `windows:default`, not the actual resolved default voice ID. If the OS default voice changes, stale cached speech can be reused under the same identity.
+
+Goal 0005 begins by fixing both.
+
+### Additional hardening
+
+- Make runtime error strings backend-neutral where they still say Piper.
+- Make the Windows TTS test explicitly decode synthesized WAV through the same decoder assumptions used by shared playback.
+- Expose hosted voice-count/synthesis evidence with `--nocapture` or equivalent diagnostics.
+- Avoid further growth of the large egui `app/mod.rs`; extract the new Windows voice/settings helpers where practical.
 
 ## PDF classification / OCR / text contracts
 
@@ -138,15 +147,15 @@ Implementation exists and compiles. Restart-era runtime behavior has not yet bee
 
 Historical parity is not assumed.
 
-## CI
+## Goal completion notifications
 
-**NATIVE WORKFLOW PRESENT; TOPOLOGY NEEDS ONE FINAL CORRECTION**
+**REQUESTED / GOAL 0005 BOOTSTRAPS IMPLEMENTATION**
 
-The active CI surface is now native-only.
+From Goal 0005 forward, the human should not manually start a watcher.
 
-Current defect: the renderer smoke is in the same sequential required job before `cargo test --workspace`, so the known hosted GPU limitation prevents the test gate from running.
+The repository protocol now requires Codex on Windows to automatically launch a detached watcher that emits one desktop notification only when the repository macro-goal reaches `done/` or `blocked/`.
 
-Goal 0004 must split required build/test verification from hosted renderer capability probing and obtain a green required Windows baseline without falsely claiming hosted GUI launch success.
+Notification failure is non-fatal workflow UX.
 
 ## Historical Tauri / React / WebView implementation
 

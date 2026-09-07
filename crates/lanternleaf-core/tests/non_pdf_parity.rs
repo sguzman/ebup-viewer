@@ -137,7 +137,7 @@ fn assert_session_contract(
     let canonical = initial.canonical_sentences.clone();
     reader.apply_command(
         session::SessionCommand::SearchSetQuery {
-            query: "repeated search term".into(),
+            query: "repeated".into(),
         },
         session::PanelState::default(),
         &normalizer,

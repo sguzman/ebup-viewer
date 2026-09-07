@@ -1,0 +1,5 @@
+LanternLeaf begins with a small, honest reading session. The repeated search term appears in the first section.
+
+Section two adds Unicode: café, naïve, and 日本語 remain readable. The repeated search term appears again here.
+
+The final paragraph has enough punctuation to exercise sentence ownership. It ends with a clear destination.

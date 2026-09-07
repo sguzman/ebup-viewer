@@ -1476,4 +1476,33 @@ mod tests {
                 .any(|event| event.kind == TtsRuntimeEventKind::Cancelled)
         );
     }
+
+    #[test]
+    fn active_voice_switch_preserves_cursor_and_replaces_request() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let runtime = TtsRuntime::new_with_mode(normalizer, TtsRuntimeMode::Simulated);
+        runtime.set_session(Some(build_test_session(&[&["A.", "B."]])));
+        let started = runtime
+            .apply_command(TtsCommand::Play)
+            .expect("play snapshot");
+        let before_idx = started.tts.current_sentence_idx;
+        let _ = runtime.collect_events();
+
+        let after = runtime
+            .apply_command(TtsCommand::ApplySettings {
+                patch: session::ReaderSettingsPatch {
+                    windows_voice_id: Some("voice-id".to_string()),
+                    ..Default::default()
+                },
+            })
+            .expect("voice patch snapshot");
+        assert_eq!(after.tts.current_sentence_idx, before_idx);
+        assert_eq!(after.settings.windows_voice_id.as_deref(), Some("voice-id"));
+        assert!(
+            runtime
+                .collect_events()
+                .iter()
+                .any(|event| event.kind == TtsRuntimeEventKind::Cancelled)
+        );
+    }
 }

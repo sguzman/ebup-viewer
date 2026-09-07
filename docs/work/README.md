@@ -9,8 +9,8 @@ The repository is the agent-to-agent communication channel. Normal implementatio
 - `queued/`: future director-defined macro-goals.
 - `ready/`: the single goal authorized to start.
 - `active/`: goal currently executing.
-- `blocked/`: goal stopped at a true blocker.
-- `done/`: acceptance criteria satisfied on the implementation branch.
+- `blocked/`: current execution attempt stopped at a true blocker; the same goal may later be reopened after director resolution.
+- `done/`: current execution attempt claims the acceptance criteria are satisfied and is ready for director review; the same goal may be reopened if review requires correction.
 - `reports/`: Codex implementation/validation reports.
 - `reviews/`: ChatGPT/director review notes or correction contracts.
 
@@ -123,3 +123,7 @@ When ChatGPT reviews a terminal attempt and requests bounded corrections while p
 9. Codex executes the correction pass, preserves prior report history, and uses the normal post-push terminal signal again.
 
 The fresh Codex Goal session is a new **execution attempt**, not a new repository macro-goal.
+
+Preferred correction invocation:
+
+> This is a director correction continuation of repository Goal <ID>, not a new macro-goal. Read `AGENTS.md`, the reopened goal in `docs/work/ready/`, and `docs/work/reviews/<ID>.md`. The prior Codex Goal session has terminated, so start this as a fresh Codex Goal session while continuing the existing repository goal branch/report lineage. Synchronize the current director correction from `main`, re-arm the watcher for this attempt, and execute all correction items until acceptance passes or an escalation condition is reached.

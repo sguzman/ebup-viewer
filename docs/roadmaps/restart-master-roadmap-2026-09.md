@@ -6,46 +6,55 @@ Roadmap state is evidence-driven. Completion means accepted implementation plus 
 
 ## Gate 0 — Recover trustworthy baseline
 
-**STATUS: IN PROGRESS, NEAR CLOSURE**
+**STATUS: IMPLEMENTATION REPAIRS COMPLETE; FINAL HOSTED TEST PROOF MOVED INTO GOAL 0004 STAGE A**
 
-Goal 0001 recovered Windows check/build and removed libclang/bindgen blockers.
+Goals 0001-0003 completed the substantive recovery work:
 
-Goal 0002 made native startup errors observable, made early-exit smoke behavior truthful, provisioned MSVC/Pandoc in Windows CI, added prerequisite diagnostics, and repaired several fixture/config defects.
+- removed libclang/bindgen blockers;
+- established reproducible MSVC/Pandoc hosted setup;
+- made native startup errors observable;
+- removed parallel environment/cache races;
+- made source fixtures cross-platform deterministic;
+- removed obsolete Tauri/React CI;
+- repaired the bounded PDF contract failures exposed by the baseline.
 
-Director review of Goal 0002 found four additional failures in the normal parallel Windows run that were hidden by Codex's single-thread audit:
+Goal 0003 also proved a hard hosted-runner renderer limitation:
 
-- two cache-root environment race failures;
-- one CRLF/LF source fixture failure;
-- one PDF alignment failure requiring race-vs-product classification.
+- glow sees only OpenGL 1.1;
+- a bounded WGPU experiment found no suitable adapter;
+- the experiment was reverted.
 
-The active Tauri/React `gui-migration` workflow is also obsolete and must leave the active CI surface.
+The remaining Gate 0 issue is CI topology, not product behavior: the known-host-limited renderer smoke currently prevents the hosted workspace tests from running.
 
-Goal 0003 begins by closing these residual baseline issues. It then continues directly into the stable bounded PDF contract failures so the required Windows test gate can become green without another human/Codex round trip.
+Goal 0004 Stage A separates those evidence channels and obtains the final required Windows build/test result.
 
-Exit:
+Gate 0 exit:
 
-- current native CI surface reflects only the native egui architecture;
-- workspace check/build pass;
-- normal parallel workspace tests pass;
-- native startup smoke executes truthfully;
-- external prerequisites are deterministic and diagnosable.
+- required Windows check/build/tests are green;
+- hosted renderer capability is classified honestly as unsupported when applicable;
+- interactive GUI launch remains a separate real-machine verification item rather than a fake hosted pass.
 
 ## Gate 1 — TTS backend boundary + Windows TTS
 
-**NEXT MAJOR FEATURE AFTER GOAL 0003**
+**STATUS: ACTIVE — GOAL 0004**
 
-Preserve Piper while making TTS backend ownership explicit.
+Preserve Piper while making sentence-audio synthesis backend-neutral.
 
-Add native Windows speech as a backend with:
+Director architecture:
+
+`canonical sentence -> backend synthesis -> cached WAV -> shared Rodio/Sonic playback -> session progression`
+
+Goal 0004 adds native Windows TTS using WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer` with:
 
 - installed voice discovery;
-- speak/pause/resume/stop lifecycle;
-- cancellation;
-- backend-neutral playback/session events;
-- UI backend/voice selection;
-- tests for state transitions where practical.
+- stable voice-ID selection;
+- sentence-to-WAV synthesis;
+- backend-aware cache identity;
+- shared pause/resume/stop/speed/volume semantics;
+- backend/voice UI settings;
+- Windows-hosted synthesis tests that do not require a graphics or audio device.
 
-Exit: non-PDF text can be spoken using both Piper and Windows TTS without reader-state special cases.
+Exit: the same reader/TTS runtime can prepare and play sentence audio from both Piper and Windows backends without format-specific or UI-specific playback state.
 
 ## Gate 2 — Non-PDF reader/TTS parity
 
@@ -54,7 +63,7 @@ Verify/fix:
 - EPUB;
 - TXT;
 - Markdown;
-- HTML path;
+- HTML;
 - sentence mapping;
 - click-to-play;
 - highlight;
@@ -67,9 +76,7 @@ Exit: representative non-PDF documents are comfortable and deterministic on Wind
 
 ## Gate 3 — Native PDF visual stability
 
-The current Goal 0003 only repairs **existing deterministic PDF core contracts** required to close the baseline. It is not authorization for broad visual PDF work.
-
-The later visual gate focuses on:
+Focus on:
 
 - page raster;
 - texture cache;
@@ -82,9 +89,9 @@ Exit: PDFs are visually usable before synchronization complexity is layered on t
 
 ## Gate 4 — PDF text, TTS, and highlight synchronization
 
-The Goal 0003 PDF substage may repair bounded classifier/OCR/reading-order/cache contracts already represented by failing tests. It must not expand into full interactive sync work.
+The bounded classifier/OCR/reading-order/cache contracts exposed by baseline tests were repaired in Goal 0003.
 
-The later full synchronization gate covers:
+Later full synchronization work covers:
 
 - extraction;
 - canonical sentence/page mapping;

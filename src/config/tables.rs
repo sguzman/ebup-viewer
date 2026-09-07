@@ -1,6 +1,7 @@
 use super::defaults;
 use super::models::{
     AppConfig, FontFamily, FontWeight, HighlightColor, LogLevel, PrettyUiConfig, ThemeMode,
+    TtsBackend,
 };
 use serde::Deserialize;
 
@@ -77,6 +78,8 @@ impl From<ConfigTables> for AppConfig {
                 .integration
                 .close_browser_tab_on_recent_delete,
             tts_model_path: tables.tts.tts_model_path,
+            tts_backend: tables.tts.tts_backend,
+            windows_voice_id: tables.tts.windows_voice_id,
             tts_espeak_path: tables.tts.tts_espeak_path,
             tts_speed: tables.tts.tts_speed,
             tts_volume: tables.tts.tts_volume,
@@ -144,6 +147,8 @@ impl From<&AppConfig> for ConfigTables {
             },
             tts: TtsConfig {
                 tts_model_path: config.tts_model_path.clone(),
+                tts_backend: config.tts_backend,
+                windows_voice_id: config.windows_voice_id.clone(),
                 tts_espeak_path: config.tts_espeak_path.clone(),
                 tts_speed: config.tts_speed,
                 tts_volume: config.tts_volume,
@@ -357,6 +362,10 @@ impl Default for IntegrationConfig {
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
 struct TtsConfig {
+    #[serde(default)]
+    tts_backend: TtsBackend,
+    #[serde(default)]
+    windows_voice_id: Option<String>,
     #[serde(default = "defaults::default_tts_model")]
     tts_model_path: String,
     #[serde(default = "defaults::default_tts_espeak_path")]
@@ -376,6 +385,8 @@ struct TtsConfig {
 impl Default for TtsConfig {
     fn default() -> Self {
         TtsConfig {
+            tts_backend: TtsBackend::Piper,
+            windows_voice_id: None,
             tts_model_path: defaults::default_tts_model(),
             tts_espeak_path: defaults::default_tts_espeak_path(),
             tts_speed: defaults::default_tts_speed(),

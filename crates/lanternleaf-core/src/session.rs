@@ -63,6 +63,8 @@ pub struct ReaderSettingsView {
     pub time_remaining_display: config::TimeRemainingDisplay,
     pub tts_speed: f32,
     pub tts_volume: f32,
+    pub tts_backend: config::TtsBackend,
+    pub windows_voice_id: Option<String>,
     pub pretty: config::PrettyUiConfig,
 }
 
@@ -116,6 +118,10 @@ pub struct ReaderSettingsPatch {
     pub tts_speed: Option<f32>,
     #[ts(optional)]
     pub tts_volume: Option<f32>,
+    #[ts(optional)]
+    pub tts_backend: Option<config::TtsBackend>,
+    #[ts(optional)]
+    pub windows_voice_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -2054,6 +2060,7 @@ mod tests {
                 text_only_show_original_text: None,
                 tts_speed: Some(4.9),
                 tts_volume: Some(-1.0),
+                ..Default::default()
             },
             &normalizer,
         );
@@ -2153,6 +2160,7 @@ mod tests {
                     text_only_show_original_text: None,
                     tts_speed: Some(2.5),
                     tts_volume: Some(1.3),
+                    ..Default::default()
                 },
             },
             PanelState::default(),
@@ -2231,6 +2239,7 @@ mod tests {
                 text_only_show_original_text: Some(true),
                 tts_speed: None,
                 tts_volume: None,
+                ..Default::default()
             },
             &normalizer,
         );

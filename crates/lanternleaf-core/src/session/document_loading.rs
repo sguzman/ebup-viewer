@@ -215,6 +215,8 @@ pub fn load_session_for_source_with_cancel(
     if let Some(mut overrides) = crate::cache::load_epub_config(&source_path) {
         overrides.log_level = base_config.log_level;
         overrides.tts_model_path = base_config.tts_model_path.clone();
+        overrides.tts_backend = base_config.tts_backend;
+        overrides.windows_voice_id = base_config.windows_voice_id.clone();
         overrides.tts_espeak_path = base_config.tts_espeak_path.clone();
         overrides.tts_threads = base_config.tts_threads;
         overrides.normalizer_threads = base_config.normalizer_threads;

@@ -20,8 +20,33 @@ use std::sync::{
 use std::thread;
 use tracing::{debug, info, warn};
 
+#[cfg(windows)]
+#[path = "tts/windows_backend.rs"]
+mod windows_backend;
+
+use crate::config::TtsBackend;
+
+#[cfg(windows)]
+pub use windows_backend::WindowsVoiceDescriptor;
+
+#[cfg(windows)]
+pub fn enumerate_windows_voices() -> Result<Vec<WindowsVoiceDescriptor>> {
+    windows_backend::enumerate_voices()
+}
+
+#[cfg(windows)]
+pub fn synthesize_windows_sentence_to_wav(
+    text: &str,
+    path: &Path,
+    voice_id: Option<&str>,
+) -> Result<()> {
+    windows_backend::synthesize_sentence_to_wav(text, path, voice_id)
+}
+
 #[derive(Clone)]
 pub struct TtsEngine {
+    backend: TtsBackend,
+    windows_voice_id: Option<String>,
     model_path: PathBuf,
     espeak_root: PathBuf,
     worker_pool: Arc<Mutex<Option<WorkerPoolState>>>,
@@ -29,7 +54,12 @@ pub struct TtsEngine {
 }
 
 impl TtsEngine {
-    pub fn new(model_path: PathBuf, espeak_path: PathBuf) -> Result<Self> {
+    pub fn new(
+        model_path: PathBuf,
+        espeak_path: PathBuf,
+        backend: TtsBackend,
+        windows_voice_id: Option<String>,
+    ) -> Result<Self> {
         let espeak_path = sanitize_espeak_root(espeak_path);
         if env::var_os("PIPER_ESPEAKNG_DATA_DIRECTORY").is_none() {
             // Safe because we set a deterministic value early in process startup.
@@ -43,6 +73,8 @@ impl TtsEngine {
             "Initializing TTS engine"
         );
         Ok(Self {
+            backend,
+            windows_voice_id,
             model_path,
             espeak_root: espeak_path,
             worker_pool: Arc::new(Mutex::new(None)),
@@ -117,6 +149,39 @@ impl TtsEngine {
         }
 
         let threads = threads.max(1);
+        if self.backend == TtsBackend::Windows {
+            #[cfg(windows)]
+            {
+                let total = sentences.len().saturating_sub(start_idx);
+                let generation = self.prepare_generation.load(Ordering::Acquire);
+                let mut output = Vec::with_capacity(total);
+                for sentence in sentences.into_iter().skip(start_idx) {
+                    if self.prepare_generation.load(Ordering::Acquire) != generation {
+                        return Err(anyhow::anyhow!("TTS batch preparation cancelled"));
+                    }
+                    let normalized = normalize_sentence(&sentence);
+                    let path = cache_path(&cache_root, &self.cache_identity(), &normalized);
+                    if let Some(parent) = path.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    if !path.exists() {
+                        windows_backend::synthesize_sentence_to_wav(
+                            &normalized,
+                            &path,
+                            self.windows_voice_id.as_deref(),
+                        )?;
+                    }
+                    output.push((path.clone(), sentence_duration(&path)));
+                }
+                return Ok(output);
+            }
+            #[cfg(not(windows))]
+            {
+                return Err(anyhow::anyhow!(
+                    "Windows TTS backend is only available on Windows"
+                ));
+            }
+        }
         let pool = self.ensure_worker_pool(threads)?;
         let started_at = std::time::Instant::now();
         let total = sentences.len().saturating_sub(start_idx);
@@ -138,7 +203,7 @@ impl TtsEngine {
                     break;
                 };
                 let normalized = normalize_sentence(&sentence);
-                let path = cache_path(&cache_root, &self.model_path, &normalized);
+                let path = cache_path(&cache_root, &self.cache_identity(), &normalized);
                 if path.exists() {
                     let dur = sentence_duration(&path);
                     collected[offset] = Some((path, dur));
@@ -257,6 +322,16 @@ impl TtsEngine {
             });
         }
         Ok(guard.as_ref().unwrap().pool.clone())
+    }
+
+    fn cache_identity(&self) -> PathBuf {
+        match self.backend {
+            TtsBackend::Piper => self.model_path.clone(),
+            TtsBackend::Windows => PathBuf::from(format!(
+                "windows:{}",
+                self.windows_voice_id.as_deref().unwrap_or("default")
+            )),
+        }
     }
 }
 

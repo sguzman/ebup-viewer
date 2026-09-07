@@ -42,7 +42,31 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace
 
-      - name: Native launch smoke
+      - name: Test workspace
+        run: cargo test --workspace
+
+  hosted-renderer-probe:
+    needs: native-workspace
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Configure MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build workspace for renderer probe
+        run: cargo build --workspace
+
+      - name: Hosted renderer capability probe
         shell: pwsh
         run: |
           $binary = Join-Path $pwd "target\debug\lanternleaf.exe"
@@ -61,14 +85,24 @@ jobs:
               if (Test-Path $stdout) { Get-Content $stdout }
               Write-Host "Native launch stderr:"
               if (Test-Path $stderr) { Get-Content $stderr }
-              throw "Native egui process exited during launch smoke with code $($process.ExitCode)"
+              $diagnostics = @()
+              if (Test-Path $stdout) { $diagnostics += Get-Content $stdout }
+              if (Test-Path $stderr) { $diagnostics += Get-Content $stderr }
+              $diagnosticText = $diagnostics -join "`n"
+              $knownUnavailable = $diagnosticText -match "requires opengl 2\.0\+" `
+                -or $diagnosticText -match "NoSuitableAdapterFound" `
+                -or $diagnosticText -match "no suitable adapter" `
+                -or $diagnosticText -match "No wgpu adapters found" `
+                -or $diagnosticText -match "Returned GL context is 1\.1"
+              if ($knownUnavailable) {
+                Write-Host "hosted_renderer_unavailable: runner lacks a supported graphics adapter/context."
+                exit 0
+              }
+              throw "Unexpected native renderer startup failure with code $($process.ExitCode)"
             }
-            Write-Host "Native egui process remained running for the launch smoke."
+            Write-Host "renderer_supported: native egui process remained running for the probe window."
           } finally {
             if (-not $process.HasExited) {
               Stop-Process -Id $process.Id -Force
             }
           }
-
-      - name: Test workspace
-        run: cargo test --workspace

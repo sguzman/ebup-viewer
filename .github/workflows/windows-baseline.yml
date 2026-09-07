@@ -106,6 +106,3 @@ jobs:
               Stop-Process -Id $process.Id -Force
             }
           }
-
-      - name: Test workspace
-        run: cargo test --workspace

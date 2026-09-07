@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-06 after review of Goal 0001
+Updated: 2026-09-07 after director review of Goal 0002
 
 This file contains verified or explicitly bounded evidence only. Roadmap checkboxes and historical parity claims are not accepted as current proof.
 
@@ -9,129 +9,159 @@ This file contains verified or explicitly bounded evidence only. Roadmap checkbo
 **VERIFIED PRESENT**
 
 - Rust workspace contains root package plus `lanternleaf-core`, `lanternleaf-app`, and `lanternleaf-egui`.
-- Root `src/main.rs` dispatches TTS worker mode and otherwise calls `lanternleaf_egui::app::run()`.
+- Root `src/main.rs` dispatches TTS worker mode and otherwise calls the native egui application.
 - Native Rust + egui remains the authoritative desktop architecture.
+- Tauri/React/WebView remains historical/obsolete as a production target.
 
 ## Windows build
 
 **VERIFIED WORKING IN WINDOWS CI / LOCAL TOOLCHAIN INCOMPLETE**
 
-Goal 0001 removed the runtime `bindgen` / `libclang` requirement from both native dependency chains that blocked the restart:
+Goal 0001 removed the runtime `bindgen` / `libclang` prerequisite from the Sonic and eSpeak dependency chains.
 
-- Sonic: `bindgen 0.59.2 -> sonic-rs-sys 0.1.9`
-- eSpeak: `bindgen 0.69.5 -> espeak-rs-sys 0.1.9 -> espeak-rs 0.1.9 -> piper-rs 0.1.9`
+The current Windows baseline workflow on `windows-latest` successfully completes:
 
-The vendored FFI declarations were reviewed against the vendored C headers and match the used ABI surface.
+- MSVC environment setup;
+- Pandoc provisioning;
+- repository prerequisite diagnostics;
+- `cargo check --workspace`;
+- `cargo build --workspace`.
 
-Windows GitHub Actions now proves:
-
-- `cargo check --workspace` passes;
-- `cargo build --workspace` passes.
-
-The maintainer machine still lacks the Visual Studio/MSVC C/C++ toolchain required by the `x86_64-pc-windows-msvc` native build. LLVM-MinGW is not treated as an ABI-compatible substitute.
+The maintainer machine still lacks the Visual Studio/MSVC C/C++ workload and Pandoc. `scripts/windows-dev-check.ps1` now reports these prerequisites explicitly.
 
 ## Egui shell
 
-**PRESENT, BUILDS, RUNTIME NOT YET VERIFIED**
+**BUILDS; STARTUP ERROR BOUNDARY FIXED; LIVE WINDOW STILL UNVERIFIED**
 
-The native binary is produced on Windows CI.
+Goal 0002 changed the native startup boundary so `eframe::run_native(...)` errors are no longer discarded.
 
-The Goal 0001 CI launch check is **not accepted as proof of a working GUI**. It treats an early code-0 process exit as success, while `crates/lanternleaf-egui/src/app/mod.rs` currently discards the result of `eframe::run_native(...)` via `let _ = ...`.
+Current behavior:
 
-This creates a false-positive path where native window startup can fail and the process still exits successfully.
+- eframe startup errors propagate as `NativeRunError::Eframe`;
+- the root process returns a non-zero result on native startup failure;
+- the standalone egui binary prints the startup error and exits 1;
+- single-instance lock I/O failure and an already-running instance remain distinct conditions.
 
-Goal 0002 must make native startup failures observable and make the smoke check truthful.
+The Windows smoke now rejects any early process exit, including code 0.
 
-## EPUB / TXT / Markdown
+However, in the latest authoritative Windows CI run the smoke step was skipped because the test step failed first. A live egui event loop has therefore not yet been accepted as verified.
 
-**PRESENT BUT UNVERIFIED END-TO-END**
+## TXT / Markdown
 
-The code compiles and related tests execute, but restart-era interactive reader/TTS behavior has not yet been established.
+**RUST INGESTION SMOKE PRESENT; END-TO-END READER/TTS UNVERIFIED**
+
+Repository-owned TXT and Markdown fixtures exist.
+
+The current Windows parallel suite exposed a CRLF-vs-LF fixture expectation failure in the TXT smoke. This is a cross-platform harness defect to be repaired before the ingestion smoke is called deterministic.
 
 ## HTML
 
-**PARTIAL**
+**RUST INGESTION TESTS PASS IN PROVISIONED WINDOWS CI; END-TO-END READER/TTS UNVERIFIED**
 
-The current source pipeline recognizes native HTML and uses Pandoc for canonical plain-text extraction. Existing HTML tests fail in the current Windows CI environment when Pandoc is absent.
+Pandoc is provisioned in the Windows baseline workflow.
 
-This is a real current external-tool dependency and test-environment issue, not yet proof of an HTML rendering defect.
+The latest Windows CI run shows both HTML source tests passing.
+
+Pandoc remains a current runtime/development prerequisite for the Pandoc-backed ingestion paths.
 
 ## DOC / DOCX
 
-**PRESENT IN THE SOURCE PIPELINE, UNVERIFIED**
+**PRESENT IN PANDOC-BACKED SOURCE PIPELINE, UNVERIFIED**
 
-The source pipeline currently advertises `.doc` and `.docx` support through the Pandoc conversion path. User-facing completeness is unverified.
+The source pipeline advertises `.doc` and `.docx` support through Pandoc conversion. User-facing completeness remains unverified.
 
 ## Piper TTS
 
 **COMPILES ON WINDOWS / RUNTIME UNVERIFIED**
 
-Goal 0001 verified the Piper/eSpeak/Sonic dependency chain can build in Windows CI without libclang.
+The Piper/eSpeak/Sonic dependency chain builds in Windows CI without libclang.
 
-No restart-era audio playback behavior has been verified.
+No restart-era audio behavior has been verified.
 
 ## Native Windows TTS
 
 **NOT IMPLEMENTED**
 
-This remains the next major feature gate after the baseline is trustworthy.
+This remains the next major feature gate after the baseline and current PDF contract-test cluster are made trustworthy.
 
 ## PDF rendering
 
-**PARTIAL**
+**PARTIAL / VISUAL RUNTIME UNVERIFIED**
 
-Native egui PDF modules compile, but visual runtime behavior is not yet verified. Historical code and roadmaps are substantial; the user reports the native PDF implementation was never finished.
+Native egui PDF modules compile. Visual page rendering, zoom/viewport behavior, and performance have not yet been verified in the restart.
 
-## PDF text extraction
+## PDF classification / OCR / text contracts
 
-**PARTIAL / TEST DRIFT PRESENT**
+**PARTIAL / KNOWN FAILING CONTRACT TESTS**
 
-Existing core tests expose PDF fixture/expectation drift. Goal 0001 intentionally did not redesign PDF behavior.
+The latest Windows CI run preserves at least seven deterministic PDF contract failures involving:
+
+- classifier/rollup policy;
+- OCR recommendation/confidence;
+- OCR normalization;
+- reading-order classification;
+- PDF cache metadata.
+
+An additional cross-column OCR alignment test fails under normal parallel CI but was absent from Codex's single-thread rerun failure set. Its classification is not yet accepted as a product defect until concurrency/state leakage is ruled out.
 
 ## PDF TTS / highlight synchronization
 
 **PARTIAL / KNOWN QUALITY AREA**
 
-Historical commits show extensive attempts to stabilize PDF TTS follow-scroll, highlight rebinding, and stale-state problems. The user reports this area was never completed satisfactorily. No restart-era runtime verification exists yet.
+Historical work is extensive, but the user reports PDF rendering + TTS + highlight synchronization was never completed satisfactorily.
+
+The active restart has not yet reached interactive PDF/TTS verification.
+
+## Cache / config / persistence
+
+**PARTIAL; PARALLEL TEST ISOLATION DEFECT CONFIRMED**
+
+A test mutates the process-wide `LANTERNLEAF_CACHE_DIR` environment variable while other cache/session tests run in parallel.
+
+The authoritative Windows CI run shows cache roundtrip tests failing to reload their just-written metadata, consistent with cache-root switching during the test.
+
+This is baseline test isolation work, not yet a PDF product defect.
 
 ## Calibre integration
 
 **PRESENT BUT UNVERIFIED**
 
-Recent implementation exists and compiles. Runtime behavior has not yet been exercised in the restart.
+Implementation exists and compiles. Restart-era runtime behavior has not yet been exercised.
 
 ## Browser/import integrations
 
 **PRESENT BUT UNVERIFIED**
 
-Do not assume historical parity claims remain true until exercised.
-
-## Persistence / bookmarks / config / cache
-
-**PARTIAL**
-
-Substantial implementation exists. Some current tests fail around shared temporary/cache/config state, indicating test isolation or behavior drift that Goal 0002 must classify and repair.
+Historical parity is not assumed.
 
 ## Tests / CI
 
-**PARTIAL**
+**PARTIAL; CURRENT AUTHORITATIVE WINDOWS RESULT: 156 PASSED / 11 FAILED IN CORE**
 
-Windows CI currently proves workspace check/build.
+Windows CI run on the accepted Goal 0002 rerun proved:
 
-The latest reviewed CI run completed the core test binary with:
+- prerequisite setup: PASS;
+- workspace check: PASS;
+- workspace build: PASS;
+- HTML/Pandoc source tests: PASS;
+- core test binary: 156 passed / 11 failed.
 
-- 153 passed;
-- 14 failed.
+The 11 failures include:
 
-Observed failure classes include:
+- seven already-classified PDF contract failures;
+- two cache roundtrip failures consistent with `LANTERNLEAF_CACHE_DIR` process-environment races;
+- one TXT fixture CRLF/LF mismatch;
+- one PDF alignment test that appears only in the parallel run and requires isolation analysis.
 
-- missing Pandoc for HTML conversion tests;
-- PDF fixture/contract drift;
-- PDF OCR/normalization expectations;
-- shared temp/cache/config interactions;
-- abbreviation/live-config expectations.
+Codex's single-thread report of 158 passed / 9 failed is useful but is not the authoritative baseline because normal `cargo test` is parallel.
 
-The native launch smoke currently produces a false positive and must be corrected.
+## CI architecture debt
+
+**BROKEN / OBSOLETE ACTIVE WORKFLOW**
+
+`.github/workflows/gui-migration.yml` is still actively running Tauri bridge, frontend, Playwright, and Tauri E2E jobs.
+
+This conflicts with the active native egui architecture and must be removed from the active CI surface. Historical web/Tauri code and documentation may remain as reference.
 
 ## Historical Tauri / React / WebView implementation
 

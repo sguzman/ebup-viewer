@@ -16,4 +16,6 @@ unsafe extern "C" {
     pub fn sonicFlushStream(stream: sonicStream) -> ::std::os::raw::c_int;
     pub fn sonicSamplesAvailable(stream: sonicStream) -> ::std::os::raw::c_int;
     pub fn sonicSetSpeed(stream: sonicStream, speed: f32);
+    pub fn sonicSetPitch(stream: sonicStream, pitch: f32);
+    pub fn sonicSetVolume(stream: sonicStream, volume: f32);
 }

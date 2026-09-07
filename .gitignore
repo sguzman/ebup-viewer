@@ -12,3 +12,4 @@ bindings
 ui/test-results
 ui/playwright-report
 logs
+.qa/

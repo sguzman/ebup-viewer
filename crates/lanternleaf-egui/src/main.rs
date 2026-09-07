@@ -24,7 +24,10 @@ pub(crate) use constants::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    app::run();
+    if let Err(err) = app::run() {
+        eprintln!("LanternLeaf native startup failed: {err}");
+        std::process::exit(1);
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

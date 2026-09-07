@@ -948,12 +948,16 @@ mod tests {
     #[test]
     fn markdown_source_emits_markdown_and_tts_text() {
         let path = unique_temp_file("markdown_contract", "md");
-        fs::write(&path, "# Title\n\nThis is **markdown** content.").expect("write md fixture");
+        fs::write(
+            &path,
+            include_str!("../tests/fixtures/source-ingestion/sample.md"),
+        )
+        .expect("write md fixture");
 
         let loaded = load_book_content(&path).expect("markdown should load");
         assert!(loaded.has_structured_markdown);
         assert!(loaded.reading_markdown.is_some());
-        assert!(loaded.tts_text.contains("Title"));
+        assert!(loaded.tts_text.contains("Markdown fixture"));
         assert!(loaded.tts_text.contains("markdown"));
 
         let _ = fs::remove_file(path);
@@ -962,12 +966,16 @@ mod tests {
     #[test]
     fn text_source_falls_back_without_markdown() {
         let path = unique_temp_file("text_contract", "txt");
-        fs::write(&path, "plain text source").expect("write txt fixture");
+        fs::write(
+            &path,
+            include_str!("../tests/fixtures/source-ingestion/sample.txt"),
+        )
+        .expect("write txt fixture");
 
         let loaded = load_book_content(&path).expect("text should load");
         assert!(!loaded.has_structured_markdown);
         assert!(loaded.reading_markdown.is_none());
-        assert_eq!(loaded.tts_text, "plain text source");
+        assert_eq!(loaded.tts_text, "Plain text source fixture.\n");
 
         let _ = fs::remove_file(path);
     }
@@ -977,7 +985,7 @@ mod tests {
         let path = unique_temp_file("html_contract", "html");
         fs::write(
             &path,
-            "<html><body><h1>Heading</h1><p>Paragraph</p><img src=\"cover.png\"/></body></html>",
+            include_str!("../tests/fixtures/source-ingestion/sample.html"),
         )
         .expect("write html fixture");
 
@@ -985,8 +993,8 @@ mod tests {
         assert!(loaded.reading_html.is_some());
         assert!(loaded.reading_markdown.is_none());
         assert!(loaded.has_structured_markdown);
-        assert!(loaded.tts_text.contains("Heading"));
-        assert!(loaded.tts_text.contains("Paragraph"));
+        assert!(loaded.tts_text.contains("HTML fixture heading"));
+        assert!(loaded.tts_text.contains("HTML fixture paragraph"));
 
         let _ = fs::remove_file(path);
     }

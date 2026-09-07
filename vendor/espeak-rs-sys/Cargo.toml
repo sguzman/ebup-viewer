@@ -45,9 +45,6 @@ resolver = "1"
 name = "espeak_rs_sys"
 path = "src/lib.rs"
 
-[build-dependencies.bindgen]
-version = "0.69.4"
-
 [build-dependencies.cmake]
 version = "0.1"
 

@@ -6,6 +6,14 @@ Set-StrictMode -Version Latest
 if ($env:OS -ne 'Windows_NT') { throw 'LanternLeaf deps.ps1 currently supports Windows only.' }
 
 $repoRoot = (Resolve-Path $PSScriptRoot).Path
+$dependencyManifestPath = Join-Path $repoRoot 'deps.windows.json'
+if (-not (Test-Path $dependencyManifestPath -PathType Leaf)) {
+    throw "Missing dependency manifest: $dependencyManifestPath"
+}
+$deps = Get-Content -LiteralPath $dependencyManifestPath -Raw | ConvertFrom-Json
+if ($deps.schema_version -ne 1) {
+    throw "Unsupported deps.windows.json schema version: $($deps.schema_version)"
+}
 
 function Refresh-ProcessPath {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
@@ -72,7 +80,7 @@ function Ensure-Rust {
     Refresh-ProcessPath
     if (-not (Has-Command 'rustup.exe')) {
         if ($CheckOnly) { throw 'Missing dependency: rustup (Rustlang.Rustup)' }
-        Install-WingetPackage 'Rustlang.Rustup' 'Rustup'
+        Install-WingetPackage $deps.rust.winget_id 'Rustup'
     }
     Refresh-ProcessPath
     if (-not (Has-Command 'cargo.exe')) {
@@ -81,7 +89,7 @@ function Ensure-Rust {
         if ($LASTEXITCODE -ne 0) { throw 'rustup failed to install/select stable Rust.' }
     }
     $targets = @(& rustup.exe target list --installed)
-    if ($targets -notcontains 'x86_64-pc-windows-msvc') {
+    if ($targets -notcontains $deps.rust.target) {
         if ($CheckOnly) { throw 'Missing Rust target: x86_64-pc-windows-msvc' }
         & rustup.exe target add x86_64-pc-windows-msvc
         if ($LASTEXITCODE -ne 0) { throw 'rustup failed to add x86_64-pc-windows-msvc.' }
@@ -101,7 +109,7 @@ function Ensure-CommandPackage([string]$Command, [string]$Id, [string]$Label) {
 
 function Ensure-Msvc {
     if (Find-VcInstance) { return }
-    if ($CheckOnly) { throw 'Missing dependency: Visual Studio 2022 C++ build tools / Microsoft.VisualStudio.Workload.VCTools' }
+    if ($CheckOnly) { throw "Missing dependency: $($deps.visual_studio.name) / $($deps.visual_studio.workload)" }
 
     $existing = Find-AnyVsInstance
     if ($existing) {
@@ -111,11 +119,12 @@ function Ensure-Msvc {
             throw "Visual Studio is installed at '$existing' but the Visual Studio Installer could not be found to add the C++ workload."
         }
         Write-Host "Adding the Visual C++ workload to: $existing"
-        & $setup modify --installPath $existing --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart
+        & $setup modify --installPath $existing --add $($deps.visual_studio.workload) --includeRecommended --passive --norestart
         if ($LASTEXITCODE -notin @(0, 3010)) { throw "Visual Studio Installer failed with exit code $LASTEXITCODE" }
     } else {
-        $override = '--wait --passive --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
-        Install-WingetPackage 'Microsoft.VisualStudio.2022.BuildTools' 'Visual Studio 2022 Build Tools + C++ workload' $override
+        $includeRecommended = if ($deps.visual_studio.include_recommended) { ' --includeRecommended' } else { '' }
+        $override = "--wait --passive --norestart --add $($deps.visual_studio.workload)$includeRecommended"
+        Install-WingetPackage $deps.visual_studio.winget_id "$($deps.visual_studio.name) + C++ workload" $override
     }
 
     if (-not (Find-VcInstance)) {
@@ -128,8 +137,9 @@ Write-Host "Repository: $repoRoot"
 if ($CheckOnly) { Write-Host 'Mode: check only (no installs)' }
 
 Ensure-Rust
-Ensure-CommandPackage 'cmake.exe' 'Kitware.CMake' 'CMake'
-Ensure-CommandPackage 'pandoc.exe' 'JohnMacFarlane.Pandoc' 'Pandoc'
+foreach ($package in $deps.packages) {
+    Ensure-CommandPackage $package.command $package.winget_id $package.name
+}
 Ensure-Msvc
 & (Join-Path $repoRoot 'scripts\windows-dev-env.ps1') -Quiet
 

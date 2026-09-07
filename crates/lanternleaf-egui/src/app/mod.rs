@@ -3007,6 +3007,38 @@ mod tests {
         assert_eq!(anchor, Some(4));
         assert_eq!(fallback, AnchorFallback::Nearest);
     }
+
+    #[test]
+    fn auto_scroll_jumps_once_for_a_new_active_sentence() {
+        let mut state = AutoScrollState::default();
+        assert_eq!(
+            state.decide_scroll(2, AnchorFallback::Exact),
+            ScrollDecision::Scroll
+        );
+        state.record(2, AnchorFallback::Exact);
+        assert_eq!(
+            state.decide_scroll(2, AnchorFallback::Exact),
+            ScrollDecision::Blocked(ScrollBlockReason::Duplicate)
+        );
+        assert_eq!(state.throttle_blocked(), 0);
+    }
+
+    #[test]
+    fn auto_scroll_treats_mapping_fallback_strength_as_a_new_decision() {
+        let mut state = AutoScrollState::default();
+        state.record(2, AnchorFallback::Exact);
+        state.last_jump_at = None;
+        assert_eq!(
+            state.decide_scroll(2, AnchorFallback::Nearest),
+            ScrollDecision::Scroll
+        );
+        state.record(2, AnchorFallback::Nearest);
+        state.last_jump_at = None;
+        assert_eq!(
+            state.decide_scroll(2, AnchorFallback::Nearest),
+            ScrollDecision::Blocked(ScrollBlockReason::Duplicate)
+        );
+    }
 }
 
 #[derive(Default)]
@@ -3962,13 +3994,14 @@ impl SchedulerEventKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum ScrollBlockReason {
     Duplicate,
     #[allow(dead_code)]
     Throttled(Duration),
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum ScrollDecision {
     Scroll,
     Blocked(ScrollBlockReason),

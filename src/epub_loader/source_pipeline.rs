@@ -10,6 +10,8 @@ use crate::cache::{hash_dir, is_browser_tab_manifest, load_browser_tab_manifest}
 use crate::cancellation::CancellationToken;
 use anyhow::{Context, Result};
 use epub::doc::EpubDoc;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -31,6 +33,12 @@ const AVAILABILITY_LOG_EVERY: u64 = 20;
 
 static LOAD_COUNT_TOTAL: AtomicU64 = AtomicU64::new(0);
 static LOAD_COUNT_WITH_MARKDOWN: AtomicU64 = AtomicU64::new(0);
+static RE_MARKDOWN_LINK_OR_IMAGE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"!?\[([^\]]*)\]\([^)]*\)").unwrap());
+static RE_MARKDOWN_HEADING_INLINE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?m)(^|\s)#{1,6}\s+").unwrap());
+static RE_MARKDOWN_BULLET_INLINE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?m)(^|\s)[-*+]\s+([A-Z])").unwrap());
 
 pub(super) fn load_source_content(
     path: &Path,
@@ -221,6 +229,7 @@ pub(super) fn source_type_label(path: &Path) -> &'static str {
 fn markdown_to_plain_text(input: &str) -> String {
     match html2text::from_read(input.as_bytes(), 10_000) {
         Ok(text) => {
+            let text = clean_markdown_plain_text(&text);
             let trimmed = text.trim();
             if trimmed.is_empty() {
                 "No textual content found in this file.".to_string()
@@ -236,6 +245,47 @@ fn markdown_to_plain_text(input: &str) -> String {
             }
         }
     }
+}
+
+fn clean_markdown_plain_text(input: &str) -> String {
+    input
+        .lines()
+        .map(|line| {
+            let mut line = line.trim().to_string();
+            let heading_end = line
+                .chars()
+                .take_while(|character| *character == '#')
+                .count();
+            if (1..=6).contains(&heading_end)
+                && line
+                    .chars()
+                    .nth(heading_end)
+                    .is_some_and(char::is_whitespace)
+            {
+                line = line[heading_end..].trim_start().to_string();
+            }
+            if let Some(stripped) = line.strip_prefix("- ") {
+                line = stripped.to_string();
+            } else if let Some(stripped) = line.strip_prefix("* ") {
+                line = stripped.to_string();
+            } else if let Some(stripped) = line.strip_prefix("+ ") {
+                line = stripped.to_string();
+            } else if let Some(dot) = line.find(". ")
+                && dot > 0
+                && line[..dot]
+                    .chars()
+                    .all(|character| character.is_ascii_digit())
+            {
+                line = line[dot + 2..].to_string();
+            }
+            let line = RE_MARKDOWN_LINK_OR_IMAGE.replace_all(&line, "$1");
+            let line = RE_MARKDOWN_HEADING_INLINE.replace_all(&line, "$1");
+            let line = RE_MARKDOWN_BULLET_INLINE.replace_all(&line, "$1$2");
+            line.replace("**", "").replace("__", "").trim().to_string()
+        })
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 fn wrap_browser_tab_html(html: &str, url: &str) -> String {
@@ -667,7 +717,10 @@ fn can_repair_pdf_paragraph_punctuation(
         Some(value) => value,
         None => return false,
     };
-    if matches!(last, '.' | '!' | '?' | ':' | ';' | '"' | '\'' | ')' | ']' | '}') {
+    if matches!(
+        last,
+        '.' | '!' | '?' | ':' | ';' | '"' | '\'' | ')' | ']' | '}'
+    ) {
         return false;
     }
     if !last.is_alphanumeric() {
@@ -2513,6 +2566,22 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[test]
+    fn markdown_plain_text_removes_representative_source_syntax() {
+        let plain = markdown_to_plain_text(
+            "# Heading\n\n**Bold** and *emphasis* with [a link](https://example.invalid).\n\n- Item one\n- Item two\n\n![Alt text](fixture.png)",
+        );
+        assert!(plain.contains("Heading"));
+        assert!(plain.contains("Bold"));
+        assert!(plain.contains("a link"));
+        assert!(plain.contains("Item one"));
+        assert!(!plain.contains("# Heading"));
+        assert!(!plain.contains("**Bold**"));
+        assert!(!plain.contains("[a link]("));
+        assert!(!plain.contains("- Item one"));
+        assert!(!plain.contains("![Alt text]("));
+    }
+
     #[derive(Debug, serde::Deserialize)]
     struct FixtureFile {
         fixtures: Vec<ClassificationFixture>,
@@ -2570,8 +2639,8 @@ mod tests {
         {
             String::new()
         } else {
-            let target_chars = fixture.sample.avg_chars_per_page as usize
-                * fixture.pages.len().max(1);
+            let target_chars =
+                fixture.sample.avg_chars_per_page as usize * fixture.pages.len().max(1);
             "Fixture transcript text. ".repeat((target_chars / 25).max(1))
         };
         let classification = classify_pdf_runtime(Some(&report), &transcript_text, "")
@@ -2811,8 +2880,7 @@ mod tests {
     #[test]
     fn pdf_cache_roundtrip_preserves_chunk_page_ranges_and_meta() {
         let path = unique_pdf_path();
-        fs::write(&path, format!("pdf-cache-test:{}", path.display()))
-            .expect("write source");
+        fs::write(&path, format!("pdf-cache-test:{}", path.display())).expect("write source");
         let signature = pdf_signature(&path, "cfg", "transcript.txt").expect("signature");
         let report = sample_report();
 

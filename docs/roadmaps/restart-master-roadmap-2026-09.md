@@ -1,6 +1,6 @@
 # LanternLeaf Restart Master Roadmap — September 2026
 
-This is the active restart roadmap. It orders the existing detailed roadmaps against the current Windows/native-egui restart.
+This is the active restart roadmap. It orders the detailed roadmaps against the current Windows/native-egui restart.
 
 Roadmap state is evidence-driven. Completion means accepted implementation plus validation, not historical checkbox state.
 
@@ -8,13 +8,7 @@ Roadmap state is evidence-driven. Completion means accepted implementation plus 
 
 **STATUS: COMPLETE**
 
-Goals 0001-0005 established:
-
-- reproducible Windows MSVC/Pandoc CI;
-- green workspace check/build/normal-parallel tests;
-- truthful separation of hosted renderer capability from required CI;
-- deterministic cache/test isolation;
-- repaired bounded PDF core contracts.
+Goals 0001-0005 established reproducible Windows CI, deterministic test/cache behavior, truthful renderer capability separation, and repaired bounded PDF core contracts.
 
 ## Gate 1 — TTS backend boundary + Windows TTS
 
@@ -24,53 +18,56 @@ Accepted flow:
 
 `canonical sentence -> backend synthesis -> cached WAV -> shared Rodio/Sonic playback -> session progression`
 
-Verified:
-
-- Piper retained as default;
-- WinRT Windows voice discovery and stable selected/default identity;
-- backend-aware cache identity;
-- active backend/voice resynchronization;
-- Windows WAV synthesis and shared Rodio decode;
-- green Windows CI.
-
-Interactive speaker/UI comfort is intentionally part of Gate 2 reader parity rather than reopening Gate 1.
+Piper and WinRT Windows synthesis share the same playback/session model.
 
 ## Workflow UX — automatic macro-goal completion notification
 
-**STATUS: IMPLEMENTED / CI-COVERED**
+**STATUS: IMPLEMENTED / MULTI-ATTEMPT HARDENED**
 
-Codex launches a detached watcher on Windows. After the terminal branch is pushed, Codex signals a checkout-safe `.git` sentinel; the watcher notifies Completed/Blocked exactly once and exits. Notification failure is non-fatal.
+Repository goal identity is durable; Codex Goal sessions are disposable execution attempts.
+
+Correction attempts reuse the repository goal ID, re-arm the detached watcher, push before signaling terminal state, and do not require the human to operate notification plumbing.
 
 ## Gate 2 — Non-PDF reader/TTS parity
 
-**STATUS: ACTIVE — GOAL 0006**
+**STATUS: AUTOMATED PARITY COMPLETE — GOAL 0007 PREPARES REAL-DESKTOP SIGNOFF**
 
-Goal 0006 re-proves current native behavior for:
+Goal 0006 re-proved current Rust-native behavior for:
 
 - TXT;
 - Markdown;
 - HTML;
 - EPUB.
 
-Required parity domains:
+Accepted automated evidence covers:
 
-- canonical `tts_text` and sentence ownership;
-- pretty/text-only projection consistency;
-- sentence click/highlight/navigation;
-- TTS play/pause/play-from/prev/next/repeat/cancellation;
-- search;
-- auto-scroll/jump mapping contracts;
-- persistence/bookmark/cache reopen;
-- deterministic representative fixtures;
-- Piper/Windows backend neutrality at reader-state level.
+- representative deterministic fixtures;
+- canonical text/sentence ownership;
+- canonical syntax cleanliness;
+- search navigation;
+- sentence click/highlight contracts;
+- native pretty structures;
+- anchor fallback;
+- auto-scroll decision logic;
+- persistence/reopen/cleanup;
+- simulated TTS across all four formats;
+- Piper/Windows reader-state neutrality;
+- real source/session -> Windows synthesis continuity.
 
-Old HTML/EPUB migration checkboxes are not proof. Goal 0006 builds a new parity matrix from current Rust tests and runtime evidence.
+Gate 2 still requires a bounded real-Windows manual signoff for visible/interactive behavior that hosted GPU-less CI cannot prove.
 
-Gate 2 exit requires automated parity evidence plus a bounded real-Windows manual QA signoff for the interaction/fidelity pieces that cannot be honestly proven on hosted GPU-less CI.
+Goal 0007 does **not** add new reader features. It creates a prebuilt Windows QA bundle and minimizes the maintainer's setup burden.
+
+Gate 2 exit:
+
+- automated Goal 0006 evidence accepted;
+- representative TXT/Markdown/HTML/EPUB GUI smoke completed on a real Windows desktop;
+- Windows voice selection and speaker playback confirmed;
+- major interaction defects, if any, are repaired or explicitly bounded.
 
 ## Gate 3 — Native PDF visual stability
 
-**NEXT AFTER GATE 2**
+**NEXT PRODUCT GATE AFTER GATE 2 SIGNOFF**
 
 Focus:
 
@@ -112,10 +109,4 @@ After visual stability:
 
 ChatGPT may compress several related passes into one macro-goal when doing so removes needless human/Codex round trips without opening architectural ambiguity.
 
-Detailed older subsystem roadmaps remain subordinate evidence, especially:
-
-- `egui-reader-rendering-roadmap.md`;
-- `egui-tts-audio-and-playback-roadmap.md`;
-- `egui-testing-and-parity-roadmap.md`;
-- `native-html-epub-rendering-and-tts-sync-roadmap.md`;
-- PDF roadmaps for later Gates 3/4.
+Detailed subsystem roadmaps remain subordinate evidence.

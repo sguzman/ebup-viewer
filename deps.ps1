@@ -23,7 +23,11 @@ function Refresh-ProcessPath {
         (Join-Path $scoopRoot 'shims'),
         (Join-Path $env:USERPROFILE '.cargo\bin')
     )
-    $parts = @($machine, $user) + $extras
+    $parts = @()
+    $parts += @($env:Path -split ';')
+    $parts += @($machine -split ';')
+    $parts += @($user -split ';')
+    $parts += $extras
     $env:Path = ($parts | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique) -join ';'
 }
 

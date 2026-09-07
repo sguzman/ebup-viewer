@@ -90,6 +90,24 @@ The watcher is workflow UX, not a correctness gate:
 - notify only after the terminal implementation branch has been pushed, so ChatGPT can inspect it immediately;
 - a correction attempt under the same goal ID must not immediately notify from the prior attempt's stale sentinel/ack.
 
+## Repo-native human development and QA
+
+The Git checkout is the canonical human execution surface.
+
+On Windows:
+
+- `deps.ps1` is the repository-owned, idempotent dependency/bootstrap contract.
+- `qa.ps1` is the repository-owned real-desktop QA entrypoint.
+- `qa.ps1` may call `deps.ps1` automatically when dependencies are missing.
+- local QA state, generated fixtures, cache, and logs belong under ignored `.qa/`.
+- do not require the human to download a GitHub Actions artifact for ordinary development or manual QA.
+- CI artifacts may exist for debugging/release/fallback purposes, but they are never the normal coordination path.
+- if a dependency is required for local build/runtime, encode it in the repo bootstrap rather than turning it into a remembered human setup ritual.
+
+The intended human testing loop is:
+
+`git pull -> .\qa.ps1 -> test -> report observations`.
+
 ## Scope discipline
 
 - Implement only the authorized macro-goal.

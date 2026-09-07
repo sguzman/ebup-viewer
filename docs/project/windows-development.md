@@ -2,78 +2,82 @@
 
 LanternLeaf's current Windows Rust target is `x86_64-pc-windows-msvc`.
 
-## Required native toolchain
+## Canonical repo-native workflow
 
-The current vendored eSpeak/native dependency build requires an MSVC-compatible C/C++ toolchain.
+The repository owns Windows setup and launch. The human should not manually reconstruct the toolchain or download CI artifacts for routine testing.
 
-Recommended installation family:
-
-- Visual Studio 2022 Build Tools or Visual Studio 2022;
-- Desktop development with C++ / MSVC v143 tools;
-- current Windows 10/11 SDK;
-- CMake support.
-
-LLVM-MinGW is not treated as a drop-in compiler for the MSVC Rust target. Mixing MinGW CRT/ABI assumptions into an MSVC Rust build is unsupported for this project.
-
-## Rust
-
-Use current stable Rust unless a future repository toolchain file pins otherwise.
-
-Useful checks:
+From the repository root:
 
 ```powershell
-rustc -Vv
-cargo -V
-rustup show
+.\deps.ps1
 ```
+
+is the idempotent dependency/bootstrap contract.
+
+For real-desktop QA:
+
+```powershell
+.\qa.ps1
+```
+
+is the normal entrypoint. It checks/repairs dependencies, enters the MSVC environment automatically, creates isolated QA config/cache/log state under ignored `.qa\windows\`, materializes the representative EPUB fixture, then builds and launches LanternLeaf.
+
+CI validates the same repo-native path with:
+
+```powershell
+.\deps.ps1 -CheckOnly
+.\qa.ps1 -SkipDependencyCheck -PrepareOnly
+```
+
+## Dependency contract
+
+`deps.ps1` owns these Windows prerequisites:
+
+- stable Rust / rustup;
+- Rust target `x86_64-pc-windows-msvc`;
+- Visual Studio 2022 Build Tools / C++ workload;
+- CMake;
+- Pandoc.
+
+When missing, the script uses WinGet package identities maintained in the repo:
+
+- `Rustlang.Rustup`;
+- `Microsoft.VisualStudio.2022.BuildTools`;
+- `Kitware.CMake`;
+- `JohnMacFarlane.Pandoc`.
+
+The C++ workload is `Microsoft.VisualStudio.Workload.VCTools`.
+
+The dependency script is intentionally imperative rather than introducing Nix/mise solely for four Windows-native prerequisites. If the dependency surface becomes materially larger or cross-platform reproducibility becomes painful, a declarative environment manager can be reconsidered.
+
+## MSVC environment
+
+The project does not require the human to open a special Developer PowerShell.
+
+`scripts/windows-dev-env.ps1` locates the installed Visual Studio instance through `vswhere.exe`, imports `VsDevCmd.bat` into the current PowerShell process, and verifies Cargo, CL, MSBuild, CMake, and Pandoc.
+
+LLVM-MinGW is not treated as a drop-in compiler for the MSVC Rust target.
 
 ## Pandoc
 
-The current source pipeline uses Pandoc for:
+Pandoc remains a runtime/development prerequisite for the current HTML/DOC/DOCX-backed conversion paths.
 
-- canonical text conversion of HTML;
-- DOC;
-- DOCX;
-- other Pandoc-backed dual-source conversions.
+Local QA installs/uses Pandoc through the repo bootstrap rather than bundling a second copy or requiring artifact extraction.
 
-Until that ingestion architecture changes, Pandoc is a runtime/development prerequisite for those source types.
+## Hosted CI / renderer limitation
 
-Hosted Windows CI provisions Pandoc before source-ingestion tests.
-
-## Build baseline
-
-Hosted Windows CI has verified:
+Hosted Windows CI remains authoritative for:
 
 ```powershell
 cargo check --workspace
 cargo build --workspace
+cargo test --workspace
 ```
 
-Goal 0004 Stage A makes the full workspace test gate independent of renderer capability so it can also become an authoritative required CI result.
-
-## Interactive launch and hosted runner limits
-
-Native startup errors are observable and nonzero.
-
-Goal 0003 proved the GitHub-hosted `windows-latest` environment is not a valid interactive-renderer test machine for the current egui shell:
-
-- the glow/OpenGL path exposes only OpenGL 1.1 and cannot satisfy the required OpenGL 2.0+ context;
-- a bounded WGPU experiment found no suitable adapter;
-- the experiment was reverted.
-
-This must not be interpreted as a normal-Windows application failure.
-
-Policy:
-
-- hosted build/test verification remains required;
-- hosted renderer capability probing may classify the runner as unsupported;
-- actual interactive window verification requires a real graphics-capable Windows environment;
-- do not weaken an app launch check until early exit becomes success merely to make hosted CI green.
+The hosted renderer capability probe remains separate because GitHub-hosted Windows exposes an unsuitable graphics environment for the current egui renderer. That limitation must not be confused with a normal Windows desktop failure.
 
 ## Native Windows TTS
 
-The selected implementation API is WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer`.
+Windows TTS uses WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer` and the shared Rodio playback path.
 
-It is suitable for hosted non-GUI verification because synthesis returns an audio stream and does not require the egui graphics path or physical audio playback.
-
-Windows TTS runtime audio output still uses LanternLeaf's shared Rodio playback path after synthesis.
+Hosted CI can verify synthesis/decoding without a physical speaker. Real speaker playback and egui interaction require real-desktop QA through `.\qa.ps1`.

@@ -1,6 +1,14 @@
 # Non-PDF Reader Windows QA (5–10 minutes)
 
-Use the current representative fixtures or equivalent small local files. Record any failure with the source format and sentence/search term.
+From the repository root, run:
+
+```powershell
+.\qa.ps1
+```
+
+The script prepares the representative sources under `.qa\windows\fixtures\`, isolates QA config/cache/log state from tracked files, builds LanternLeaf, and launches it. No CI artifact download is part of this workflow.
+
+Use those prepared fixtures or equivalent small local files. Record any failure with the source format and sentence/search term.
 
 - [ ] TXT: open, search repeated term, click a sentence, play/pause, next/previous, and confirm highlight follows speech.
 - [ ] Markdown: open in Pretty mode, verify headings/emphasis/list/link/image are readable, toggle text-only, and play from highlight.

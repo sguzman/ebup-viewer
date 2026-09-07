@@ -33,6 +33,14 @@ jobs:
         shell: pwsh
         run: ./scripts/windows-dev-check.ps1
 
+      - name: Check repo-native dependency bootstrap
+        shell: pwsh
+        run: ./deps.ps1 -CheckOnly
+
+      - name: Prepare repo-native QA path
+        shell: pwsh
+        run: ./qa.ps1 -SkipDependencyCheck -PrepareOnly
+
       - name: Test Codex goal notification workflow
         shell: pwsh
         run: ./scripts/test-codex-goal-notify.ps1
@@ -51,52 +59,6 @@ jobs:
 
       - name: Windows TTS probe with diagnostics
         run: cargo test -p lanternleaf-core --test windows_tts -- --nocapture
-
-  windows-qa-bundle:
-    needs: native-workspace
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Configure MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Install Pandoc
-        shell: pwsh
-        run: |
-          if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) {
-            choco install pandoc --yes --no-progress
-          }
-
-      - name: Build native executable
-        run: cargo build --workspace
-
-      - name: Stage Windows QA bundle
-        shell: pwsh
-        run: |
-          $pandoc = (Get-Command pandoc).Source
-          ./scripts/build-windows-qa-bundle.ps1 `
-            -BinaryPath "$pwd\target\debug\lanternleaf.exe" `
-            -PandocPath $pandoc `
-            -OutputDirectory "$pwd\dist\lanternleaf-windows-qa"
-
-      - name: Verify bundle structure and launcher
-        shell: pwsh
-        run: ./scripts/test-windows-qa-bundle.ps1 -BundleDirectory "$pwd\dist\lanternleaf-windows-qa"
-
-      - name: Upload Windows QA bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: lanternleaf-windows-qa
-          path: dist/lanternleaf-windows-qa
-          if-no-files-found: error
-          retention-days: 30
 
   hosted-renderer-probe:
     needs: native-workspace

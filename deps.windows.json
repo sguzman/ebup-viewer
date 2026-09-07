@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "rust": {
+    "winget_id": "Rustlang.Rustup",
+    "target": "x86_64-pc-windows-msvc"
+  },
+  "packages": [
+    {
+      "name": "CMake",
+      "winget_id": "Kitware.CMake",
+      "command": "cmake.exe"
+    },
+    {
+      "name": "Pandoc",
+      "winget_id": "JohnMacFarlane.Pandoc",
+      "command": "pandoc.exe"
+    }
+  ],
+  "visual_studio": {
+    "name": "Visual Studio 2022 Build Tools",
+    "winget_id": "Microsoft.VisualStudio.2022.BuildTools",
+    "workload": "Microsoft.VisualStudio.Workload.VCTools",
+    "include_recommended": true
+  }
+}

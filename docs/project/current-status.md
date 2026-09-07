@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-07 after director acceptance of Goal 0006
+Updated: 2026-09-07 after Goal 0007 workflow correction
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -111,7 +111,14 @@ Hosted CI cannot honestly prove:
 
 A concise Windows checklist exists at `docs/qa/non-pdf-reader-windows-checklist.md`.
 
-Goal 0007 prepares a prebuilt Windows QA bundle so the maintainer can perform this signoff without installing MSVC or Pandoc.
+Goal 0007 proved that a prebuilt QA bundle could be produced, but the human rejected artifact download/extraction as unnecessary workflow friction.
+
+The accepted human workflow is now repo-native:
+
+- `deps.ps1` owns Windows dependency/bootstrap state;
+- `qa.ps1` owns isolated real-desktop QA preparation/build/launch;
+- generated QA state/fixtures/logs live under ignored `.qa/`;
+- GitHub Actions artifacts are not part of ordinary manual testing.
 
 ## PDF
 

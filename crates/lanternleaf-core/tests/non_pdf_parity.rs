@@ -42,7 +42,7 @@ fn build_epub_fixture() -> PathBuf {
         ),
         (
             "OEBPS/chapter2.xhtml",
-            "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Chapter Two</h1><p>EPUB beta appears here. EPUB alpha appears again for search navigation.</p><ul><li>Native list item.</li></ul></body></html>",
+            "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Chapter Two</h1><p>EPUB beta appears here. EPUB alpha appears again for search navigation.</p><p>The repeated search term appears again.</p><ul><li>Native list item.</li></ul></body></html>",
         ),
     ];
     let mut bytes = Vec::new();

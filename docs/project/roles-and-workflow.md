@@ -41,9 +41,9 @@ Canonical Windows entrypoints:
 - `.\deps.ps1` — idempotent bootstrap that installs Scoop if necessary, imports the Scoopfile, then verifies Rust/MSVC.
 - `.\qa.ps1` — prepares isolated QA state/fixtures, enters the MSVC environment, builds, and launches LanternLeaf.
 
-The human should not have to download CI artifacts, unpack alternate distributions, manually enter a Visual Studio shell, or remember separate dependency commands merely to perform routine testing.
+The human should not have to download CI artifacts, unpack alternate distributions, manually enter a Visual Studio shell, or remember separate dependency commands to perform development/manual testing. Generated CI/agent payload handoff is prohibited for this human workflow, not merely discouraged.
 
-CI artifacts are secondary evidence/fallback mechanisms, not the normal coordination surface.
+CI artifacts may remain as machine evidence or release/distribution outputs, but they are **not** a fallback human testing surface. Do not ask the human maintainer to download/unpack/run generated CI or agent payloads for development/manual QA.
 
 ## ChatGPT / director, architect, integrator
 

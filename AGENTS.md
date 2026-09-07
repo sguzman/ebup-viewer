@@ -100,9 +100,10 @@ On Windows:
 - `qa.ps1` is the repository-owned real-desktop QA entrypoint.
 - `qa.ps1` may call `deps.ps1` automatically when dependencies are missing.
 - local QA state, generated fixtures, cache, and logs belong under ignored `.qa/`.
-- do not require the human to download a GitHub Actions artifact for ordinary development or manual QA.
-- CI artifacts may exist for debugging/release/fallback purposes, but they are never the normal coordination path.
+- **never** instruct the human principal to download, unpack, or run a generated GitHub Actions/agent payload for development or manual QA.
+- CI artifacts may exist as machine evidence or release/distribution outputs, but they are never a human development/manual-QA fallback.
 - ordinary Windows CLI dependencies belong in `Scoopfile.json`; Rust belongs in `rust-toolchain.toml`; only Windows-native compiler/workload exceptions belong in bootstrap code.
+- Scoop is the current Windows dependency convention. Nix/mise are not active LanternLeaf work and must not be added or scheduled without an explicit future director/principal policy change.
 
 The intended human testing loop is:
 

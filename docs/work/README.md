@@ -82,12 +82,15 @@ Unless overridden by the goal, Codex:
 1. fast-forwards `main`;
 2. creates/switches to `codex/<id>-<slug>`;
 3. moves the goal `ready -> active`;
-4. performs all authorized passes;
-5. validates;
-6. writes `reports/<id>.md`;
-7. moves the goal to `done` or `blocked`;
-8. commits/pushes;
-9. switches the shared checkout back to `main` without merging.
+4. on Windows, launches `scripts/codex-goal-notify.ps1` as a detached process when the script exists;
+5. performs all authorized passes;
+6. validates;
+7. writes `reports/<id>.md`;
+8. moves the goal to `done` or `blocked`;
+9. commits/pushes;
+10. switches the shared checkout back to `main` without merging.
+
+The watcher should emit exactly one terminal notification for `done` or `blocked` and then exit. Its failure is non-fatal and should not change the macro-goal result.
 
 ChatGPT reviews and integrates directly from GitHub.
 
@@ -98,3 +101,5 @@ The preferred human instruction to Codex is short:
 > Read AGENTS.md and execute the single macro-goal in docs/work/ready/. Continue through all authorized passes until its acceptance gates pass or its escalation rules require stopping.
 
 The goal itself carries the implementation contract.
+
+The human does **not** separately launch the goal watcher.

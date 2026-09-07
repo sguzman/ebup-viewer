@@ -1,0 +1,26 @@
+{
+  "config": {},
+  "buckets": [
+    {
+      "Name": "main",
+      "Source": "https://github.com/ScoopInstaller/Main"
+    }
+  ],
+  "apps": [
+    {
+      "Name": "cmake",
+      "Source": "main",
+      "Info": "64bit"
+    },
+    {
+      "Name": "pandoc",
+      "Source": "main",
+      "Info": "64bit"
+    },
+    {
+      "Name": "vswhere",
+      "Source": "main",
+      "Info": "64bit"
+    }
+  ]
+}

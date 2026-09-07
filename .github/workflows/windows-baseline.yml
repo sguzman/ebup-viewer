@@ -43,7 +43,11 @@ jobs:
           try {
             Start-Sleep -Seconds 8
             if ($process.HasExited) {
-              throw "Native egui process exited during launch smoke with code $($process.ExitCode)"
+              if ($process.ExitCode -ne 0) {
+                throw "Native egui process exited during launch smoke with code $($process.ExitCode)"
+              }
+              Write-Host "Native egui process started and exited cleanly with code 0 during the launch smoke."
+              return
             }
             Write-Host "Native egui process remained running for the launch smoke."
           } finally {

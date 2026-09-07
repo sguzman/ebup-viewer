@@ -17,6 +17,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use std::fmt;
+
 use crate::helpers::{
     app_config_path, bootstrap_config_from_app_config, format_combo, workspace_root_from_cwd,
 };
@@ -67,16 +69,43 @@ use lanternleaf_core::{
 use serde::{Deserialize, Serialize};
 use tracing::{Level, info, trace, warn};
 
-pub fn run() {
+#[derive(Debug)]
+pub enum NativeRunError {
+    LockIo(std::io::Error),
+    AlreadyRunning,
+    Eframe(eframe::Error),
+}
+
+impl fmt::Display for NativeRunError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LockIo(err) => write!(f, "failed to acquire the LanternLeaf instance lock: {err}"),
+            Self::AlreadyRunning => write!(f, "another LanternLeaf egui instance is already running"),
+            Self::Eframe(err) => write!(f, "failed to start the LanternLeaf egui shell: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for NativeRunError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::LockIo(err) => Some(err),
+            Self::Eframe(err) => Some(err),
+            Self::AlreadyRunning => None,
+        }
+    }
+}
+
+pub fn run() -> Result<(), NativeRunError> {
     let config_path = app_config_path();
     let app_config = config::load_config(&config_path);
     let bootstrap_config = bootstrap_config_from_app_config(&app_config);
     let tracing_guard = init_tracing(&bootstrap_config.log_level);
-    let _instance_lock = match acquire_single_instance_lock() {
+    let _instance_lock = match acquire_single_instance_lock().map_err(NativeRunError::LockIo)? {
         Some(lock) => lock,
         None => {
             warn!("Another LanternLeaf egui instance is already running");
-            return;
+            return Err(NativeRunError::AlreadyRunning);
         }
     };
     let normalizer = normalizer::TextNormalizer::load_default();
@@ -97,7 +126,7 @@ pub fn run() {
 
     info!("Starting LanternLeaf egui shell");
 
-    let _ = eframe::run_native(
+    eframe::run_native(
         "LanternLeaf",
         options,
         Box::new(move |cc| {
@@ -109,7 +138,8 @@ pub fn run() {
                 normalizer.clone(),
             )) as Box<dyn eframe::App>
         }),
-    );
+    )
+    .map_err(NativeRunError::Eframe)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -166,7 +196,7 @@ impl Drop for SingleInstanceLock {
     }
 }
 
-fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
+fn acquire_single_instance_lock() -> std::io::Result<Option<SingleInstanceLock>> {
     let root = workspace_root_from_cwd().unwrap_or_else(|| PathBuf::from("."));
     let logs_dir = root.join("logs");
     if let Err(err) = fs::create_dir_all(&logs_dir) {
@@ -175,7 +205,7 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
             path = %logs_dir.display(),
             "Failed to prepare logs directory for single-instance lock"
         );
-        return None;
+        return Err(err);
     }
 
     let path: PathBuf = logs_dir.join("lanternleaf-egui.lock");
@@ -186,7 +216,7 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
                 pid = %std::process::id(),
                 "Acquired LanternLeaf egui single-instance lock"
             );
-            Some(SingleInstanceLock { path, _file: file })
+            Ok(Some(SingleInstanceLock { path, _file: file }))
         }
         Err(err) if err.kind() == ErrorKind::AlreadyExists => {
             trace!(path = %path.display(), "Found existing LanternLeaf egui lock");
@@ -197,7 +227,7 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
                         path = %path.display(),
                         "Another LanternLeaf egui instance is already running"
                     );
-                    return None;
+                    return Ok(None);
                 }
                 trace!(pid, path = %path.display(), "Existing lock PID is not running");
             } else {
@@ -213,7 +243,7 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
                     path = %path.display(),
                     "Failed to remove stale single-instance lock"
                 );
-                return None;
+                return Err(remove_err);
             }
             match try_create_lock(&path) {
                 Ok(file) => {
@@ -223,10 +253,10 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
                         "Reacquired LanternLeaf egui lock after clearing stale file"
                     );
                     let owned_path: PathBuf = path.clone();
-                    Some(SingleInstanceLock {
+                    Ok(Some(SingleInstanceLock {
                         path: owned_path,
                         _file: file,
-                    })
+                    }))
                 }
                 Err(final_err) => {
                     warn!(
@@ -234,7 +264,7 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
                         path = %path.display(),
                         "Failed to recreate LanternLeaf egui lock"
                     );
-                    None
+                    Err(final_err)
                 }
             }
         }
@@ -244,7 +274,7 @@ fn acquire_single_instance_lock() -> Option<SingleInstanceLock> {
                 path = %path.display(),
                 "Failed to create LanternLeaf egui lock"
             );
-            None
+            Err(err)
         }
     }
 }

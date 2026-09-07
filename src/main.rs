@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    lanternleaf_egui::app::run();
+    lanternleaf_egui::app::run()?;
     
     Ok(())
 }

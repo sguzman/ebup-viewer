@@ -2,7 +2,8 @@
 param(
     [switch]$SkipDependencyCheck,
     [switch]$Release,
-    [switch]$ResetQaState
+    [switch]$ResetQaState,
+    [switch]$PrepareOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -71,6 +72,11 @@ Write-Host ''
 Write-Host 'Open the four files under .qa\windows\fixtures from LanternLeaf.'
 Write-Host 'Windows TTS is the critical audio path; Piper may still require a configured model.'
 Write-Host ''
+
+if ($PrepareOnly) {
+    Write-Host 'Repo-native QA preparation passed.'
+    exit 0
+}
 
 Push-Location $repoRoot
 try {

@@ -32,19 +32,19 @@ fn build_epub_fixture() -> PathBuf {
         ("mimetype", "application/epub+zip"),
         (
             "META-INF/container.xml",
-            "<container><rootfiles><rootfile full-path=\"OEBPS/content.opf\"/></rootfiles></container>",
+            "<?xml version=\"1.0\"?><container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>",
         ),
         (
             "OEBPS/content.opf",
-            "<package><manifest><item id=\"c1\" href=\"chapter1.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"c2\" href=\"chapter2.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"c1\"/><itemref idref=\"c2\"/></spine></package>",
+            "<?xml version=\"1.0\"?><package xmlns=\"http://www.idpf.org/2007/opf\" version=\"2.0\" unique-identifier=\"uid\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>LanternLeaf Runtime Fixture</dc:title><dc:language>en</dc:language><dc:identifier id=\"uid\">urn:lanternleaf:0006-runtime</dc:identifier></metadata><manifest><item id=\"c1\" href=\"chapter1.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"c2\" href=\"chapter2.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"c1\"/><itemref idref=\"c2\"/></spine></package>",
         ),
         (
             "OEBPS/chapter1.xhtml",
-            "<html><body><h1>Chapter One</h1><p>EPUB alpha appears here. The first chapter is readable.</p></body></html>",
+            "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Chapter One</h1><p>EPUB alpha appears here. The first chapter is readable.</p></body></html>",
         ),
         (
             "OEBPS/chapter2.xhtml",
-            "<html><body><h1>Chapter Two</h1><p>EPUB beta appears here. The repeated search term appears again.</p></body></html>",
+            "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Chapter Two</h1><p>EPUB beta appears here. The repeated search term appears again.</p></body></html>",
         ),
     ];
     let entry_count = entries.len();

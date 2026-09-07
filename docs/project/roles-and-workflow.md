@@ -23,7 +23,7 @@ Does not normally own:
 
 The desired human loop is short:
 
-`pull accepted main -> reset/start one Codex Goal -> give the standard one-line invocation -> leave it alone -> receive a terminal desktop notification -> tell ChatGPT the goal finished/blocked`.
+`pull accepted main -> reset/start one Codex Goal -> give the standard one-line invocation -> leave it alone -> receive a terminal desktop notification after the branch is pushed -> tell ChatGPT the goal finished/blocked`.
 
 ## ChatGPT / director, architect, integrator
 
@@ -100,17 +100,20 @@ Only the goal in `ready/` is authorized to begin.
 
 1. ChatGPT writes/updates project docs and the next macro-goal on `main`.
 2. Human pulls `main`, resets/starts one Codex Goal for that numbered macro-goal, and gives the standard repository invocation.
-3. Codex moves `ready -> active`, creates `codex/<id>-<slug>`, and automatically launches the Windows goal watcher when available.
+3. Codex moves `ready -> active`, creates `codex/<id>-<slug>`, and launches the detached Windows goal watcher.
 4. Codex executes all authorized passes without requiring a new prompt for ordinary retries/fixes.
-5. Codex writes `reports/<id>.md`, moves the goal to `done` or `blocked`, commits/pushes, and restores the checkout to `main`.
-6. The detached watcher emits one terminal Windows notification and exits.
-7. ChatGPT reviews the pushed branch/report directly.
-8. ChatGPT may write `reviews/<id>.md`, request a bounded correction, or integrate accepted commits.
-9. ChatGPT updates current status/roadmaps and queues the next goal.
-10. Human pulls accepted `main` and runs runtime verification only when requested.
+5. Codex writes `reports/<id>.md`, moves the goal to `done` or `blocked`, commits, and pushes the terminal branch.
+6. After the push succeeds, Codex calls `scripts/signal-codex-goal-terminal.ps1` for that goal/state.
+7. The detached watcher emits one terminal Windows notification, acknowledges the signal, and exits; notification failure is non-fatal.
+8. Codex restores the shared checkout to `main`.
+9. ChatGPT reviews the already-pushed branch/report directly.
+10. ChatGPT may write `reviews/<id>.md`, request a bounded correction, or integrate accepted commits.
+11. ChatGPT updates current status/roadmaps and queues the next goal.
+12. Human pulls accepted `main` and runs runtime verification only when requested.
+
+The post-push `.git/lanternleaf-goal-state/<id>.terminal` sentinel is the normal notification trigger. This makes the alert mean that the implementation is already remotely inspectable and prevents checkout restoration from racing the watcher.
 
 Notification is best-effort workflow UX. It must not alter whether a product goal passes or fails.
-
 ## Parallelism inside a goal
 
 Multiple things may be worked in the same goal when they support one outcome and have explicit boundaries.

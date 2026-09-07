@@ -35,6 +35,19 @@ function Has-Command([string]$Name) {
     return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Publish-CiPaths {
+    if (-not $env:GITHUB_PATH) { return }
+    $scoopRoot = if ($env:SCOOP) { $env:SCOOP } else { Join-Path $env:USERPROFILE 'scoop' }
+    $scoopShims = Join-Path $scoopRoot 'shims'
+    if (Test-Path $scoopShims) {
+        Add-Content -LiteralPath $env:GITHUB_PATH -Value $scoopShims
+    }
+    $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
+    if (Test-Path $cargoBin) {
+        Add-Content -LiteralPath $env:GITHUB_PATH -Value $cargoBin
+    }
+}
+
 function Ensure-Scoop {
     Refresh-ProcessPath
     if (Has-Command 'scoop') { return }
@@ -89,6 +102,7 @@ function Ensure-ScoopDependencies {
         throw "scoop import failed with exit code $LASTEXITCODE"
     }
     Refresh-ProcessPath
+    Publish-CiPaths
 }
 
 function Ensure-Rust {
@@ -198,6 +212,7 @@ Write-Host "Scoopfile: $scoopfile"
 if ($CheckOnly) { Write-Host 'Mode: check only (no installs)' }
 
 Ensure-ScoopDependencies
+Publish-CiPaths
 Ensure-Rust
 Ensure-Msvc
 & (Join-Path $repoRoot 'scripts\windows-dev-env.ps1') -Quiet

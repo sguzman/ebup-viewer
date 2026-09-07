@@ -96,13 +96,13 @@ The Git checkout is the canonical human execution surface.
 
 On Windows:
 
-- `deps.ps1` is the repository-owned, idempotent dependency/bootstrap contract.
+- `Scoopfile.json` is the Scoop-native declaration of Windows CLI dependencies; `deps.ps1` is the repository-owned bootstrap/import contract.
 - `qa.ps1` is the repository-owned real-desktop QA entrypoint.
 - `qa.ps1` may call `deps.ps1` automatically when dependencies are missing.
 - local QA state, generated fixtures, cache, and logs belong under ignored `.qa/`.
 - do not require the human to download a GitHub Actions artifact for ordinary development or manual QA.
 - CI artifacts may exist for debugging/release/fallback purposes, but they are never the normal coordination path.
-- if a dependency is required for local build/runtime, encode it in the repo bootstrap rather than turning it into a remembered human setup ritual.
+- ordinary Windows CLI dependencies belong in `Scoopfile.json`; Rust belongs in `rust-toolchain.toml`; only Windows-native compiler/workload exceptions belong in bootstrap code.
 
 The intended human testing loop is:
 

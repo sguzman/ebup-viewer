@@ -7,7 +7,7 @@ pub type espeak_ERROR = i32;
 
 pub const espeak_AUDIO_OUTPUT_AUDIO_OUTPUT_RETRIEVAL: espeak_AUDIO_OUTPUT = 1;
 pub const espeak_ERROR_EE_OK: espeak_ERROR = 0;
-pub const espeakINITIALIZE_PHONEME_IPA: i32 = 0x0002;
+pub const espeakINITIALIZE_PHONEME_IPA: u32 = 0x0002;
 pub const espeakINITIALIZE_DONT_EXIT: i32 = 0x8000;
 pub const espeakCHARS_UTF8: i32 = 1;
 

@@ -153,6 +153,31 @@ fn main() {
     let espeak_dst = out_dir.join("espeak-ng");
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("Failed to get CARGO_MANIFEST_DIR");
     let espeak_src = Path::new(&manifest_dir).join("espeak-ng");
+
+    // bindgen needs libclang, but callers should not have to maintain a
+    // machine-specific environment variable when LLVM is installed in its
+    // standard Windows location. CI provisions LLVM explicitly; this lookup
+    // also makes that installation work from a plain PowerShell prompt.
+    if env::var_os("LIBCLANG_PATH").is_none() && cfg!(windows) {
+        let mut candidates = Vec::new();
+        if let Some(program_files) = env::var_os("ProgramFiles") {
+            candidates.push(PathBuf::from(program_files).join("LLVM").join("bin"));
+        }
+        if let Some(llvm_install_dir) = env::var_os("LLVM_INSTALL_DIR") {
+            candidates.push(PathBuf::from(llvm_install_dir).join("bin"));
+        }
+        if let Some(path) = env::var_os("PATH") {
+            candidates.extend(env::split_paths(&path));
+        }
+        if let Some(path) = candidates
+            .into_iter()
+            .find(|path| path.join("libclang.dll").is_file() || path.join("clang.dll").is_file())
+        {
+            println!("cargo:warning=Using libclang from {}", path.display());
+            env::set_var("LIBCLANG_PATH", path);
+        }
+    }
+
     let build_shared_libs = false;
 
     let build_shared_libs = std::env::var("ESPEAK_BUILD_SHARED_LIBS")

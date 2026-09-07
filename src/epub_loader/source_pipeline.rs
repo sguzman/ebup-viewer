@@ -2742,7 +2742,11 @@ mod tests {
             PdfGeometryMode::MixedTextTrust,
             PdfSyncStrategy::ParagraphFallback,
             classification.as_ref(),
-            "Header\n\nAlpha-\nbeta line\n[12]\nFooter",
+            normalize_pdf_text_for_reader_with_summary(
+                "Header\n\nAlpha-\nbeta line\n[12]\nFooter",
+                Some(&report),
+            )
+            .1,
         );
 
         assert_eq!(
@@ -2769,7 +2773,7 @@ mod tests {
             PdfGeometryMode::OcrRequired,
             PdfSyncStrategy::RenderOnly,
             classification.as_ref(),
-            "Header\nAlpha\nFooter",
+            normalize_pdf_text_for_reader_with_summary("Header\nAlpha\nFooter", Some(&report)).1,
         );
         assert!(
             text_only_pipeline
@@ -2806,7 +2810,7 @@ mod tests {
                 PdfGeometryMode::MixedTextTrust,
                 PdfSyncStrategy::ParagraphFallback,
                 classify_pdf_runtime(Some(&report), "Alpha. Beta.", "## pretty").as_ref(),
-                "Alpha. Beta.",
+                normalize_pdf_text_for_reader_with_summary("Alpha. Beta.", Some(&report)).1,
             )),
         )
         .expect("write pdf cache");

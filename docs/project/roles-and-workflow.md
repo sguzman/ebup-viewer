@@ -31,6 +31,19 @@ If director review requires correction after that Codex Goal session has termina
 
 A new Codex Goal session does **not** imply a new repository macro-goal number.
 
+## Repo-native local execution
+
+Ordinary human development/testing must stay inside the repository checkout.
+
+Canonical Windows entrypoints:
+
+- `.\deps.ps1` — idempotent dependency/bootstrap contract.
+- `.\qa.ps1` — prepares isolated QA state/fixtures, enters the MSVC environment, builds, and launches LanternLeaf.
+
+The human should not have to download CI artifacts, unpack alternate distributions, manually enter a Visual Studio shell, or remember separate dependency commands merely to perform routine testing.
+
+CI artifacts are secondary evidence/fallback mechanisms, not the normal coordination surface.
+
 ## ChatGPT / director, architect, integrator
 
 Owns:

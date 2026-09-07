@@ -47,13 +47,90 @@ The native reader may have format-specific presentation paths, but they should c
 
 TTS is a first-class subsystem, not a UI effect.
 
-Target direction:
+#### Canonical TTS ownership
 
-- a stable backend abstraction;
-- existing Piper support retained;
-- native Windows TTS added as another backend;
-- backend selection should not leak platform details through reader UI/state logic;
-- sentence/chunk completion events drive highlight and navigation state.
+Reader/session state owns:
+
+- which canonical sentence is active;
+- play/pause/stop intent;
+- seek/repeat behavior;
+- sentence completion/progression;
+- highlight/navigation coupling.
+
+A synthesis backend must not invent an independent playback cursor.
+
+#### Synthesis vs playback
+
+The backend boundary is **sentence audio synthesis**, not whole-session playback.
+
+Target flow:
+
+`canonical sentence -> selected synthesis backend -> cached WAV -> shared Rodio/Sonic playback -> runtime sentence completion -> reader/session state`
+
+Shared playback owns:
+
+- audio-device output;
+- pause/resume;
+- stop;
+- volume;
+- pause-after-sentence;
+- playback speed/time-stretch;
+- sentence duration accounting.
+
+Backend implementations own:
+
+- voice/model discovery and identity;
+- conversion of text to sentence audio;
+- backend-specific worker/resource management;
+- backend-specific errors.
+
+This preserves one playback/session state machine across Piper and Windows TTS.
+
+#### Backend configuration
+
+The cross-platform configuration contract should expose a stable backend kind such as:
+
+- `piper`;
+- `windows`.
+
+Piper-specific model/eSpeak settings remain valid and backward-compatible.
+
+Windows-specific voice selection uses a stable Windows voice ID. Selecting a backend that is unavailable on the current platform must produce explicit unavailability/error state; do not silently reinterpret it as another backend.
+
+#### Piper backend
+
+Retain the current Piper worker-pool behavior and WAV caching.
+
+Piper remains supported on Windows and future Linux builds.
+
+#### Windows backend
+
+The selected native Windows implementation is WinRT:
+
+`Windows.Media.SpeechSynthesis::SpeechSynthesizer`
+
+Use it to:
+
+- enumerate installed voices;
+- expose voice ID, display name, language, and gender/description where practical;
+- select a voice by stable voice ID;
+- synthesize text with `SynthesizeTextToStreamAsync`;
+- persist the resulting `audio/wav` stream into the same sentence-audio cache contract used by shared playback.
+
+Use the current supported Rust `windows` crate behind `cfg(windows)` / target-specific dependencies.
+
+Do not add a second OS-owned media playback state machine merely because the Windows API can synthesize speech.
+
+#### Cache identity
+
+Sentence audio cache identity must include enough backend identity to prevent collisions:
+
+- backend kind;
+- backend voice/model identity;
+- normalized sentence text;
+- synthesis-affecting settings, if any.
+
+Playback-only speed and volume should not fork synthesis cache entries when they remain post-synthesis transformations.
 
 ### PDF
 
@@ -71,6 +148,21 @@ Canonical TTS/search text must remain distinguishable from visual PDF ordering.
 ### Platform integration
 
 Windows/Linux-specific behavior belongs behind explicit modules/traits. Avoid scattered shell commands and machine-specific paths.
+
+## Verification layers
+
+Hosted CI and interactive desktop verification are distinct evidence classes.
+
+Required hosted CI should prove:
+
+- compile/check;
+- build;
+- deterministic tests;
+- platform APIs that do not require a real display/audio device.
+
+Interactive renderer/audio verification may require a graphics/audio-capable real machine and must not be faked by weakening hosted checks.
+
+A hosted environment limitation should be classified explicitly rather than turning the entire non-interactive baseline red forever.
 
 ## Dependency direction
 

@@ -3,29 +3,31 @@ param([switch]$CheckOnly)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-if ($env:OS -ne 'Windows_NT') { throw 'LanternLeaf deps.ps1 currently supports Windows only.' }
+
+if ($env:OS -ne 'Windows_NT') {
+    throw 'LanternLeaf deps.ps1 currently supports Windows only.'
+}
 
 $repoRoot = (Resolve-Path $PSScriptRoot).Path
-$dependencyManifestPath = Join-Path $repoRoot 'deps.windows.json'
-if (-not (Test-Path $dependencyManifestPath -PathType Leaf)) {
-    throw "Missing dependency manifest: $dependencyManifestPath"
+$scoopfile = Join-Path $repoRoot 'Scoopfile.json'
+if (-not (Test-Path $scoopfile -PathType Leaf)) {
+    throw "Missing Scoop dependency file: $scoopfile"
 }
-$deps = Get-Content -LiteralPath $dependencyManifestPath -Raw | ConvertFrom-Json
-if ($deps.schema_version -ne 1) {
-    throw "Unsupported deps.windows.json schema version: $($deps.schema_version)"
-}
+$scoopDeps = Get-Content -LiteralPath $scoopfile -Raw | ConvertFrom-Json
 
 function Refresh-ProcessPath {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $scoopRoot = if ($env:SCOOP) { $env:SCOOP } else { Join-Path $env:USERPROFILE 'scoop' }
     $extras = @(
-        (Join-Path $env:USERPROFILE '.cargo\bin'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'),
-        (Join-Path $env:ProgramFiles 'CMake\bin'),
-        (Join-Path $env:ProgramFiles 'Pandoc'),
-        (Join-Path $env:LOCALAPPDATA 'Pandoc')
+        (Join-Path $scoopRoot 'shims'),
+        (Join-Path $env:USERPROFILE '.cargo\bin')
     )
-    $parts = @($machine, $user) + $extras
+    $parts = @()
+    $parts += @($env:Path -split ';')
+    $parts += @($machine -split ';')
+    $parts += @($user -split ';')
+    $parts += $extras
     $env:Path = ($parts | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique) -join ';'
 }
 
@@ -33,23 +35,108 @@ function Has-Command([string]$Name) {
     return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-function Require-Winget {
-    if (-not (Has-Command 'winget.exe')) {
-        throw 'Windows Package Manager (winget) is required for automatic bootstrap. Install/update Microsoft App Installer, then rerun .\deps.ps1.'
+function Publish-CiPaths {
+    if (-not $env:GITHUB_PATH) { return }
+    $scoopRoot = if ($env:SCOOP) { $env:SCOOP } else { Join-Path $env:USERPROFILE 'scoop' }
+    $scoopShims = Join-Path $scoopRoot 'shims'
+    if (Test-Path $scoopShims) {
+        Add-Content -LiteralPath $env:GITHUB_PATH -Value $scoopShims
+    }
+    $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
+    if (Test-Path $cargoBin) {
+        Add-Content -LiteralPath $env:GITHUB_PATH -Value $cargoBin
     }
 }
 
-function Install-WingetPackage([string]$Id, [string]$Label, [string]$Override = '') {
-    Require-Winget
-    Write-Host "Installing $Label ($Id)..."
-    $args = @('install','--source','winget','--exact','--id',$Id,'--accept-source-agreements','--accept-package-agreements')
-    if ($Override) { $args += @('--override', $Override) }
-    & winget.exe @args
-    if ($LASTEXITCODE -ne 0) { throw "winget failed while installing $Label ($Id), exit code $LASTEXITCODE" }
+function Ensure-Scoop {
     Refresh-ProcessPath
+    if (Has-Command 'scoop') { return }
+    if ($CheckOnly) {
+        throw 'Missing dependency manager: Scoop. Run .\deps.ps1 without -CheckOnly to bootstrap it.'
+    }
+
+    Write-Host 'Bootstrapping Scoop from https://get.scoop.sh ...'
+    $previousPolicy = Get-ExecutionPolicy -Scope Process
+    $installer = Join-Path $env:TEMP 'lanternleaf-scoop-install.ps1'
+    try {
+        Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+        Invoke-RestMethod -Uri 'https://get.scoop.sh' -OutFile $installer
+        $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+        $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        if ($isAdmin) {
+            & $installer -RunAsAdmin
+        } else {
+            & $installer
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "Scoop installer failed with exit code $LASTEXITCODE"
+        }
+    } finally {
+        if ($previousPolicy) {
+            Set-ExecutionPolicy -ExecutionPolicy $previousPolicy -Scope Process -Force
+        }
+        Remove-Item $installer -Force -ErrorAction SilentlyContinue
+    }
+
+    Refresh-ProcessPath
+    if (-not (Has-Command 'scoop')) {
+        throw 'Scoop installed but is not available in the current process PATH.'
+    }
+}
+
+function Ensure-ScoopDependencies {
+    Ensure-Scoop
+    if ($CheckOnly) {
+        foreach ($app in $scoopDeps.apps) {
+            & scoop prefix $app.Name *> $null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Missing Scoop dependency: $($app.Source)/$($app.Name)"
+            }
+        }
+        return
+    }
+
+    Write-Host "Importing Scoop dependencies from $scoopfile ..."
+    & scoop import $scoopfile
+    if ($LASTEXITCODE -ne 0) {
+        throw "scoop import failed with exit code $LASTEXITCODE"
+    }
+    Refresh-ProcessPath
+    Publish-CiPaths
+}
+
+function Ensure-Rust {
+    Refresh-ProcessPath
+    if (-not (Has-Command 'rustup.exe')) {
+        if ($CheckOnly) { throw 'Missing Rust toolchain manager: rustup.' }
+        Ensure-Scoop
+        Write-Host 'Installing rustup through Scoop...'
+        & scoop install main/rustup
+        if ($LASTEXITCODE -ne 0) {
+            throw "scoop install main/rustup failed with exit code $LASTEXITCODE"
+        }
+        Refresh-ProcessPath
+    }
+
+    if (-not (Has-Command 'cargo.exe')) {
+        if ($CheckOnly) { throw 'Missing dependency: cargo' }
+        & rustup.exe default stable
+        if ($LASTEXITCODE -ne 0) { throw 'rustup failed to install/select stable Rust.' }
+        Refresh-ProcessPath
+    }
+
+    $requiredTarget = 'x86_64-pc-windows-msvc'
+    $targets = @(& rustup.exe target list --installed)
+    if ($targets -notcontains $requiredTarget) {
+        if ($CheckOnly) { throw "Missing Rust target: $requiredTarget" }
+        & rustup.exe target add $requiredTarget
+        if ($LASTEXITCODE -ne 0) { throw "rustup failed to add $requiredTarget." }
+    }
 }
 
 function Find-VsWhere {
+    $command = Get-Command 'vswhere.exe' -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
     $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
     $candidates = @(
         (Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'),
@@ -76,40 +163,17 @@ function Find-AnyVsInstance {
     return $null
 }
 
-function Ensure-Rust {
-    Refresh-ProcessPath
-    if (-not (Has-Command 'rustup.exe')) {
-        if ($CheckOnly) { throw 'Missing dependency: rustup (Rustlang.Rustup)' }
-        Install-WingetPackage $deps.rust.winget_id 'Rustup'
-    }
-    Refresh-ProcessPath
-    if (-not (Has-Command 'cargo.exe')) {
-        if ($CheckOnly) { throw 'Missing dependency: cargo' }
-        & rustup.exe default stable
-        if ($LASTEXITCODE -ne 0) { throw 'rustup failed to install/select stable Rust.' }
-    }
-    $targets = @(& rustup.exe target list --installed)
-    if ($targets -notcontains $deps.rust.target) {
-        if ($CheckOnly) { throw "Missing Rust target: $($deps.rust.target)" }
-        & rustup.exe target add $deps.rust.target
-        if ($LASTEXITCODE -ne 0) { throw "rustup failed to add $($deps.rust.target)." }
-    }
-}
-
-function Ensure-CommandPackage([string]$Command, [string]$Id, [string]$Label) {
-    Refresh-ProcessPath
-    if (Has-Command $Command) { return }
-    if ($CheckOnly) { throw "Missing dependency: $Label ($Command)" }
-    Install-WingetPackage $Id $Label
-    Refresh-ProcessPath
-    if (-not (Has-Command $Command)) {
-        throw "$Label installed but $Command is still unavailable. Open a fresh terminal and rerun .\deps.ps1."
+function Require-WingetForMsvc {
+    if (-not (Has-Command 'winget.exe')) {
+        throw 'Visual Studio C++ Build Tools are missing, and WinGet is unavailable for that Windows-native bootstrap. Install Microsoft App Installer or the Visual Studio C++ workload, then rerun .\deps.ps1.'
     }
 }
 
 function Ensure-Msvc {
     if (Find-VcInstance) { return }
-    if ($CheckOnly) { throw "Missing dependency: $($deps.visual_studio.name) / $($deps.visual_studio.workload)" }
+    if ($CheckOnly) {
+        throw 'Missing dependency: Visual Studio 2022 C++ build tools / Microsoft.VisualStudio.Workload.VCTools'
+    }
 
     $existing = Find-AnyVsInstance
     if ($existing) {
@@ -119,29 +183,40 @@ function Ensure-Msvc {
             throw "Visual Studio is installed at '$existing' but the Visual Studio Installer could not be found to add the C++ workload."
         }
         Write-Host "Adding the Visual C++ workload to: $existing"
-        & $setup modify --installPath $existing --add $($deps.visual_studio.workload) --includeRecommended --passive --norestart
-        if ($LASTEXITCODE -notin @(0, 3010)) { throw "Visual Studio Installer failed with exit code $LASTEXITCODE" }
+        & $setup modify --installPath $existing --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart
+        if ($LASTEXITCODE -notin @(0, 3010)) {
+            throw "Visual Studio Installer failed with exit code $LASTEXITCODE"
+        }
     } else {
-        $includeRecommended = if ($deps.visual_studio.include_recommended) { ' --includeRecommended' } else { '' }
-        $override = "--wait --passive --norestart --add $($deps.visual_studio.workload)$includeRecommended"
-        Install-WingetPackage $deps.visual_studio.winget_id "$($deps.visual_studio.name) + C++ workload" $override
+        Require-WingetForMsvc
+        Write-Host 'Installing Visual Studio 2022 Build Tools + C++ workload (the one non-Scoop dependency)...'
+        $wingetArgs = @(
+            'install', '--source', 'winget', '--exact', '--id', 'Microsoft.VisualStudio.2022.BuildTools',
+            '--accept-source-agreements', '--accept-package-agreements',
+            '--override', '--wait --passive --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
+        )
+        & winget.exe @wingetArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "WinGet failed while installing Visual Studio Build Tools, exit code $LASTEXITCODE"
+        }
     }
 
     if (-not (Find-VcInstance)) {
-        throw 'Visual C++ build tools are still unavailable. A reboot or a fresh terminal may be required; then rerun .\deps.ps1.'
+        throw 'Visual C++ build tools are still unavailable. A reboot or fresh terminal may be required; then rerun .\deps.ps1.'
     }
 }
 
 Write-Host 'LanternLeaf Windows dependency bootstrap'
 Write-Host "Repository: $repoRoot"
+Write-Host "Scoopfile: $scoopfile"
 if ($CheckOnly) { Write-Host 'Mode: check only (no installs)' }
 
+Ensure-ScoopDependencies
+Publish-CiPaths
 Ensure-Rust
-foreach ($package in $deps.packages) {
-    Ensure-CommandPackage $package.command $package.winget_id $package.name
-}
 Ensure-Msvc
 & (Join-Path $repoRoot 'scripts\windows-dev-env.ps1') -Quiet
 
 Write-Host 'LanternLeaf Windows dependencies are ready.'
+Write-Host 'Scoop dependencies can also be restored directly with: scoop import .\Scoopfile.json'
 Write-Host 'Normal manual QA entrypoint: .\qa.ps1'

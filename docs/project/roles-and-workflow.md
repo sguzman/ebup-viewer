@@ -37,7 +37,8 @@ Ordinary human development/testing must stay inside the repository checkout.
 
 Canonical Windows entrypoints:
 
-- `.\deps.ps1` — idempotent dependency/bootstrap contract.
+- `Scoopfile.json` — Scoop-native Windows CLI dependency declaration.
+- `.\deps.ps1` — idempotent bootstrap that installs Scoop if necessary, imports the Scoopfile, then verifies Rust/MSVC.
 - `.\qa.ps1` — prepares isolated QA state/fixtures, enters the MSVC environment, builds, and launches LanternLeaf.
 
 The human should not have to download CI artifacts, unpack alternate distributions, manually enter a Visual Studio shell, or remember separate dependency commands merely to perform routine testing.

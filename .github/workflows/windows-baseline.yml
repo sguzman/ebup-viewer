@@ -22,20 +22,13 @@ jobs:
       - name: Configure MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Install Pandoc
+      - name: Restore repo-native Scoop dependencies
         shell: pwsh
-        run: |
-          if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) {
-            choco install pandoc --yes --no-progress
-          }
+        run: ./deps.ps1
 
       - name: Check Windows prerequisites
         shell: pwsh
         run: ./scripts/windows-dev-check.ps1
-
-      - name: Check repo-native dependency bootstrap
-        shell: pwsh
-        run: ./deps.ps1 -CheckOnly
 
       - name: Prepare repo-native QA path
         shell: pwsh

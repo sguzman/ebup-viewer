@@ -9,6 +9,7 @@ search_policy = "full_text"
 page_classes = ["embedded_clean", "embedded_clean"]
 
 [fixtures.sample]
+pages = []
 sampled_pages = 2
 avg_chars_per_page = 1400
 garbage_ratio = 0.01
@@ -102,6 +103,7 @@ search_policy = "full_text"
 page_classes = ["embedded_noisy"]
 
 [fixtures.sample]
+pages = []
 sampled_pages = 1
 avg_chars_per_page = 500
 garbage_ratio = 0.05
@@ -163,6 +165,7 @@ search_policy = "full_text"
 page_classes = ["embedded_sparse"]
 
 [fixtures.sample]
+pages = []
 sampled_pages = 1
 avg_chars_per_page = 90
 garbage_ratio = 0.0
@@ -224,6 +227,7 @@ search_policy = "full_text"
 page_classes = ["layout_hostile"]
 
 [fixtures.sample]
+pages = []
 sampled_pages = 1
 avg_chars_per_page = 420
 garbage_ratio = 0.0
@@ -285,6 +289,7 @@ search_policy = "full_text"
 page_classes = ["scan_with_weak_ocr", "image_only_no_text"]
 
 [fixtures.sample]
+pages = []
 sampled_pages = 2
 avg_chars_per_page = 60
 garbage_ratio = 0.0
@@ -378,6 +383,7 @@ search_policy = "disabled"
 page_classes = ["image_only_no_text"]
 
 [fixtures.sample]
+pages = []
 sampled_pages = 1
 avg_chars_per_page = 0
 garbage_ratio = 0.0
@@ -439,6 +445,7 @@ search_policy = "full_text"
 page_classes = ["hidden_ocr_overlay"]
 
 [fixtures.sample]
+pages = []
 sampled_pages = 1
 avg_chars_per_page = 40
 garbage_ratio = 0.0
@@ -500,6 +507,7 @@ search_policy = "full_text"
 page_classes = ["embedded_clean", "image_only_no_text"]
 
 [fixtures.sample]
+pages = []
 sampled_pages = 2
 avg_chars_per_page = 700
 garbage_ratio = 0.01

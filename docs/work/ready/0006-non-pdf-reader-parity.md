@@ -470,3 +470,16 @@ Required report sections:
 ## Remaining Product Risks
 ## Recommended Next Goal
 ## Git
+
+
+# Director correction pass — required before integration
+
+The first implementation pass was reviewed and **is not yet accepted**.
+
+Read and execute:
+
+`docs/work/reviews/0006.md`
+
+This is a continuation of the same numbered Goal 0006. Reuse the existing Codex Goal lifecycle and implementation branch. Do not start Goal 0007 and do not treat the first green CI run as final acceptance.
+
+All original non-goals remain in force. The correction is limited to evidence/behavior gaps identified in the director review.

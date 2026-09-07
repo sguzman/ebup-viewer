@@ -35,6 +35,11 @@ pub fn enumerate_windows_voices() -> Result<Vec<WindowsVoiceDescriptor>> {
 }
 
 #[cfg(windows)]
+pub fn resolve_windows_voice_id(configured_id: Option<&str>) -> Result<String> {
+    windows_backend::resolve_voice_id(configured_id)
+}
+
+#[cfg(windows)]
 pub fn synthesize_windows_sentence_to_wav(
     text: &str,
     path: &Path,
@@ -60,23 +65,39 @@ impl TtsEngine {
         backend: TtsBackend,
         windows_voice_id: Option<String>,
     ) -> Result<Self> {
-        let espeak_path = sanitize_espeak_root(espeak_path);
-        if env::var_os("PIPER_ESPEAKNG_DATA_DIRECTORY").is_none() {
-            // Safe because we set a deterministic value early in process startup.
-            unsafe {
-                env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", &espeak_path);
+        let (espeak_root, effective_windows_voice_id) = match backend {
+            TtsBackend::Piper => {
+                let espeak_root = sanitize_espeak_root(espeak_path);
+                if env::var_os("PIPER_ESPEAKNG_DATA_DIRECTORY").is_none() {
+                    // Safe because we set a deterministic value early in process startup.
+                    unsafe {
+                        env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", &espeak_root);
+                    }
+                }
+                (espeak_root, None)
             }
-        }
+            TtsBackend::Windows => {
+                #[cfg(windows)]
+                let resolved = windows_backend::resolve_voice_id(windows_voice_id.as_deref())?;
+                #[cfg(not(windows))]
+                let resolved = windows_voice_id.clone().ok_or_else(|| {
+                    anyhow::anyhow!("Windows TTS backend is only available on Windows")
+                })?;
+                (espeak_path, Some(resolved))
+            }
+        };
         info!(
+            backend = ?backend,
             model = %model_path.display(),
-            espeak_root = %espeak_path.display(),
+            espeak_root = %espeak_root.display(),
+            windows_voice_id = ?effective_windows_voice_id,
             "Initializing TTS engine"
         );
         Ok(Self {
             backend,
-            windows_voice_id,
+            windows_voice_id: effective_windows_voice_id,
             model_path,
-            espeak_root: espeak_path,
+            espeak_root,
             worker_pool: Arc::new(Mutex::new(None)),
             prepare_generation: Arc::new(AtomicU64::new(1)),
         })
@@ -727,5 +748,32 @@ fn read_response(
             .error
             .unwrap_or_else(|| "Unknown worker error".to_string());
         Err(anyhow::anyhow!(msg))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_identity_separates_backend_and_effective_voice() {
+        let root = PathBuf::from("cache");
+        let sentence = normalize_sentence("  Hello   world. ");
+        let piper = cache_path(&root, &PathBuf::from("piper:model.onnx"), &sentence);
+        let windows_a = cache_path(&root, &PathBuf::from("windows:voice-a"), &sentence);
+        let windows_b = cache_path(&root, &PathBuf::from("windows:voice-b"), &sentence);
+        assert_ne!(piper, windows_a);
+        assert_ne!(windows_a, windows_b);
+    }
+
+    #[test]
+    fn cache_identity_ignores_playback_settings() {
+        let root = PathBuf::from("cache");
+        let identity = PathBuf::from("windows:voice-a");
+        let sentence = normalize_sentence("Hello world.");
+        assert_eq!(
+            cache_path(&root, &identity, &sentence),
+            cache_path(&root, &identity, &sentence)
+        );
     }
 }

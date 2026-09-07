@@ -14,6 +14,20 @@ pub struct WindowsVoiceDescriptor {
     pub gender: String,
 }
 
+pub fn resolve_voice_id(configured_id: Option<&str>) -> Result<String> {
+    if let Some(configured_id) = configured_id {
+        let voices = SpeechSynthesizer::AllVoices()?;
+        for index in 0..voices.Size()? {
+            let voice = voices.GetAt(index)?;
+            if voice.Id()?.to_string_lossy() == configured_id {
+                return Ok(configured_id.to_string());
+            }
+        }
+        return Err(anyhow!("Windows voice ID was not found: {configured_id}"));
+    }
+    Ok(SpeechSynthesizer::DefaultVoice()?.Id()?.to_string_lossy())
+}
+
 pub fn enumerate_voices() -> Result<Vec<WindowsVoiceDescriptor>> {
     SpeechSynthesizer::new().context("initializing Windows speech synthesizer")?;
     let voices = SpeechSynthesizer::AllVoices().context("enumerating Windows voices")?;

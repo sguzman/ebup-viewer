@@ -6,15 +6,23 @@ Roadmap state is evidence-driven. Completion means accepted implementation plus 
 
 ## Gate 0 — Recover trustworthy baseline
 
+**STATUS: IN PROGRESS**
+
+Goal 0001 recovered the Windows check/build path and removed the libclang/bindgen blockers. Director review found that the native launch smoke can false-positive because `eframe::run_native` errors are discarded, and the existing workspace suite still has deterministic/environment/fixture failures.
+
+Goal 0002 closes this gate by combining truthful startup handling, test stabilization, external prerequisite diagnostics, and a small non-PDF ingestion smoke corpus.
+
 Goal family:
 
 - Windows build/toolchain recovery;
-- native egui launch;
+- truthful native egui startup/bootstrap;
+- deterministic test baseline;
+- explicit external prerequisites;
 - current capability inventory;
 - Windows CI;
 - verified current-status reset.
 
-Exit: the project can be built/tested intentionally on the current Windows environment and we know what actually works.
+Exit: the project can be built/tested intentionally, required prerequisites are diagnosable, CI does not hide startup failure, and remaining product defects are explicitly separated from harness noise.
 
 ## Gate 1 — TTS backend boundary + Windows TTS
 

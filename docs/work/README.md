@@ -23,9 +23,11 @@ Use monotonically increasing four-digit IDs: `0001`, `0002`, etc.
 The same ID is used for:
 
 - goal filename;
-- Codex branch;
-- report;
+- Codex branch lineage;
+- report lineage;
 - review notes.
+
+The ID names the **repository macro-goal**, not a Codex Goal UI session. One repository goal may require multiple fresh Codex Goal sessions after director review. Do not increment the goal ID merely because a worker session terminated.
 
 ## Macro-goal design
 
@@ -46,6 +48,8 @@ A good macro-goal specifies:
 - required human verification, if any.
 
 Codex is expected to iterate within the goal. For example, after repairing the first build blocker it should continue to the next Windows build blocker if that remains inside the stated recovery goal.
+
+A macro-goal may also span multiple **review-separated attempts**. If Codex terminalizes and ChatGPT later issues a bounded correction, ChatGPT reopens the same goal to `ready/`; the human starts a fresh Codex Goal session; Codex continues the same goal lineage.
 
 ## Default goal template
 
@@ -103,3 +107,19 @@ The preferred human instruction to Codex is short:
 The goal itself carries the implementation contract.
 
 The human does **not** separately launch the goal watcher.
+
+## Director correction continuation
+
+When ChatGPT reviews a terminal attempt and requests bounded corrections while preserving the same semantic goal:
+
+1. keep the same goal ID;
+2. keep the same implementation branch and report lineage unless the review explicitly says otherwise;
+3. move/reopen the same goal back to `ready/`;
+4. commit the correction review on `main`;
+5. the human pulls `main` and starts a **fresh Codex Goal session** if the previous session is terminal;
+6. Codex reads `AGENTS.md`, the reopened goal, and `docs/work/reviews/<id>.md` before editing;
+7. Codex continues the existing branch and synchronizes the current director-owned review/governance state into it safely;
+8. Codex launches `scripts/codex-goal-notify.ps1 -Rearm` so prior `.terminal` / `.ack` state for the same goal ID cannot retrigger;
+9. Codex executes the correction pass, preserves prior report history, and uses the normal post-push terminal signal again.
+
+The fresh Codex Goal session is a new **execution attempt**, not a new repository macro-goal.

@@ -47,15 +47,27 @@ Do not stop after the first compile failure merely to ask for another prompt if 
 
 At most one macro-goal is authorized in `docs/work/ready/` at a time.
 
+## Repository goal identity vs Codex Goal session
+
+A repository macro-goal and a Codex Goal UI session are different lifecycles.
+
+- The repository goal ID names the durable semantic work unit.
+- A Codex Goal session is one disposable execution container for one attempt at that goal.
+- Director review may reopen the same repository goal after a Codex Goal session has already terminated.
+- In that case, start a **fresh Codex Goal session** while preserving the same repository goal ID.
+- Do not create the next numbered macro-goal merely because the prior Codex Goal session ended.
+
+For a director correction continuation, Codex must read the reopened goal and `docs/work/reviews/<goal-id>.md` from current `main`, continue the existing implementation branch/report lineage unless the review says otherwise, and preserve accepted work from the earlier attempt.
+
 ## Goal-completion notification protocol
 
 The human maintainer must not need to remember a second command merely to learn that a long-running macro-goal finished.
 
-On Windows, Codex is responsible for launching the repository-owned goal watcher automatically for each macro-goal.
+On Windows, Codex is responsible for launching the repository-owned goal watcher automatically for each **execution attempt**. A reopened macro-goal gets a fresh watcher epoch even though the goal ID is unchanged.
 
 Normal terminal-notification protocol:
 
-1. after moving `ready -> active`, launch `scripts/codex-goal-notify.ps1` as an independent/detached Windows process for the current goal ID;
+1. after moving `ready -> active`, launch `scripts/codex-goal-notify.ps1` as an independent/detached Windows process for the current goal ID; for a correction continuation under a reused goal ID, pass `-Rearm` so stale terminal/ack state from the prior attempt is cleared before polling;
 2. execute the goal normally;
 3. write the report and move the goal to `done/` or `blocked/` only at its real terminal state;
 4. commit and push the terminal implementation branch;
@@ -65,6 +77,8 @@ Normal terminal-notification protocol:
 
 The `.git/lanternleaf-goal-state/<id>.terminal` sentinel is the normal notification trigger. It is intentionally outside the checked-out tree so switching the shared checkout back to `main` cannot erase the terminal signal.
 
+Because one repository goal may now have multiple execution attempts, the watcher is **exactly-once per attempt**, not exactly-once for the entire goal lifetime. On a correction continuation, `-Rearm` clears the previous attempt's ephemeral `.terminal` and `.ack` files before the new watcher begins. The human does not perform this reset manually.
+
 The watcher may support repository-state fallback for diagnostics/tests, including slugged goal filenames such as `0006-non-pdf-reader-parity.md`, but ordinary Codex handoff must use the post-push sentinel protocol.
 
 The watcher is workflow UX, not a correctness gate:
@@ -73,7 +87,9 @@ The watcher is workflow UX, not a correctness gate:
 - Codex should record watcher startup/signal/ack failure in the report when material;
 - do not make the human manually start or signal the watcher;
 - do not notify on intermediate Codex turns/passes;
-- notify only after the terminal implementation branch has been pushed, so ChatGPT can inspect it immediately.
+- notify only after the terminal implementation branch has been pushed, so ChatGPT can inspect it immediately;
+- a correction attempt under the same goal ID must not immediately notify from the prior attempt's stale sentinel/ack.
+
 ## Scope discipline
 
 - Implement only the authorized macro-goal.

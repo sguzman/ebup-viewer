@@ -480,6 +480,12 @@ Read and execute:
 
 `docs/work/reviews/0006.md`
 
-This is a continuation of the same numbered Goal 0006. Reuse the existing Codex Goal lifecycle and implementation branch. Do not start Goal 0007 and do not treat the first green CI run as final acceptance.
+This is a continuation of the same numbered repository Goal 0006.
+
+The first Codex Goal UI session has already terminated, so start/reset a **fresh Codex Goal session** for this correction attempt. Do **not** start repository Goal 0007.
+
+Reuse the existing implementation branch `codex/0006-non-pdf-reader-parity` and report lineage. Read the director review from current `main`, synchronize that correction/governance state into the working branch safely, and launch the goal watcher with `-Rearm` for this new attempt so stale terminal/ack state from the first attempt cannot retrigger.
+
+Do not treat the first green CI run as final acceptance.
 
 All original non-goals remain in force. The correction is limited to evidence/behavior gaps identified in the director review.

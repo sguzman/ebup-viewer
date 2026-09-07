@@ -12,7 +12,8 @@ function Invoke-WatcherProbe(
     [string] $stateFile,
     [string] $expected,
     [int] $expectedExit = 0,
-    [switch] $AllowRepoStateFallback
+    [switch] $AllowRepoStateFallback,
+    [switch] $Rearm
 ) {
     $args = @(
         '-NoProfile',
@@ -26,6 +27,9 @@ function Invoke-WatcherProbe(
     )
     if ($AllowRepoStateFallback) {
         $args += '-AllowRepoStateFallback'
+    }
+    if ($Rearm) {
+        $args += '-Rearm'
     }
 
     $output = & pwsh @args 2>&1
@@ -68,6 +72,19 @@ $signalSentinel = Join-Path $root '.git\lanternleaf-goal-state\0008.terminal'
 if ((Get-Content -LiteralPath $signalSentinel -Raw).Trim() -ne 'done') {
     throw 'Terminal signal helper wrote the wrong state.'
 }
+
+# A director correction may reuse the same repository goal ID in a fresh Codex Goal session.
+# Rearm must clear the prior attempt's terminal + ack so stale state cannot immediately retrigger.
+$rearmSentinel = Join-Path $root '.git\lanternleaf-goal-state\0009.terminal'
+$rearmAck = "$rearmSentinel.ack"
+Set-Content -LiteralPath $rearmSentinel -Value 'done'
+Set-Content -LiteralPath $rearmAck -Value "done`nprior-attempt"
+Invoke-WatcherProbe '0009' $rearmSentinel 'WATCH_TIMEOUT' 2 -Rearm
+if ((Test-Path -LiteralPath $rearmSentinel) -or (Test-Path -LiteralPath $rearmAck)) {
+    throw 'Rearm must clear stale terminal/ack state from the prior attempt.'
+}
+Set-Content -LiteralPath $rearmSentinel -Value 'blocked'
+Invoke-WatcherProbe '0009' $rearmSentinel 'TEST_NOTIFICATION|blocked'
 
 Write-Output 'codex-goal-notify tests passed'
 Remove-Item -LiteralPath $root -Recurse -Force

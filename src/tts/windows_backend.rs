@@ -70,8 +70,12 @@ pub fn synthesize_sentence_to_wav(text: &str, path: &Path, voice_id: Option<&str
         .context("reading Windows speech stream")?;
     let mut bytes = vec![0u8; size as usize];
     reader.ReadBytes(&mut bytes)?;
-    let mut file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    let temp_path = path.with_extension("wav.partial");
+    let mut file =
+        File::create(&temp_path).with_context(|| format!("creating {}", temp_path.display()))?;
     file.write_all(&bytes)?;
     file.sync_all()?;
+    drop(file);
+    std::fs::rename(&temp_path, path).with_context(|| format!("publishing {}", path.display()))?;
     Ok(())
 }

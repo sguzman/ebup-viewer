@@ -23,7 +23,7 @@ use crate::helpers::{
     app_config_path, bootstrap_config_from_app_config, format_combo, workspace_root_from_cwd,
 };
 use eframe::{
-    NativeOptions,
+    HardwareAcceleration, NativeOptions,
     egui::{
         self, Button, CollapsingHeader, Color32, ColorImage, Context, FontData, FontDefinitions,
         FontFamily, RichText, Slider, TextStyle, TextureHandle, Ui, Vec2, Visuals,
@@ -112,6 +112,13 @@ pub fn run() -> Result<(), NativeRunError> {
 
     let runtime = AppRuntime::with_bootstrap_config(&bootstrap_config);
     let mut options = NativeOptions::default();
+    if matches!(
+        std::env::var("LANTERNLEAF_EFRAME_HARDWARE_ACCELERATION").as_deref(),
+        Ok("off")
+    ) {
+        options.hardware_acceleration = HardwareAcceleration::Off;
+        info!("Using software eframe rendering selected by LANTERNLEAF_EFRAME_HARDWARE_ACCELERATION");
+    }
     options.viewport.inner_size = Some(egui::vec2(
         app_config.window_width as f32,
         app_config.window_height as f32,

@@ -48,7 +48,7 @@ fn build_epub_fixture() -> PathBuf {
         ),
         (
             "OEBPS/chapter1.xhtml",
-            "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Chapter One</h1><p>EPUB alpha appears here. The first chapter has an internal link to chapter two.</p><p>Unicode café remains readable.</p></body></html>",
+            "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Chapter One</h1><p>EPUB alpha appears here. The first chapter has an internal link to chapter two.</p><p>The repeated search term appears in chapter one.</p><p>Unicode café remains readable.</p></body></html>",
         ),
         (
             "OEBPS/chapter2.xhtml",

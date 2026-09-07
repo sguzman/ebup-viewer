@@ -75,16 +75,34 @@ Write-Host ''
 
 if ($PrepareOnly) {
     Write-Host 'Repo-native QA preparation passed.'
-    exit 0
+    return
 }
 
 Push-Location $repoRoot
 try {
-    $cargoArgs = @('run', '--bin', 'lanternleaf')
+    $buildArgs = @('build', '--bin', 'lanternleaf')
+    $binary = Join-Path $repoRoot 'target\debug\lanternleaf.exe'
     if ($Release) {
-        $cargoArgs = @('run', '--release', '--bin', 'lanternleaf')
+        $buildArgs = @('build', '--release', '--bin', 'lanternleaf')
+        $binary = Join-Path $repoRoot 'target\release\lanternleaf.exe'
     }
-    & cargo.exe @cargoArgs
+
+    & cargo.exe @buildArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ''
+        Write-Host 'Initial build failed. Retrying once after targeted native-dependency cleanup...'
+        & cargo.exe clean -p espeak-rs-sys
+        & cargo.exe clean -p sonic-rs-sys
+        & cargo.exe @buildArgs
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw 'LanternLeaf build failed after the targeted native-dependency retry.'
+    }
+    if (-not (Test-Path $binary -PathType Leaf)) {
+        throw "Expected LanternLeaf executable was not produced: $binary"
+    }
+
+    & $binary
     $exitCode = $LASTEXITCODE
 } finally {
     Pop-Location
@@ -101,4 +119,4 @@ Get-ChildItem -LiteralPath $runLogs -File -ErrorAction SilentlyContinue | Copy-I
 Write-Host ''
 Write-Host "LanternLeaf exited with code $exitCode."
 Write-Host "QA handoff: $handoff"
-exit $exitCode
+if ($exitCode -ne 0) { throw "LanternLeaf exited with code $exitCode" }

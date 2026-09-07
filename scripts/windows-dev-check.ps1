@@ -12,6 +12,15 @@ if ($LASTEXITCODE -eq 0) {
 
 $missing = [System.Collections.Generic.List[string]]::new()
 
+$rustTarget = & rustup target list --installed 2>$null | Where-Object { $_ -eq "x86_64-pc-windows-msvc" }
+if ($null -ne $rustTarget) {
+    Write-Host "OK: Rust MSVC target (x86_64-pc-windows-msvc)"
+} else {
+    Write-Host "MISSING: Rust MSVC target (x86_64-pc-windows-msvc)"
+    Write-Host "GUIDANCE: install it with 'rustup target add x86_64-pc-windows-msvc'."
+    $missing.Add("x86_64-pc-windows-msvc")
+}
+
 function Report-Command([string] $Name, [string] $Purpose) {
     $command = Get-Command $Name -ErrorAction SilentlyContinue
     if ($null -ne $command) {

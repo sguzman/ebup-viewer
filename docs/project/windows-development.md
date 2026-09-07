@@ -4,80 +4,83 @@ LanternLeaf's current Windows Rust target is `x86_64-pc-windows-msvc`.
 
 ## Canonical repo-native workflow
 
-The repository owns Windows setup and launch. The human should not manually reconstruct the toolchain or download CI artifacts for routine testing.
+The repository owns Windows setup and launch. Routine testing does not require downloading CI artifacts or manually reconstructing PATH state.
 
-From the repository root:
-
-```powershell
-.\deps.ps1
-```
-
-is the idempotent dependency/bootstrap contract.
-
-For real-desktop QA:
+Normal real-desktop QA:
 
 ```powershell
 .\qa.ps1
 ```
 
-is the normal entrypoint. It checks/repairs dependencies, enters the MSVC environment automatically, creates isolated QA config/cache/log state under ignored `.qa\windows\`, materializes the representative EPUB fixture, then builds and launches LanternLeaf.
+`qa.ps1` invokes the dependency bootstrap automatically, prepares isolated state under `.qa\windows\`, builds LanternLeaf, and launches it.
 
-CI validates the same repo-native path with:
+## Scoop dependency declaration
+
+Windows command-line dependencies are declared in the repo's `Scoopfile.json`, using Scoop's native export/import format.
+
+You can restore them directly with:
 
 ```powershell
-.\deps.ps1 -CheckOnly
-.\qa.ps1 -SkipDependencyCheck -PrepareOnly
+scoop import .\Scoopfile.json
 ```
 
-## Dependency contract
+The current Scoop-owned project tools are:
 
-`deps.ps1` owns these Windows prerequisites:
+- `main/cmake`;
+- `main/pandoc`;
+- `main/vswhere`.
 
-- stable Rust / rustup;
-- Rust target `x86_64-pc-windows-msvc`;
-- Visual Studio 2022 Build Tools / C++ workload;
-- CMake;
-- Pandoc.
+Scoop's `main` bucket is the canonical source for these tools.
 
-When missing, the script uses WinGet package identities maintained in the repo:
+`deps.ps1` is the safe full bootstrap entrypoint:
 
-- `Rustlang.Rustup`;
-- `Microsoft.VisualStudio.2022.BuildTools`;
-- `Kitware.CMake`;
-- `JohnMacFarlane.Pandoc`.
+```powershell
+.\deps.ps1
+```
 
-The C++ workload is `Microsoft.VisualStudio.Workload.VCTools`.
+It:
 
-The dependency script is intentionally imperative rather than introducing Nix/mise solely for four Windows-native prerequisites. If the dependency surface becomes materially larger or cross-platform reproducibility becomes painful, a declarative environment manager can be reconsidered.
+1. installs Scoop from `get.scoop.sh` if Scoop is absent;
+2. runs `scoop import .\Scoopfile.json`;
+3. ensures a Rust toolchain is available;
+4. ensures the MSVC Rust target exists;
+5. ensures the Visual Studio C++ workload exists;
+6. enters/verifies the native Windows development environment.
+
+## Rust
+
+Rust is declared separately through `rust-toolchain.toml`, because Rust's own toolchain manager is the correct authority for channel/components/targets.
+
+If `rustup` itself is missing, `deps.ps1` installs `main/rustup` through Scoop. Existing rustup installations are left alone rather than forcibly replaced.
+
+## Visual Studio C++ workload
+
+The Visual Studio C++ workload is the one intentional non-Scoop exception.
+
+Scoop's own Rust manifests note that Microsoft's C++ Build Tools and Windows SDK are required separately for the MSVC toolchain. `deps.ps1` therefore detects an existing Visual Studio instance and adds `Microsoft.VisualStudio.Workload.VCTools` through the Visual Studio Installer, or installs Build Tools through WinGet when no instance exists.
+
+This exception is about the compiler workload only. Auxiliary CLI tooling remains Scoop-owned.
 
 ## MSVC environment
 
-The project does not require the human to open a special Developer PowerShell.
+`scripts/windows-dev-env.ps1` resolves Scoop shims, prefers Scoop's `vswhere.exe`, locates the Visual Studio C++ instance, imports `VsDevCmd.bat`, and verifies Cargo, CL, MSBuild, CMake, and Pandoc.
 
-`scripts/windows-dev-env.ps1` locates the installed Visual Studio instance through `vswhere.exe`, imports `VsDevCmd.bat` into the current PowerShell process, and verifies Cargo, CL, MSBuild, CMake, and Pandoc.
+The human does not need to open a special Developer PowerShell.
 
-LLVM-MinGW is not treated as a drop-in compiler for the MSVC Rust target.
+## CI
 
-## Pandoc
-
-Pandoc remains a runtime/development prerequisite for the current HTML/DOC/DOCX-backed conversion paths.
-
-Local QA installs/uses Pandoc through the repo bootstrap rather than bundling a second copy or requiring artifact extraction.
-
-## Hosted CI / renderer limitation
-
-Hosted Windows CI remains authoritative for:
+Hosted Windows CI exercises the same dependency path by running:
 
 ```powershell
+.\deps.ps1
+.\qa.ps1 -SkipDependencyCheck -PrepareOnly
 cargo check --workspace
 cargo build --workspace
 cargo test --workspace
 ```
 
-The hosted renderer capability probe remains separate because GitHub-hosted Windows exposes an unsuitable graphics environment for the current egui renderer. That limitation must not be confused with a normal Windows desktop failure.
+The hosted renderer capability probe remains separate because GitHub-hosted Windows does not expose a suitable graphics adapter/context for the current egui renderer.
 
 ## Native Windows TTS
 
-Windows TTS uses WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer` and the shared Rodio playback path.
-
-Hosted CI can verify synthesis/decoding without a physical speaker. Real speaker playback and egui interaction require real-desktop QA through `.\qa.ps1`.
+Windows TTS uses WinRT `Windows.Media.SpeechSynthesis::SpeechSynthesizer` and the shared Rodio playback path. Hosted CI can verify synthesis/decoding without physical speaker playback; real speaker/egui behavior is verified through `.\qa.ps1` on a real desktop.

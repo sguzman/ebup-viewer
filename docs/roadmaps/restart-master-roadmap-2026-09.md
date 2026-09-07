@@ -6,25 +6,33 @@ Roadmap state is evidence-driven. Completion means accepted implementation plus 
 
 ## Gate 0 — Recover trustworthy baseline
 
-**STATUS: IN PROGRESS**
+**STATUS: IN PROGRESS, NEAR CLOSURE**
 
-Goal 0001 recovered the Windows check/build path and removed the libclang/bindgen blockers. Director review found that the native launch smoke can false-positive because `eframe::run_native` errors are discarded, and the existing workspace suite still has deterministic/environment/fixture failures.
+Goal 0001 recovered Windows check/build and removed libclang/bindgen blockers.
 
-Goal 0002 closes this gate by combining truthful startup handling, test stabilization, external prerequisite diagnostics, and a small non-PDF ingestion smoke corpus.
+Goal 0002 made native startup errors observable, made early-exit smoke behavior truthful, provisioned MSVC/Pandoc in Windows CI, added prerequisite diagnostics, and repaired several fixture/config defects.
 
-Goal family:
+Director review of Goal 0002 found four additional failures in the normal parallel Windows run that were hidden by Codex's single-thread audit:
 
-- Windows build/toolchain recovery;
-- truthful native egui startup/bootstrap;
-- deterministic test baseline;
-- explicit external prerequisites;
-- current capability inventory;
-- Windows CI;
-- verified current-status reset.
+- two cache-root environment race failures;
+- one CRLF/LF source fixture failure;
+- one PDF alignment failure requiring race-vs-product classification.
 
-Exit: the project can be built/tested intentionally, required prerequisites are diagnosable, CI does not hide startup failure, and remaining product defects are explicitly separated from harness noise.
+The active Tauri/React `gui-migration` workflow is also obsolete and must leave the active CI surface.
+
+Goal 0003 begins by closing these residual baseline issues. It then continues directly into the stable bounded PDF contract failures so the required Windows test gate can become green without another human/Codex round trip.
+
+Exit:
+
+- current native CI surface reflects only the native egui architecture;
+- workspace check/build pass;
+- normal parallel workspace tests pass;
+- native startup smoke executes truthfully;
+- external prerequisites are deterministic and diagnosable.
 
 ## Gate 1 — TTS backend boundary + Windows TTS
+
+**NEXT MAJOR FEATURE AFTER GOAL 0003**
 
 Preserve Piper while making TTS backend ownership explicit.
 
@@ -59,9 +67,9 @@ Exit: representative non-PDF documents are comfortable and deterministic on Wind
 
 ## Gate 3 — Native PDF visual stability
 
-Use the existing detailed native PDF roadmap as subsystem guidance.
+The current Goal 0003 only repairs **existing deterministic PDF core contracts** required to close the baseline. It is not authorization for broad visual PDF work.
 
-Focus first on:
+The later visual gate focuses on:
 
 - page raster;
 - texture cache;
@@ -74,7 +82,9 @@ Exit: PDFs are visually usable before synchronization complexity is layered on t
 
 ## Gate 4 — PDF text, TTS, and highlight synchronization
 
-Then complete:
+The Goal 0003 PDF substage may repair bounded classifier/OCR/reading-order/cache contracts already represented by failing tests. It must not expand into full interactive sync work.
+
+The later full synchronization gate covers:
 
 - extraction;
 - canonical sentence/page mapping;
@@ -93,8 +103,6 @@ Exit: representative text PDFs maintain reliable speech/highlight position; poor
 - DOCX/Word ingestion;
 - common source/document boundaries;
 - fixtures and format-level regression tests.
-
-Exit: source format support no longer requires format-specific TTS semantics.
 
 ## Gate 6 — Ergonomics, performance, packaging
 
@@ -117,4 +125,6 @@ Detailed older subsystem roadmaps remain useful beneath these gates, especially:
 - `egui-tts-audio-and-playback-roadmap.md`;
 - `egui-native-pdf-roadmap.md`;
 - `egui-testing-and-parity-roadmap.md`;
-- PDF rendering/sync/OCR roadmaps.
+- `pdf-type-and-text-layer-classification-roadmap.md`;
+- `pdf-ocr-geometry-aware-alignment-roadmap.md`;
+- `native-pdf-rendering-and-text-sync-roadmap.md`.

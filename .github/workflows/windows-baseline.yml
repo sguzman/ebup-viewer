@@ -42,9 +42,6 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace
 
-      - name: Test workspace
-        run: cargo test --workspace
-
       - name: Native launch smoke
         shell: pwsh
         run: |
@@ -64,3 +61,6 @@ jobs:
               Stop-Process -Id $process.Id -Force
             }
           }
+
+      - name: Test workspace
+        run: cargo test --workspace

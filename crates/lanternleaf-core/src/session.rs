@@ -1946,6 +1946,10 @@ mod tests {
         p
     }
 
+    fn write_pdf_source(path: &Path) {
+        fs::write(path, format!("pdf-test-source:{}", path.display())).expect("write source");
+    }
+
     #[test]
     fn paused_state_is_preserved_when_changing_pages() {
         let normalizer = normalizer::TextNormalizer::default();
@@ -2485,7 +2489,7 @@ mod tests {
     #[test]
     fn restore_bookmark_position_falls_back_to_pdf_ocr_alignment_metadata() {
         let source_path = unique_pdf_source_path();
-        fs::write(&source_path, b"pdf").expect("write source");
+        write_pdf_source(&source_path);
         let normalizer = normalizer::TextNormalizer::default();
         let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
         session.source_path = source_path.clone();
@@ -2534,7 +2538,7 @@ mod tests {
     #[test]
     fn bookmark_carries_cached_pdf_location_metadata_for_current_sentence() {
         let source_path = unique_pdf_source_path();
-        fs::write(&source_path, b"pdf").expect("write source");
+        write_pdf_source(&source_path);
         let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
         session.source_path = source_path.clone();
         session.current_page = 1;
@@ -2588,7 +2592,7 @@ mod tests {
     #[test]
     fn refresh_pdf_ocr_alignment_artifact_reuses_unchanged_sentence_alignments() {
         let source_path = unique_pdf_source_path();
-        fs::write(&source_path, b"pdf").expect("write source");
+        write_pdf_source(&source_path);
         let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
         session.source_path = source_path.clone();
         crate::cache::persist_pdf_sentence_map(
@@ -2645,7 +2649,7 @@ mod tests {
     #[test]
     fn pdf_ocr_alignment_summary_reports_exact_fallback_and_page_only_rates() {
         let source_path = unique_pdf_source_path();
-        fs::write(&source_path, b"pdf").expect("write source");
+        write_pdf_source(&source_path);
         let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
         session.source_path = source_path.clone();
         crate::cache::persist_pdf_sentence_map(
@@ -2716,7 +2720,7 @@ mod tests {
     #[test]
     fn pdf_ocr_alignment_artifact_populates_token_lineage_and_cross_column_contract() {
         let source_path = unique_pdf_source_path();
-        fs::write(&source_path, b"pdf").expect("write source");
+        write_pdf_source(&source_path);
         let mut session = build_test_session(&[&["Alpha beta gamma."], &["Delta epsilon."]]);
         session.source_path = source_path.clone();
         crate::cache::persist_pdf_sentence_map(
@@ -2803,7 +2807,7 @@ mod tests {
     #[test]
     fn pdf_toggle_text_only_preserves_tts_highlight_and_ocr_summary() {
         let source_path = unique_pdf_source_path();
-        fs::write(&source_path, b"pdf").expect("write source");
+        write_pdf_source(&source_path);
         let normalizer = normalizer::TextNormalizer::default();
         let mut session = build_test_session(&[&["Alpha.", "Beta."], &["Gamma.", "Delta."]]);
         session.source_path = source_path.clone();

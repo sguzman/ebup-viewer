@@ -310,7 +310,7 @@ impl RuntimeEffect {
             Self::OpenSourcePath { .. }
             | Self::OpenClipboard
             | Self::OpenClipboardText { .. }
-            | Self::OpenCalibreBook { .. } => EffectOwner::SourceOpen
+            | Self::OpenCalibreBook { .. } => EffectOwner::SourceOpen,
             Self::OpenBrowserTab { .. }
             | Self::OpenBrowserTabBundle { .. }
             | Self::RefreshBrowserTab { .. }

@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-07 after successful repo-native Windows launch and Goal 0008 queueing
+Updated: 2026-09-07 after Goal 0008 Caliberate integration acceptance
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,13 +136,22 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**CALIBERATE FIRST-CLASS SERVICE INTEGRATION QUEUED AS GOAL 0008**
+**GOAL 0008 COMPLETE — REAL-DESKTOP SERVICE SIGNOFF PENDING**
 
-LanternLeaf already contains a Calibre-oriented browser/catalog/cache/materialization subsystem, but its HTTP transport currently assumes legacy Calibre content-server web-UI routes and stale checked-in network configuration.
+Accepted integration:
 
-Caliberate now exposes a source-neutral versioned HTTP/JSON API, including paged `/api/v1/books` catalog access and `/api/v1/books/{id}/content/{format}` content streaming.
+- Caliberate is the preferred/default local provider at `http://127.0.0.1:8181`;
+- paged `/api/v1/books` catalog retrieval maps into the existing library browser;
+- supported formats materialize from `/api/v1/books/{id}/content/{format}`;
+- materialized sources enter the existing LanternLeaf source/session/TTS path;
+- provider-aware caches prevent Caliberate/legacy Calibre cross-contamination;
+- Caliberate API-key auth and legacy Basic auth remain isolated;
+- Caliberate does not probe legacy Calibre cover endpoints;
+- legacy Calibre catalog/download behavior remains covered by deterministic HTTP regression tests.
 
-Goal 0008 will make Caliberate at `http://127.0.0.1:8181` the preferred local library provider while preserving legacy Calibre HTTP compatibility behind the same browser UI.
+Authoritative Windows run `34185172624` passed both jobs and the core suite reached **180 passed / 0 failed**.
+
+Remaining evidence is the real desktop/service loop against the human's actual Caliberate instance: catalog population, opening a real book, and Windows TTS on that Caliberate-sourced book.
 
 ## Historical Tauri / React / WebView implementation
 

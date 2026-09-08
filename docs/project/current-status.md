@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-08 after real-desktop Goal 0008 A4 reader-normalization stall diagnosis
+Updated: 2026-09-08 after Goal 0008 A4 reader-normalization correction acceptance/integration
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**GOAL 0008 A4 REOPENED — READER STARTUP BLOCKED BY WHOLE-BOOK NORMALIZATION**
+**A4 ACCEPTED — REAL-DESKTOP READER + WINDOWS TTS SIGNOFF PENDING**
 
 Accepted integration:
 
@@ -151,7 +151,7 @@ Accepted integration:
 
 Authoritative Windows run `34185172624` passed both jobs and the core suite reached **180 passed / 0 failed**.
 
-A3 remains accepted for its bounded responsibilities: valid Caliberate EPUB materialization, native EPUB ingestion, and poisoned-cache recovery. New real-desktop evidence localizes the remaining blocker after those stages. One real Caliberate EPUB materialized in ~154 ms and completed native source loading in ~325 ms, then a 3,178-sentence one-page pretty EPUB entered synchronous normalization precompute and remained stuck there. A second already-materialized Recent EPUB with 10,488 sentences reproduced the same behavior. Goal 0008 is therefore reopened as A4 to make reader startup and first-TTS preparation bounded/lazy and to precompile stable normalizer matchers. No further human QA until A4 is implemented/reviewed/integrated.
+A3 remains accepted for Caliberate materialization/native EPUB ingestion/cache recovery. A4 is now accepted and integrated for the reader-startup defect exposed on the human machine: synchronous whole-book normalization has been removed from source open; idle snapshots avoid TTS-plan construction; first TTS activation prepares a bounded 64-sentence window; sentence cache population is bounded/lazy; and stable normalizer regex/token matchers are compiled once per normalizer configuration. A deterministic 3,500-sentence regression verifies zero normalization cache work at idle open, bounded first-Play work, and cursor progression across window boundaries. Windows CI run `34260546736` passed the normal workspace validation path. One real-desktop EPUB open plus immediate Windows TTS interaction remains before Gate 2.5 exit.
 
 ## Historical Tauri / React / WebView implementation
 

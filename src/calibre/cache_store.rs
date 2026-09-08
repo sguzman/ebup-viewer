@@ -26,7 +26,7 @@ pub(super) fn try_load_cache(
     check_ttl: bool,
     allow_signature_mismatch: bool,
 ) -> Result<Option<Vec<CalibreBook>>> {
-    let cache_path = calibre_cache_path();
+    let cache_path = calibre_cache_path_for(config);
     let contents = match fs::read_to_string(&cache_path) {
         Ok(contents) => contents,
         Err(_) => return Ok(None),
@@ -60,7 +60,7 @@ pub(super) fn write_cache(
     signature: &str,
     books: &[CalibreBook],
 ) -> Result<()> {
-    let cache_path = calibre_cache_path();
+    let cache_path = calibre_cache_path_for(config);
     if let Some(parent) = cache_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
@@ -112,6 +112,16 @@ pub(super) fn cache_signature(config: &CalibreConfig) -> String {
 
 pub(super) fn calibre_cache_path() -> PathBuf {
     crate::cache::cache_root().join(CALIBRE_CACHE_FILE)
+}
+
+pub(super) fn calibre_cache_path_for(config: &CalibreConfig) -> PathBuf {
+    let provider = match config.provider {
+        CalibreProvider::Caliberate => "caliberate",
+        CalibreProvider::Calibre => "calibre",
+    };
+    let signature = cache_signature(config);
+    let scope = signature.chars().take(16).collect::<String>();
+    crate::cache::cache_root().join(format!("{CALIBRE_CACHE_FILE}-{provider}-{scope}"))
 }
 
 pub(super) fn calibre_download_dir() -> PathBuf {

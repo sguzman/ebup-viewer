@@ -375,27 +375,13 @@ fn ensure_not_cancelled(cancel: Option<&CancellationToken>, stage: &'static str)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::calibre::cache_store;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_cache_root(label: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be after epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!("lanternleaf_catalog_{label}_{nanos}"))
-    }
 
     #[test]
     fn stale_fallback_never_crosses_provider_boundary() {
-        let env_key = crate::cache::CACHE_DIR_ENV;
-        let previous = std::env::var_os(env_key);
-        let cache_root = unique_cache_root("provider_cache");
-        // SAFETY: test-scoped environment override, restored before return.
-        unsafe { std::env::set_var(env_key, &cache_root) };
-
         let legacy = CalibreConfig {
             enabled: true,
             provider: CalibreProvider::Calibre,
@@ -444,12 +430,8 @@ mod tests {
         assert_eq!(fallback.len(), 1);
         assert_eq!(fallback[0].title, caliberate_book.title);
         assert_eq!(fallback[0].id, caliberate_book.id);
-
-        match previous {
-            Some(value) => unsafe { std::env::set_var(env_key, value) },
-            None => unsafe { std::env::remove_var(env_key) },
-        }
-        let _ = fs::remove_dir_all(cache_root);
+        let _ = fs::remove_file(cache_store::calibre_cache_path_for(&legacy));
+        let _ = fs::remove_file(cache_store::calibre_cache_path_for(&caliberate));
     }
 
     #[test]

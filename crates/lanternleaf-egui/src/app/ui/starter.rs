@@ -175,6 +175,9 @@ impl LanternLeafApp {
                 if model.loading_calibre || model.operations.calibre_load {
                     ui.label("Loading…");
                 }
+                if model.operations.source_open {
+                    ui.label("Opening book…");
+                }
             });
             ui.horizontal(|ui| {
                 ui.add(

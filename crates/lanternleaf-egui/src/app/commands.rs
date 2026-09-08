@@ -9,7 +9,23 @@ use tracing::trace;
 use super::{LanternLeafApp, StatusLogEntry};
 use crate::shell::NotificationLevel;
 
+pub(crate) fn starter_startup_commands() -> Vec<AppCommand> {
+    vec![
+        AppCommand::Bootstrap,
+        AppCommand::RefreshRecents { limit: None },
+        AppCommand::LoadCalibreBooks {
+            force_refresh: false,
+        },
+    ]
+}
+
 impl LanternLeafApp {
+    pub(crate) fn execute_startup_commands(&mut self) {
+        for command in starter_startup_commands() {
+            self.execute_command(command);
+        }
+    }
+
     pub(crate) fn execute_command(&mut self, command: AppCommand) {
         let state_snapshot = self.runtime.state_snapshot();
         let reader_snapshot = state_snapshot.reader_document.snapshot.as_ref();
@@ -159,5 +175,27 @@ impl LanternLeafApp {
         if self.status_log.len() > 8 {
             self.status_log.remove(0);
         }
+    }
+}
+
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+
+    #[test]
+    fn starter_startup_loads_caliberate_catalog_without_manual_refresh() {
+        let commands = starter_startup_commands();
+        assert!(matches!(commands.first(), Some(AppCommand::Bootstrap)));
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            AppCommand::RefreshRecents { limit: None }
+        )));
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            AppCommand::LoadCalibreBooks {
+                force_refresh: false
+            }
+        )));
     }
 }

@@ -136,12 +136,27 @@ try {
     Pop-Location
 }
 
-Get-ChildItem -LiteralPath $runLogs -File -ErrorAction SilentlyContinue | Copy-Item -Destination $handoff -Force
+$logFiles = @(Get-ChildItem -LiteralPath $runLogs -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime)
+$logFiles | Copy-Item -Destination $handoff -Force
+
+if ($logFiles.Count -gt 0) {
+    $latestLog = $logFiles[-1]
+    Get-Content -LiteralPath $latestLog.FullName -Tail 250 -ErrorAction SilentlyContinue |
+        Set-Content -LiteralPath (Join-Path $handoff 'latest-log-tail.txt')
+
+    $diagnosticPattern = 'error|warn|failed|failure|timeout|timed out|calibre|caliberate|source[_ -]?open|materializ'
+    @(Select-String -LiteralPath $latestLog.FullName -Pattern $diagnosticPattern -CaseSensitive:$false -ErrorAction SilentlyContinue |
+        Select-Object -Last 250 |
+        ForEach-Object { $_.Line }) |
+        Set-Content -LiteralPath (Join-Path $handoff 'latest-errors.txt')
+}
+
 @(
     "Repository: $repoRoot",
     "Fixtures: $fixtureRoot",
     "Logs: $runLogs",
-    "Application exit code: $exitCode"
+    "Application exit code: $exitCode",
+    "Small diagnostic files: latest-log-tail.txt, latest-errors.txt"
 ) | Set-Content -LiteralPath (Join-Path $handoff 'README.txt')
 
 Write-Host ''

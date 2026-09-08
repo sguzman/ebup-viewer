@@ -330,7 +330,24 @@ pub fn library_id(config: &CalibreConfig) -> Option<String> {
         .map(|v| v.to_string())
 }
 
+const CATALOG_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+const CONTENT_HTTP_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub fn build_http_client(config: &CalibreConfig) -> Result<reqwest::blocking::Client> {
+    build_http_client_with_timeout(config, CATALOG_HTTP_TIMEOUT)
+}
+
+pub(crate) fn build_content_http_client(
+    config: &CalibreConfig,
+) -> Result<reqwest::blocking::Client> {
+    build_http_client_with_timeout(config, CONTENT_HTTP_TIMEOUT)
+}
+
+fn build_http_client_with_timeout(
+    config: &CalibreConfig,
+    timeout: Duration,
+) -> Result<reqwest::blocking::Client> {
     let mut headers = reqwest::header::HeaderMap::new();
     if matches!(config.provider, CalibreProvider::Calibre)
         && let (Some(user), Some(pass)) = (effective_username(config), effective_password(config))
@@ -355,7 +372,8 @@ pub fn build_http_client(config: &CalibreConfig) -> Result<reqwest::blocking::Cl
     }
     reqwest::blocking::Client::builder()
         .default_headers(headers)
-        .timeout(Duration::from_secs(30))
+        .connect_timeout(HTTP_CONNECT_TIMEOUT)
+        .timeout(timeout)
         .build()
         .map_err(Into::into)
 }
@@ -391,6 +409,12 @@ mod tests {
             .expect("clock should be after epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("lanternleaf_calibre_{name}_{nanos}.{extension}"))
+    }
+
+    #[test]
+    fn content_timeout_is_longer_than_catalog_timeout() {
+        assert!(CONTENT_HTTP_TIMEOUT > CATALOG_HTTP_TIMEOUT);
+        assert!(CONTENT_HTTP_TIMEOUT >= Duration::from_secs(5 * 60));
     }
 
     #[test]

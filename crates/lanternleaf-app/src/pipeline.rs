@@ -5,7 +5,10 @@ use crate::contracts::{
     SourceOpenEvent, TtsStateEvent, UiMode,
 };
 use crate::logging::{command_span, event_span};
-use crate::state::{AppState, OperationState, RuntimeJobPatch, derive_reader_playback};
+use crate::state::{
+    AppState, Notification, NotificationLevel, OperationState, RuntimeJobPatch,
+    derive_reader_playback,
+};
 use lanternleaf_core::{cache, session};
 use tracing::{debug, trace, warn};
 
@@ -1007,6 +1010,11 @@ pub fn apply_event(state: &mut AppState, event: AppEvent) {
             state.set_loading_recents(false);
             state.set_loading_calibre(false);
             state.set_loading_browser_tabs(false);
+            state.push_notification(Notification {
+                id: request_id,
+                level: NotificationLevel::Error,
+                message: format!("{}: {}", error.code, error.message),
+            });
         }
         AppEvent::RemotePlaybackStateUpdated(playback) => {
             if let Some(snapshot) = &state.reader_document.snapshot {
@@ -1166,6 +1174,33 @@ mod tests {
                 show_tts: true,
             },
         }
+    }
+
+    #[test]
+    fn command_failure_surfaces_visible_error_notification() {
+        let mut state = AppState::default();
+        apply_event(
+            &mut state,
+            AppEvent::CommandFailed {
+                request_id: 99,
+                scope: Some(OperationScope::SourceOpen),
+                error: BridgeError {
+                    code: "calibre_open_failed".to_string(),
+                    message: "request timed out".to_string(),
+                },
+            },
+        );
+
+        assert!(!state.app_shell.operations.source_open);
+        let note = state
+            .app_shell
+            .notifications
+            .last()
+            .expect("command failure should create a notification");
+        assert_eq!(note.id, 99);
+        assert_eq!(note.level, NotificationLevel::Error);
+        assert!(note.message.contains("calibre_open_failed"));
+        assert!(note.message.contains("request timed out"));
     }
 
     #[test]

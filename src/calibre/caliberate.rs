@@ -3,12 +3,15 @@ use serde::Deserialize;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tracing::info;
 
 use crate::cancellation::CancellationToken;
 
-use super::{CalibreBook, CalibreConfig, build_http_client, cache_store::calibre_download_dir};
+use super::{
+    CalibreBook, CalibreConfig, build_content_http_client, build_http_client,
+    cache_store::calibre_download_dir,
+};
 
 const PAGE_LIMIT: usize = 500;
 
@@ -144,7 +147,16 @@ fn download_book(config: &CalibreConfig, book: &CalibreBook, cache_root: &Path) 
     let base_url = super::server_base_url(config)
         .ok_or_else(|| anyhow!("Caliberate library_url is missing or invalid"))?;
     let url = format!("{base_url}/api/v1/books/{}/content/{ext}", book.id);
-    let mut response = build_http_client(config)?
+    let started = Instant::now();
+    info!(
+        provider = "caliberate",
+        book_id = book.id,
+        extension = %ext,
+        url = %url,
+        expected_bytes = ?book.file_size_bytes,
+        "Starting Caliberate content materialization"
+    );
+    let mut response = build_content_http_client(config)?
         .get(&url)
         .send()
         .with_context(|| format!("failed to materialize Caliberate book {}", book.id))?;
@@ -155,6 +167,7 @@ fn download_book(config: &CalibreConfig, book: &CalibreBook, cache_root: &Path) 
             book.id
         ));
     }
+    let response_bytes = response.content_length();
     let temp_path = cache_root.join(format!(
         ".tmp-{}-{}-{}",
         book.id,
@@ -167,7 +180,7 @@ fn download_book(config: &CalibreConfig, book: &CalibreBook, cache_root: &Path) 
             temp_path.display()
         )
     })?;
-    response
+    let copied = response
         .copy_to(&mut file)
         .with_context(|| format!("failed to write Caliberate book {}", book.id))?;
     file.flush()?;
@@ -178,7 +191,15 @@ fn download_book(config: &CalibreConfig, book: &CalibreBook, cache_root: &Path) 
             target_path.display()
         )
     })?;
-    info!(provider = "caliberate", book_id = book.id, path = %target_path.display(), "Materialized Caliberate book");
+    info!(
+        provider = "caliberate",
+        book_id = book.id,
+        path = %target_path.display(),
+        bytes = copied,
+        response_bytes = ?response_bytes,
+        elapsed_ms = started.elapsed().as_millis(),
+        "Materialized Caliberate book"
+    );
     Ok(target_path)
 }
 

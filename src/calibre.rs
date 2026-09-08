@@ -1,5 +1,7 @@
 #[path = "calibre/cache_store.rs"]
 mod cache_store;
+#[path = "calibre/caliberate.rs"]
+mod caliberate;
 #[path = "calibre/catalog.rs"]
 mod catalog;
 #[path = "calibre/thumbnails.rs"]
@@ -26,6 +28,7 @@ const THUMB_FETCH_TIMEOUT: Duration = Duration::from_millis(350);
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct CalibreConfig {
+    pub provider: CalibreProvider,
     pub enabled: bool,
     pub library_path: Option<PathBuf>,
     pub library_url: Option<String>,
@@ -35,10 +38,24 @@ pub struct CalibreConfig {
     pub server_urls: Vec<String>,
     pub server_username: Option<String>,
     pub server_password: Option<String>,
+    pub api_key: Option<String>,
     pub allow_local_library_fallback: bool,
     pub allowed_extensions: Vec<String>,
     pub columns: Vec<String>,
     pub list_cache_ttl_secs: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CalibreProvider {
+    Caliberate,
+    Calibre,
+}
+
+impl Default for CalibreProvider {
+    fn default() -> Self {
+        Self::Caliberate
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -51,18 +68,20 @@ pub struct ContentServerConfig {
 impl Default for CalibreConfig {
     fn default() -> Self {
         Self {
+            provider: CalibreProvider::Caliberate,
             enabled: false,
             library_path: None,
-            library_url: Some("http://127.0.0.1:8080".to_string()),
+            library_url: Some("http://127.0.0.1:8181".to_string()),
             state_path: None,
             content_server: ContentServerConfig::default(),
             calibredb_bin: "calibredb".to_string(),
             server_urls: vec![
-                "http://127.0.0.1:8080".to_string(),
-                "http://localhost:8080".to_string(),
+                "http://127.0.0.1:8181".to_string(),
+                "http://localhost:8181".to_string(),
             ],
             server_username: None,
             server_password: None,
+            api_key: None,
             allow_local_library_fallback: false,
             allowed_extensions: vec![
                 "epub".to_string(),
@@ -129,10 +148,26 @@ impl CalibreConfig {
             return Self::default();
         };
         match toml::from_str::<CalibreFile>(&contents) {
-            Ok(file) => file
-                .calibre
-                .or(file.calibred)
-                .unwrap_or_else(CalibreConfig::default),
+            Ok(file) => {
+                let mut config = file
+                    .calibre
+                    .or(file.calibred)
+                    .unwrap_or_else(CalibreConfig::default);
+                let provider_is_explicit = toml::from_str::<toml::Value>(&contents)
+                    .ok()
+                    .map(|value| {
+                        value
+                            .get("calibre")
+                            .or_else(|| value.get("calibred"))
+                            .and_then(|table| table.get("provider"))
+                            .is_some()
+                    })
+                    .unwrap_or(false);
+                if !provider_is_explicit && library_id(&config).is_some() {
+                    config.provider = CalibreProvider::Calibre;
+                }
+                config
+            }
             Err(err) => {
                 warn!(
                     path = %path.display(),
@@ -297,12 +332,25 @@ pub fn library_id(config: &CalibreConfig) -> Option<String> {
 
 pub fn build_http_client(config: &CalibreConfig) -> Result<reqwest::blocking::Client> {
     let mut headers = reqwest::header::HeaderMap::new();
-    if let (Some(user), Some(pass)) = (effective_username(config), effective_password(config)) {
+    if matches!(config.provider, CalibreProvider::Calibre)
+        && let (Some(user), Some(pass)) = (effective_username(config), effective_password(config))
+    {
         let auth = format!("{user}:{pass}");
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD.encode(auth.as_bytes());
         if let Ok(val) = reqwest::header::HeaderValue::from_str(&format!("Basic {b64}")) {
             headers.insert(reqwest::header::AUTHORIZATION, val);
+        }
+    }
+    if matches!(config.provider, CalibreProvider::Caliberate)
+        && let Some(key) = config
+            .api_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+    {
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(key) {
+            headers.insert("x-api-key", value);
         }
     }
     reqwest::blocking::Client::builder()
@@ -440,8 +488,14 @@ allowed_extensions = ["epub", "pdf", "txt"]
         }
 
         assert_eq!(
-            cache_store::calibre_cache_path(),
-            override_path.join("lantern-leaf").join(CALIBRE_CACHE_FILE)
+            cache_store::calibre_cache_path_for(&CalibreConfig::default()),
+            override_path.join("lantern-leaf").join(format!(
+                "{CALIBRE_CACHE_FILE}-caliberate-{}",
+                cache_store::cache_signature(&CalibreConfig::default())
+                    .chars()
+                    .take(16)
+                    .collect::<String>()
+            ))
         );
         assert_eq!(
             cache_store::calibre_download_dir(),
@@ -484,6 +538,59 @@ allowed_extensions = ["epub", "pdf", "txt"]
         assert!(
             err.to_string().contains("operation cancelled"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn default_config_targets_caliberate_without_a_library_fragment() {
+        let config = CalibreConfig::default();
+        assert_eq!(config.provider, CalibreProvider::Caliberate);
+        assert_eq!(
+            server_base_url(&config).as_deref(),
+            Some("http://127.0.0.1:8181")
+        );
+        assert_eq!(library_id(&config), None);
+    }
+
+    #[test]
+    fn legacy_config_without_provider_is_preserved_by_library_fragment() {
+        let key = "CALIBRE_CONFIG_PATH";
+        let previous = std::env::var_os(key);
+        let path = unique_temp_file("legacy_provider", "toml");
+        fs::write(
+            &path,
+            r#"
+[calibre]
+enabled = true
+library_url = "http://127.0.0.1:8083/#main"
+"#,
+        )
+        .unwrap();
+        unsafe { std::env::set_var(key, &path) };
+        assert_eq!(
+            CalibreConfig::load_default().provider,
+            CalibreProvider::Calibre
+        );
+        match previous {
+            Some(value) => unsafe { std::env::set_var(key, value) },
+            None => unsafe { std::env::remove_var(key) },
+        }
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn provider_is_part_of_catalog_and_thumbnail_cache_identity() {
+        let mut caliberate = CalibreConfig::default();
+        let mut legacy = caliberate.clone();
+        legacy.provider = CalibreProvider::Calibre;
+        assert_ne!(
+            cache_store::cache_signature(&caliberate),
+            cache_store::cache_signature(&legacy)
+        );
+        caliberate.api_key = Some("not included in cache identity".to_string());
+        assert_ne!(
+            cache_store::cache_signature(&caliberate),
+            cache_store::cache_signature(&legacy)
         );
     }
 }

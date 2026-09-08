@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, info};
 
 use super::{
-    CalibreBook, CalibreConfig, THUMB_FETCH_TIMEOUT, THUMB_HEIGHT, THUMB_WIDTH,
+    CalibreBook, CalibreConfig, CalibreProvider, THUMB_FETCH_TIMEOUT, THUMB_HEIGHT, THUMB_WIDTH,
     cache_store::calibre_thumb_dir, effective_password, effective_username, server_base_url,
 };
 
@@ -150,6 +150,7 @@ fn ensure_book_thumbnail(
     }
 
     if allow_remote_fetch
+        && matches!(config.provider, CalibreProvider::Calibre)
         && let Some(bytes) = fetch_thumbnail_from_server(config, book_id, deadline)
         && write_thumbnail_file(&thumb_path, &bytes).is_ok()
     {
@@ -246,6 +247,11 @@ fn calibre_thumbnail_path(config: &CalibreConfig, book_id: u64) -> PathBuf {
 
 fn thumbnail_scope_key(config: &CalibreConfig) -> String {
     let mut hasher = Sha256::new();
+    hasher.update(match config.provider {
+        CalibreProvider::Caliberate => b"caliberate" as &[u8],
+        CalibreProvider::Calibre => b"calibre",
+    });
+    hasher.update([0u8]);
     if let Some(url) = server_base_url(config) {
         hasher.update(url.as_bytes());
     }
@@ -304,4 +310,46 @@ fn write_thumbnail_file(path: &Path, raw_image: &[u8]) -> Result<()> {
         .with_context(|| format!("failed to write thumbnail {}", path.display()))?;
     debug!(path = %path.display(), "cached calibre thumbnail");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn caliberate_does_not_probe_legacy_thumbnail_routes() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        listener
+            .set_nonblocking(true)
+            .expect("set listener nonblocking");
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let state_path = std::env::temp_dir().join(format!("lanternleaf-thumb-test-{unique}"));
+        let config = CalibreConfig {
+            provider: CalibreProvider::Caliberate,
+            library_url: Some(base_url),
+            server_urls: Vec::new(),
+            state_path: Some(state_path.clone()),
+            ..CalibreConfig::default()
+        };
+
+        let result = ensure_book_thumbnail(
+            &config,
+            9_000_001,
+            None,
+            Instant::now() + Duration::from_millis(100),
+            true,
+        );
+
+        assert!(result.is_none());
+        assert!(
+            matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+        );
+        let _ = fs::remove_dir_all(state_path);
+    }
 }

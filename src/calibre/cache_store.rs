@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{
     CALIBRE_CACHE_FILE, CALIBRE_CACHE_REV, CALIBRE_DOWNLOAD_SUBDIR, CALIBRE_THUMB_SUBDIR,
-    CalibreBook, CalibreConfig, server_base_url,
+    CalibreBook, CalibreConfig, CalibreProvider, server_base_url,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -15,6 +15,8 @@ struct CachedBookList {
     rev: String,
     generated_unix_secs: u64,
     signature: String,
+    #[serde(default)]
+    provider: Option<CalibreProvider>,
     books: Vec<CalibreBook>,
 }
 
@@ -24,7 +26,7 @@ pub(super) fn try_load_cache(
     check_ttl: bool,
     allow_signature_mismatch: bool,
 ) -> Result<Option<Vec<CalibreBook>>> {
-    let cache_path = calibre_cache_path();
+    let cache_path = calibre_cache_path_for(config);
     let contents = match fs::read_to_string(&cache_path) {
         Ok(contents) => contents,
         Err(_) => return Ok(None),
@@ -39,6 +41,9 @@ pub(super) fn try_load_cache(
     if !allow_signature_mismatch && parsed.signature != signature {
         return Ok(None);
     }
+    if allow_signature_mismatch && parsed.provider != Some(config.provider) {
+        return Ok(None);
+    }
 
     if check_ttl {
         let now = now_unix_secs();
@@ -50,8 +55,12 @@ pub(super) fn try_load_cache(
     Ok(Some(parsed.books))
 }
 
-pub(super) fn write_cache(signature: &str, books: &[CalibreBook]) -> Result<()> {
-    let cache_path = calibre_cache_path();
+pub(super) fn write_cache(
+    config: &CalibreConfig,
+    signature: &str,
+    books: &[CalibreBook],
+) -> Result<()> {
+    let cache_path = calibre_cache_path_for(config);
     if let Some(parent) = cache_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
@@ -60,6 +69,7 @@ pub(super) fn write_cache(signature: &str, books: &[CalibreBook]) -> Result<()> 
         rev: CALIBRE_CACHE_REV.to_string(),
         generated_unix_secs: now_unix_secs(),
         signature: signature.to_string(),
+        provider: Some(config.provider),
         books: books.to_vec(),
     };
     let serialized =
@@ -72,6 +82,11 @@ pub(super) fn write_cache(signature: &str, books: &[CalibreBook]) -> Result<()> 
 pub(super) fn cache_signature(config: &CalibreConfig) -> String {
     let mut hasher = Sha256::new();
     hasher.update(CALIBRE_CACHE_REV.as_bytes());
+    hasher.update(match config.provider {
+        CalibreProvider::Caliberate => b"caliberate" as &[u8],
+        CalibreProvider::Calibre => b"calibre",
+    });
+    hasher.update([0u8]);
     hasher.update(config.calibredb_bin.as_bytes());
     if let Some(url) = server_base_url(config) {
         hasher.update(url.as_bytes());
@@ -95,8 +110,14 @@ pub(super) fn cache_signature(config: &CalibreConfig) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub(super) fn calibre_cache_path() -> PathBuf {
-    crate::cache::cache_root().join(CALIBRE_CACHE_FILE)
+pub(super) fn calibre_cache_path_for(config: &CalibreConfig) -> PathBuf {
+    let provider = match config.provider {
+        CalibreProvider::Caliberate => "caliberate",
+        CalibreProvider::Calibre => "calibre",
+    };
+    let signature = cache_signature(config);
+    let scope = signature.chars().take(16).collect::<String>();
+    crate::cache::cache_root().join(format!("{CALIBRE_CACHE_FILE}-{provider}-{scope}"))
 }
 
 pub(super) fn calibre_download_dir() -> PathBuf {

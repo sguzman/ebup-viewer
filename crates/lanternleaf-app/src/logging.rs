@@ -154,11 +154,13 @@ fn command_span_fields(command: &AppCommand) -> SpanFields {
             ),
             ..SpanFields::default()
         },
-        AppCommand::OpenCalibreBook { id } | AppCommand::EnsureCalibreThumbnail { id } => {
-            SpanFields {
-                calibre_id: Some(*id),
-                ..SpanFields::default()
-            }
+        AppCommand::OpenCalibreBook { book } => SpanFields {
+            calibre_id: Some(book.id),
+            ..SpanFields::default()
+        },
+        AppCommand::EnsureCalibreThumbnail { id } => SpanFields {
+            calibre_id: Some(*id),
+            ..SpanFields::default()
         }
         AppCommand::SetRuntimeLogLevel { level } => SpanFields {
             log_level: Some(level.clone()),
@@ -199,11 +201,13 @@ fn effect_span_fields(effect: &RuntimeEffect) -> SpanFields {
             ),
             ..SpanFields::default()
         },
-        RuntimeEffect::OpenCalibreBook { id } | RuntimeEffect::EnsureCalibreThumbnail { id } => {
-            SpanFields {
-                calibre_id: Some(*id),
-                ..SpanFields::default()
-            }
+        RuntimeEffect::OpenCalibreBook { book } => SpanFields {
+            calibre_id: Some(book.id),
+            ..SpanFields::default()
+        },
+        RuntimeEffect::EnsureCalibreThumbnail { id } => SpanFields {
+            calibre_id: Some(*id),
+            ..SpanFields::default()
         }
         RuntimeEffect::FlushPersistence { trigger } => SpanFields {
             trigger: Some(*trigger),

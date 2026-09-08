@@ -78,8 +78,70 @@ if ($PrepareOnly) {
     return
 }
 
+function Clear-StaleEspeakGeneratorCache {
+    $cacheFiles = Get-ChildItem -Path (Join-Path $repoRoot 'target') -Filter 'CMakeCache.txt' -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match '[\\/]build[\\/]espeak-rs-sys-[^\\/]+[\\/]out[\\/]build[\\/]CMakeCache\.txt
+    $binary = Join-Path $repoRoot 'target\debug\lanternleaf.exe'
+    if ($Release) {
+        $buildArgs = @('build', '--release', '--bin', 'lanternleaf')
+        $binary = Join-Path $repoRoot 'target\release\lanternleaf.exe'
+    }
+
+    & cargo.exe @buildArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ''
+        Write-Host 'Initial build failed. Retrying once after targeted native-dependency cleanup...'
+        & cargo.exe clean -p espeak-rs-sys
+        & cargo.exe clean -p sonic-rs-sys
+        & cargo.exe @buildArgs
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw 'LanternLeaf build failed after the targeted native-dependency retry.'
+    }
+    if (-not (Test-Path $binary -PathType Leaf)) {
+        throw "Expected LanternLeaf executable was not produced: $binary"
+    }
+
+    & $binary
+    $exitCode = $LASTEXITCODE
+} finally {
+    Pop-Location
+}
+
+Get-ChildItem -LiteralPath $runLogs -File -ErrorAction SilentlyContinue | Copy-Item -Destination $handoff -Force
+@(
+    "Repository: $repoRoot",
+    "Fixtures: $fixtureRoot",
+    "Logs: $runLogs",
+    "Application exit code: $exitCode"
+) | Set-Content -LiteralPath (Join-Path $handoff 'README.txt')
+
+Write-Host ''
+Write-Host "LanternLeaf exited with code $exitCode."
+Write-Host "QA handoff: $handoff"
+if ($exitCode -ne 0) { throw "LanternLeaf exited with code $exitCode" }
+ }
+
+    foreach ($cache in $cacheFiles) {
+        $generatorLine = Get-Content -LiteralPath $cache.FullName -ErrorAction SilentlyContinue |
+            Where-Object { $_ -like 'CMAKE_GENERATOR:INTERNAL=*' } |
+            Select-Object -First 1
+
+        if ($generatorLine -and $generatorLine -ne 'CMAKE_GENERATOR:INTERNAL=Ninja') {
+            Write-Host "Removing stale eSpeak CMake generator cache: $generatorLine"
+            & cargo.exe clean -p espeak-rs-sys
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Failed to clean stale eSpeak native build state.'
+            }
+            return
+        }
+    }
+}
+
 Push-Location $repoRoot
 try {
+    Clear-StaleEspeakGeneratorCache
+
     $buildArgs = @('build', '--bin', 'lanternleaf')
     $binary = Join-Path $repoRoot 'target\debug\lanternleaf.exe'
     if ($Release) {

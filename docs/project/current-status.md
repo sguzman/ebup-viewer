@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-08 after director rejection of first Goal 0008 A5 implementation
+Updated: 2026-09-08 after Goal 0008 A5.1 canonical-session correction acceptance/integration
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**GOAL 0008 A5.1 REQUIRED — FRAME FIXES GOOD, SESSION/TTS/PERSISTENCE OWNERSHIP STILL WRONG**
+**A5.1 ACCEPTED — REAL-DESKTOP LARGE-EPUB RESPONSIVENESS + WINDOWS TTS SIGNOFF PENDING**
 
 Accepted integration:
 
@@ -163,3 +163,8 @@ It may be consulted for behavioral evidence only.
 ### A5 director review update
 
 The first A5 implementation at `ca91d6ce...` is **not integrated**. Arc-backed frame state, bounded pretty rendering, off-main command submission, and the optimized QA profile are good and must be preserved. Director inspection found that persistence and TTS worker hot paths still construct full `ReaderSnapshot` values, and the app still owns separate effect/TTS `ReaderSession` values synchronized only by source-path changes. A5.1 must collapse to one canonical session handle and use lightweight TTS/persistence projections before another real-desktop run.
+
+
+### A5.1 accepted correction
+
+A5.1 is now integrated. Production normal reader effects, TTS runtime, and persistence share one canonical `Arc<Mutex<Option<ReaderSession>>>`. TTS hot paths use lightweight playback/session projections rather than full document snapshots, and persistence derives bookmark/config/playback data directly. Deterministic 10k+ sentence regressions prove zero full `ReaderSnapshot` construction during TTS worker Play/100 seeks and persistence flush. Windows CI run `34280238462` passed. The remaining evidence is one real-desktop large-EPUB responsiveness and Windows TTS run using the optimized default `qa.ps1` profile.

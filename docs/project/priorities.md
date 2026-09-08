@@ -27,7 +27,7 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - click-to-play;
 - bookmarks/config/search/navigation.
 
-## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A5.1 SESSION AUTHORITY CORRECTION
+## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A5.1 ACCEPTED, REAL-DESKTOP SIGNOFF PENDING
 
 - use Caliberate's versioned HTTP/JSON API rather than direct database coupling;
 - default local provider target `http://127.0.0.1:8181`;
@@ -86,3 +86,10 @@ A5.1 correction priority:
 - remove full ReaderSnapshot construction from TTS worker plan/progress/control paths;
 - remove full ReaderSnapshot construction from persistence flushes;
 - add deterministic 10k+ sentence tests proving zero heavyweight snapshots and cross-path cursor authority.
+
+
+A5.1 accepted:
+- one canonical ReaderSession handle now serves normal reader effects, TTS, and persistence;
+- TTS/persistence hot paths are structurally snapshot-free on 10k+ sentence regressions;
+- accepted A5 Arc-backed frame state, bounded pretty rendering, off-main TTS submission, and optimized QA profile remain in place;
+- require successful real-desktop large-EPUB responsiveness + Windows TTS Play/seek/pause/resume/stop before Gate 2.5 completion.

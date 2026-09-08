@@ -46,6 +46,10 @@ if (-not (Test-Path $filterDestination)) {
     Copy-Item (Join-Path $repoRoot 'conf\pandoc\strip-nontext.lua') $filterDestination
 }
 
+# The library-service config is part of the QA contract, not ambient cwd state.
+$calibreConfig = Join-Path $configRoot 'calibre.toml'
+Copy-Item (Join-Path $repoRoot 'conf\calibre.toml') $calibreConfig -Force
+
 foreach ($fixture in @('representative.txt', 'representative.md', 'representative.html')) {
     Copy-Item (Join-Path $repoRoot "tests\fixtures\source-ingestion\$fixture") (Join-Path $fixtureRoot $fixture) -Force
 }
@@ -60,6 +64,7 @@ $env:LANTERNLEAF_CONFIG_PATH = Join-Path $configRoot 'config.toml'
 $env:LANTERNLEAF_NORMALIZER_CONFIG_PATH = Join-Path $configRoot 'normalizer.toml'
 $env:LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH = Join-Path $configRoot 'abbreviations.toml'
 $env:QUACK_CHECK_CONFIG = Join-Path $configRoot 'quack-check.toml'
+$env:CALIBRE_CONFIG_PATH = $calibreConfig
 $env:LANTERNLEAF_LOG_DIR = $runLogs
 $env:LANTERNLEAF_CACHE_DIR = $cacheRoot
 
@@ -67,6 +72,7 @@ Write-Host ''
 Write-Host 'LanternLeaf real-desktop QA'
 Write-Host "Fixtures: $fixtureRoot"
 Write-Host "Checklist: $(Join-Path $repoRoot 'docs\qa\non-pdf-reader-windows-checklist.md')"
+Write-Host "Caliberate config: $calibreConfig"
 Write-Host "Logs: $runLogs"
 Write-Host ''
 Write-Host 'Open the four files under .qa\windows\fixtures from LanternLeaf.'

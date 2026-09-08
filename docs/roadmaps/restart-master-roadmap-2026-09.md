@@ -73,15 +73,15 @@ Gate 2 exit:
 
 ## Gate 2.5 — First-class Caliberate library service
 
-**STATUS: GOAL 0008 READY**
+**STATUS: IMPLEMENTATION COMPLETE — REAL-DESKTOP SERVICE SIGNOFF PENDING**
 
-Before moving fully into PDF work, connect the now-working native reader to the user's existing Caliberate library service.
+Goal 0008 connected the native reader to the user's existing Caliberate library service.
 
 Target relationship:
 
 `Caliberate -> HTTP/JSON v1 at 127.0.0.1:8181 -> LanternLeaf library browser -> materialized source -> existing reader/TTS pipeline`
 
-Goal 0008 keeps one browser UI, adds a narrow provider boundary, makes Caliberate the preferred local provider, and preserves legacy Calibre content-server compatibility.
+Goal 0008 keeps one browser UI, adds a narrow provider boundary, makes Caliberate the preferred local provider, and preserves legacy Calibre content-server compatibility. Automated Windows validation is complete; only the real service/UI/TTS pass remains.
 
 Exit:
 

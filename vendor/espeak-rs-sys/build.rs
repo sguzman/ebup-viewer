@@ -197,6 +197,14 @@ fn main() {
 
     if cfg!(windows) {
         config.static_crt(static_crt);
+
+        // The Visual Studio generator can rediscover VS/toolset state independently
+        // of the active developer environment. On Windows we already enter a
+        // verified MSVC environment before Cargo runs, so use Ninja and the
+        // compiler on PATH directly instead of relying on VS generator discovery.
+        config.generator("Ninja");
+        config.define("CMAKE_C_COMPILER", "cl.exe");
+        config.define("CMAKE_CXX_COMPILER", "cl.exe");
     }
 
     // We only need phonemization for piper, so disable audio device output.

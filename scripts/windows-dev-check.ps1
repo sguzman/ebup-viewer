@@ -35,6 +35,7 @@ function Report-Command([string] $Name, [string] $Purpose) {
 
 $null = Report-Command "cargo" "Cargo"
 $null = Report-Command "cmake" "CMake"
+$null = Report-Command "ninja" "Ninja for native CMake builds"
 $null = Report-Command "pandoc" "Pandoc for HTML/DOC conversion tests"
 
 $cl = Get-Command cl.exe -ErrorAction SilentlyContinue
@@ -50,7 +51,7 @@ $msbuild = Get-Command MSBuild.exe -ErrorAction SilentlyContinue
 if ($null -ne $msbuild) {
     Write-Host "OK: MSBuild ($($msbuild.Source))"
 } else {
-    Write-Host "MISSING: MSBuild.exe (required by the CMake Visual Studio generator)"
+    Write-Host "MISSING: MSBuild.exe (Visual Studio toolchain sanity check)"
     $missing.Add("MSBuild.exe")
 }
 

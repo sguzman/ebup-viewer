@@ -21,6 +21,11 @@
       "Name": "vswhere",
       "Source": "main",
       "Info": "64bit"
+    },
+    {
+      "Name": "ninja",
+      "Source": "main",
+      "Info": "64bit"
     }
   ]
 }

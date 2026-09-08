@@ -50,17 +50,43 @@ foreach ($line in $lines) {
     }
 }
 
-$required = @('cargo.exe', 'cl.exe', 'MSBuild.exe', 'cmake.exe', 'pandoc.exe')
+$required = @('cargo.exe', 'cl.exe', 'MSBuild.exe', 'cmake.exe', 'ninja.exe', 'pandoc.exe')
 $missing = @($required | Where-Object { $null -eq (Get-Command $_ -ErrorAction SilentlyContinue) })
 if ($missing.Count -gt 0) {
     throw "Windows development environment is incomplete: $($missing -join ', '). Run .\deps.ps1."
 }
+
+function Test-MsvcCompiler {
+    $probeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lanternleaf-msvc-probe-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
+    try {
+        $cSource = Join-Path $probeRoot 'probe.c'
+        $cppSource = Join-Path $probeRoot 'probe.cpp'
+        Set-Content -LiteralPath $cSource -Value 'int lanternleaf_c_probe(void) { return 0; }' -Encoding Ascii
+        Set-Content -LiteralPath $cppSource -Value 'int lanternleaf_cpp_probe() { return 0; }' -Encoding Ascii
+
+        & cl.exe /nologo /c $cSource /Fo"$probeRoot\probe-c.obj" *> $null
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $probeRoot 'probe-c.obj'))) {
+            throw 'MSVC C compiler probe failed even though cl.exe is on PATH.'
+        }
+
+        & cl.exe /nologo /c $cppSource /Fo"$probeRoot\probe-cpp.obj" *> $null
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $probeRoot 'probe-cpp.obj'))) {
+            throw 'MSVC C++ compiler probe failed even though cl.exe is on PATH.'
+        }
+    } finally {
+        Remove-Item $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Test-MsvcCompiler
 
 if (-not $Quiet) {
     Write-Host "MSVC environment: $installPath"
     Write-Host "cl: $((Get-Command cl.exe).Source)"
     Write-Host "MSBuild: $((Get-Command MSBuild.exe).Source)"
     Write-Host "CMake: $((Get-Command cmake.exe).Source)"
+    Write-Host "Ninja: $((Get-Command ninja.exe).Source)"
     Write-Host "Pandoc: $((Get-Command pandoc.exe).Source)"
     Write-Host "Cargo: $((Get-Command cargo.exe).Source)"
 }

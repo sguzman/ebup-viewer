@@ -370,3 +370,15 @@ Stop and report a true blocker only if:
 - an unrelated baseline regression prevents required validation.
 
 Do not block merely because hosted CI cannot reach the human's local `127.0.0.1:8181` service.
+
+
+## Director correction continuation — attempt A2
+
+Director review found two remaining acceptance defects. Read `docs/work/reviews/0008.md` before editing.
+
+Attempt A2 is limited to:
+
+1. making stale catalog fallback provider-safe so Caliberate can never receive a legacy Calibre catalog (and vice versa) through signature-mismatch fallback;
+2. adding deterministic HTTP regression coverage for the retained legacy Calibre catalog + content download + Basic-auth path.
+
+Preserve the accepted provider boundary and Caliberate implementation from attempt A1. Do not broaden scope.

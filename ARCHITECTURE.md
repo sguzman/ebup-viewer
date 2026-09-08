@@ -145,6 +145,27 @@ PDF is a first-class subsystem with separate responsibilities for:
 
 Canonical TTS/search text must remain distinguishable from visual PDF ordering.
 
+### Library service integration
+
+LanternLeaf may consume external library/catalog services, but those services do not own reader/session state.
+
+Preferred boundary:
+
+```text
+library browser/UI
+  -> catalog/provider service
+      -> Caliberate HTTP/JSON v1
+      -> legacy Calibre content-server compatibility
+  -> materialized local source
+  -> canonical LanternLeaf document/session pipeline
+```
+
+Caliberate is the preferred first-class local service provider and communicates with LanternLeaf over HTTP rather than through direct database access or crate linking. The default local development endpoint is `http://127.0.0.1:8181`.
+
+Provider-specific catalog response shapes, authentication, download routes, and thumbnail capabilities belong behind the provider boundary. Once a book is materialized, Caliberate/Calibre provenance must not create a second reader/TTS state machine.
+
+Legacy Calibre HTTP support may remain as a compatibility adapter. Do not make the UI itself depend on legacy Calibre web-UI response shapes.
+
 ### Platform integration
 
 Windows/Linux-specific behavior belongs behind explicit modules/traits. Avoid scattered shell commands and machine-specific paths.

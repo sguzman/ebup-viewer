@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-07 after Goal 0007 workflow correction
+Updated: 2026-09-07 after successful repo-native Windows launch and Goal 0008 queueing
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -98,6 +98,12 @@ Observed final test evidence includes:
 
 Goal 0006 also fixed bounded Markdown canonicalization so raw representative Markdown syntax is not spoken as canonical text.
 
+### Real-desktop evidence now observed
+
+A repo-native Windows run using `git pull -> .\qa.ps1` successfully completed dependency bootstrap, built LanternLeaf, and entered the native egui shell on the human Windows machine. The run used isolated `.qa/windows` state, so an initially empty library is expected until files or an external library source are opened.
+
+This closes the basic real-desktop build/launch uncertainty. It does **not** yet prove speaker playback, voice selection, visible render quality, or end-user reader ergonomics.
+
 ### Remaining Gate 2 evidence
 
 Hosted CI cannot honestly prove:
@@ -128,11 +134,15 @@ Goal 0003 repaired the bounded classifier/OCR/reading-order/cache contract set.
 
 Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff.
 
-## Calibre and browser/import integrations
+## Caliberate / Calibre library integration
 
-**PRESENT BUT RESTART-ERA PARITY UNVERIFIED**
+**CALIBERATE FIRST-CLASS SERVICE INTEGRATION QUEUED AS GOAL 0008**
 
-They remain outside the current reader parity scope.
+LanternLeaf already contains a Calibre-oriented browser/catalog/cache/materialization subsystem, but its HTTP transport currently assumes legacy Calibre content-server web-UI routes and stale checked-in network configuration.
+
+Caliberate now exposes a source-neutral versioned HTTP/JSON API, including paged `/api/v1/books` catalog access and `/api/v1/books/{id}/content/{format}` content streaming.
+
+Goal 0008 will make Caliberate at `http://127.0.0.1:8181` the preferred local library provider while preserving legacy Calibre HTTP compatibility behind the same browser UI.
 
 ## Historical Tauri / React / WebView implementation
 

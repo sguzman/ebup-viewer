@@ -71,9 +71,29 @@ Gate 2 exit:
 - Windows voice selection and speaker playback confirmed;
 - major interaction defects, if any, are repaired or explicitly bounded.
 
+## Gate 2.5 — First-class Caliberate library service
+
+**STATUS: GOAL 0008 READY**
+
+Before moving fully into PDF work, connect the now-working native reader to the user's existing Caliberate library service.
+
+Target relationship:
+
+`Caliberate -> HTTP/JSON v1 at 127.0.0.1:8181 -> LanternLeaf library browser -> materialized source -> existing reader/TTS pipeline`
+
+Goal 0008 keeps one browser UI, adds a narrow provider boundary, makes Caliberate the preferred local provider, and preserves legacy Calibre content-server compatibility.
+
+Exit:
+
+- paged Caliberate catalog appears through the existing library browser;
+- a supported book format materializes from the Caliberate content endpoint;
+- the materialized book enters the existing LanternLeaf session/TTS path;
+- legacy Calibre remains available behind the provider adapter;
+- real Windows QA confirms a Caliberate-sourced book can be opened and spoken.
+
 ## Gate 3 — Native PDF visual stability
 
-**NEXT PRODUCT GATE AFTER GATE 2 SIGNOFF**
+**NEXT CORE RENDERING GATE AFTER CALIBERATE INTEGRATION / REMAINING GATE 2 SIGNOFF**
 
 Focus:
 

@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{
     CALIBRE_CACHE_FILE, CALIBRE_CACHE_REV, CALIBRE_DOWNLOAD_SUBDIR, CALIBRE_THUMB_SUBDIR,
-    CalibreBook, CalibreConfig, server_base_url,
+    CalibreBook, CalibreConfig, CalibreProvider, server_base_url,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -72,6 +72,11 @@ pub(super) fn write_cache(signature: &str, books: &[CalibreBook]) -> Result<()> 
 pub(super) fn cache_signature(config: &CalibreConfig) -> String {
     let mut hasher = Sha256::new();
     hasher.update(CALIBRE_CACHE_REV.as_bytes());
+    hasher.update(match config.provider {
+        CalibreProvider::Caliberate => b"caliberate" as &[u8],
+        CalibreProvider::Calibre => b"calibre",
+    });
+    hasher.update([0u8]);
     hasher.update(config.calibredb_bin.as_bytes());
     if let Some(url) = server_base_url(config) {
         hasher.update(url.as_bytes());

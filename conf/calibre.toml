@@ -1,23 +1,21 @@
 [calibre]
 # Enable Calibre browser integration.
 enabled = true
+provider = "caliberate"
 
-# Chunkr-compatible calibre fields.
-library_path = "/drive/calibre/en_nonfiction"
-library_url = "http://192.168.0.113:8083/#en_nonfiction"
+# Caliberate v1 local service.
+library_path = ""
+library_url = "http://127.0.0.1:8181"
 state_path = ""
 
 # Calibre CLI binary.
 calibredb_bin = "calibredb"
 
 # Legacy/extra server URL list (optional).
-server_urls = ["http://192.168.0.113:8083"]
+server_urls = ["http://127.0.0.1:8181"]
 server_username = ""
 server_password = ""
-
-[calibre.content_server]
-username = "admin"
-password = "admin"
+api_key = ""
 
 # If true, fallback to local library path when no server target is reachable.
 allow_local_library_fallback = false

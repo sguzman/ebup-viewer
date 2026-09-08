@@ -120,6 +120,16 @@ pub(super) fn calibre_cache_path_for(config: &CalibreConfig) -> PathBuf {
     crate::cache::cache_root().join(format!("{CALIBRE_CACHE_FILE}-{provider}-{scope}"))
 }
 
+pub(super) fn calibre_cache_path_for(config: &CalibreConfig) -> PathBuf {
+    let provider = match config.provider {
+        CalibreProvider::Caliberate => "caliberate",
+        CalibreProvider::Calibre => "calibre",
+    };
+    let signature = cache_signature(config);
+    let scope = signature.chars().take(16).collect::<String>();
+    crate::cache::cache_root().join(format!("{CALIBRE_CACHE_FILE}-{provider}-{scope}"))
+}
+
 pub(super) fn calibre_download_dir() -> PathBuf {
     crate::cache::cache_root().join(CALIBRE_DOWNLOAD_SUBDIR)
 }

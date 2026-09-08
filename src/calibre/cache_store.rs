@@ -15,6 +15,8 @@ struct CachedBookList {
     rev: String,
     generated_unix_secs: u64,
     signature: String,
+    #[serde(default)]
+    provider: Option<CalibreProvider>,
     books: Vec<CalibreBook>,
 }
 
@@ -39,6 +41,9 @@ pub(super) fn try_load_cache(
     if !allow_signature_mismatch && parsed.signature != signature {
         return Ok(None);
     }
+    if allow_signature_mismatch && parsed.provider != Some(config.provider) {
+        return Ok(None);
+    }
 
     if check_ttl {
         let now = now_unix_secs();
@@ -50,7 +55,11 @@ pub(super) fn try_load_cache(
     Ok(Some(parsed.books))
 }
 
-pub(super) fn write_cache(signature: &str, books: &[CalibreBook]) -> Result<()> {
+pub(super) fn write_cache(
+    config: &CalibreConfig,
+    signature: &str,
+    books: &[CalibreBook],
+) -> Result<()> {
     let cache_path = calibre_cache_path();
     if let Some(parent) = cache_path.parent() {
         fs::create_dir_all(parent)
@@ -60,6 +69,7 @@ pub(super) fn write_cache(signature: &str, books: &[CalibreBook]) -> Result<()> 
         rev: CALIBRE_CACHE_REV.to_string(),
         generated_unix_secs: now_unix_secs(),
         signature: signature.to_string(),
+        provider: Some(config.provider),
         books: books.to_vec(),
     };
     let serialized =

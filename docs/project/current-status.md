@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-07 after Goal 0008 Caliberate integration acceptance
+Updated: 2026-09-08 after real-desktop Goal 0008 EPUB-open failure and A3 correction reopen
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**GOAL 0008 COMPLETE — REAL-DESKTOP SERVICE SIGNOFF PENDING**
+**GOAL 0008 REOPENED — REAL CALIBERATE EPUBS DO NOT YET ENTER THE READER**
 
 Accepted integration:
 
@@ -151,7 +151,7 @@ Accepted integration:
 
 Authoritative Windows run `34185172624` passed both jobs and the core suite reached **180 passed / 0 failed**.
 
-Remaining evidence is the real desktop/service loop against the human's actual Caliberate instance: catalog population, opening a real book, and Windows TTS on that Caliberate-sourced book.
+Real-desktop evidence now proves catalog population against the human's actual Caliberate instance, but a real EPUB still fails to enter the reader even after the timeout and large-catalog open-path hotfixes. Acceptance gate 7 is therefore reopened. Attempt A3 must add a valid-EPUB Caliberate-to-reader regression, repair the EPUB ingestion/materialization failure path, and pass Windows validation before another human QA run.
 
 ## Historical Tauri / React / WebView implementation
 

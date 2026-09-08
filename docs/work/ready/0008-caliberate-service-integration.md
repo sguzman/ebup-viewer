@@ -382,3 +382,117 @@ Attempt A2 is limited to:
 2. adding deterministic HTTP regression coverage for the retained legacy Calibre catalog + content download + Basic-auth path.
 
 Preserve the accepted provider boundary and Caliberate implementation from attempt A1. Do not broaden scope.
+
+
+## Director correction continuation — attempt A3: real-desktop EPUB open failure
+
+### Current evidence
+
+Real Windows QA against the human's actual Caliberate service invalidated acceptance gate 7.
+
+Verified runtime facts:
+
+- the Caliberate catalog populates in LanternLeaf;
+- selecting a real EPUB still does not enter the reader;
+- the post-acceptance timeout/progress hotfix and the large-catalog in-memory selection hotfix did not resolve the open;
+- commit `caea5741a6b2fea2754082268169f166a1c61c8e` removed the 100k-book catalog reread and duplicate opens, but the real EPUB still fails after that change.
+
+The previous automated evidence was insufficient. In particular, the Caliberate materialization regression named `fetches_all_pages_with_api_key_and_materializes_versioned_content` serves the literal byte string `representative book bytes` as an EPUB and asserts only that the bytes were downloaded. It never proves that a valid EPUB served through Caliberate can enter LanternLeaf's document/session pipeline.
+
+Two additional concrete risk points are now part of the correction evidence:
+
+1. Caliberate content-cache reuse currently trusts an already-existing materialized path without validating that an EPUB is readable.
+2. EPUB ingestion currently performs `load_with_pandoc(path, "plain", ...)` before the native `EpubDoc` pretty-content pass. That launches an external Pandoc process with `Command::output()` and no process timeout, then parses the same EPUB again natively.
+
+These are hypotheses/defects to resolve with deterministic evidence; do not assume either one alone is the entire root cause.
+
+### Authorized correction passes
+
+#### A. Real Caliberate -> EPUB -> reader regression
+
+Replace the fake-byte blind spot with a deterministic test that serves a **valid minimal EPUB** from the mock Caliberate content endpoint.
+
+The regression must exercise, at minimum:
+
+`mock Caliberate HTTP -> content materialization -> normal LanternLeaf EPUB/source loader -> canonical reader/session content`
+
+Use a project-owned deterministic EPUB fixture/helper. The test must assert semantic content from the EPUB (for example known chapter text) in canonical `tts_text` and structured/native reading content. Merely asserting downloaded bytes is not sufficient.
+
+Where dependency layering makes the full egui effect inappropriate for a unit test, the boundary may stop at the canonical core session/source loader, but it must cross both the Caliberate HTTP materialization boundary and the real EPUB ingestion boundary.
+
+#### B. Remove the unbounded EPUB subprocess dependency from the critical open path
+
+EPUB already has a Rust-native `EpubDoc` parser and native chapter HTML path. Do not require an unbounded external Pandoc child process merely to obtain EPUB TTS text before that native parse.
+
+Prefer one native EPUB ingestion pass that derives:
+
+- chapter/native reading HTML;
+- canonical plain TTS text from the same chapter content using existing Rust-native text extraction machinery such as `html2text`;
+- the existing source/session structures.
+
+Pandoc may remain for source families that genuinely need it, but a real EPUB open must not be able to hang forever in an external `pandoc` process.
+
+Preserve canonical sentence/session semantics; do not invent a Caliberate-specific or EPUB-specific reader state machine.
+
+#### C. Validate/recover materialized EPUB cache entries
+
+A pre-existing Caliberate `.epub` materialization must not be trusted solely because the path exists.
+
+Add bounded validation sufficient to detect a zero-length, truncated, non-ZIP/non-EPUB, or otherwise unreadable cached EPUB before handing it to the reader. If a cached Caliberate EPUB is invalid:
+
+1. discard only that poisoned materialization;
+2. download it again once from the normal content endpoint;
+3. validate the replacement;
+4. return an actionable error if the replacement is still invalid.
+
+Do not wipe unrelated catalog or reader caches.
+
+#### D. Stage-level diagnostics
+
+Keep the existing `materializing` / `loading_reader` progress, and add enough structured tracing around the real EPUB path to distinguish:
+
+- content cache hit vs network download;
+- downloaded byte count;
+- EPUB validation start/result;
+- native EPUB parse/text extraction start/result;
+- session load completion/failure.
+
+Failures must terminate the source-open operation and surface an actionable visible error. A failed worker must not leave the UI permanently believing a source open is active.
+
+#### E. Preserve accepted behavior
+
+Do not regress:
+
+- the in-memory selected-book handoff from `caea574...`;
+- duplicate-open suppression;
+- 10-minute Caliberate content timeout;
+- provider-safe catalog caches;
+- Caliberate API-key behavior;
+- legacy Calibre catalog/download/Basic-auth behavior;
+- loopback default `127.0.0.1:8181`;
+- repo-native Windows QA workflow.
+
+### Correction acceptance gates
+
+Attempt A3 is not complete until all of the following are true:
+
+1. A deterministic mock Caliberate server serves a syntactically valid EPUB, not placeholder bytes.
+2. The materialized result is accepted by LanternLeaf's real EPUB loader/session path.
+3. The resulting canonical TTS text contains known fixture chapter text.
+4. Structured/native EPUB reading content is present and contains known fixture chapter text.
+5. EPUB opening no longer depends on an unbounded external Pandoc process.
+6. An invalid pre-existing Caliberate EPUB cache entry is rejected and recovered by one clean re-download, with a deterministic regression.
+7. A still-invalid replacement fails explicitly and leaves source-open state recoverable.
+8. Existing Caliberate catalog/auth/cache tests remain green.
+9. Existing legacy Calibre HTTP compatibility regression remains green.
+10. `cargo check --workspace`, `cargo build --workspace`, and `cargo test --workspace` pass on Windows CI.
+11. The report records exact tests and the corrected end-to-end EPUB path.
+12. No PDF work, cover-polish work, broad library UI redesign, or reader/TTS state redesign is introduced.
+
+### Human verification for attempt A3
+
+**No human QA during implementation/correction.**
+
+The human has already supplied the failing real-desktop evidence. Do not ask them to repeat the same EPUB click before the automated blind spot above is repaired and the director has reviewed/integrated A3.
+
+After director acceptance only, request one repo-native `git pull -> .\qa.ps1` run against the already-running Caliberate service and one real EPUB open before proceeding to Windows TTS.

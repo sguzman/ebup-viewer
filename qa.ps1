@@ -108,8 +108,8 @@ Push-Location $repoRoot
 try {
     Clear-StaleEspeakGeneratorCache
 
-    $buildArgs = @('build', '--bin', 'lanternleaf')
-    $binary = Join-Path $repoRoot 'target\debug\lanternleaf.exe'
+    $buildArgs = @('build', '--profile', 'qa', '--bin', 'lanternleaf')
+    $binary = Join-Path $repoRoot 'target\qa\lanternleaf.exe'
     if ($Release) {
         $buildArgs = @('build', '--release', '--bin', 'lanternleaf')
         $binary = Join-Path $repoRoot 'target\release\lanternleaf.exe'

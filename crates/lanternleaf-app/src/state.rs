@@ -6,6 +6,7 @@ use crate::contracts::{
 };
 use crate::pipeline::{PersistenceOutcome, PersistenceTrigger};
 use lanternleaf_core::{epub_loader, session};
+use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -94,11 +95,11 @@ pub struct SourceMetadata {
 #[derive(Debug, Clone, Default)]
 pub struct ReaderDocumentState {
     pub source: Option<SourceMetadata>,
-    pub snapshot: Option<ReaderSnapshot>,
-    pub canonical_page_text: Option<String>,
+    pub snapshot: Option<Arc<ReaderSnapshot>>,
+    pub canonical_page_text: Option<Arc<str>>,
     pub pretty_kind: Option<session::PrettyKind>,
-    pub images: Vec<session::ReaderImageRef>,
-    pub sentence_anchor_map: Vec<Option<usize>>,
+    pub images: Arc<Vec<session::ReaderImageRef>>,
+    pub sentence_anchor_map: Arc<Vec<Option<usize>>>,
     pub pdf_sync_metadata: Option<PdfSyncMetadata>,
 }
 
@@ -147,7 +148,7 @@ pub struct TransientControls {
 #[derive(Debug, Clone, Default)]
 pub struct StarterState {
     pub recents: Vec<RecentBook>,
-    pub calibre_books: Vec<CalibreBookDto>,
+    pub calibre_books: Arc<Vec<CalibreBookDto>>,
     pub browser_tabs_health: Option<BrowserTabsHealth>,
     pub browser_tabs_windows: Vec<BrowserTabsWindow>,
     pub browser_tabs_tabs: Vec<BrowserTabsTab>,
@@ -203,8 +204,8 @@ impl Default for AppState {
             reader_document: ReaderDocumentState {
                 canonical_page_text: None,
                 pretty_kind: None,
-                images: Vec::new(),
-                sentence_anchor_map: Vec::new(),
+                images: Arc::new(Vec::new()),
+                sentence_anchor_map: Arc::new(Vec::new()),
                 pdf_sync_metadata: None,
                 ..ReaderDocumentState::default()
             },
@@ -326,10 +327,10 @@ impl AppState {
             source_name: reader.source_name.clone(),
         });
         if let Some(ref reader) = snapshot {
-            self.reader_document.canonical_page_text = Some(reader.page_text.clone());
+            self.reader_document.canonical_page_text = Some(Arc::from(reader.page_text.as_str()));
             self.reader_document.pretty_kind = Some(reader.pretty_kind);
-            self.reader_document.images = reader.images.clone();
-            self.reader_document.sentence_anchor_map = reader.sentence_anchor_map.clone();
+            self.reader_document.images = Arc::new(reader.images.clone());
+            self.reader_document.sentence_anchor_map = Arc::new(reader.sentence_anchor_map.clone());
             self.reader_document.pdf_sync_metadata = Some(PdfSyncMetadata {
                 geometry_mode: reader.pdf_geometry_mode,
                 sync_strategy: reader.pdf_sync_strategy,
@@ -341,12 +342,12 @@ impl AppState {
         } else {
             self.reader_document.canonical_page_text = None;
             self.reader_document.pretty_kind = None;
-            self.reader_document.images.clear();
-            self.reader_document.sentence_anchor_map.clear();
+            self.reader_document.images = Arc::new(Vec::new());
+            self.reader_document.sentence_anchor_map = Arc::new(Vec::new());
             self.reader_document.pdf_sync_metadata = None;
         }
-        self.reader_document.snapshot = snapshot.clone();
         self.reader_ui = derive_reader_ui(snapshot.as_ref());
+        self.reader_document.snapshot = snapshot.map(Arc::new);
     }
 
     pub fn set_reader_playback(&mut self, playback: Option<ReaderPlaybackState>) {
@@ -376,7 +377,7 @@ impl AppState {
     }
 
     pub fn set_starter_calibre_books(&mut self, calibre_books: Vec<CalibreBookDto>) {
-        self.starter.calibre_books = calibre_books;
+        self.starter.calibre_books = Arc::new(calibre_books);
     }
 
     pub fn set_starter_browser_tabs_health(&mut self, health: Option<BrowserTabsHealth>) {
@@ -701,6 +702,36 @@ mod tests {
                 .map(|reader| reader.current_page),
             Some(3)
         );
+    }
+
+    #[test]
+    fn large_ui_state_clone_shares_catalog_and_reader_document_payloads() {
+        let mut state = AppState::default();
+        state.set_reader_document(Some(make_reader_snapshot()));
+        state.set_starter_calibre_books(
+            (0..104_732)
+                .map(|id| CalibreBookDto {
+                    id,
+                    title: format!("Book {id}"),
+                    extension: "epub".to_string(),
+                    authors: "Author".to_string(),
+                    year: Some(2026),
+                    file_size_bytes: Some(123),
+                    source_path: None,
+                    cover_thumbnail: None,
+                })
+                .collect(),
+        );
+
+        let cloned = state.clone();
+        assert!(Arc::ptr_eq(
+            &state.starter.calibre_books,
+            &cloned.starter.calibre_books
+        ));
+        assert!(Arc::ptr_eq(
+            state.reader_document.snapshot.as_ref().unwrap(),
+            cloned.reader_document.snapshot.as_ref().unwrap()
+        ));
     }
 
     #[test]

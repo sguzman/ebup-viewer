@@ -113,6 +113,8 @@ pub struct TtsRuntimeEvent {
     pub request_id: u64,
     pub action: String,
     pub kind: TtsRuntimeEventKind,
+    /// TTS events carry playback deltas only. The immutable reader document remains owned by the
+    /// app session and is never cloned into the high-frequency event stream.
     pub snapshot: Option<session::ReaderSnapshot>,
     pub playback: Option<crate::contracts::ReaderPlaybackState>,
     pub tts: Option<session::ReaderTtsView>,
@@ -209,6 +211,7 @@ pub struct TtsRuntime {
     event_tx: mpsc::Sender<TtsRuntimeEvent>,
     event_rx: Arc<Mutex<mpsc::Receiver<TtsRuntimeEvent>>>,
     event_batcher: Arc<Mutex<TtsEventBatcher>>,
+    command_tx: mpsc::Sender<TtsCommand>,
 }
 
 impl TtsRuntime {
@@ -218,7 +221,8 @@ impl TtsRuntime {
 
     pub fn new_with_mode(normalizer: normalizer::TextNormalizer, mode: TtsRuntimeMode) -> Self {
         let (event_tx, event_rx) = mpsc::channel();
-        Self {
+        let (command_tx, command_rx) = mpsc::channel();
+        let runtime = Self {
             mode,
             normalizer,
             panels: Arc::new(Mutex::new(session::PanelState::default())),
@@ -229,7 +233,34 @@ impl TtsRuntime {
             event_tx,
             event_rx: Arc::new(Mutex::new(event_rx)),
             event_batcher: Arc::new(Mutex::new(TtsEventBatcher::default())),
-        }
+            command_tx,
+        };
+        let worker = runtime.clone();
+        thread::Builder::new()
+            .name("lanternleaf-tts-control".to_string())
+            .spawn(move || {
+                while let Ok(command) = command_rx.recv() {
+                    let started = Instant::now();
+                    trace!(tts_command = command.label(), "TTS control worker started");
+                    let _ = worker.apply_command(command);
+                    trace!(
+                        elapsed_ms = started.elapsed().as_millis(),
+                        "TTS control worker finished"
+                    );
+                }
+            })
+            .expect("failed to spawn TTS control worker");
+        runtime
+    }
+
+    /// Queue a TTS command for the control worker. This is the egui-facing API and performs no
+    /// planning, cache IO, snapshot construction, engine creation, or synthesis on the caller.
+    pub fn submit_command(&self, command: TtsCommand) -> bool {
+        let started = Instant::now();
+        let label = command.label().to_string();
+        let submitted = self.command_tx.send(command).is_ok();
+        trace!(command = %label, elapsed_us = started.elapsed().as_micros(), submitted, "Submitted TTS control command");
+        submitted
     }
 
     pub fn set_session(&self, session: Option<session::ReaderSession>) {
@@ -312,7 +343,7 @@ impl TtsRuntime {
             request_id,
             action: action.to_string(),
             kind: TtsRuntimeEventKind::StateChanged,
-            snapshot: Some(snapshot.clone()),
+            snapshot: None,
             playback: Some(reader_playback_state_from_snapshot(&snapshot)),
             tts: Some(snapshot.tts.clone()),
             message: None,
@@ -1206,7 +1237,7 @@ fn emit_snapshot_event(
         request_id,
         action: action.to_string(),
         kind,
-        snapshot: Some(snapshot.clone()),
+        snapshot: None,
         playback: Some(playback),
         tts: Some(snapshot.tts.clone()),
         message,
@@ -1377,6 +1408,48 @@ mod tests {
 
         let snapshot = runtime.apply_command(TtsCommand::Play).expect("snapshot");
         assert_eq!(snapshot.tts.state, session::TtsPlaybackState::Playing);
+    }
+
+    #[test]
+    fn large_session_tts_submission_is_bounded_and_worker_owned() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let runtime = TtsRuntime::new_with_mode(normalizer, TtsRuntimeMode::Simulated);
+        let sentences: Vec<String> = (0..10_488)
+            .map(|idx| format!("Sentence {idx} is deterministic."))
+            .collect();
+        let page = sentences.join(" ");
+        runtime.set_session(Some(session::ReaderSession::from_pages_for_test(
+            PathBuf::from("/tmp/large-test.epub"),
+            "large-test.epub".to_string(),
+            vec![page],
+            vec![sentences],
+        )));
+
+        let started = Instant::now();
+        assert!(runtime.submit_command(TtsCommand::Play));
+        assert!(
+            started.elapsed() < Duration::from_millis(50),
+            "egui-facing TTS submission took {:?}",
+            started.elapsed()
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut saw_state = false;
+        while Instant::now() < deadline {
+            let events = runtime.collect_events();
+            assert!(events.iter().all(|event| event.snapshot.is_none()));
+            saw_state |= events
+                .iter()
+                .any(|event| event.kind == TtsRuntimeEventKind::StateChanged);
+            if saw_state {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            saw_state,
+            "TTS control worker did not begin the large session"
+        );
     }
 
     #[test]

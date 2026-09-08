@@ -24,8 +24,21 @@ fn get_cargo_target_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Erro
         }
         sub_path = parent;
     }
-    let target_dir = target_dir.ok_or("not found")?;
-    Ok(target_dir.to_path_buf())
+    if let Some(target_dir) = target_dir {
+        return Ok(target_dir.to_path_buf());
+    }
+
+    // Cargo custom profiles inherit the base PROFILE name (for example `release`) while
+    // placing artifacts under the custom profile directory (for example `target/qa`). Locate
+    // that directory from its stable `build` child so repo-owned optimized QA profiles work.
+    let mut candidate = out_dir.as_path();
+    while let Some(parent) = candidate.parent() {
+        if parent.join("build").is_dir() {
+            return Ok(parent.to_path_buf());
+        }
+        candidate = parent;
+    }
+    Err("not found".into())
 }
 
 fn copy_folder(src: &Path, dst: &Path) {

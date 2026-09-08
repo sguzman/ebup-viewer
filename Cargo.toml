@@ -7,6 +7,14 @@ edition = "2024"
 members = [".", "crates/lanternleaf-core", "crates/lanternleaf-app", "crates/lanternleaf-egui"]
 resolver = "2"
 
+# Repo-native desktop QA needs representative egui optimization while retaining symbols and
+# diagnostics useful for local investigation. CI keeps using the normal check/build/test profiles.
+[profile.qa]
+inherits = "release"
+opt-level = 2
+debug = true
+strip = "none"
+
 [dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }

@@ -28,17 +28,26 @@ impl LanternLeafApp {
 
     pub(crate) fn execute_command(&mut self, command: AppCommand) {
         let state_snapshot = self.runtime.state_snapshot();
-        let reader_snapshot = state_snapshot.reader_document.snapshot.as_ref();
+        let reader_snapshot = state_snapshot.reader_document.snapshot.as_deref();
         self.maybe_record_audio_command(&command, reader_snapshot);
         self.apply_persistence_trigger(&command, reader_snapshot);
+        let is_tts_command = matches!(
+            &command,
+            AppCommand::Reader(ReaderCommand::Session(session_command))
+                if lanternleaf_app::tts_runtime::TtsCommand::from_session_command(session_command).is_some()
+        );
         let plan = self.runtime.plan_command(command.clone());
         self.apply_local_events(&plan);
         self.log_plan(&plan);
         self.last_plan = Some(plan);
-        if let Some(plan) = &self.last_plan {
-            self.dispatch_effects(plan);
+        if !is_tts_command {
+            if let Some(plan) = &self.last_plan {
+                self.dispatch_effects(plan);
+            }
         }
-        self.apply_tts_command_if_needed(&command);
+        if is_tts_command {
+            self.apply_tts_command_if_needed(&command);
+        }
     }
 
     pub(crate) fn execute_reader_command(&mut self, command: ReaderCommand) {
@@ -71,7 +80,7 @@ impl LanternLeafApp {
             action = session_command.action(),
             "Dispatching TTS command to egui runtime"
         );
-        let _ = self.tts_runtime.apply_command(tts_command);
+        let _ = self.tts_runtime.submit_command(tts_command);
     }
 
     fn apply_persistence_trigger(
@@ -127,11 +136,11 @@ impl LanternLeafApp {
                     self.queue_persistence_flush(PersistenceTrigger::SourceOpen);
                     self.last_reader_source = Some(snapshot.source_path.clone());
                 }
-                self.last_reader_snapshot = Some(snapshot.clone());
+                self.last_reader_source_for_persistence = Some(snapshot.source_path.clone());
             }
             None => {
-                if let Some(last_snapshot) = self.last_reader_snapshot.take() {
-                    self.record_persistence_status("session_close", &last_snapshot.source_path);
+                if let Some(last_source) = self.last_reader_source_for_persistence.take() {
+                    self.record_persistence_status("session_close", &last_source);
                     self.queue_persistence_flush(PersistenceTrigger::SessionClose);
                 }
                 self.last_reader_source = None;
@@ -178,7 +187,6 @@ impl LanternLeafApp {
     }
 }
 
-
 #[cfg(test)]
 mod startup_tests {
     use super::*;
@@ -187,10 +195,11 @@ mod startup_tests {
     fn starter_startup_loads_caliberate_catalog_without_manual_refresh() {
         let commands = starter_startup_commands();
         assert!(matches!(commands.first(), Some(AppCommand::Bootstrap)));
-        assert!(commands.iter().any(|command| matches!(
-            command,
-            AppCommand::RefreshRecents { limit: None }
-        )));
+        assert!(
+            commands
+                .iter()
+                .any(|command| matches!(command, AppCommand::RefreshRecents { limit: None }))
+        );
         assert!(commands.iter().any(|command| matches!(
             command,
             AppCommand::LoadCalibreBooks {

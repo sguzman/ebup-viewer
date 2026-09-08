@@ -1,6 +1,4 @@
-use lanternleaf_app::contracts::{
-    BridgeError, ReaderPlaybackStateEvent, ReaderStateEvent, TtsStateEvent,
-};
+use lanternleaf_app::contracts::{BridgeError, ReaderPlaybackStateEvent, TtsStateEvent};
 use lanternleaf_app::pipeline::{AppEvent, OperationScope};
 use tracing::{info, trace, warn};
 
@@ -91,85 +89,16 @@ impl LanternLeafApp {
                 }
             }
 
-            if let Some(snapshot) = event.snapshot.clone() {
+            if let Some(playback) = event.playback.clone() {
                 trace!(
                     tts_request_id,
                     app_request_id,
-                    source_path = %snapshot.source_path,
-                    page = snapshot.current_page + 1,
-                    text_only_mode = snapshot.text_only_mode,
-                    text_only_show_original_text = snapshot.settings.text_only_show_original_text,
-                    text_only_override = ?self.text_only_override,
-                    sentence_count = snapshot.sentences.len(),
-                    tts_state = ?snapshot.tts.state,
-                    highlighted_sentence_idx = ?snapshot.highlighted_sentence_idx,
-                    tts_audio_idx = ?snapshot.tts.current_sentence_idx,
-                    "TTS runtime snapshot received"
+                    source_path = %playback.source_path,
+                    page = playback.current_page + 1,
+                    highlighted_sentence_idx = ?playback.highlighted_sentence_idx,
+                    tts_state = ?playback.tts.state,
+                    "TTS playback delta received"
                 );
-                if snapshot.tts.state == lanternleaf_core::session::TtsPlaybackState::Playing {
-                    let highlighted_text = snapshot
-                        .highlighted_sentence_idx
-                        .and_then(|idx| snapshot.sentences.get(idx))
-                        .map(String::as_str);
-                    let spoken_text = snapshot.tts_current_sentence_text.as_deref();
-                    match (highlighted_text, spoken_text) {
-                        (Some(highlighted), Some(spoken)) => {
-                            let highlighted_norm = normalize_for_tts_compare(highlighted);
-                            let spoken_norm = normalize_for_tts_compare(spoken);
-                            if !highlighted_norm.is_empty()
-                                && !spoken_norm.is_empty()
-                                && highlighted_norm != spoken_norm
-                            {
-                                trace!(
-                                    tts_request_id,
-                                    app_request_id,
-                                    highlighted_len = highlighted.len(),
-                                    spoken_len = spoken.len(),
-                                    highlighted_preview = %highlighted.chars().take(80).collect::<String>(),
-                                    spoken_preview = %spoken.chars().take(80).collect::<String>(),
-                                    display_idx = snapshot.highlighted_sentence_idx,
-                                    audio_idx = snapshot.tts.current_sentence_idx,
-                                    "TTS desync detected: spoken sentence text differs from highlighted sentence text"
-                                );
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                self.maybe_reapply_text_only(&snapshot);
-                if let Some(cursor) = event.cursor {
-                    trace!(
-                        tts_request_id,
-                        app_request_id,
-                        page = cursor.page + 1,
-                        audio_idx = ?cursor.audio_idx,
-                        display_idx = ?cursor.display_idx,
-                        "TTS cursor updated"
-                    );
-                }
-                if snapshot.settings.auto_scroll_tts
-                    && matches!(
-                        event.kind,
-                        lanternleaf_app::tts_runtime::TtsRuntimeEventKind::Progress
-                            | lanternleaf_app::tts_runtime::TtsRuntimeEventKind::StateChanged
-                    )
-                    && snapshot.highlighted_sentence_idx.is_some()
-                {
-                    self.auto_scroll_state.note_auto_scroll();
-                }
-                self.runtime
-                    .apply_event(AppEvent::ReaderUpdated(ReaderStateEvent {
-                        request_id: app_request_id,
-                        action: event.action.clone(),
-                        reader: snapshot.clone(),
-                    }));
-                self.runtime
-                    .apply_event(AppEvent::TtsStateUpdated(TtsStateEvent {
-                        request_id: app_request_id,
-                        action: event.action.clone(),
-                        tts: snapshot.tts.clone(),
-                    }));
-            } else if let Some(playback) = event.playback.clone() {
                 self.runtime.apply_event(AppEvent::ReaderPlaybackUpdated(
                     ReaderPlaybackStateEvent {
                         request_id: app_request_id,
@@ -177,6 +106,35 @@ impl LanternLeafApp {
                         playback,
                     },
                 ));
+                self.runtime.apply_event(AppEvent::OperationChanged {
+                    scope: OperationScope::ReaderTts,
+                    active: false,
+                });
+                self.runtime.apply_event(AppEvent::OperationChanged {
+                    scope: OperationScope::ReaderCommand,
+                    active: false,
+                });
+            }
+            if let Some(tts) = event.tts.clone() {
+                if tts.current_sentence_idx.is_some() {
+                    self.auto_scroll_state.note_auto_scroll();
+                }
+                self.runtime
+                    .apply_event(AppEvent::TtsStateUpdated(TtsStateEvent {
+                        request_id: app_request_id,
+                        action: event.action.clone(),
+                        tts,
+                    }));
+            }
+            if let Some(cursor) = event.cursor {
+                trace!(
+                    tts_request_id,
+                    app_request_id,
+                    page = cursor.page + 1,
+                    audio_idx = ?cursor.audio_idx,
+                    display_idx = ?cursor.display_idx,
+                    "TTS cursor updated"
+                );
             }
 
             if event.kind == lanternleaf_app::tts_runtime::TtsRuntimeEventKind::Failed {

@@ -329,7 +329,7 @@ struct LanternLeafApp {
     tts_session_source: Option<PathBuf>,
     persistence_logged: bool,
     last_reader_source: Option<String>,
-    last_reader_snapshot: Option<ReaderSnapshot>,
+    last_reader_source_for_persistence: Option<String>,
     effect_dispatcher: EffectDispatcher,
     shell_state: ShellState,
     layout_policy: LayoutPolicy,
@@ -346,6 +346,7 @@ struct LanternLeafApp {
     current_pdf_path: Option<PathBuf>,
     pretty_page_cache_key: Option<PrettyPageCacheKey>,
     pretty_page_cache_blocks: Vec<PrettyBlock>,
+    pretty_sentence_block_index: HashMap<String, usize>,
     thumbnail_cache: ThumbnailCache,
     pretty_image_cache: PrettyImageCache,
     sentence_scroll_offset: Option<Vec2>,
@@ -369,6 +370,8 @@ struct LanternLeafApp {
     windows_voice_catalog: Vec<WindowsVoiceDescriptor>,
     #[cfg(windows)]
     windows_voice_catalog_error: Option<String>,
+    frame_count: u64,
+    slow_frame_count: u64,
 }
 
 struct StarterViewModel<'a> {
@@ -780,7 +783,7 @@ impl LanternLeafApp {
             tts_session_source: None,
             persistence_logged: false,
             last_reader_source: None,
-            last_reader_snapshot: None,
+            last_reader_source_for_persistence: None,
             effect_dispatcher,
             shell_state: ShellState::default(),
             layout_policy: LayoutPolicy::default(),
@@ -797,6 +800,7 @@ impl LanternLeafApp {
             current_pdf_path: None,
             pretty_page_cache_key: None,
             pretty_page_cache_blocks: Vec::new(),
+            pretty_sentence_block_index: HashMap::new(),
             thumbnail_cache: ThumbnailCache::new(),
             pretty_image_cache: PrettyImageCache::new(),
             sentence_scroll_offset: None,
@@ -820,6 +824,8 @@ impl LanternLeafApp {
             windows_voice_catalog: Vec::new(),
             #[cfg(windows)]
             windows_voice_catalog_error: None,
+            frame_count: 0,
+            slow_frame_count: 0,
         };
         app.load_pinned_timeline_entries();
         app.execute_startup_commands();
@@ -885,7 +891,7 @@ impl LanternLeafApp {
             tts_session_source: None,
             persistence_logged: false,
             last_reader_source: None,
-            last_reader_snapshot: None,
+            last_reader_source_for_persistence: None,
             effect_dispatcher,
             shell_state: ShellState::default(),
             layout_policy: LayoutPolicy::default(),
@@ -902,6 +908,7 @@ impl LanternLeafApp {
             current_pdf_path: None,
             pretty_page_cache_key: None,
             pretty_page_cache_blocks: Vec::new(),
+            pretty_sentence_block_index: HashMap::new(),
             thumbnail_cache: ThumbnailCache::new(),
             pretty_image_cache: PrettyImageCache::new(),
             sentence_scroll_offset: None,
@@ -921,6 +928,8 @@ impl LanternLeafApp {
             starter_browser_tabs_force_refresh: false,
             starter_browser_tab_id_input: String::new(),
             starter_browser_window_id_input: String::new(),
+            frame_count: 0,
+            slow_frame_count: 0,
         };
         app
     }
@@ -2507,12 +2516,20 @@ fn face_bytes(db: &fontdb::Database, id: fontdb::ID) -> Option<Vec<u8>> {
 
 impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
+        let frame_started = Instant::now();
         let _ = frame;
         self.sync_tts_runtime_session();
         self.handle_tts_runtime_events();
         self.handle_effect_events();
+        let projection_started = Instant::now();
         let snapshot = self.runtime.state_snapshot();
-        let reader_snapshot = snapshot.reader_document.snapshot.as_ref();
+        trace!(
+            elapsed_us = projection_started.elapsed().as_micros(),
+            catalog_books = snapshot.starter.calibre_books.len(),
+            reader_document_shared = snapshot.reader_document.snapshot.is_some(),
+            "Prepared lightweight egui state projection"
+        );
+        let reader_snapshot = snapshot.reader_document.snapshot.as_deref();
         self.update_persistence_lifecycle(reader_snapshot);
         self.update_shell_state(ctx, &snapshot);
         let panels = snapshot
@@ -2544,6 +2561,21 @@ impl eframe::App for LanternLeafApp {
         self.render_center(ctx, &snapshot);
         self.render_modals(ctx, reader_snapshot);
         self.render_status(ctx);
+        self.frame_count = self.frame_count.saturating_add(1);
+        let frame_elapsed = frame_started.elapsed();
+        if frame_elapsed > Duration::from_millis(33) {
+            self.slow_frame_count = self.slow_frame_count.saturating_add(1);
+            if self.slow_frame_count.is_multiple_of(16)
+                || frame_elapsed > Duration::from_millis(250)
+            {
+                warn!(
+                    elapsed_ms = frame_elapsed.as_millis(),
+                    frame_count = self.frame_count,
+                    slow_frame_count = self.slow_frame_count,
+                    "Slow egui frame"
+                );
+            }
+        }
     }
 }
 

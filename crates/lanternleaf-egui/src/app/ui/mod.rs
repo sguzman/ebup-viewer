@@ -38,7 +38,7 @@ impl LanternLeafApp {
                 ui.horizontal(|ui| {
                     ui.heading("LanternLeaf (egui)");
                     let current_theme =
-                        self.resolve_theme(state, state.reader_document.snapshot.as_ref());
+                        self.resolve_theme(state, state.reader_document.snapshot.as_deref());
                     let next_theme = match current_theme {
                         lanternleaf_core::config::ThemeMode::Day => {
                             lanternleaf_core::config::ThemeMode::Night

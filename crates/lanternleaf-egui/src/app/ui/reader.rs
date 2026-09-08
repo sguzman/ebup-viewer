@@ -19,6 +19,10 @@ use crate::pretty::{
 impl LanternLeafApp {
     pub(crate) fn render_reader_content(&mut self, ui: &mut Ui, state: &AppState) {
         if let Some(snapshot) = state.reader_document.snapshot.as_ref() {
+            let highlighted_sentence_idx = state
+                .reader_playback
+                .highlighted_sentence_idx
+                .or(snapshot.highlighted_sentence_idx);
             let effective_text_only = self.resolved_text_only_mode(snapshot);
             trace!(
                 page = snapshot.current_page,
@@ -44,18 +48,18 @@ impl LanternLeafApp {
             self.render_reader_summary(ui, snapshot);
             ui.add_space(6.0);
             if self.should_render_pretty(snapshot) {
-                self.render_pretty_page(ui, snapshot);
+                self.render_pretty_page(ui, snapshot, highlighted_sentence_idx);
             } else {
                 trace!(
                     text_only = effective_text_only,
                     pretty_kind = ?snapshot.pretty_kind,
                     "Skipping pretty view in favor of sentence list"
                 );
-                self.render_sentence_list(ui, snapshot);
+                self.render_sentence_list(ui, snapshot, highlighted_sentence_idx);
                 ui.add_space(6.0);
                 self.render_canonical_preview(ui, snapshot);
             }
-            self.render_spoken_sentence_banner(ui, snapshot);
+            self.render_spoken_sentence_banner(ui, snapshot, highlighted_sentence_idx);
             ui.add_space(6.0);
             self.render_pdf_diagnostics(ui, snapshot);
         } else {
@@ -74,8 +78,15 @@ impl LanternLeafApp {
         self.text_only_override.unwrap_or(snapshot.text_only_mode)
     }
 
-    fn render_pretty_page(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
-        let highlight_idx = snapshot.highlighted_sentence_idx;
+    fn render_pretty_page(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &ReaderSnapshot,
+        effective_highlighted_sentence_idx: Option<usize>,
+    ) {
+        let render_started = std::time::Instant::now();
+        self.refresh_pretty_cache(snapshot);
+        let highlight_idx = effective_highlighted_sentence_idx;
         let highlight_sentence = highlight_idx
             .and_then(|idx| snapshot.sentences.get(idx))
             .map(String::as_str);
@@ -88,9 +99,9 @@ impl LanternLeafApp {
         // we have the highlighted sentence available.
         let highlight_block_idx_by_text = if snapshot.pretty_kind == PrettyKind::Html {
             highlight_sentence.and_then(|sentence| {
-                self.pretty_page_cache_blocks
-                    .iter()
-                    .position(|block| block_contains_sentence(block, sentence))
+                self.pretty_sentence_block_index
+                    .get(&normalize_for_match(sentence))
+                    .copied()
             })
         } else {
             None
@@ -115,7 +126,6 @@ impl LanternLeafApp {
             renderer = "pure_egui",
             "Rendering pretty view via pretty blocks"
         );
-        self.refresh_pretty_cache(snapshot);
         ui.group(|ui| {
             ui.label("Pretty view");
             if !snapshot.settings.pretty.enabled {
@@ -126,7 +136,7 @@ impl LanternLeafApp {
             }
             ScrollArea::vertical()
                 .id_source("pretty_page")
-                .show(ui, |ui| {
+                .show_viewport(ui, |ui, viewport| {
                     let max_width = 720.0;
                     let available_width = ui.available_width();
                     let margin = ((available_width - max_width) / 2.0).max(0.0);
@@ -160,7 +170,38 @@ impl LanternLeafApp {
                                 FontFamily::Monospace
                             };
 
-                            for (block_i, block) in self.pretty_page_cache_blocks.iter().enumerate()
+                            let total_blocks = self.pretty_page_cache_blocks.len();
+                            let estimated_block_height =
+                                (base_px * 1.8 + pretty_cfg.paragraph_spacing.max(0.0) + 12.0)
+                                    .max(28.0);
+                            let overscan = 8usize;
+                            let render_window = pretty_render_window(
+                                total_blocks,
+                                viewport.min.y,
+                                viewport.max.y,
+                                estimated_block_height,
+                                overscan,
+                                auto_scroll_requested
+                                    .then_some(highlight_block_idx_by_text)
+                                    .flatten(),
+                            );
+                            let render_start = render_window.start;
+                            let render_end = render_window.end;
+                            ui.set_min_height(total_blocks as f32 * estimated_block_height);
+                            ui.add_space(render_start as f32 * estimated_block_height);
+                            trace!(
+                                total_blocks,
+                                active_blocks = render_end.saturating_sub(render_start),
+                                overscan,
+                                "Rendering bounded pretty block window"
+                            );
+
+                            for (block_i, block) in self
+                                .pretty_page_cache_blocks
+                                .iter()
+                                .enumerate()
+                                .skip(render_start)
+                                .take(render_end.saturating_sub(render_start))
                             {
                                 if block_i > 0 {
                                     if let PrettyBlockKind::Heading { level } = &block.kind {
@@ -475,10 +516,19 @@ impl LanternLeafApp {
                                 };
                                 ui.add_space(spacing.max(0.0));
                             }
+                            ui.add_space(
+                                total_blocks.saturating_sub(render_end) as f32
+                                    * estimated_block_height,
+                            );
                         });
                     });
                 });
         });
+        trace!(
+            elapsed_ms = render_started.elapsed().as_millis(),
+            total_blocks = self.pretty_page_cache_blocks.len(),
+            "Finished bounded pretty render"
+        );
     }
 
     fn render_reader_summary(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
@@ -529,7 +579,12 @@ impl LanternLeafApp {
         });
     }
 
-    fn render_sentence_list(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+    fn render_sentence_list(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &ReaderSnapshot,
+        effective_highlighted_sentence_idx: Option<usize>,
+    ) {
         ui.group(|ui| {
             ui.label("Sentence list");
             if snapshot.sentences.is_empty() {
@@ -537,7 +592,7 @@ impl LanternLeafApp {
                 return;
             }
             let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
-            let target_idx = snapshot.highlighted_sentence_idx;
+            let target_idx = effective_highlighted_sentence_idx;
             ScrollArea::vertical()
                 .id_source("sentence_list")
                 .max_height(240.0)
@@ -633,6 +688,15 @@ impl LanternLeafApp {
             return;
         }
         self.pretty_page_cache_blocks = self.build_pretty_blocks(snapshot);
+        self.pretty_sentence_block_index.clear();
+        for (block_idx, block) in self.pretty_page_cache_blocks.iter().enumerate() {
+            let text = block_text(block);
+            for sentence in text_utils::split_sentences(&text) {
+                self.pretty_sentence_block_index
+                    .entry(normalize_for_match(&sentence))
+                    .or_insert(block_idx);
+            }
+        }
         self.pretty_page_cache_key = Some(key);
     }
 
@@ -843,12 +907,16 @@ impl LanternLeafApp {
         });
     }
 
-    fn render_spoken_sentence_banner(&mut self, ui: &mut Ui, snapshot: &ReaderSnapshot) {
+    fn render_spoken_sentence_banner(
+        &mut self,
+        ui: &mut Ui,
+        snapshot: &ReaderSnapshot,
+        effective_highlighted_sentence_idx: Option<usize>,
+    ) {
         let background = self.resolve_highlight_color(snapshot);
         ui.group(|ui| {
             ui.label("TTS vs highlight");
-            let highlighted = snapshot
-                .highlighted_sentence_idx
+            let highlighted = effective_highlighted_sentence_idx
                 .and_then(|idx| snapshot.sentences.get(idx))
                 .map(|text| text.as_str())
                 .unwrap_or("None");
@@ -864,7 +932,7 @@ impl LanternLeafApp {
     }
 
     fn resolve_highlight_color(&self, snapshot: &ReaderSnapshot) -> Color32 {
-        let theme = self.resolve_theme(&self.runtime.state_snapshot(), Some(snapshot));
+        let theme = self.theme_override.unwrap_or(snapshot.settings.theme);
         let highlight = match theme {
             lanternleaf_core::config::ThemeMode::Day => snapshot.settings.day_highlight,
             lanternleaf_core::config::ThemeMode::Night => snapshot.settings.night_highlight,
@@ -944,6 +1012,12 @@ fn normalize_for_match(input: &str) -> String {
 }
 
 fn block_contains_sentence(block: &PrettyBlock, target_sentence: &str) -> bool {
+    let text = block_text(block);
+    let sentences = text_utils::split_sentences(&text);
+    match_sentence_index(&sentences, target_sentence).is_some()
+}
+
+fn block_text(block: &PrettyBlock) -> String {
     let mut text = String::new();
     match block.kind {
         PrettyBlockKind::CodeBlock => {
@@ -957,8 +1031,29 @@ fn block_contains_sentence(block: &PrettyBlock, target_sentence: &str) -> bool {
             }
         }
     }
-    let sentences = text_utils::split_sentences(&text);
-    match_sentence_index(&sentences, target_sentence).is_some()
+    text
+}
+
+fn pretty_render_window(
+    total_blocks: usize,
+    viewport_min_y: f32,
+    viewport_max_y: f32,
+    estimated_block_height: f32,
+    overscan: usize,
+    target_block: Option<usize>,
+) -> std::ops::Range<usize> {
+    if total_blocks == 0 {
+        return 0..0;
+    }
+    if let Some(target) = target_block {
+        let start = target.saturating_sub(overscan);
+        return start..(target + overscan + 1).min(total_blocks);
+    }
+    let visible_start = (viewport_min_y / estimated_block_height).floor().max(0.0) as usize;
+    let visible_end = (viewport_max_y / estimated_block_height)
+        .ceil()
+        .max(visible_start as f32) as usize;
+    visible_start.saturating_sub(overscan)..(visible_end + overscan).min(total_blocks)
 }
 
 fn match_sentence_index(sentences: &[String], target_sentence: &str) -> Option<usize> {
@@ -1082,6 +1177,17 @@ mod tests {
         let target = "Second sentence!";
         let matched = match_sentence_index(&sentences, target);
         assert_eq!(matched, Some(1));
+    }
+
+    #[test]
+    fn large_pretty_document_uses_a_bounded_active_window() {
+        let window = pretty_render_window(1_644, 12_000.0, 12_600.0, 32.0, 8, None);
+        assert!(window.len() <= 40);
+        assert!(window.start > 0);
+
+        let jumped = pretty_render_window(1_644, 0.0, 640.0, 32.0, 8, Some(1_500));
+        assert!(jumped.contains(&1_500));
+        assert!(jumped.len() <= 17);
     }
 }
 

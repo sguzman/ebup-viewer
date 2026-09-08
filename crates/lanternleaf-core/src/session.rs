@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use ts_rs::TS;
 
@@ -264,6 +264,8 @@ pub struct ReaderSession {
     selected_search_match: Option<usize>,
     tts_state: TtsPlaybackState,
     current_plan_page: Option<usize>,
+    current_plan_display_start: usize,
+    current_plan_display_end: usize,
     current_plan: Option<normalizer::PageNormalization>,
 }
 
@@ -312,6 +314,8 @@ impl ReaderSession {
             selected_search_match: None,
             tts_state: TtsPlaybackState::Paused,
             current_plan_page: None,
+            current_plan_display_start: 0,
+            current_plan_display_end: 0,
             current_plan: None,
         }
     }
@@ -1100,6 +1104,7 @@ impl ReaderSession {
         panels: PanelState,
         normalizer: &normalizer::TextNormalizer,
     ) -> ReaderSnapshot {
+        let snapshot_started = Instant::now();
         let sentences = self.current_sentences(normalizer);
         let canonical_sentences = self
             .raw_page_sentences
@@ -1168,6 +1173,12 @@ impl ReaderSession {
             has_markdown = self.reading_markdown.is_some(),
             has_html = self.reading_html.is_some(),
             "Prepared reader snapshot payload"
+        );
+        tracing::trace!(
+            path = %self.source_path.display(),
+            elapsed_ms = snapshot_started.elapsed().as_millis() as u64,
+            tts_state = ?self.tts_state,
+            "Prepared reader snapshot within bounded initialization path"
         );
         ReaderSnapshot {
             source_path: self.source_path_str(),
@@ -1390,8 +1401,18 @@ impl ReaderSession {
         normalizer: &normalizer::TextNormalizer,
         progress_pct: f64,
     ) -> ReaderTtsView {
-        let sentence_count = self.current_audio_sentences(normalizer).len();
-        let current_sentence_idx = self.current_audio_highlight_idx(normalizer);
+        let plan_ready = self.tts_state != TtsPlaybackState::Idle
+            || self.current_plan_page == Some(self.current_page);
+        let sentence_count = if plan_ready {
+            self.current_audio_sentences(normalizer).len()
+        } else {
+            self.current_display_len()
+        };
+        let current_sentence_idx = if plan_ready {
+            self.current_audio_highlight_idx(normalizer)
+        } else {
+            None
+        };
         let can_seek_prev = if let Some(idx) = current_sentence_idx {
             idx > 0 || self.has_sentence_before_current_page()
         } else {
@@ -1928,6 +1949,8 @@ mod tests {
             selected_search_match: None,
             tts_state: TtsPlaybackState::Paused,
             current_plan_page: None,
+            current_plan_display_start: 0,
+            current_plan_display_end: 0,
             current_plan: None,
         }
     }
@@ -2914,5 +2937,56 @@ mod tests {
         );
 
         let _ = crate::cache::delete_recent_source_and_cache(&source_path);
+    }
+
+    #[test]
+    fn large_book_open_and_first_tts_use_only_a_bounded_normalization_window() {
+        let source_path =
+            std::env::temp_dir().join(format!("lanternleaf-a4-large-{}.epub", std::process::id()));
+        let normalized_dir = crate::cache::normalized_dir(&source_path);
+        let _ = fs::remove_dir_all(&normalized_dir);
+        let sentences = (0..3_500)
+            .map(|idx| format!("Deterministic large-book sentence {idx}."))
+            .collect::<Vec<_>>();
+        let page = sentences.join(" ");
+        let mut session = ReaderSession::from_pages_for_test(
+            source_path.clone(),
+            "large.epub".to_string(),
+            vec![page],
+            vec![sentences],
+        );
+        session.tts_state = TtsPlaybackState::Idle;
+        let normalizer = normalizer::TextNormalizer::default();
+
+        let idle = session.snapshot(PanelState::default(), &normalizer);
+        assert_eq!(idle.tts.state, TtsPlaybackState::Idle);
+        assert!(session.current_plan.is_none());
+        assert!(!normalized_dir.exists());
+
+        let started =
+            session.apply_command(SessionCommand::TtsPlay, PanelState::default(), &normalizer);
+        assert_eq!(started.snapshot.tts.state, TtsPlaybackState::Playing);
+        assert!(session.current_plan.is_some());
+        assert!(
+            session
+                .current_plan
+                .as_ref()
+                .map(|plan| plan.audio_sentences.len() <= ReaderSession::TTS_PLAN_WINDOW)
+                .unwrap_or(false)
+        );
+        let cache_files = fs::read_dir(&normalized_dir)
+            .map(|entries| entries.filter_map(Result::ok).count())
+            .unwrap_or_default();
+        assert!(cache_files <= ReaderSession::TTS_PLAN_WINDOW + 1);
+
+        for _ in 0..100 {
+            let _ = session.apply_command(
+                SessionCommand::TtsSeekNext,
+                PanelState::default(),
+                &normalizer,
+            );
+        }
+        assert_eq!(session.highlighted_display_idx, Some(100));
+        let _ = fs::remove_dir_all(&normalized_dir);
     }
 }

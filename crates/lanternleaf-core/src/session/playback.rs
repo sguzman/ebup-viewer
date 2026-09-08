@@ -1,6 +1,8 @@
 use super::*;
 
 impl ReaderSession {
+    pub(crate) const TTS_PLAN_WINDOW: usize = 64;
+
     pub fn sentence_click(&mut self, sentence_idx: usize, normalizer: &normalizer::TextNormalizer) {
         if self.text_only_mode {
             if self.config.text_only_show_original_text {
@@ -234,8 +236,13 @@ impl ReaderSession {
         &mut self,
         normalizer: &normalizer::TextNormalizer,
     ) -> normalizer::PageNormalization {
-        let needs_refresh = self.current_plan_page != Some(self.current_page);
+        let current_display = self.highlighted_display_idx.unwrap_or(0);
+        let needs_refresh = self.current_plan_page != Some(self.current_page)
+            || self.current_plan.is_none()
+            || current_display < self.current_plan_display_start
+            || current_display >= self.current_plan_display_end;
         if needs_refresh {
+            let plan_started = std::time::Instant::now();
             let page_text_chars = self
                 .pages
                 .get(self.current_page)
@@ -253,9 +260,43 @@ impl ReaderSession {
                 .get(self.current_page)
                 .cloned()
                 .unwrap_or_default();
-            let plan = normalizer.plan_page_cached(&self.source_path, self.current_page, &display);
+            let start = current_display
+                .saturating_sub(8)
+                .min(display.len().saturating_sub(1));
+            let end = start
+                .saturating_add(Self::TTS_PLAN_WINDOW)
+                .min(display.len());
+            let window = &display[start..end];
+            let local = normalizer.plan_page_cached(&self.source_path, self.current_page, window);
+            let mut display_to_audio = vec![None; display.len()];
+            for (idx, audio_idx) in local.display_to_audio.iter().enumerate() {
+                display_to_audio[start + idx] = audio_idx.map(|value| value);
+            }
+            let plan = normalizer::PageNormalization {
+                audio_sentences: local.audio_sentences,
+                display_to_audio,
+                audio_to_display: local
+                    .audio_to_display
+                    .into_iter()
+                    .map(|value| start + value)
+                    .collect(),
+            };
             self.current_plan_page = Some(self.current_page);
+            self.current_plan_display_start = start;
+            self.current_plan_display_end = end;
+            self.highlighted_audio_idx = self
+                .highlighted_display_idx
+                .and_then(|idx| plan.display_to_audio.get(idx).copied().flatten());
             self.current_plan = Some(plan);
+            tracing::debug!(
+                path = %self.source_path.display(),
+                page = self.current_page + 1,
+                window_start = start,
+                window_end = end,
+                prepared_sentences = self.current_plan.as_ref().map(|plan| plan.audio_sentences.len()).unwrap_or_default(),
+                elapsed_ms = plan_started.elapsed().as_millis() as u64,
+                "Prepared bounded normalization/TTS plan window"
+            );
         }
 
         self.current_plan
@@ -383,6 +424,13 @@ impl ReaderSession {
                 let _ = self.set_audio_highlight_idx(normalizer, next);
                 return true;
             }
+            if let Some(current_display) = self.highlighted_display_idx
+                && current_display + 1 < self.current_display_len()
+            {
+                self.highlighted_display_idx = Some(current_display + 1);
+                self.highlighted_audio_idx = None;
+                return self.current_audio_highlight_idx(normalizer).is_some();
+            }
             if self.move_to_adjacent_page_with_sentences(1, normalizer) {
                 return self.set_audio_highlight_idx(normalizer, 0);
             }
@@ -392,6 +440,27 @@ impl ReaderSession {
         let back = delta.unsigned_abs();
         if current >= back {
             return self.set_audio_highlight_idx(normalizer, current - back);
+        }
+        if let Some(current_display) = self.highlighted_display_idx
+            && current_display >= back
+        {
+            let target = current_display - back;
+            self.highlighted_display_idx = Some(target);
+            self.highlighted_audio_idx = None;
+            let _ = self.ensure_current_plan(normalizer);
+            let Some(plan) = self.current_plan.clone() else {
+                return false;
+            };
+            if let Some(first) = plan.display_to_audio.get(target).copied().flatten() {
+                let last = plan
+                    .audio_to_display
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .find_map(|(idx, display)| (*display == target).then_some(idx))
+                    .unwrap_or(first);
+                return self.set_audio_highlight_idx(normalizer, last);
+            }
         }
         if self.move_to_adjacent_page_with_sentences(-1, normalizer) {
             let new_count = self.current_audio_sentences(normalizer).len();

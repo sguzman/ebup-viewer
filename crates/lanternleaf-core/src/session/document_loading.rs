@@ -119,13 +119,23 @@ impl ReaderSession {
             selected_search_match: None,
             tts_state: TtsPlaybackState::Idle,
             current_plan_page: None,
+            current_plan_display_start: 0,
+            current_plan_display_end: 0,
             current_plan: None,
         };
 
         if let Some(bookmark) = bookmark.as_ref() {
             session.current_page = bookmark.page;
         }
+        let repagination_started = std::time::Instant::now();
         session.repaginate(normalizer, None);
+        tracing::info!(
+            path = %session.source_path.display(),
+            pages = session.pages.len(),
+            sentences = session.page_sentence_counts.iter().sum::<usize>(),
+            elapsed_ms = repagination_started.elapsed().as_millis() as u64,
+            "Finished bounded reader repagination and sentence-anchor setup"
+        );
         if let Some(bookmark) = bookmark.as_ref() {
             session.restore_bookmark_position(bookmark, normalizer);
         }
@@ -133,67 +143,6 @@ impl ReaderSession {
             session.highlighted_display_idx = Some(0).filter(|_| session.current_display_len() > 0);
         }
         Ok(session)
-    }
-
-    fn precompute_normalization_cache(
-        &self,
-        normalizer: &normalizer::TextNormalizer,
-        threads: usize,
-        cancel: Option<&CancellationToken>,
-    ) -> Result<(), String> {
-        let total_pages = self.raw_page_sentences.len();
-        if total_pages == 0 {
-            return Ok(());
-        }
-
-        tracing::info!(
-            path = %self.source_path.display(),
-            total_pages,
-            threads = threads.max(1),
-            "Precomputing normalization cache for loaded book"
-        );
-
-        let worker_count = threads.max(1).min(total_pages);
-        let next_page = AtomicUsize::new(0);
-        let cancelled = AtomicBool::new(false);
-
-        std::thread::scope(|scope| {
-            for _ in 0..worker_count {
-                scope.spawn(|| {
-                    loop {
-                        if cancelled.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        if cancel.map(|token| token.is_cancelled()).unwrap_or(false) {
-                            cancelled.store(true, Ordering::Relaxed);
-                            break;
-                        }
-                        let page_idx = next_page.fetch_add(1, Ordering::Relaxed);
-                        if page_idx >= total_pages {
-                            break;
-                        }
-                        let display_sentences = &self.raw_page_sentences[page_idx];
-                        let _ = normalizer.plan_page_cached(
-                            &self.source_path,
-                            page_idx,
-                            display_sentences,
-                        );
-                    }
-                });
-            }
-        });
-
-        if cancelled.load(Ordering::Relaxed) {
-            return Err("Session load cancelled during normalization precompute".to_string());
-        }
-
-        tracing::info!(
-            path = %self.source_path.display(),
-            total_pages,
-            "Finished normalization cache precompute for loaded book"
-        );
-
-        Ok(())
     }
 }
 
@@ -234,7 +183,6 @@ pub fn load_session_for_source_with_cancel(
         effective_config = overrides;
     }
     let bookmark = crate::cache::load_bookmark(&source_path);
-    let normalizer_threads = effective_config.normalizer_threads.max(1);
     let session = ReaderSession::load_with_cancel(
         source_path,
         effective_config,
@@ -242,7 +190,6 @@ pub fn load_session_for_source_with_cancel(
         bookmark,
         cancel,
     )?;
-    session.precompute_normalization_cache(normalizer, normalizer_threads, cancel)?;
     Ok(session)
 }
 

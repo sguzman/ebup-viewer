@@ -34,6 +34,24 @@ static RE_SOFT_BREAK_WS: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap())
 #[derive(Debug, Clone)]
 pub struct TextNormalizer {
     config: NormalizerConfig,
+    compiled: CompiledNormalizer,
+}
+
+#[derive(Debug, Clone)]
+struct CompiledNormalizer {
+    abbreviation_regex: Vec<CompiledReplacement>,
+    abbreviation_case: Vec<CompiledReplacement>,
+    abbreviation_nocase: Vec<CompiledReplacement>,
+    brand_map: Vec<CompiledReplacement>,
+    custom_pronunciations: Vec<CompiledReplacement>,
+    acronym_tokens: Vec<(Regex, AcronymConfig)>,
+    year: Regex,
+}
+
+#[derive(Debug, Clone)]
+struct CompiledReplacement {
+    regex: Regex,
+    replacement: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -201,7 +219,110 @@ pub struct PageNormalization {
     pub audio_to_display: Vec<usize>,
 }
 
+impl CompiledNormalizer {
+    fn compile(config: &NormalizerConfig) -> Self {
+        let abbreviations = config.abbreviations.merged();
+        let mut abbreviation_regex = Vec::new();
+        for rule in &abbreviations.regex {
+            if rule.pattern.trim().is_empty() {
+                continue;
+            }
+            let pattern = if rule.case_sensitive {
+                rule.pattern.clone()
+            } else {
+                format!("(?i){}", rule.pattern)
+            };
+            match Regex::new(&pattern) {
+                Ok(regex) => abbreviation_regex.push(CompiledReplacement {
+                    regex,
+                    replacement: rule.replace.clone(),
+                }),
+                Err(err) => {
+                    tracing::warn!(pattern = %rule.pattern, "Skipping invalid abbreviation regex rule: {err}")
+                }
+            }
+        }
+
+        let mut abbreviation_case = Vec::new();
+        for (token, replacement) in abbreviations.case.iter() {
+            let trimmed = token.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let pattern = if let Some(base) = trimmed.strip_suffix('.') {
+                format!(r"\b{}\.", regex::escape(base))
+            } else {
+                format!(r"\b{}\b", regex::escape(trimmed))
+            };
+            if let Ok(regex) = Regex::new(&pattern) {
+                abbreviation_case.push(CompiledReplacement {
+                    regex,
+                    replacement: replacement.clone(),
+                });
+            }
+        }
+        abbreviation_case.sort_by_key(|entry| std::cmp::Reverse(entry.regex.as_str().len()));
+
+        let mut abbreviation_nocase = Vec::new();
+        for (token, replacement) in build_nocase_abbreviation_entries(&abbreviations.nocase) {
+            let pattern = if let Some(base) = token.strip_suffix('.') {
+                format!(r"(?i)\b{}\.", regex::escape(base))
+            } else {
+                format!(r"(?i)\b{}\b", regex::escape(&token))
+            };
+            if let Ok(regex) = Regex::new(&pattern) {
+                abbreviation_nocase.push(CompiledReplacement { regex, replacement });
+            }
+        }
+
+        fn compile_map(map: &BTreeMap<String, String>) -> Vec<CompiledReplacement> {
+            let mut entries = map
+                .iter()
+                .filter_map(|(token, replacement)| {
+                    Regex::new(&format!(r"(?i)\b{}\b", regex::escape(token)))
+                        .ok()
+                        .map(|regex| CompiledReplacement {
+                            regex,
+                            replacement: replacement.clone(),
+                        })
+                })
+                .collect::<Vec<_>>();
+            entries.sort_by_key(|entry| std::cmp::Reverse(entry.regex.as_str().len()));
+            entries
+        }
+
+        let acronym_tokens = config
+            .acronyms
+            .tokens
+            .iter()
+            .filter_map(|token| {
+                Regex::new(&format!(
+                    r"(?i)\b{}(?P<digits>\d+(?:\.\d+)*)?\b",
+                    regex::escape(token)
+                ))
+                .ok()
+                .map(|regex| (regex, config.acronyms.clone()))
+            })
+            .collect();
+
+        Self {
+            abbreviation_regex,
+            abbreviation_case,
+            abbreviation_nocase,
+            brand_map: compile_map(&config.pronunciation.brand_map),
+            custom_pronunciations: compile_map(&config.pronunciation.custom_pronunciations),
+            acronym_tokens,
+            year: Regex::new(r"\b(1\d{3}|20\d{2})\b").expect("valid year regex"),
+        }
+    }
+}
+
 impl TextNormalizer {
+    fn from_config(config: NormalizerConfig) -> Self {
+        let compiled = CompiledNormalizer::compile(&config);
+        Self { config, compiled }
+    }
+
     pub fn load_default() -> Self {
         let path = resolve_default_normalizer_path();
         Self::load(path.as_path())
@@ -216,7 +337,7 @@ impl TextNormalizer {
                         .abbreviations
                         .extend(load_external_abbreviations(path));
                     tracing::info!(path = %path.display(), "Loaded text normalizer config");
-                    Self { config }
+                    Self::from_config(config)
                 }
                 Err(err) => {
                     tracing::warn!(path = %path.display(), "Invalid normalizer config TOML: {err}");
@@ -395,6 +516,56 @@ impl TextNormalizer {
         }
     }
 
+    fn apply_compiled_abbreviation_map(&self, text: &str) -> String {
+        let mut out = text.to_string();
+        for rule in self
+            .compiled
+            .abbreviation_regex
+            .iter()
+            .chain(self.compiled.abbreviation_case.iter())
+            .chain(self.compiled.abbreviation_nocase.iter())
+        {
+            out = rule
+                .regex
+                .replace_all(&out, rule.replacement.as_str())
+                .to_string();
+        }
+        out
+    }
+
+    fn apply_compiled_brand_map(&self, text: &str, rules: &[CompiledReplacement]) -> String {
+        let mut out = text.to_string();
+        for rule in rules {
+            out = rule
+                .regex
+                .replace_all(&out, rule.replacement.as_str())
+                .to_string();
+        }
+        out
+    }
+
+    fn apply_compiled_year_pronunciation(&self, text: &str) -> String {
+        self.compiled
+            .year
+            .replace_all(text, |caps: &regex::Captures| {
+                let year = caps[1].parse::<usize>().unwrap_or(0);
+                year_to_words(year, &self.config.pronunciation)
+            })
+            .to_string()
+    }
+
+    fn apply_compiled_acronym_expansion(&self, text: &str) -> String {
+        let mut out = text.to_string();
+        for (regex, cfg) in &self.compiled.acronym_tokens {
+            out = regex
+                .replace_all(&out, |caps: &regex::Captures| {
+                    expand_acronym_match(caps, cfg)
+                })
+                .to_string();
+        }
+        out
+    }
+
     fn clean_text_core(&self, input: &str) -> String {
         let mut text = normalize_unicode_punctuation(input);
         text = text.replace('"', "");
@@ -434,7 +605,7 @@ impl TextNormalizer {
         }
 
         if !self.config.abbreviations.is_empty() {
-            text = apply_abbreviation_map(&text, &self.config.abbreviations);
+            text = self.apply_compiled_abbreviation_map(&text);
         }
 
         if !self.config.replacements.is_empty() {
@@ -456,19 +627,19 @@ impl TextNormalizer {
         if self.config.pronunciation.enable_brand_map
             && !self.config.pronunciation.brand_map.is_empty()
         {
-            text = apply_brand_map(&text, &self.config.pronunciation.brand_map);
+            text = self.apply_compiled_brand_map(&text, &self.compiled.brand_map);
         }
 
         if !self.config.pronunciation.custom_pronunciations.is_empty() {
-            text = apply_brand_map(&text, &self.config.pronunciation.custom_pronunciations);
+            text = self.apply_compiled_brand_map(&text, &self.compiled.custom_pronunciations);
         }
 
         if self.config.pronunciation.year_mode != YearMode::None {
-            text = apply_year_pronunciation(&text, &self.config.pronunciation);
+            text = self.apply_compiled_year_pronunciation(&text);
         }
 
         if self.config.acronyms.enabled && !self.config.acronyms.tokens.is_empty() {
-            text = apply_acronym_expansion(&text, &self.config.acronyms);
+            text = self.apply_compiled_acronym_expansion(&text);
         }
 
         if self.config.collapse_whitespace {
@@ -829,9 +1000,7 @@ fn resolve_abbreviations_path(normalizer_config_path: &Path) -> PathBuf {
 
 impl Default for TextNormalizer {
     fn default() -> Self {
-        Self {
-            config: NormalizerConfig::default(),
-        }
+        Self::from_config(NormalizerConfig::default())
     }
 }
 
@@ -1198,6 +1367,51 @@ fn apply_acronym_expansion(text: &str, cfg: &AcronymConfig) -> String {
     }
 
     out
+}
+
+fn expand_acronym_match(caps: &regex::Captures, cfg: &AcronymConfig) -> String {
+    let letters = caps[0]
+        .chars()
+        .filter(|ch| ch.is_ascii_alphabetic())
+        .map(|ch| {
+            let key = ch.to_ascii_uppercase().to_string();
+            cfg.letter_sounds.get(&key).cloned().unwrap_or(key)
+        })
+        .collect::<Vec<_>>();
+
+    let mut spelled = letters.join(&cfg.letter_separator);
+    if let Some(digits) = caps.name("digits") {
+        let spoken_digits = digits
+            .as_str()
+            .split('.')
+            .map(|group| {
+                group
+                    .chars()
+                    .filter(|ch| ch.is_ascii_digit())
+                    .map(|ch| {
+                        cfg.letter_sounds
+                            .get(&ch.to_string())
+                            .cloned()
+                            .unwrap_or_else(|| ch.to_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(&cfg.letter_separator)
+            })
+            .filter(|group| !group.is_empty())
+            .collect::<Vec<_>>()
+            .join(&cfg.digit_separator);
+        if !spoken_digits.is_empty() {
+            if !spelled.is_empty() {
+                spelled.push(' ');
+            }
+            spelled.push_str(&spoken_digits);
+        }
+    }
+    if spelled.is_empty() {
+        caps[0].to_string()
+    } else {
+        spelled
+    }
 }
 
 fn hash_sentences(sentences: &[String]) -> String {

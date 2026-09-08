@@ -822,6 +822,7 @@ impl LanternLeafApp {
             windows_voice_catalog_error: None,
         };
         app.load_pinned_timeline_entries();
+        app.execute_startup_commands();
         app
     }
 

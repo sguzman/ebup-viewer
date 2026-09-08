@@ -496,3 +496,206 @@ Attempt A3 is not complete until all of the following are true:
 The human has already supplied the failing real-desktop evidence. Do not ask them to repeat the same EPUB click before the automated blind spot above is repaired and the director has reviewed/integrated A3.
 
 After director acceptance only, request one repo-native `git pull -> .\qa.ps1` run against the already-running Caliberate service and one real EPUB open before proceeding to Windows TTS.
+
+
+## Director correction continuation — attempt A4: real-desktop reader startup / normalization stall
+
+### Why A4 exists
+
+Real Windows QA after accepted A3 proves that Caliberate transport and native EPUB ingestion are no longer the blocking stage, but the book still does not become usable because LanternLeaf performs pathological whole-book TTS normalization synchronously before the reader is allowed to finish opening.
+
+The observed real-desktop sequence for Caliberate book id `35656` is:
+
+```text
+Caliberate materialization
+  -> ~154 ms
+native EPUB parse + TTS/HTML extraction
+  -> ~158 ms
+complete source load including image extraction
+  -> ~325 ms
+EPUB pretty repagination
+  -> one logical page
+sentence-anchor map
+  -> 3,178 sentences
+synchronous normalization precompute
+  -> stalls for minutes
+reader never becomes interactively available during the observed run
+```
+
+A second already-materialized Recent EPUB reproduces the same defect without requiring a Caliberate download:
+
+- native EPUB source load completes in under one second;
+- pretty EPUB mode contains 10,488 sentences in one logical page;
+- the session again enters `Precomputing normalization cache for loaded book`;
+- the normalizer repeatedly reapplies the same abbreviation machinery sentence by sentence.
+
+This is therefore a canonical reader/session startup defect, not a Caliberate-storage latency defect.
+
+### Root-cause evidence in current code
+
+Current session architecture compounds several individually reasonable historical decisions into a pathological open path:
+
+1. EPUB pretty mode deliberately represents the complete EPUB as one logical reader page so HTML and canonical text remain in one coordinate space.
+2. `load_session_for_source_with_cancel` synchronously calls `precompute_normalization_cache` before returning the session.
+3. The precompute parallelizes by page. A one-page EPUB therefore collapses `normalizer_threads = 8` to one worker.
+4. Sentence-mode normalization walks every sentence in that one page.
+5. `apply_abbreviation_map` recompiles configuration-driven regexes repeatedly for each sentence. The observed configuration contains 5 regex rules, 154 case-sensitive abbreviation rules, and 8 case-insensitive rules.
+6. Initial reader snapshot/TTS metadata paths can also request the current full-page audio plan, so simply deleting the explicit precompute is not sufficient if the first snapshot immediately rebuilds the same thousands-of-sentence plan.
+7. Sentence-mode cache misses currently serialize individual per-sentence normalization cache files, multiplying startup IO and serialization work.
+
+Historical intent must be preserved: the old eager precompute existed to avoid later page-turn/TTS stalls. A4 must replace that behavior with bounded/lazy/background work rather than merely moving the same multi-minute stall to the first Play action.
+
+### Authorized correction passes
+
+#### A. Remove whole-book normalization from the synchronous source-open critical path
+
+A normal EPUB source open must be able to return a reader-ready session after source ingestion, pagination/anchor setup, and other bounded reader initialization.
+
+`load_session_for_source_with_cancel` must not synchronously normalize every sentence merely to construct the session.
+
+The existing historical `precompute_normalization_cache` behavior may be:
+
+- removed from synchronous open;
+- converted to a bounded background warmup;
+- replaced with demand-driven normalization;
+- or otherwise restructured.
+
+Do not make reader visibility depend on completion of whole-book TTS preparation.
+
+#### B. Initial snapshot must remain bounded while TTS is idle
+
+The first `ReaderSnapshot` must not immediately recreate the same full-book stall through `tts_view`, `current_audio_sentences`, `current_audio_highlight_idx`, or equivalent helpers.
+
+While TTS is idle, the UI may derive cheap metadata from canonical/display sentence counts, cached-plan metadata, or an explicit not-yet-prepared state, provided the existing public contract remains coherent.
+
+Do not introduce a parallel reader state machine.
+
+#### C. First TTS interaction must also be bounded
+
+Do not merely move the multi-minute stall from book open to the first TTS Play/Seek.
+
+On initial TTS use, prepare only what is needed for prompt playback plus bounded lookahead, or provide an equivalently fast bulk-normalization implementation.
+
+Required behavior:
+
+- Play becomes responsive without full-book preprocessing;
+- current sentence can be normalized and spoken promptly;
+- next/previous sentence navigation remains correct;
+- canonical display <-> audio ownership remains correct when one display sentence expands into multiple audio chunks;
+- background warming may continue after playback starts, but must not block the UI.
+
+#### D. Compile stable normalization matchers once per TextNormalizer configuration
+
+Configuration-driven regular expressions and token matchers must not be recompiled for every sentence.
+
+At minimum review and eliminate per-sentence stable-regex compilation for:
+
+- configured abbreviation regex rules;
+- case-sensitive abbreviation token patterns;
+- case-insensitive abbreviation token patterns;
+- brand pronunciation map patterns;
+- custom-pronunciation map patterns;
+- acronym token patterns;
+- year matching.
+
+Prefer a compiled normalizer/runtime representation built when `TextNormalizer` is created or loaded. Invalid user-config rules must still produce useful warnings and be skipped safely.
+
+Preserve normalization semantics unless a test demonstrates an existing bug.
+
+#### E. Eliminate thousands of tiny synchronous cache writes from reader open
+
+Opening a large EPUB must not synchronously write one TOML file per normalized sentence before the reader appears.
+
+Caching may remain sentence-addressable, but population must be lazy/batched/background, or the representation may be redesigned behind the existing cache boundary.
+
+Cache correctness and normalizer-config invalidation semantics must remain deterministic.
+
+#### F. Large-document deterministic regression
+
+Add a project-owned deterministic regression that exercises a realistically large EPUB/session shape.
+
+Required fixture/evidence:
+
+- at least one generated/owned EPUB or canonical session with **3,000+ sentences**;
+- preferably also a 10,000-sentence stress case if it remains practical for ordinary CI;
+- do not commit a giant binary when a tiny generated fixture can express the same shape.
+
+The regression must prove structurally, not only by optimistic wall-clock timing, that:
+
+1. source/session open does not eagerly normalize every sentence;
+2. initial reader snapshot while TTS is idle does not eagerly normalize every sentence;
+3. opening does not create thousands of sentence-normalization cache files;
+4. first TTS use prepares bounded work rather than the complete book;
+5. canonical normalized sentence content remains correct;
+6. display-to-audio and audio-to-display mappings remain correct for chunked sentences.
+
+Instrumentation/counters exposed only under tests are acceptable if they keep the assertion deterministic.
+
+A generous performance smoke assertion may supplement these structural checks, but must not be the sole acceptance evidence.
+
+#### G. Stage-level timing and progress diagnostics
+
+Add enough tracing to distinguish at least:
+
+- source content load duration;
+- EPUB repagination duration;
+- sentence/anchor construction duration;
+- synchronous normalization work performed during open;
+- initial snapshot duration;
+- TTS-plan preparation count and duration;
+- optional background warmup count/duration.
+
+A normal successful open must transition out of `loading_reader` after bounded non-TTS initialization.
+
+#### H. Preserve all accepted Goal 0008 behavior
+
+A4 must not regress:
+
+- Caliberate paged catalog loading;
+- in-memory selected-book handoff;
+- duplicate-open suppression;
+- the 10-minute slow-storage-safe content timeout;
+- valid EPUB cache validation/recovery from A3;
+- native EPUB ingestion from A3;
+- provider-safe catalog caches;
+- Caliberate API-key auth;
+- legacy Calibre catalog/download/Basic-auth compatibility;
+- local default `127.0.0.1:8181`;
+- repo-native Windows QA;
+- source-open failure cleanup.
+
+The black/blank Caliberate cover issue remains explicitly out of scope for A4.
+
+Do not start PDF work.
+
+### Attempt A4 acceptance gates
+
+A4 is not complete until all of the following are true:
+
+1. `load_session_for_source_with_cancel` no longer requires all-sentence/all-page normalization cache precompute before returning a normal reader session.
+2. Initial reader snapshot while TTS is idle does not force normalization of the complete single-page EPUB.
+3. First TTS Play/Seek does not synchronously normalize the complete 3,000+/10,000-sentence EPUB before becoming usable.
+4. Stable configuration-driven regex/token matchers are compiled once per loaded normalizer configuration rather than once per sentence.
+5. Large-book tests prove bounded normalization/cache work before reader visibility.
+6. Large-book tests prove bounded first-TTS preparation.
+7. Existing normalization semantics and display/audio mapping regressions remain green.
+8. Existing A3 valid Caliberate EPUB -> materialization -> native source loader -> canonical session regression remains green.
+9. Poisoned Caliberate EPUB cache recovery remains green.
+10. Legacy Calibre HTTP compatibility remains green.
+11. `cargo check --workspace`, `cargo build --workspace`, and `cargo test --workspace` pass on Windows CI.
+12. The Goal 0008 report records exact A4 architecture, tests, before/after startup stages, and remaining human verification.
+13. No PDF work, cover work, broad library UI redesign, or duplicate reader state machine is introduced.
+
+### Human verification for attempt A4
+
+**No human QA during A4 implementation/correction.**
+
+The human has already supplied sufficient real-desktop evidence. Do not ask them to reopen the same EPUB until A4 is implemented, validated, director-reviewed, and integrated.
+
+After director acceptance only:
+
+1. keep Caliberate running at `127.0.0.1:8181`;
+2. `git pull -> .\qa.ps1`;
+3. open one real Caliberate EPUB;
+4. confirm the reader appears promptly;
+5. immediately test Windows TTS Play/next/previous/pause/resume/stop so A4 cannot hide the same stall behind first TTS activation.

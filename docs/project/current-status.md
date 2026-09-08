@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-08 after Goal 0008 A3 EPUB correction acceptance/integration
+Updated: 2026-09-08 after real-desktop Goal 0008 A4 reader-normalization stall diagnosis
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**A3 AUTOMATED CORRECTION ACCEPTED — REAL-DESKTOP EPUB SIGNOFF PENDING**
+**GOAL 0008 A4 REOPENED — READER STARTUP BLOCKED BY WHOLE-BOOK NORMALIZATION**
 
 Accepted integration:
 
@@ -151,7 +151,7 @@ Accepted integration:
 
 Authoritative Windows run `34185172624` passed both jobs and the core suite reached **180 passed / 0 failed**.
 
-The earlier real-desktop run proved catalog population but exposed that a real Caliberate EPUB did not enter the reader. Attempt A3 is now accepted and integrated: a valid EPUB is exercised end-to-end through mock Caliberate HTTP materialization, the real EPUB loader, and the canonical session path; EPUB no longer depends on Pandoc in its critical open path; and invalid materialized EPUB cache entries are validated/recovered. Windows CI run `34253400879` passed. One real-desktop EPUB open against the human's actual Caliberate service remains before Gate 2.5 exit.
+A3 remains accepted for its bounded responsibilities: valid Caliberate EPUB materialization, native EPUB ingestion, and poisoned-cache recovery. New real-desktop evidence localizes the remaining blocker after those stages. One real Caliberate EPUB materialized in ~154 ms and completed native source loading in ~325 ms, then a 3,178-sentence one-page pretty EPUB entered synchronous normalization precompute and remained stuck there. A second already-materialized Recent EPUB with 10,488 sentences reproduced the same behavior. Goal 0008 is therefore reopened as A4 to make reader startup and first-TTS preparation bounded/lazy and to precompile stable normalizer matchers. No further human QA until A4 is implemented/reviewed/integrated.
 
 ## Historical Tauri / React / WebView implementation
 

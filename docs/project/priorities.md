@@ -27,6 +27,15 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - click-to-play;
 - bookmarks/config/search/navigation.
 
+## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service
+
+- use Caliberate's versioned HTTP/JSON API rather than direct database coupling;
+- default local provider target `http://127.0.0.1:8181`;
+- page/catalog/search-compatible provider boundary behind the existing library browser;
+- stream/materialize supported formats into the normal LanternLeaf reader/session pipeline;
+- preserve legacy Calibre content-server compatibility;
+- keep the human workflow repo-native: `git pull -> .\qa.ps1`.
+
 ## P3 — Make native PDF rendering reliable
 
 - page rendering;

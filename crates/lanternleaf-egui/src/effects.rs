@@ -830,14 +830,7 @@ fn handle_persistence_flush(
             .save_base_config(&context.config_path, &cfg)
             .map_err(|err| bridge_error("config_persist_failed", err))?;
     }
-    let panels = {
-        let guard = context
-            .panels
-            .lock()
-            .map_err(|_| bridge_error("lock_poisoned", "Panel state lock poisoned"))?;
-        *guard
-    };
-    let (snapshot, config) = {
+    let housekeeping = {
         let mut guard = context
             .session
             .lock()
@@ -866,17 +859,25 @@ fn handle_persistence_flush(
                 outcome: PersistenceOutcome::SkippedNoSession,
             }]);
         };
-        let snapshot = session.snapshot(panels, &context.normalizer);
-        let config = session.config.clone();
-        (snapshot, config)
+        let view = session.playback_view(&context.normalizer);
+        let playback = lanternleaf_app::contracts::ReaderPlaybackState {
+            source_path: view.source_path.clone(),
+            current_page: view.current_page,
+            highlighted_sentence_idx: view.highlighted_sentence_idx,
+            tts: view.tts,
+            stats: view.stats,
+            updated_at: 0,
+        };
+        lanternleaf_app::persistence::ReaderHousekeeping {
+            source_path: view.source_path,
+            bookmark: session.to_bookmark(),
+            config: session.config.clone(),
+            playback: Some(playback),
+        }
     };
-    context.persistence.flush_trigger(
-        Some(lanternleaf_app::persistence::ReaderHousekeeping {
-            snapshot: &snapshot,
-            config: &config,
-        }),
-        trigger,
-    );
+    context
+        .persistence
+        .flush_trigger(Some(housekeeping), trigger);
     debug!(
         request_id,
         trigger = ?trigger,
@@ -1296,6 +1297,37 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn persistence_flush_uses_lightweight_session_projection() {
+        let persistence = Arc::new(lanternleaf_app::persistence::PersistenceLifecycle::new(
+            Arc::new(lanternleaf_app::persistence::FilesystemPersistenceService::default()),
+        ));
+        let context = EffectContext::new(
+            config::AppConfig::default(),
+            normalizer::TextNormalizer::default(),
+            persistence,
+            std::env::temp_dir().join("lanternleaf-lightweight-persistence.toml"),
+        );
+        let sentences: Vec<String> = (0..10_000)
+            .map(|idx| format!("Sentence {idx} for persistence."))
+            .collect();
+        *context.session.lock().expect("session lock") =
+            Some(session::ReaderSession::from_pages_for_test(
+                PathBuf::from("/tmp/large-persistence.epub"),
+                "large-persistence.epub".to_string(),
+                vec![sentences.join(" ")],
+                vec![sentences],
+            ));
+        session::reset_snapshot_construction_count();
+        handle_persistence_flush(&context, 1, PersistenceTrigger::ReaderCommand)
+            .expect("persistence flush should succeed");
+        assert_eq!(
+            session::snapshot_construction_count(),
+            0,
+            "persistence flush constructed a full ReaderSnapshot"
+        );
     }
 
     struct CountingConfigService {

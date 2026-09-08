@@ -233,6 +233,26 @@ pub struct SessionEvent {
     pub snapshot: ReaderSnapshot,
 }
 
+/// The bounded state needed by playback, persistence, and the native UI event bridge.
+///
+/// This deliberately excludes document payloads (HTML, canonical sentences, images, and
+/// anchor maps).  Callers that need those payloads must explicitly request `snapshot()`.
+#[derive(Debug, Clone)]
+pub struct ReaderPlaybackView {
+    pub source_path: String,
+    pub current_page: usize,
+    pub highlighted_sentence_idx: Option<usize>,
+    pub tts: ReaderTtsView,
+    pub stats: ReaderStats,
+    pub settings: ReaderSettingsView,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReaderSessionDelta {
+    pub action: &'static str,
+    pub playback: ReaderPlaybackView,
+}
+
 #[derive(Debug, Clone)]
 pub struct ReaderSession {
     pub source_path: PathBuf,
@@ -319,6 +339,20 @@ impl ReaderSession {
             current_plan: None,
         }
     }
+
+    /// Return only cursor/playback metadata. This must remain free of `ReaderSnapshot` creation.
+    pub fn playback_view(&mut self, normalizer: &normalizer::TextNormalizer) -> ReaderPlaybackView {
+        let stats = self.stats(normalizer);
+        let tts = self.tts_view(normalizer, stats.tts_progress_pct);
+        ReaderPlaybackView {
+            source_path: self.source_path_str(),
+            current_page: self.current_page,
+            highlighted_sentence_idx: self.current_highlight_idx(),
+            tts,
+            stats,
+            settings: self.settings_view(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -336,6 +370,16 @@ struct MappingTelemetry {
 }
 
 static MAPPING_TELEMETRY: OnceLock<MappingTelemetry> = OnceLock::new();
+static SNAPSHOT_CONSTRUCTIONS: AtomicUsize = AtomicUsize::new(0);
+
+/// Test/diagnostic counter for proving hot paths use lightweight projections.
+pub fn reset_snapshot_construction_count() {
+    SNAPSHOT_CONSTRUCTIONS.store(0, Ordering::SeqCst);
+}
+
+pub fn snapshot_construction_count() -> usize {
+    SNAPSHOT_CONSTRUCTIONS.load(Ordering::SeqCst)
+}
 
 fn mapping_telemetry() -> &'static MappingTelemetry {
     MAPPING_TELEMETRY.get_or_init(|| MappingTelemetry {
@@ -1104,6 +1148,7 @@ impl ReaderSession {
         panels: PanelState,
         normalizer: &normalizer::TextNormalizer,
     ) -> ReaderSnapshot {
+        SNAPSHOT_CONSTRUCTIONS.fetch_add(1, Ordering::SeqCst);
         let snapshot_started = Instant::now();
         let sentences = self.current_sentences(normalizer);
         let canonical_sentences = self

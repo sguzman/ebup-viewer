@@ -326,7 +326,6 @@ struct LanternLeafApp {
     persistence: Arc<PersistenceLifecycle>,
     cache_service: Arc<dyn cache_service::CacheService>,
     effect_session: Arc<Mutex<Option<session::ReaderSession>>>,
-    tts_session_source: Option<PathBuf>,
     persistence_logged: bool,
     last_reader_source: Option<String>,
     last_reader_source_for_persistence: Option<String>,
@@ -772,7 +771,11 @@ impl LanternLeafApp {
             anchor_diagnostics: AnchorDiagnostics::default(),
             overlay_diagnostics: OverlayDiagnostics::default(),
             audio_diagnostics: AudioDiagnostics::default(),
-            tts_runtime: TtsRuntime::new(normalizer.clone()),
+            tts_runtime: TtsRuntime::new_with_session(
+                normalizer.clone(),
+                lanternleaf_app::tts_runtime::TtsRuntimeMode::Real,
+                Arc::clone(&effect_session),
+            ),
             last_tts_runtime_event: None,
             theme_override: None,
             pending_theme_mode: None,
@@ -780,7 +783,6 @@ impl LanternLeafApp {
             persistence,
             cache_service,
             effect_session,
-            tts_session_source: None,
             persistence_logged: false,
             last_reader_source: None,
             last_reader_source_for_persistence: None,
@@ -880,7 +882,11 @@ impl LanternLeafApp {
             anchor_diagnostics: AnchorDiagnostics::default(),
             overlay_diagnostics: OverlayDiagnostics::default(),
             audio_diagnostics: AudioDiagnostics::default(),
-            tts_runtime: TtsRuntime::new(normalizer.clone()),
+            tts_runtime: TtsRuntime::new_with_session(
+                normalizer.clone(),
+                lanternleaf_app::tts_runtime::TtsRuntimeMode::Real,
+                Arc::clone(&effect_session),
+            ),
             last_tts_runtime_event: None,
             theme_override: None,
             pending_theme_mode: None,
@@ -888,7 +894,6 @@ impl LanternLeafApp {
             persistence,
             cache_service,
             effect_session,
-            tts_session_source: None,
             persistence_logged: false,
             last_reader_source: None,
             last_reader_source_for_persistence: None,
@@ -2518,7 +2523,6 @@ impl eframe::App for LanternLeafApp {
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
         let frame_started = Instant::now();
         let _ = frame;
-        self.sync_tts_runtime_session();
         self.handle_tts_runtime_events();
         self.handle_effect_events();
         let projection_started = Instant::now();

@@ -220,13 +220,21 @@ impl TtsRuntime {
     }
 
     pub fn new_with_mode(normalizer: normalizer::TextNormalizer, mode: TtsRuntimeMode) -> Self {
+        Self::new_with_session(normalizer, mode, Arc::new(Mutex::new(None)))
+    }
+
+    pub fn new_with_session(
+        normalizer: normalizer::TextNormalizer,
+        mode: TtsRuntimeMode,
+        session: Arc<Mutex<Option<session::ReaderSession>>>,
+    ) -> Self {
         let (event_tx, event_rx) = mpsc::channel();
         let (command_tx, command_rx) = mpsc::channel();
         let runtime = Self {
             mode,
             normalizer,
             panels: Arc::new(Mutex::new(session::PanelState::default())),
-            session: Arc::new(Mutex::new(None)),
+            session,
             request: Arc::new(Mutex::new(None)),
             next_request_id: Arc::new(AtomicU64::new(1)),
             last_command: Arc::new(Mutex::new(None)),
@@ -287,7 +295,7 @@ impl TtsRuntime {
         Some(reader.snapshot(panels, &self.normalizer))
     }
 
-    pub fn apply_command(&self, command: TtsCommand) -> Option<session::ReaderSnapshot> {
+    pub fn apply_command(&self, command: TtsCommand) -> Option<session::ReaderPlaybackView> {
         trace!(tts_command = command.label(), "Applying TTS command");
         if let Ok(mut guard) = self.last_command.lock() {
             *guard = Some(command.label().to_string());
@@ -311,7 +319,7 @@ impl TtsRuntime {
         let action = command_for_session.action();
         let sync_after_command = should_sync_tts_after_reader_command(&command_for_session);
         let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst);
-        let snapshot = {
+        let playback = {
             let mut guard = self.session.lock().ok()?;
             let reader = match guard.as_mut() {
                 Some(reader) => reader,
@@ -333,19 +341,19 @@ impl TtsRuntime {
                     return None;
                 }
             };
-            let panels = panels_snapshot(&self.panels);
-            let event = reader.apply_command(command_for_session, panels, &self.normalizer);
-            event.snapshot
+            reader
+                .apply_command_lightweight(command_for_session, &self.normalizer)
+                .playback
         };
 
-        let cursor = cursor_from_snapshot(&snapshot);
+        let cursor = cursor_from_playback(&playback);
         self.emit_event(TtsRuntimeEvent {
             request_id,
             action: action.to_string(),
             kind: TtsRuntimeEventKind::StateChanged,
             snapshot: None,
-            playback: Some(reader_playback_state_from_snapshot(&snapshot)),
-            tts: Some(snapshot.tts.clone()),
+            playback: Some(reader_playback_state_from_view(&playback)),
+            tts: Some(playback.tts.clone()),
             message: None,
             cursor,
         });
@@ -354,7 +362,7 @@ impl TtsRuntime {
             self.sync_tts_runtime_after_reader_change();
         }
 
-        Some(snapshot)
+        Some(playback)
     }
 
     pub fn collect_events(&self) -> Vec<TtsRuntimeEvent> {
@@ -424,8 +432,7 @@ impl TtsRuntime {
                 Some(reader) => reader,
                 None => return false,
             };
-            let panels = panels_snapshot(&self.panels);
-            let state = reader.snapshot(panels, &self.normalizer).tts.state;
+            let state = reader.playback_view(&self.normalizer).tts.state;
             (
                 reader.config.tts_pause_resume_behavior,
                 state == session::TtsPlaybackState::Paused,
@@ -458,8 +465,7 @@ impl TtsRuntime {
                 Some(reader) => reader,
                 None => return false,
             };
-            let panels = panels_snapshot(&self.panels);
-            let state = reader.snapshot(panels, &self.normalizer).tts.state;
+            let state = reader.playback_view(&self.normalizer).tts.state;
             (
                 reader.config.tts_pause_resume_behavior,
                 state,
@@ -536,7 +542,6 @@ impl TtsRuntime {
         let ctx = TtsRuntimeContext {
             mode: self.mode,
             normalizer: self.normalizer.clone(),
-            panels: self.panels.clone(),
             session: self.session.clone(),
             request: self.request.clone(),
             last_command: self.last_command.clone(),
@@ -551,9 +556,8 @@ impl TtsRuntime {
     fn build_tts_playback_plan(&self) -> Option<TtsPlaybackPlan> {
         let mut guard = self.session.lock().ok()?;
         let reader = guard.as_mut()?;
-        let panels = panels_snapshot(&self.panels);
-        let snapshot = reader.snapshot(panels, &self.normalizer);
-        if snapshot.tts.state != session::TtsPlaybackState::Playing {
+        let playback = reader.playback_view(&self.normalizer);
+        if playback.tts.state != session::TtsPlaybackState::Playing {
             return None;
         }
         let (audio_sentences, start_idx) = reader.current_tts_audio_slice(&self.normalizer);
@@ -562,7 +566,7 @@ impl TtsRuntime {
         }
         trace!(
             source = %reader.source_path.display(),
-            page = snapshot.current_page + 1,
+            page = playback.current_page + 1,
             start_idx,
             sentence_count = audio_sentences.len(),
             tts_payload_source = "tts_text",
@@ -570,7 +574,7 @@ impl TtsRuntime {
         );
         Some(TtsPlaybackPlan {
             source_path: reader.source_path.clone(),
-            page: snapshot.current_page,
+            page: playback.current_page,
             sentences: audio_sentences,
             start_idx,
             pause_after: Duration::from_secs_f64(reader.config.pause_after_sentence.max(0.0) as f64),
@@ -592,7 +596,6 @@ impl TtsRuntime {
 struct TtsRuntimeContext {
     mode: TtsRuntimeMode,
     normalizer: normalizer::TextNormalizer,
-    panels: Arc<Mutex<session::PanelState>>,
     session: Arc<Mutex<Option<session::ReaderSession>>>,
     request: Arc<Mutex<Option<TtsRequestRuntime>>>,
     last_command: Arc<Mutex<Option<String>>>,
@@ -927,9 +930,8 @@ fn collect_tts_playback_plan(
     if current_request_id != Some(runtime_request_id) {
         return None;
     }
-    let panels = panels_snapshot(&ctx.panels);
-    let snapshot = reader.snapshot(panels, &ctx.normalizer);
-    if snapshot.tts.state != session::TtsPlaybackState::Playing {
+    let playback = reader.playback_view(&ctx.normalizer);
+    if playback.tts.state != session::TtsPlaybackState::Playing {
         return None;
     }
     let (audio_sentences, start_idx) = reader.current_tts_audio_slice(&ctx.normalizer);
@@ -938,7 +940,7 @@ fn collect_tts_playback_plan(
     }
     Some(TtsPlaybackPlan {
         source_path: reader.source_path.clone(),
-        page: snapshot.current_page,
+        page: playback.current_page,
         sentences: audio_sentences,
         start_idx,
         pause_after: Duration::from_secs_f64(reader.config.pause_after_sentence.max(0.0) as f64),
@@ -987,25 +989,24 @@ fn transition_tts_runtime_to_paused(
             Some(reader) => reader,
             None => return,
         };
-        let panels = panels_snapshot(&ctx.panels);
-        let event =
-            reader.apply_command(session::SessionCommand::TtsPause, panels, &ctx.normalizer);
+        let delta =
+            reader.apply_command_lightweight(session::SessionCommand::TtsPause, &ctx.normalizer);
         persist_reader_progress(reader, "tts_runtime_pause");
-        Some((event.snapshot, reader.source_path.clone()))
+        Some((delta.playback, reader.source_path.clone()))
     };
 
-    if let Some((snapshot, source_path)) = event_payload {
+    if let Some((playback, source_path)) = event_payload {
         warn!(
             runtime_request_id,
             source = %source_path.display(),
             error = %message,
             "TTS runtime transitioned to paused"
         );
-        emit_snapshot_event(
+        emit_playback_event(
             ctx,
             runtime_request_id,
             action,
-            snapshot,
+            playback,
             TtsRuntimeEventKind::Failed,
             Some(message.to_string()),
         );
@@ -1030,30 +1031,26 @@ fn advance_tts_runtime_cursor(ctx: &TtsRuntimeContext, runtime_request_id: u64) 
             Some(reader) => reader,
             None => return false,
         };
-        let panels = panels_snapshot(&ctx.panels);
-        let current_snapshot = reader.snapshot(panels, &ctx.normalizer);
-        if current_snapshot.tts.state != session::TtsPlaybackState::Playing {
+        let current_playback = reader.playback_view(&ctx.normalizer);
+        if current_playback.tts.state != session::TtsPlaybackState::Playing {
             return false;
         }
-        let event = reader.apply_command(
-            session::SessionCommand::TtsSeekNext,
-            panels,
-            &ctx.normalizer,
-        );
+        let delta =
+            reader.apply_command_lightweight(session::SessionCommand::TtsSeekNext, &ctx.normalizer);
         persist_reader_progress(reader, "tts_runtime_step");
-        Some(event.snapshot)
+        Some(delta.playback)
     };
 
-    if let Some(snapshot) = event_payload {
-        emit_snapshot_event(
+    if let Some(playback) = event_payload {
+        emit_playback_event(
             ctx,
             runtime_request_id,
             "reader_tts_runtime_step",
-            snapshot.clone(),
+            playback.clone(),
             TtsRuntimeEventKind::Progress,
             None,
         );
-        snapshot.tts.state == session::TtsPlaybackState::Playing
+        playback.tts.state == session::TtsPlaybackState::Playing
     } else {
         false
     }
@@ -1223,23 +1220,22 @@ fn build_playback(
     }
 }
 
-fn emit_snapshot_event(
+fn emit_playback_event(
     ctx: &TtsRuntimeContext,
     request_id: u64,
     action: &str,
-    snapshot: session::ReaderSnapshot,
+    playback: session::ReaderPlaybackView,
     kind: TtsRuntimeEventKind,
     message: Option<String>,
 ) {
-    let playback = reader_playback_state_from_snapshot(&snapshot);
-    let cursor = cursor_from_snapshot(&snapshot);
+    let cursor = cursor_from_playback(&playback);
     let event = TtsRuntimeEvent {
         request_id,
         action: action.to_string(),
         kind,
         snapshot: None,
-        playback: Some(playback),
-        tts: Some(snapshot.tts.clone()),
+        playback: Some(reader_playback_state_from_view(&playback)),
+        tts: Some(playback.tts.clone()),
         message,
         cursor,
     };
@@ -1289,7 +1285,7 @@ fn emit_queued_event(
     let _ = ctx.event_tx.send(event);
 }
 
-fn cursor_from_snapshot(snapshot: &session::ReaderSnapshot) -> Option<TtsCursor> {
+fn cursor_from_playback(snapshot: &session::ReaderPlaybackView) -> Option<TtsCursor> {
     Some(TtsCursor {
         audio_idx: snapshot.tts.current_sentence_idx,
         display_idx: snapshot.highlighted_sentence_idx,
@@ -1297,8 +1293,8 @@ fn cursor_from_snapshot(snapshot: &session::ReaderSnapshot) -> Option<TtsCursor>
     })
 }
 
-fn reader_playback_state_from_snapshot(
-    reader: &session::ReaderSnapshot,
+fn reader_playback_state_from_view(
+    reader: &session::ReaderPlaybackView,
 ) -> crate::contracts::ReaderPlaybackState {
     crate::contracts::ReaderPlaybackState {
         source_path: reader.source_path.clone(),
@@ -1413,6 +1409,7 @@ mod tests {
     #[test]
     fn large_session_tts_submission_is_bounded_and_worker_owned() {
         let normalizer = normalizer::TextNormalizer::default();
+        session::reset_snapshot_construction_count();
         let runtime = TtsRuntime::new_with_mode(normalizer, TtsRuntimeMode::Simulated);
         let sentences: Vec<String> = (0..10_488)
             .map(|idx| format!("Sentence {idx} is deterministic."))
@@ -1450,6 +1447,51 @@ mod tests {
             saw_state,
             "TTS control worker did not begin the large session"
         );
+        for _ in 0..100 {
+            assert!(runtime.submit_command(TtsCommand::SeekNext));
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            let _ = runtime.collect_events();
+            if session::snapshot_construction_count() != 0 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            session::snapshot_construction_count(),
+            0,
+            "TTS worker constructed a full ReaderSnapshot in its hot path"
+        );
+    }
+
+    #[test]
+    fn canonical_session_cursor_is_shared_between_reader_and_tts_paths() {
+        let normalizer = normalizer::TextNormalizer::default();
+        let shared = Arc::new(Mutex::new(Some(build_test_session(&[&["A.", "B.", "C."]]))));
+        let runtime = TtsRuntime::new_with_session(
+            normalizer.clone(),
+            TtsRuntimeMode::Simulated,
+            Arc::clone(&shared),
+        );
+        {
+            let mut guard = shared.lock().expect("session lock");
+            guard.as_mut().expect("session").apply_command(
+                session::SessionCommand::SentenceClick { sentence_idx: 2 },
+                session::PanelState::default(),
+                &normalizer,
+            );
+        }
+        let view = runtime
+            .apply_command(TtsCommand::PlayFromHighlight)
+            .expect("playback view");
+        assert_eq!(view.highlighted_sentence_idx, Some(2));
+        assert_eq!(view.tts.current_sentence_idx, Some(2));
+
+        let _ = runtime.apply_command(TtsCommand::SeekPrev);
+        let mut guard = shared.lock().expect("session lock");
+        let projected = guard.as_mut().expect("session").playback_view(&normalizer);
+        assert_eq!(projected.tts.current_sentence_idx, Some(1));
     }
 
     #[test]

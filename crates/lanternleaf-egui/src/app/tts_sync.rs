@@ -22,22 +22,6 @@ fn normalize_for_tts_compare(input: &str) -> String {
 }
 
 impl LanternLeafApp {
-    pub(crate) fn sync_tts_runtime_session(&mut self) {
-        let session_guard = match self.effect_session.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
-        let current_source = session_guard
-            .as_ref()
-            .map(|session| session.source_path.clone());
-        if current_source == self.tts_session_source {
-            return;
-        }
-        self.tts_session_source = current_source.clone();
-        self.tts_runtime.set_session(session_guard.clone());
-        trace!(source = ?current_source, "Synced TTS runtime session");
-    }
-
     pub(crate) fn handle_tts_runtime_events(&mut self) {
         for event in self.tts_runtime.collect_events() {
             let tts_request_id = event.request_id;

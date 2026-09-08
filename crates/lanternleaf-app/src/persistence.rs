@@ -1,5 +1,5 @@
 use crate::contracts::BridgeError;
-use crate::contracts::ReaderSnapshot;
+use crate::contracts::ReaderPlaybackState;
 use crate::pipeline::PersistenceTrigger;
 use lanternleaf_core::{cache, cache_service, config};
 use std::path::{Path, PathBuf};
@@ -154,16 +154,29 @@ impl PersistencePolicy {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct ReaderHousekeeping<'a> {
-    pub snapshot: &'a ReaderSnapshot,
-    pub config: &'a config::AppConfig,
+#[derive(Debug, Clone)]
+pub struct ReaderHousekeeping {
+    pub source_path: String,
+    pub bookmark: cache::Bookmark,
+    pub config: config::AppConfig,
+    pub playback: Option<ReaderPlaybackState>,
+}
+
+impl ReaderHousekeeping {
+    pub fn from_parts(
+        source_path: impl Into<String>,
+        bookmark: cache::Bookmark,
+        config: config::AppConfig,
+        playback: Option<ReaderPlaybackState>,
+    ) -> Self {
+        Self { source_path: source_path.into(), bookmark, config, playback }
+    }
 }
 
 pub trait PersistenceService: Send + Sync {
-    fn persist_reader_housekeeping<'a>(
+    fn persist_reader_housekeeping(
         &self,
-        housekeeping: ReaderHousekeeping<'a>,
+        housekeeping: ReaderHousekeeping,
     ) -> Result<(), BridgeError>;
 
     fn load_bookmark(&self, source_path: &Path) -> Option<cache::Bookmark>;
@@ -193,34 +206,16 @@ impl Default for FilesystemPersistenceService {
 }
 
 impl PersistenceService for FilesystemPersistenceService {
-    fn persist_reader_housekeeping<'a>(
+    fn persist_reader_housekeeping(
         &self,
-        housekeeping: ReaderHousekeeping<'a>,
+        housekeeping: ReaderHousekeeping,
     ) -> Result<(), BridgeError> {
-        let source_path = Path::new(&housekeeping.snapshot.source_path);
-        let sentence_text = housekeeping
-            .snapshot
-            .highlighted_sentence_idx
-            .and_then(|idx| housekeeping.snapshot.sentences.get(idx).cloned());
-        let bookmark = cache::Bookmark {
-            page: housekeeping.snapshot.current_page,
-            sentence_idx: housekeeping.snapshot.highlighted_sentence_idx,
-            sentence_text,
-            scroll_y: 0.0,
-            pdf_page_idx: None,
-            pdf_rects: Vec::new(),
-            pdf_line_rects: Vec::new(),
-            pdf_block_rects: Vec::new(),
-            pdf_confidence: None,
-            pdf_reason: None,
-            pdf_quality_class: None,
-            pdf_sentence_text_hash: None,
-            pdf_token_lineage: Vec::new(),
-        };
+        let source_path = Path::new(&housekeeping.source_path);
         self.cache_service.remember_source_path(source_path);
-        self.cache_service.save_bookmark(source_path, &bookmark);
         self.cache_service
-            .save_epub_config(source_path, housekeeping.config);
+            .save_bookmark(source_path, &housekeeping.bookmark);
+        self.cache_service
+            .save_epub_config(source_path, &housekeeping.config);
         Ok(())
     }
 
@@ -311,30 +306,11 @@ impl RemotePersistenceService {
 }
 
 impl PersistenceService for RemotePersistenceService {
-    fn persist_reader_housekeeping<'a>(
+    fn persist_reader_housekeeping(
         &self,
-        housekeeping: ReaderHousekeeping<'a>,
+        housekeeping: ReaderHousekeeping,
     ) -> Result<(), BridgeError> {
-        let source_path = Path::new(&housekeeping.snapshot.source_path);
-        let sentence_text = housekeeping
-            .snapshot
-            .highlighted_sentence_idx
-            .and_then(|idx| housekeeping.snapshot.sentences.get(idx).cloned());
-        let bookmark = cache::Bookmark {
-            page: housekeeping.snapshot.current_page,
-            sentence_idx: housekeeping.snapshot.highlighted_sentence_idx,
-            sentence_text,
-            scroll_y: 0.0,
-            pdf_page_idx: None,
-            pdf_rects: Vec::new(),
-            pdf_line_rects: Vec::new(),
-            pdf_block_rects: Vec::new(),
-            pdf_confidence: None,
-            pdf_reason: None,
-            pdf_quality_class: None,
-            pdf_sentence_text_hash: None,
-            pdf_token_lineage: Vec::new(),
-        };
+        let source_path = Path::new(&housekeeping.source_path);
 
         let updated_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -342,16 +318,52 @@ impl PersistenceService for RemotePersistenceService {
             .as_millis() as u64;
 
         let playback = crate::contracts::ReaderPlaybackState {
-            source_path: housekeeping.snapshot.source_path.clone(),
-            current_page: housekeeping.snapshot.current_page,
-            highlighted_sentence_idx: housekeeping.snapshot.highlighted_sentence_idx,
-            tts: housekeeping.snapshot.tts.clone(),
-            stats: housekeeping.snapshot.stats.clone(),
+            source_path: housekeeping.source_path.clone(),
+            current_page: housekeeping
+                .playback
+                .as_ref()
+                .map(|p| p.current_page)
+                .unwrap_or(housekeeping.bookmark.page),
+            highlighted_sentence_idx: housekeeping.bookmark.sentence_idx,
+            tts: housekeeping
+                .playback
+                .as_ref()
+                .map(|p| p.tts.clone())
+                .unwrap_or_else(|| crate::contracts::ReaderTtsView {
+                    state: lanternleaf_core::session::TtsPlaybackState::Idle,
+                    current_sentence_idx: None,
+                    sentence_count: 0,
+                    can_seek_prev: false,
+                    can_seek_next: false,
+                    progress_pct: 0.0,
+                }),
+            stats: housekeeping
+                .playback
+                .as_ref()
+                .map(|p| p.stats.clone())
+                .unwrap_or_else(|| crate::contracts::ReaderStats {
+                    page_index: housekeeping.bookmark.page + 1,
+                    total_pages: 0,
+                    tts_progress_pct: 0.0,
+                    global_progress_pct: 0.0,
+                    page_time_remaining_secs: 0.0,
+                    book_time_remaining_secs: 0.0,
+                    page_word_count: 0,
+                    page_sentence_count: 0,
+                    page_start_percent: 0.0,
+                    page_end_percent: 0.0,
+                    words_read_up_to_page_start: 0,
+                    sentences_read_up_to_page_start: 0,
+                    words_read_up_to_page_end: 0,
+                    sentences_read_up_to_page_end: 0,
+                    words_read_up_to_current_position: 0,
+                    sentences_read_up_to_current_position: 0,
+                }),
             updated_at,
         };
 
         let update = serde_json::json!({
-            "bookmark": bookmark,
+            "bookmark": housekeeping.bookmark,
             "config": housekeeping.config,
             "playback": playback,
         });
@@ -462,11 +474,8 @@ impl PersistenceLifecycle {
         self.policy.log();
     }
 
-    pub fn on_live_update(
-        &self,
-        housekeeping: ReaderHousekeeping<'_>,
-        trigger: PersistenceTrigger,
-    ) {
+    pub fn on_live_update(&self, housekeeping: ReaderHousekeeping, trigger: PersistenceTrigger) {
+        let source_path = housekeeping.source_path.clone();
         if let Err(error) = self.service.persist_reader_housekeeping(housekeeping) {
             warn!(
                 trigger = ?trigger,
@@ -476,15 +485,15 @@ impl PersistenceLifecycle {
         } else {
             debug!(
                 trigger = ?trigger,
-                path = %housekeeping.snapshot.source_path,
+                path = %source_path,
                 "Reader housekeeping persisted"
             );
         }
     }
 
-    pub fn on_source_open(&self, housekeeping: ReaderHousekeeping<'_>) {
+    pub fn on_source_open(&self, housekeeping: ReaderHousekeeping) {
         info!(
-            path = %housekeeping.snapshot.source_path,
+            path = %housekeeping.source_path,
             "Persistence lifecycle: source open"
         );
         if let Err(error) = self.service.persist_reader_housekeeping(housekeeping) {
@@ -494,9 +503,9 @@ impl PersistenceLifecycle {
         }
     }
 
-    pub fn on_session_close(&self, housekeeping: ReaderHousekeeping<'_>) {
+    pub fn on_session_close(&self, housekeeping: ReaderHousekeeping) {
         info!(
-            path = %housekeeping.snapshot.source_path,
+            path = %housekeeping.source_path,
             "Persistence lifecycle: session close"
         );
         if let Err(error) = self.service.persist_reader_housekeeping(housekeeping) {
@@ -506,9 +515,9 @@ impl PersistenceLifecycle {
         }
     }
 
-    pub fn on_safe_quit(&self, housekeeping: ReaderHousekeeping<'_>) {
+    pub fn on_safe_quit(&self, housekeeping: ReaderHousekeeping) {
         info!(
-            path = %housekeeping.snapshot.source_path,
+            path = %housekeeping.source_path,
             "Persistence lifecycle: safe quit"
         );
         if let Err(error) = self.service.persist_reader_housekeeping(housekeeping) {
@@ -530,7 +539,7 @@ impl PersistenceLifecycle {
 
     pub fn flush_trigger(
         &self,
-        housekeeping: Option<ReaderHousekeeping<'_>>,
+        housekeeping: Option<ReaderHousekeeping>,
         trigger: PersistenceTrigger,
     ) {
         let has_housekeeping = housekeeping.is_some();
@@ -682,10 +691,7 @@ mod tests {
     }
 
     impl PersistenceService for StubService {
-        fn persist_reader_housekeeping<'a>(
-            &self,
-            _: ReaderHousekeeping<'a>,
-        ) -> Result<(), BridgeError> {
+        fn persist_reader_housekeeping(&self, _: ReaderHousekeeping) -> Result<(), BridgeError> {
             self.persisted.store(true, Ordering::SeqCst);
             Ok(())
         }
@@ -832,13 +838,14 @@ mod tests {
     fn lifecycle_flush_calls_service() {
         let service = Arc::new(StubService::new(None));
         let lifecycle = PersistenceLifecycle::new(service.clone());
-        let snapshot = make_reader_snapshot();
         let config = config::AppConfig::default();
         lifecycle.flush_trigger(
-            Some(ReaderHousekeeping {
-                snapshot: &snapshot,
-                config: &config,
-            }),
+            Some(ReaderHousekeeping::from_parts(
+                "/tmp/test.epub",
+                sample_bookmark(),
+                config,
+                None,
+            )),
             PersistenceTrigger::SourceOpen,
         );
         assert!(service.persisted.load(Ordering::SeqCst));
@@ -848,13 +855,14 @@ mod tests {
     fn lifecycle_flush_calls_service_on_session_close() {
         let service = Arc::new(StubService::new(None));
         let lifecycle = PersistenceLifecycle::new(service.clone());
-        let snapshot = make_reader_snapshot();
         let config = config::AppConfig::default();
         lifecycle.flush_trigger(
-            Some(ReaderHousekeeping {
-                snapshot: &snapshot,
-                config: &config,
-            }),
+            Some(ReaderHousekeeping::from_parts(
+                "/tmp/test.epub",
+                sample_bookmark(),
+                config,
+                None,
+            )),
             PersistenceTrigger::SessionClose,
         );
         assert!(service.persisted.load(Ordering::SeqCst));
@@ -864,13 +872,14 @@ mod tests {
     fn lifecycle_flush_calls_service_on_safe_quit() {
         let service = Arc::new(StubService::new(None));
         let lifecycle = PersistenceLifecycle::new(service.clone());
-        let snapshot = make_reader_snapshot();
         let config = config::AppConfig::default();
         lifecycle.flush_trigger(
-            Some(ReaderHousekeeping {
-                snapshot: &snapshot,
-                config: &config,
-            }),
+            Some(ReaderHousekeeping::from_parts(
+                "/tmp/test.epub",
+                sample_bookmark(),
+                config,
+                None,
+            )),
             PersistenceTrigger::SafeQuit,
         );
         assert!(service.persisted.load(Ordering::SeqCst));
@@ -892,14 +901,15 @@ mod tests {
     fn filesystem_persistence_uses_cache_service_config() {
         let (cache_service, saved_bookmark, saved_config) = TestCacheService::new();
         let service = FilesystemPersistenceService::new(Arc::new(cache_service));
-        let snapshot = make_reader_snapshot();
         let mut cfg = config::AppConfig::default();
         cfg.tts_speed = 3.5;
         service
-            .persist_reader_housekeeping(ReaderHousekeeping {
-                snapshot: &snapshot,
-                config: &cfg,
-            })
+            .persist_reader_housekeeping(ReaderHousekeeping::from_parts(
+                "/tmp/test.epub",
+                sample_bookmark(),
+                cfg,
+                None,
+            ))
             .expect("persist should succeed");
         assert!(saved_bookmark.load(Ordering::SeqCst));
         let guard = saved_config.lock().expect("config lock");
@@ -1015,14 +1025,15 @@ mod tests {
     fn filesystem_persistence_remembers_source_before_saving() {
         let (cache_service, calls) = RecordingCacheService::new();
         let service = FilesystemPersistenceService::new(Arc::new(cache_service));
-        let snapshot = make_reader_snapshot();
         let config = config::AppConfig::default();
 
         service
-            .persist_reader_housekeeping(ReaderHousekeeping {
-                snapshot: &snapshot,
-                config: &config,
-            })
+            .persist_reader_housekeeping(ReaderHousekeeping::from_parts(
+                "/tmp/test.epub",
+                sample_bookmark(),
+                config,
+                None,
+            ))
             .expect("persist should succeed");
 
         let recorded = calls.lock().expect("calls lock").clone();

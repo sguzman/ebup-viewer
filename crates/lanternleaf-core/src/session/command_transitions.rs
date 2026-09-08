@@ -29,6 +29,43 @@ impl SessionCommand {
 }
 
 impl ReaderSession {
+    pub fn apply_command_lightweight(
+        &mut self,
+        command: SessionCommand,
+        normalizer: &normalizer::TextNormalizer,
+    ) -> ReaderSessionDelta {
+        let action = command.action();
+        match command {
+            SessionCommand::GetSnapshot => {}
+            SessionCommand::NextPage => self.next_page(normalizer),
+            SessionCommand::PrevPage => self.prev_page(normalizer),
+            SessionCommand::SetPage { page } => self.set_page(page, normalizer),
+            SessionCommand::SentenceClick { sentence_idx } => {
+                self.sentence_click(sentence_idx, normalizer)
+            }
+            SessionCommand::NextSentence => self.select_next_sentence(normalizer),
+            SessionCommand::PrevSentence => self.select_prev_sentence(normalizer),
+            SessionCommand::ToggleTextOnly => self.toggle_text_only(normalizer),
+            SessionCommand::ApplySettings { patch } => self.apply_settings_patch(patch, normalizer),
+            SessionCommand::SearchSetQuery { query } => self.set_search_query(query, normalizer),
+            SessionCommand::SearchNext => self.search_next(normalizer),
+            SessionCommand::SearchPrev => self.search_prev(normalizer),
+            SessionCommand::TtsPlay => self.tts_play(normalizer),
+            SessionCommand::TtsPause => self.tts_pause(),
+            SessionCommand::TtsTogglePlayPause => self.tts_toggle_play_pause(normalizer),
+            SessionCommand::TtsPlayFromPageStart => self.tts_play_from_page_start(normalizer),
+            SessionCommand::TtsPlayFromHighlight => self.tts_play_from_highlight(normalizer),
+            SessionCommand::TtsSeekNext => self.tts_seek_next(normalizer),
+            SessionCommand::TtsSeekPrev => self.tts_seek_prev(normalizer),
+            SessionCommand::TtsRepeatSentence => self.tts_repeat_current_sentence(normalizer),
+            SessionCommand::TtsStop => self.tts_stop(),
+        }
+        ReaderSessionDelta {
+            action,
+            playback: self.playback_view(normalizer),
+        }
+    }
+
     pub fn apply_command(
         &mut self,
         command: SessionCommand,

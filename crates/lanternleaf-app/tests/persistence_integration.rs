@@ -44,6 +44,29 @@ fn cleanup_source(path: &Path) {
     let _ = fs::remove_file(path);
 }
 
+fn sample_housekeeping(path: &Path, config: config::AppConfig) -> ReaderHousekeeping {
+    ReaderHousekeeping::from_parts(
+        path.to_string_lossy().to_string(),
+        cache::Bookmark {
+            page: 0,
+            sentence_idx: Some(0),
+            sentence_text: Some("sentence".to_string()),
+            scroll_y: 0.0,
+            pdf_page_idx: None,
+            pdf_rects: Vec::new(),
+            pdf_line_rects: Vec::new(),
+            pdf_block_rects: Vec::new(),
+            pdf_confidence: None,
+            pdf_reason: None,
+            pdf_quality_class: None,
+            pdf_sentence_text_hash: None,
+            pdf_token_lineage: Vec::new(),
+        },
+        config,
+        None,
+    )
+}
+
 fn sample_snapshot(path: &Path) -> session::ReaderSnapshot {
     session::ReaderSnapshot {
         source_path: path.to_string_lossy().to_string(),
@@ -153,14 +176,10 @@ fn persistence_roundtrip_and_delete() {
         cache::remember_source_path(&source);
         let lifecycle =
             PersistenceLifecycle::new(Arc::new(FilesystemPersistenceService::default()));
-        let snapshot = sample_snapshot(&source);
         let config = config::AppConfig::default();
 
         lifecycle.flush_trigger(
-            Some(ReaderHousekeeping {
-                snapshot: &snapshot,
-                config: &config,
-            }),
+            Some(sample_housekeeping(&source, config)),
             PersistenceTrigger::SourceOpen,
         );
         let loaded = cache::load_bookmark(&source);
@@ -191,13 +210,9 @@ fn persistence_rebuilds_after_corruption() {
 
         let lifecycle =
             PersistenceLifecycle::new(Arc::new(FilesystemPersistenceService::default()));
-        let snapshot = sample_snapshot(&source);
         let config = config::AppConfig::default();
         lifecycle.flush_trigger(
-            Some(ReaderHousekeeping {
-                snapshot: &snapshot,
-                config: &config,
-            }),
+            Some(sample_housekeeping(&source, config)),
             PersistenceTrigger::SourceOpen,
         );
         let rebuilt = fs::read_to_string(&bookmark_path).unwrap_or_default();

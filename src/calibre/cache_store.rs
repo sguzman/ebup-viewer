@@ -110,10 +110,6 @@ pub(super) fn cache_signature(config: &CalibreConfig) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub(super) fn calibre_cache_path() -> PathBuf {
-    crate::cache::cache_root().join(CALIBRE_CACHE_FILE)
-}
-
 pub(super) fn calibre_cache_path_for(config: &CalibreConfig) -> PathBuf {
     let provider = match config.provider {
         CalibreProvider::Caliberate => "caliberate",

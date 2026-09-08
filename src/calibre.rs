@@ -488,8 +488,14 @@ allowed_extensions = ["epub", "pdf", "txt"]
         }
 
         assert_eq!(
-            cache_store::calibre_cache_path(),
-            override_path.join("lantern-leaf").join(CALIBRE_CACHE_FILE)
+            cache_store::calibre_cache_path_for(&CalibreConfig::default()),
+            override_path.join("lantern-leaf").join(format!(
+                "{CALIBRE_CACHE_FILE}-caliberate-{}",
+                cache_store::cache_signature(&CalibreConfig::default())
+                    .chars()
+                    .take(16)
+                    .collect::<String>()
+            ))
         );
         assert_eq!(
             cache_store::calibre_download_dir(),

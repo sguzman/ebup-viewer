@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-08 after Goal 0008 A4 reader-normalization correction acceptance/integration
+Updated: 2026-09-08 after real-desktop Goal 0008 A5 native-frame/TTS crash diagnosis
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**A4 ACCEPTED — REAL-DESKTOP READER + WINDOWS TTS SIGNOFF PENDING**
+**GOAL 0008 A5 REOPENED — NATIVE READER FRAME BUDGET + TTS MAIN-THREAD CRASH**
 
 Accepted integration:
 
@@ -151,7 +151,7 @@ Accepted integration:
 
 Authoritative Windows run `34185172624` passed both jobs and the core suite reached **180 passed / 0 failed**.
 
-A3 remains accepted for Caliberate materialization/native EPUB ingestion/cache recovery. A4 is now accepted and integrated for the reader-startup defect exposed on the human machine: synchronous whole-book normalization has been removed from source open; idle snapshots avoid TTS-plan construction; first TTS activation prepares a bounded 64-sentence window; sentence cache population is bounded/lazy; and stable normalizer regex/token matchers are compiled once per normalizer configuration. A deterministic 3,500-sentence regression verifies zero normalization cache work at idle open, bounded first-Play work, and cursor progression across window boundaries. Windows CI run `34260546736` passed the normal workspace validation path. One real-desktop EPUB open plus immediate Windows TTS interaction remains before Gate 2.5 exit.
+A3 remains accepted for Caliberate materialization/native EPUB ingestion/cache recovery, and A4 successfully reduced real EPUB open time to an acceptable ~1–2 seconds. Real-desktop A4 signoff nevertheless failed immediately afterward: a 1.34 MB / 10,488-sentence EPUB produced 1,644 native pretty blocks and the egui reader became catastrophically unresponsive, with roughly 2–3 second pointer-hover latency. Pressing TTS Play then terminated the process with a main-thread stack overflow before the playback-worker-start diagnostic. Director inspection localizes deterministic causes: full `AppState` deep cloning per frame includes the 104,732-book catalog; heavyweight `ReaderSnapshot` content is copied through high-frequency state/events; the pretty renderer submits all 1,644 blocks to egui each frame without virtualization; and TTS planning is synchronously entered from the egui main-thread command handler against a second session copy. Goal 0008 is reopened as A5 to repair native frame ownership/virtualization, lightweight snapshot/event boundaries, off-main TTS control, and the QA performance profile. No further human QA until A5 is implemented, validated, reviewed, and integrated.
 
 ## Historical Tauri / React / WebView implementation
 

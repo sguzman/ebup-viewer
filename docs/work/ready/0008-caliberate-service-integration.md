@@ -699,3 +699,156 @@ After director acceptance only:
 3. open one real Caliberate EPUB;
 4. confirm the reader appears promptly;
 5. immediately test Windows TTS Play/next/previous/pause/resume/stop so A4 cannot hide the same stall behind first TTS activation.
+
+
+## Correction attempt A5 — native egui frame budget and TTS main-thread crash
+
+### Triggering real-desktop evidence
+
+A4 fixed the previous reader-open stall. The accepted A4 build was pulled and exercised on the human Windows machine against a real already-materialized Caliberate EPUB.
+
+The source-open path is now acceptable:
+
+- native EPUB parse/text extraction completed in about 704 ms;
+- bounded repagination/sentence-anchor setup completed in about 874 ms;
+- Reader mode became visible roughly 1–2 seconds after the open began.
+
+The opened EPUB is deliberately large enough to expose real reader scaling:
+
+- reading HTML: 1,342,983 chars;
+- canonical TTS text: 1,291,569 chars;
+- canonical sentences: 10,488;
+- native pretty parse: 1,644 blocks / 4,726 spans in 48 ms.
+
+The human then observed catastrophic steady-state native UI latency: button hover feedback itself took roughly 2–3 seconds. This is a hard failure of the native egui performance objective, not polish.
+
+Pressing TTS Play then terminated LanternLeaf:
+
+```text
+thread 'main' (...) has overflowed its stack
+LanternLeaf exited with code -1073740771
+```
+
+The crash occurred after the reader command/persistence snapshots and before the existing `Starting TTS runtime playback job` diagnostic appeared. A4 therefore fails real-desktop signoff.
+
+### Director localization
+
+The current architecture contains multiple deterministic sources of pathological native-frame work:
+
+1. `AppRuntime::state_snapshot()` deep-clones the complete `AppState` on every egui `update()`.
+2. `AppState::starter.calibre_books` contains the full real catalog (104,732 DTOs), so the reader pays to clone the library even when the library is not being rendered.
+3. `ReaderSnapshot` carries heavyweight document payloads, including the complete ~1.34 MB HTML stream and all canonical sentences; these are cloned into app/runtime/event snapshots.
+4. `resolve_highlight_color` calls `runtime.state_snapshot()` again from a leaf reader-rendering function, causing another heavyweight state clone during the same frame.
+5. The HTML pretty cache avoids reparsing after the first frame, but `render_pretty_page` still walks every cached block and rebuilds egui `LayoutJob`/widget state for all 1,644 blocks on every frame. `ScrollArea::show` does not virtualize this work.
+6. Native QA currently launches the unoptimized dev profile, which magnifies immediate-mode layout cost. That does not excuse the architectural work above, but the real-desktop QA binary should also use a representative optimized profile.
+7. A TTS UI command is applied through two paths: the normal reader effect/session and a second cloned `TtsRuntime` session. The egui button path then calls `tts_runtime.apply_command(...)` synchronously on the main/UI thread. Normalization-plan/cache/snapshot work therefore occurs before the runtime spawns its playback worker. The observed stack overflow happened on this main-thread control path.
+
+A5 must repair these ownership and bounded-work violations. Do not hide them behind a larger stack size, a release-only build, or a Caliberate-specific special case.
+
+### A5-A — eliminate heavyweight per-frame state cloning
+
+Make egui frame-state access scale with the visible UI, not the total catalog/document size.
+
+Requirements:
+
+- do not deep-clone the 104k-book catalog on every frame;
+- do not deep-clone megabyte reader HTML or the full canonical sentence corpus on every frame;
+- remove `runtime.state_snapshot()` calls from leaf rendering helpers such as highlight-color resolution;
+- introduce an explicit lightweight UI projection and/or shared immutable `Arc`-backed heavyweight payloads;
+- preserve thread-safe event application without holding a global state mutex across egui rendering or command execution;
+- catalog and reader payload ownership must remain explicit and testable.
+
+Deterministic regression evidence must construct a large catalog/document state and prove that ordinary reader-frame projection shares or omits heavyweight payloads rather than cloning them.
+
+### A5-B — virtualize/bound native pretty rendering
+
+A native reader may not submit the complete EPUB to egui every frame.
+
+Requirements:
+
+- parse HTML/Markdown into pretty blocks once per content/config identity;
+- render only the visible block window plus bounded overscan, or implement an equivalent bounded pagination/window contract;
+- scrolling must remain visually continuous and usable;
+- highlighted/spoken sentence navigation and auto-scroll must be able to bring an off-screen block into the active window;
+- no ordinary frame may iterate/build layout jobs for all 1,644+ blocks merely because the EPUB is one logical HTML stream;
+- preserve headings, paragraphs, lists, block quotes, code, tables, images, and existing highlight semantics for blocks that enter the active render window;
+- do not fall back to a WebView/Tauri renderer.
+
+Add a deterministic large-pretty-document regression proving that the active render set stays bounded when the document contains thousands of blocks. Structural bounds are preferred over flaky CI wall-clock thresholds.
+
+### A5-C — remove heavyweight full-document payloads from high-frequency snapshots/events
+
+Split document identity/content from playback/UI deltas.
+
+Requirements:
+
+- TTS progress/state events must not clone the full reading HTML or complete canonical sentence corpus;
+- persistence flushes must use direct bookmark/config/housekeeping data rather than manufacturing a full UI `ReaderSnapshot` just to persist progress;
+- ordinary reader commands should update lightweight state where possible;
+- heavyweight immutable document content may be shared by identity/handle/`Arc` rather than copied into every event;
+- preserve public behavior and deterministic state ownership.
+
+### A5-D — TTS control must never do planning/synthesis work on the egui main thread
+
+The Play button must be a bounded control submission.
+
+Requirements:
+
+- egui command handling queues/sends the TTS command and returns without normalization, cache IO, snapshot construction, engine creation, or synthesis on the UI thread;
+- the TTS worker/runtime owns bounded first-window preparation and playback startup;
+- eliminate or formally collapse the current double-application of TTS commands across the effect-session copy and `TtsRuntime` session copy so there is one authoritative cursor/state transition contract;
+- reader UI state must receive lightweight playback deltas/events from that authority;
+- Play, next, previous, pause/resume, repeat, backend/voice changes, and stop must retain existing cursor semantics;
+- do not “fix” the crash by increasing the process/main-thread stack size.
+
+Add a large-session regression (10k+ display sentences) that exercises the native TTS command submission/control path and proves command submission is bounded/nonblocking and does not recurse/stack-overflow before the playback worker begins.
+
+### A5-E — representative native QA performance profile
+
+Keep tests/checks truthful, but launch the human desktop QA binary with a representative optimized Cargo profile rather than the fully unoptimized dev binary.
+
+Requirements:
+
+- define a repo-owned QA profile (or equivalent) with optimization suitable for interactive egui performance while retaining useful diagnostics;
+- `qa.ps1` builds/launches that profile automatically;
+- no new manual command or payload ceremony for the human;
+- this profile change is supplemental: A5-A/B/C/D must still repair the pathological work structurally.
+
+### A5-F — diagnostics and acceptance
+
+Add bounded diagnostics that make future native-frame failures localizable without producing multi-megabyte noise.
+
+At minimum record/aggregate:
+
+- egui frame/update duration or slow-frame events;
+- state-projection duration and whether heavyweight payloads were shared;
+- pretty render window: total blocks, active blocks, overscan, render duration;
+- TTS control submission duration and worker-start latency.
+
+Avoid per-block/per-frame spam at normal debug/info levels.
+
+A5 automated acceptance requires:
+
+1. normal workspace check/build/test remains green;
+2. Windows TTS probes remain green;
+3. large catalog UI projection is structurally non-copying/bounded;
+4. large pretty document active rendering is bounded;
+5. 10k+ sentence TTS command submission is off-main/bounded;
+6. existing A3/A4 Caliberate materialization/open/lazy-normalization regressions remain green;
+7. no new Caliberate-specific reader or TTS state machine.
+
+### Human QA contract for attempt A5
+
+**No human QA during A5 implementation/correction.**
+
+After director acceptance only:
+
+1. keep Caliberate running at `127.0.0.1:8181`;
+2. `git pull -> .\qa.ps1`;
+3. open the same large Recent/Caliberate EPUB;
+4. verify pointer hover/button feedback is effectively immediate rather than multi-second;
+5. scroll through the pretty EPUB and verify no pathological stalls;
+6. press Windows TTS Play and verify the process stays alive and speech starts;
+7. verify next/previous/pause/resume/stop.
+
+Gate 2.5 remains blocked until this real-desktop signoff succeeds.

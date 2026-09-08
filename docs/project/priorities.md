@@ -27,7 +27,7 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - click-to-play;
 - bookmarks/config/search/navigation.
 
-## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A4 ACCEPTED, REAL-DESKTOP SIGNOFF PENDING
+## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A5 REOPENED FOR NATIVE PERFORMANCE/CRASH
 
 - use Caliberate's versioned HTTP/JSON API rather than direct database coupling;
 - default local provider target `http://127.0.0.1:8181`;
@@ -39,7 +39,12 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - A4 now removes synchronous whole-book normalization from reader open and idle snapshot;
 - A4 bounds first TTS activation to a 64-display-sentence lazy plan window and precompiles stable normalizer matchers;
 - deterministic 3,500-sentence regression evidence is green;
-- require one successful real-desktop Caliberate EPUB open plus immediate Windows TTS Play/seek/pause/resume/stop verification before Gate 2.5 is complete.
+- A4 now proves the large real EPUB can enter Reader mode in an acceptable ~1–2 seconds;
+- A5 must eliminate per-frame deep cloning of the 104k catalog/heavy reader payloads;
+- A5 must virtualize/bound pretty rendering instead of rebuilding all 1,644+ blocks per egui frame;
+- A5 must move TTS control/planning off the egui main thread and remove the observed Play-triggered stack overflow;
+- A5 must make repo-native `qa.ps1` launch a representative optimized interactive profile;
+- require one successful real-desktop large-EPUB responsiveness + Windows TTS verification before Gate 2.5 is complete.
 
 ## P3 — Make native PDF rendering reliable
 

@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-08 after real-desktop Goal 0008 EPUB-open failure and A3 correction reopen
+Updated: 2026-09-08 after Goal 0008 A3 EPUB correction acceptance/integration
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**GOAL 0008 REOPENED — REAL CALIBERATE EPUBS DO NOT YET ENTER THE READER**
+**A3 AUTOMATED CORRECTION ACCEPTED — REAL-DESKTOP EPUB SIGNOFF PENDING**
 
 Accepted integration:
 
@@ -151,7 +151,7 @@ Accepted integration:
 
 Authoritative Windows run `34185172624` passed both jobs and the core suite reached **180 passed / 0 failed**.
 
-Real-desktop evidence now proves catalog population against the human's actual Caliberate instance, but a real EPUB still fails to enter the reader even after the timeout and large-catalog open-path hotfixes. Acceptance gate 7 is therefore reopened. Attempt A3 must add a valid-EPUB Caliberate-to-reader regression, repair the EPUB ingestion/materialization failure path, and pass Windows validation before another human QA run.
+The earlier real-desktop run proved catalog population but exposed that a real Caliberate EPUB did not enter the reader. Attempt A3 is now accepted and integrated: a valid EPUB is exercised end-to-end through mock Caliberate HTTP materialization, the real EPUB loader, and the canonical session path; EPUB no longer depends on Pandoc in its critical open path; and invalid materialized EPUB cache entries are validated/recovered. Windows CI run `34253400879` passed. One real-desktop EPUB open against the human's actual Caliberate service remains before Gate 2.5 exit.
 
 ## Historical Tauri / React / WebView implementation
 

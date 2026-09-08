@@ -27,7 +27,7 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - click-to-play;
 - bookmarks/config/search/navigation.
 
-## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — REOPENED FOR EPUB OPEN CORRECTION
+## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A3 ACCEPTED, REAL-DESKTOP SIGNOFF PENDING
 
 - use Caliberate's versioned HTTP/JSON API rather than direct database coupling;
 - default local provider target `http://127.0.0.1:8181`;
@@ -35,8 +35,8 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - stream/materialize supported formats into the normal LanternLeaf reader/session pipeline;
 - preserve legacy Calibre content-server compatibility;
 - keep the human workflow repo-native: `git pull -> .\qa.ps1`;
-- close the real-desktop defect where Caliberate-sourced EPUBs materialize/select but do not enter the canonical reader/session path;
-- require a valid-EPUB HTTP materialization -> reader/session regression before Gate 2.5 is complete again.
+- A3 now covers valid-EPUB HTTP materialization -> native EPUB ingestion -> canonical reader/session with deterministic regression evidence;
+- require one successful real-desktop Caliberate EPUB open before Gate 2.5 is marked complete again.
 
 ## P3 — Make native PDF rendering reliable
 

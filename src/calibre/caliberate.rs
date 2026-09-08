@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow};
+use epub::doc::EpubDoc;
 use serde::Deserialize;
 use std::fs;
 use std::io::Write;
@@ -8,7 +9,10 @@ use tracing::info;
 
 use crate::cancellation::CancellationToken;
 
-use super::{CalibreBook, CalibreConfig, build_http_client, cache_store::calibre_download_dir};
+use super::{
+    CalibreBook, CalibreConfig, build_content_http_client, build_http_client,
+    cache_store::calibre_download_dir,
+};
 
 const PAGE_LIMIT: usize = 500;
 
@@ -139,12 +143,27 @@ fn download_book(config: &CalibreConfig, book: &CalibreBook, cache_root: &Path) 
         ext
     ));
     if target_path.exists() {
-        return Ok(target_path);
+        if ext != "epub" {
+            info!(provider = "caliberate", book_id = book.id, path = %target_path.display(), "Using Caliberate materialized cache hit");
+            return Ok(target_path);
+        }
+        info!(provider = "caliberate", book_id = book.id, path = %target_path.display(), stage = "epub_cache_validation", "Validating Caliberate EPUB cache hit");
+        if validate_epub_materialization(&target_path).is_ok() {
+            info!(provider = "caliberate", book_id = book.id, path = %target_path.display(), stage = "epub_cache_validation", "Caliberate EPUB cache hit is valid");
+            return Ok(target_path);
+        }
+        tracing::warn!(provider = "caliberate", book_id = book.id, path = %target_path.display(), stage = "epub_cache_validation", "Discarding invalid Caliberate EPUB cache hit");
+        fs::remove_file(&target_path).with_context(|| {
+            format!(
+                "failed to discard invalid Caliberate EPUB {}",
+                target_path.display()
+            )
+        })?;
     }
     let base_url = super::server_base_url(config)
         .ok_or_else(|| anyhow!("Caliberate library_url is missing or invalid"))?;
     let url = format!("{base_url}/api/v1/books/{}/content/{ext}", book.id);
-    let mut response = build_http_client(config)?
+    let mut response = build_content_http_client(config)?
         .get(&url)
         .send()
         .with_context(|| format!("failed to materialize Caliberate book {}", book.id))?;
@@ -178,8 +197,40 @@ fn download_book(config: &CalibreConfig, book: &CalibreBook, cache_root: &Path) 
             target_path.display()
         )
     })?;
+    if ext == "epub" {
+        info!(
+            provider = "caliberate",
+            book_id = book.id,
+            bytes = fs::metadata(&target_path).map(|m| m.len()).unwrap_or(0),
+            stage = "epub_download_validation",
+            "Validating downloaded Caliberate EPUB"
+        );
+        if let Err(err) = validate_epub_materialization(&target_path) {
+            let _ = fs::remove_file(&target_path);
+            return Err(err).with_context(|| {
+                format!("downloaded Caliberate EPUB is invalid for book {}", book.id)
+            });
+        }
+    }
     info!(provider = "caliberate", book_id = book.id, path = %target_path.display(), "Materialized Caliberate book");
     Ok(target_path)
+}
+
+fn validate_epub_materialization(path: &Path) -> Result<()> {
+    let metadata = fs::metadata(path)
+        .with_context(|| format!("failed to inspect EPUB materialization {}", path.display()))?;
+    if metadata.len() == 0 {
+        anyhow::bail!("EPUB materialization is empty: {}", path.display());
+    }
+    let mut doc = EpubDoc::new(path)
+        .with_context(|| format!("EPUB materialization is not readable: {}", path.display()))?;
+    if doc.get_current_str().is_none() {
+        anyhow::bail!(
+            "EPUB materialization has no readable spine content: {}",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 fn map_book(row: BookRow, allowed: &[String]) -> Option<CalibreBook> {
@@ -272,6 +323,89 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
     use std::thread;
 
+    fn valid_epub_bytes() -> Vec<u8> {
+        let entries = [
+            ("mimetype", "application/epub+zip"),
+            (
+                "META-INF/container.xml",
+                "<?xml version=\"1.0\"?><container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>",
+            ),
+            (
+                "OEBPS/content.opf",
+                "<?xml version=\"1.0\"?><package xmlns=\"http://www.idpf.org/2007/opf\" version=\"2.0\" unique-identifier=\"uid\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>Caliberate Fixture</dc:title><dc:language>en</dc:language><dc:identifier id=\"uid\">urn:lanternleaf:a3</dc:identifier></metadata><manifest><item id=\"c1\" href=\"chapter.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"c1\"/></spine></package>",
+            ),
+            (
+                "OEBPS/chapter.xhtml",
+                "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Caliberate Chapter</h1><p>Caliberate EPUB fixture text reaches the reader.</p></body></html>",
+            ),
+        ];
+        let mut bytes = Vec::new();
+        let mut central = Vec::new();
+        for (name, content) in entries {
+            let name = name.as_bytes();
+            let data = content.as_bytes();
+            let offset = bytes.len() as u32;
+            let crc = crc32(data);
+            bytes.extend_from_slice(&0x04034b50u32.to_le_bytes());
+            bytes.extend_from_slice(&20u16.to_le_bytes());
+            bytes.extend_from_slice(&0u16.to_le_bytes());
+            bytes.extend_from_slice(&0u16.to_le_bytes());
+            bytes.extend_from_slice(&0u16.to_le_bytes());
+            bytes.extend_from_slice(&0u16.to_le_bytes());
+            bytes.extend_from_slice(&crc.to_le_bytes());
+            bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            bytes.extend_from_slice(&0u16.to_le_bytes());
+            bytes.extend_from_slice(name);
+            bytes.extend_from_slice(data);
+            central.extend_from_slice(&0x02014b50u32.to_le_bytes());
+            central.extend_from_slice(&20u16.to_le_bytes());
+            central.extend_from_slice(&20u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&crc.to_le_bytes());
+            central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes());
+            central.extend_from_slice(&0u32.to_le_bytes());
+            central.extend_from_slice(&offset.to_le_bytes());
+            central.extend_from_slice(name);
+        }
+        let central_offset = bytes.len() as u32;
+        bytes.extend_from_slice(&central);
+        bytes.extend_from_slice(&0x06054b50u32.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&(central.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&central_offset.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes
+    }
+
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = 0xffff_ffffu32;
+        for byte in data {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xedb8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+
     #[test]
     fn selects_allowed_priority_and_primary_fallback() {
         let row: BookRow = serde_json::from_str(
@@ -308,7 +442,8 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let page_one = br#"{"items":[{"id":7,"title":"Alpha","authors":["Ada"],"pubdate":"2024-01-01","formats":[{"format":"EPUB","size_bytes":12}]}],"total":2,"offset":0,"limit":500}"#;
         let page_two = br#"{"items":[{"id":8,"title":"Beta","authors":[],"primary_format":"txt","formats":[]}],"total":2,"offset":1,"limit":500}"#;
-        let content = b"representative book bytes";
+        let content = valid_epub_bytes();
+        let server_content = content.clone();
         let server = thread::spawn(move || {
             for (index, expected) in [
                 "/api/v1/books?offset=0",
@@ -340,10 +475,10 @@ mod tests {
                     _ => {
                         let header = format!(
                             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                            content.len()
+                            server_content.len()
                         );
                         stream.write_all(header.as_bytes()).unwrap();
-                        stream.write_all(content).unwrap();
+                        stream.write_all(&server_content).unwrap();
                     }
                 }
             }
@@ -364,6 +499,29 @@ mod tests {
         fs::create_dir_all(&temp).unwrap();
         let path = download_book(&config, &books[0], &temp).unwrap();
         assert_eq!(fs::read(&path).unwrap(), content);
+        let loaded = crate::epub_loader::load_book_content(&path).unwrap();
+        assert!(loaded.tts_text.contains("Caliberate EPUB fixture text"));
+        assert!(
+            loaded
+                .reading_html
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Caliberate Chapter")
+        );
+        let normalizer = crate::normalizer::TextNormalizer::load_default();
+        let mut session = crate::session::load_session_for_source(
+            path.clone(),
+            &crate::config::AppConfig::default(),
+            &normalizer,
+        )
+        .unwrap();
+        assert!(
+            session
+                .snapshot(crate::session::PanelState::default(), &normalizer)
+                .canonical_sentences
+                .iter()
+                .any(|sentence| sentence.contains("Caliberate EPUB fixture text"))
+        );
         assert!(!temp.join(".tmp-7").exists());
         let _ = fs::remove_dir_all(&temp);
         server.join().unwrap();
@@ -375,5 +533,61 @@ mod tests {
         config.library_url = Some("http://127.0.0.1:1".to_string());
         let error = fetch_books(&config, None).expect_err("unreachable service must fail");
         assert!(error.to_string().contains("Caliberate"));
+    }
+
+    #[test]
+    fn invalid_epub_cache_is_redownloaded_once_and_still_invalid_replacement_fails() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let valid = valid_epub_bytes();
+        let server = thread::spawn(move || {
+            for (index, body) in [valid, b"still-not-an-epub".to_vec()]
+                .into_iter()
+                .enumerate()
+            {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request);
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                stream.write_all(header.as_bytes()).unwrap();
+                stream.write_all(&body).unwrap();
+                assert!(index < 2);
+            }
+        });
+        let mut config = CalibreConfig::default();
+        config.library_url = Some(format!("http://{}", address));
+        let book = CalibreBook {
+            id: 909090,
+            title: "Recovery EPUB".to_string(),
+            extension: "epub".to_string(),
+            authors: "Test".to_string(),
+            year: None,
+            file_size_bytes: None,
+            cover_thumbnail: None,
+            path: None,
+        };
+        let temp = std::env::temp_dir().join(format!(
+            "lanternleaf-caliberate-epub-recovery-{}",
+            now_nanos()
+        ));
+        fs::create_dir_all(&temp).unwrap();
+        let target = temp.join(format!(
+            "{}-{}.epub",
+            book.id,
+            short_title_hash(&book.title)
+        ));
+        fs::write(&target, b"poisoned").unwrap();
+        let recovered = download_book(&config, &book, &temp).unwrap();
+        assert_eq!(recovered, target);
+        assert!(validate_epub_materialization(&recovered).is_ok());
+        fs::write(&target, b"poisoned-again").unwrap();
+        let error = download_book(&config, &book, &temp).unwrap_err();
+        assert!(error.to_string().contains("invalid"));
+        assert!(!target.exists());
+        server.join().unwrap();
+        let _ = fs::remove_dir_all(temp);
     }
 }

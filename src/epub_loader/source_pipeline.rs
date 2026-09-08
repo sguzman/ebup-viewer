@@ -120,6 +120,10 @@ pub(super) fn load_source_content(
         return load_pdf_with_quack_check(path, cancel);
     }
 
+    if is_epub(path) {
+        return load_epub_source_content(path, cancel);
+    }
+
     if is_native_html_source(path) {
         let tts_text = load_with_pandoc(path, "plain", cancel)?;
         let html = load_native_pretty_html(path, cancel)?;
@@ -338,7 +342,7 @@ fn is_native_html_source(path: &Path) -> bool {
         path.extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| ext.to_ascii_lowercase()),
-        Some(ext) if ext == "epub" || ext == "html" || ext == "htm" || ext == "lltab"
+        Some(ext) if ext == "html" || ext == "htm" || ext == "lltab"
     )
 }
 
@@ -578,9 +582,6 @@ pub(super) fn resolve_pdf_dual_view_content(
 }
 
 fn load_native_pretty_html(path: &Path, cancel: Option<&CancellationToken>) -> Result<String> {
-    if is_epub(path) {
-        return load_epub_native_html(path, cancel);
-    }
     ensure_not_cancelled(cancel, "before_native_html_read")?;
     let html = fs::read_to_string(path)
         .with_context(|| format!("Failed to read HTML source at {}", path.display()))?;
@@ -590,6 +591,44 @@ fn load_native_pretty_html(path: &Path, cancel: Option<&CancellationToken>) -> R
     } else {
         Ok(html)
     }
+}
+
+fn load_epub_source_content(
+    path: &Path,
+    cancel: Option<&CancellationToken>,
+) -> Result<SourceContent> {
+    let start = Instant::now();
+    info!(path = %path.display(), stage = "epub_native_parse", "Starting native EPUB parse");
+    let reading_html = load_epub_native_html(path, cancel)
+        .with_context(|| format!("Failed native EPUB reading parse for {}", path.display()))?;
+    ensure_not_cancelled(cancel, "before_epub_native_text_extract")?;
+    info!(path = %path.display(), stage = "epub_native_text_extract", "Extracting EPUB TTS text from native reading HTML");
+    let tts_text = html2text::from_read(reading_html.as_bytes(), 10_000)
+        .with_context(|| format!("Failed native EPUB text extraction for {}", path.display()))?;
+    let tts_text = if tts_text.trim().is_empty() {
+        "No textual content found in this file.".to_string()
+    } else {
+        tts_text
+    };
+    info!(
+        path = %path.display(),
+        stage = "epub_native_complete",
+        tts_chars = tts_text.len(),
+        reading_html_chars = reading_html.len(),
+        elapsed_ms = start.elapsed().as_millis(),
+        "Completed native EPUB parse and text extraction"
+    );
+    Ok(SourceContent {
+        tts_text,
+        reading_markdown: None,
+        reading_html: Some(reading_html),
+        has_structured_markdown: true,
+        pdf_geometry_mode: None,
+        pdf_sync_strategy: None,
+        pdf_classification: None,
+        pdf_runtime_policy: None,
+        pdf_ocr_pipeline: None,
+    })
 }
 
 fn load_epub_native_html(path: &Path, cancel: Option<&CancellationToken>) -> Result<String> {

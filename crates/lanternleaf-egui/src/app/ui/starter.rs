@@ -285,10 +285,16 @@ impl LanternLeafApp {
                                     }
                                 });
                                 ui.horizontal(|ui| {
-                                    if ui.button("Open").clicked() {
+                                    if ui
+                                        .add_enabled(
+                                            !model.operations.source_open,
+                                            egui::Button::new("Open"),
+                                        )
+                                        .clicked()
+                                    {
                                         trace!(id = book.id, "Starter open Calibre book");
                                         self.execute_command(AppCommand::OpenCalibreBook {
-                                            id: book.id,
+                                            book: book.clone(),
                                         });
                                     }
                                     if ui.button("Ensure thumbnail").clicked() {

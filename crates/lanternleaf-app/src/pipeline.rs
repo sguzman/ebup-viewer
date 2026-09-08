@@ -74,7 +74,7 @@ pub enum AppCommand {
         force_refresh: bool,
     },
     OpenCalibreBook {
-        id: u64,
+        book: CalibreBookDto,
     },
     EnsureCalibreThumbnail {
         id: u64,
@@ -284,7 +284,7 @@ pub enum RuntimeEffect {
         force_refresh: bool,
     },
     OpenCalibreBook {
-        id: u64,
+        book: CalibreBookDto,
     },
     EnsureCalibreThumbnail {
         id: u64,
@@ -307,9 +307,10 @@ impl RuntimeEffect {
             | Self::TogglePanel { .. }
             | Self::SafeQuit => EffectOwner::AppShell,
             Self::ListRecents { .. } | Self::DeleteRecent { .. } => EffectOwner::RecentBooks,
-            Self::OpenSourcePath { .. } | Self::OpenClipboard | Self::OpenClipboardText { .. } => {
-                EffectOwner::SourceOpen
-            }
+            Self::OpenSourcePath { .. }
+            | Self::OpenClipboard
+            | Self::OpenClipboardText { .. }
+            | Self::OpenCalibreBook { .. } => EffectOwner::SourceOpen,
             Self::OpenBrowserTab { .. }
             | Self::OpenBrowserTabBundle { .. }
             | Self::RefreshBrowserTab { .. }
@@ -327,7 +328,6 @@ impl RuntimeEffect {
             Self::SetRuntimeLogLevel { .. } => EffectOwner::Logging,
             Self::LoadCalibreCachedBooks
             | Self::LoadCalibreBooks { .. }
-            | Self::OpenCalibreBook { .. }
             | Self::EnsureCalibreThumbnail { .. } => EffectOwner::Calibre,
             Self::FlushPersistence { .. } => EffectOwner::Persistence,
         }
@@ -434,6 +434,22 @@ pub fn plan_command(state: &AppState, request_id: u64, command: AppCommand) -> D
     let span = command_span(request_id, &command);
     let _guard = span.enter();
     trace!(action = action, "Planning app command");
+
+    if state.app_shell.operations.source_open
+        && matches!(command, AppCommand::OpenCalibreBook { .. })
+    {
+        trace!(
+            action = action,
+            "Ignoring duplicate Calibre book-open command while source open is active"
+        );
+        return DispatchPlan {
+            request_id,
+            action,
+            local_events: Vec::new(),
+            effects: Vec::new(),
+        };
+    }
+
     let (local_events, effects) = match command {
         AppCommand::Bootstrap => (
             vec![
@@ -650,12 +666,12 @@ pub fn plan_command(state: &AppState, request_id: u64, command: AppCommand) -> D
                 effects,
             )
         }
-        AppCommand::OpenCalibreBook { id } => (
+        AppCommand::OpenCalibreBook { book } => (
             vec![AppEvent::OperationChanged {
                 scope: OperationScope::SourceOpen,
                 active: true,
             }],
-            vec![RuntimeEffect::OpenCalibreBook { id }],
+            vec![RuntimeEffect::OpenCalibreBook { book }],
         ),
         AppCommand::EnsureCalibreThumbnail { id } => (
             vec![AppEvent::OperationChanged {
@@ -1174,6 +1190,48 @@ mod tests {
                 show_tts: true,
             },
         }
+    }
+
+    #[test]
+    fn calibre_open_effect_is_owned_by_source_open_scope() {
+        let effect = RuntimeEffect::OpenCalibreBook {
+            book: CalibreBookDto {
+                id: 1,
+                title: "Book".to_string(),
+                extension: "epub".to_string(),
+                authors: "Author".to_string(),
+                year: None,
+                file_size_bytes: None,
+                source_path: None,
+                cover_thumbnail: None,
+            },
+        };
+        assert_eq!(effect.owner(), EffectOwner::SourceOpen);
+    }
+
+    #[test]
+    fn duplicate_calibre_open_is_not_planned_while_source_open_is_active() {
+        let mut state = AppState::default();
+        state.app_shell.operations.source_open = true;
+        state.app_shell.busy = true;
+        let plan = plan_command(
+            &state,
+            55,
+            AppCommand::OpenCalibreBook {
+                book: CalibreBookDto {
+                    id: 7,
+                    title: "Already opening".to_string(),
+                    extension: "epub".to_string(),
+                    authors: "Author".to_string(),
+                    year: None,
+                    file_size_bytes: None,
+                    source_path: None,
+                    cover_thumbnail: None,
+                },
+            },
+        );
+        assert!(plan.local_events.is_empty());
+        assert!(plan.effects.is_empty());
     }
 
     #[test]

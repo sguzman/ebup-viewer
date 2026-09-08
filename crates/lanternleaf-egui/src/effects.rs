@@ -2,6 +2,7 @@ use eframe::egui;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use std::time::Instant;
 
 use lanternleaf_app::contracts::{
     BootstrapState, BridgeError, CalibreBookDto, CalibreLoadEvent, LogLevelEvent, OpenSourceResult,
@@ -198,7 +199,9 @@ fn execute_effect(
         RuntimeEffect::LoadCalibreBooks { force_refresh } => {
             handle_calibre_books(&context, request_id, force_refresh)
         }
-        RuntimeEffect::OpenCalibreBook { id } => handle_calibre_open_book(&context, request_id, id),
+        RuntimeEffect::OpenCalibreBook { book } => {
+            handle_calibre_open_book(&context, request_id, book, &event_tx)
+        }
         RuntimeEffect::EnsureCalibreThumbnail { id } => {
             handle_calibre_thumbnail(&context, request_id, id)
         }
@@ -609,19 +612,56 @@ fn handle_calibre_books(
 fn handle_calibre_open_book(
     context: &EffectContext,
     request_id: u64,
-    book_id: u64,
+    book_dto: CalibreBookDto,
+    event_tx: &mpsc::Sender<AppEvent>,
 ) -> Result<Vec<AppEvent>, BridgeError> {
-    let mut book = calibre::load_cached_books(&context.calibre_config)
-        .map_err(|err| bridge_error("calibre_cache_load_failed", err.to_string()))?
-        .into_iter()
-        .find(|book| book.id == book_id)
-        .ok_or_else(|| bridge_error("calibre_not_found", "Book not found"))?;
+    let total_started = Instant::now();
+    let mut book = calibre_book_from_dto(book_dto);
+
+    emit_source_open_progress(
+        event_tx,
+        request_id,
+        "materializing",
+        None,
+        Some(format!(
+            "Materializing {} ({}) from library service",
+            book.title, book.extension
+        )),
+    );
+
+    let materialize_started = Instant::now();
     let path = calibre::materialize_book_path(&context.calibre_config, &book)
         .map_err(|err| bridge_error("calibre_open_failed", err.to_string()))?;
-    if book.cover_thumbnail.is_none() {
-        let _ = calibre::ensure_thumbnail_for_book(&context.calibre_config, &mut book, true);
-    }
-    open_source_from_path(context, request_id, path)
+    info!(
+        request_id,
+        book_id = book.id,
+        path = %path.display(),
+        elapsed_ms = materialize_started.elapsed().as_millis(),
+        "Finished Caliberate book materialization stage"
+    );
+    book.path = Some(path.clone());
+
+    emit_source_open_progress(
+        event_tx,
+        request_id,
+        "loading_reader",
+        Some(path.to_string_lossy().to_string()),
+        Some(format!(
+            "Book materialized; loading {} into the reader",
+            book.extension
+        )),
+    );
+
+    let reader_started = Instant::now();
+    let events = open_source_from_path(context, request_id, path)?;
+    info!(
+        request_id,
+        book_id = book.id,
+        reader_elapsed_ms = reader_started.elapsed().as_millis(),
+        total_elapsed_ms = total_started.elapsed().as_millis(),
+        "Finished Caliberate book open pipeline"
+    );
+    Ok(events)
 }
 
 fn handle_calibre_thumbnail(
@@ -1064,6 +1104,34 @@ fn map_recent_book(recent: cache::RecentBook) -> RecentBook {
         browser_tab_id: recent.browser_tab_id,
         browser_window_id: recent.browser_window_id,
     }
+}
+
+fn calibre_book_from_dto(book: CalibreBookDto) -> calibre::CalibreBook {
+    calibre::CalibreBook {
+        id: book.id,
+        title: book.title,
+        extension: book.extension,
+        authors: book.authors,
+        year: book.year,
+        file_size_bytes: book.file_size_bytes,
+        path: book.source_path.map(PathBuf::from),
+        cover_thumbnail: book.cover_thumbnail.map(PathBuf::from),
+    }
+}
+
+fn emit_source_open_progress(
+    tx: &mpsc::Sender<AppEvent>,
+    request_id: u64,
+    phase: &str,
+    source_path: Option<String>,
+    message: Option<String>,
+) {
+    let _ = tx.send(AppEvent::SourceOpenProgress(SourceOpenEvent {
+        request_id,
+        phase: phase.to_string(),
+        source_path,
+        message,
+    }));
 }
 
 fn map_calibre_book(book: calibre::CalibreBook) -> CalibreBookDto {

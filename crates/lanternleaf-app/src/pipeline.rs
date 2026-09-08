@@ -307,9 +307,10 @@ impl RuntimeEffect {
             | Self::TogglePanel { .. }
             | Self::SafeQuit => EffectOwner::AppShell,
             Self::ListRecents { .. } | Self::DeleteRecent { .. } => EffectOwner::RecentBooks,
-            Self::OpenSourcePath { .. } | Self::OpenClipboard | Self::OpenClipboardText { .. } => {
-                EffectOwner::SourceOpen
-            }
+            Self::OpenSourcePath { .. }
+            | Self::OpenClipboard
+            | Self::OpenClipboardText { .. }
+            | Self::OpenCalibreBook { .. } => EffectOwner::SourceOpen
             Self::OpenBrowserTab { .. }
             | Self::OpenBrowserTabBundle { .. }
             | Self::RefreshBrowserTab { .. }
@@ -327,7 +328,6 @@ impl RuntimeEffect {
             Self::SetRuntimeLogLevel { .. } => EffectOwner::Logging,
             Self::LoadCalibreCachedBooks
             | Self::LoadCalibreBooks { .. }
-            | Self::OpenCalibreBook { .. }
             | Self::EnsureCalibreThumbnail { .. } => EffectOwner::Calibre,
             Self::FlushPersistence { .. } => EffectOwner::Persistence,
         }
@@ -1190,6 +1190,23 @@ mod tests {
                 show_tts: true,
             },
         }
+    }
+
+    #[test]
+    fn calibre_open_effect_is_owned_by_source_open_scope() {
+        let effect = RuntimeEffect::OpenCalibreBook {
+            book: CalibreBookDto {
+                id: 1,
+                title: "Book".to_string(),
+                extension: "epub".to_string(),
+                authors: "Author".to_string(),
+                year: None,
+                file_size_bytes: None,
+                source_path: None,
+                cover_thumbnail: None,
+            },
+        };
+        assert_eq!(effect.owner(), EffectOwner::SourceOpen);
     }
 
     #[test]

@@ -852,3 +852,226 @@ After director acceptance only:
 7. verify next/previous/pause/resume/stop.
 
 Gate 2.5 remains blocked until this real-desktop signoff succeeds.
+
+
+## Director correction continuation — attempt A5.1: canonical session authority and truly lightweight TTS/persistence
+
+### Director decision on first A5 implementation
+
+**REJECTED. Do not integrate worker terminal head `6378ffc07e7b8b6da77dce59157f43d25627c45b` as-is.**
+
+The A5 implementation at `ca91d6ce6adc557fbd62e7cccd66d22234b4bc3d` made real progress on native frame cost:
+
+- large catalog and reader document state are Arc-backed in AppState;
+- ordinary egui state projection no longer deep-copies the 104,732-book catalog;
+- native pretty rendering uses a bounded viewport window instead of laying out all 1,644 blocks;
+- egui-facing TTS submission goes through a dedicated control worker;
+- repo-native QA uses an optimized `profile.qa`.
+
+However, the implementation fails A5-C/A5-D's ownership and heavyweight-work requirements.
+
+### Rejection evidence
+
+#### 1. Persistence still constructs a full ReaderSnapshot
+
+`crates/lanternleaf-egui/src/effects.rs::handle_persistence_flush` still does:
+
+```text
+lock canonical effect session
+-> session.snapshot(panels, normalizer)
+-> clone config
+-> ReaderHousekeeping { snapshot, config }
+```
+
+`ReaderSession::snapshot` clones/collects heavyweight document data, including:
+
+- complete current-page/plain TTS text;
+- complete native reading HTML for one-stream EPUB;
+- canonical sentence corpus;
+- sentence-anchor map;
+- page sentence counts;
+- reader images and other UI payload.
+
+Meanwhile `execute_command` still calls `apply_persistence_trigger` for every `AppCommand::Reader(_)`, including TTS Play/Next/Prev/Pause/Stop.
+
+Therefore A5 did not satisfy the explicit requirement:
+
+> persistence flushes must use direct bookmark/config/housekeeping data rather than manufacturing a full UI ReaderSnapshot just to persist progress.
+
+#### 2. TTS worker events are lightweight only after heavyweight snapshots are built
+
+`TtsRuntime::apply_command` still calls:
+
+```text
+reader.apply_command(...)
+-> SessionEvent { snapshot: reader.snapshot(...) }
+-> derive ReaderPlaybackState / TtsState from that full snapshot
+-> emit event with snapshot = None
+```
+
+`build_tts_playback_plan`, `collect_tts_playback_plan`, pause transitions, and runtime step transitions also call full `reader.snapshot(...)`.
+
+Thus the event channel no longer carries the megabyte payload, but the TTS worker still repeatedly constructs it internally. The 10,488-sentence A5 test only proves:
+
+- `submit_command` returns within 50 ms;
+- the worker eventually emits a state event;
+- emitted events have `snapshot.is_none()`.
+
+It does **not** structurally prove that no heavyweight `ReaderSnapshot` was constructed inside the worker.
+
+#### 3. There are still two ReaderSession authorities
+
+The egui app still maintains:
+
+- `effect_session: Arc<Mutex<Option<ReaderSession>>>` used by normal reader effects/persistence;
+- a separate `TtsRuntime.session: Arc<Mutex<Option<ReaderSession>>>`.
+
+`sync_tts_runtime_session` clones the effect session only when the source path changes.
+
+A5 then deliberately skips the effect-session command path for TTS commands and applies those commands only to the TTS-runtime copy.
+
+This means:
+
+- a non-TTS sentence click/search/navigation change can mutate the effect session without updating the TTS session;
+- subsequent Play/Play-from-highlight can begin from stale cursor state;
+- TTS progression mutates the TTS copy while command-triggered persistence may snapshot the stale effect copy;
+- there is no single canonical ReaderSession cursor/state owner.
+
+That violates A5-D's explicit requirement to collapse the double-application model into one authoritative cursor/state transition contract.
+
+### Required correction architecture
+
+A5.1 must finish A5 rather than layering another synchronization shim.
+
+#### A. One canonical ReaderSession object
+
+Normal reader commands, TTS commands, persistence, and playback planning must operate on the same authoritative `ReaderSession` instance/handle.
+
+Preferred shape:
+
+```text
+Arc<Mutex<Option<ReaderSession>>>
+        ^
+        |
+  one canonical owner
+   /      |       \
+reader   TTS    persistence
+effects worker   projection
+```
+
+The TTS runtime may hold a clone of the **Arc handle**, not a clone of the `ReaderSession` value.
+
+Do not add version counters or periodic whole-session copy reconciliation unless unavoidable and director-reviewed.
+
+Acceptance regression must prove:
+
+1. sentence click/search/highlight on normal reader command path;
+2. immediately queue TTS Play/Play-from-highlight;
+3. worker starts from that exact canonical cursor;
+4. TTS seek updates are visible to subsequent normal reader operations/persistence from the same session.
+
+#### B. Add lightweight session projections
+
+Introduce explicit ReaderSession APIs for the data needed by hot paths, for example:
+
+- `playback_view()/playback_state()`;
+- `tts_state_view()`;
+- `tts_plan_input()/current_tts_slice()`;
+- `persistence_housekeeping()/bookmark + config`;
+- lightweight cursor/page/source metadata.
+
+Names are implementation detail; the contract is not.
+
+These APIs must not call `ReaderSession::snapshot()` internally.
+
+A full `ReaderSnapshot` remains appropriate for source-open/full-document UI publication and explicit low-frequency document refreshes, but not for TTS stepping, plan collection, or persistence.
+
+#### C. Remove full snapshots from TTS worker hot path
+
+After A5.1:
+
+- `TtsRuntime::apply_command` must not require a full ReaderSnapshot merely to emit playback/TTS deltas;
+- `build_tts_playback_plan` and `collect_tts_playback_plan` must not call full `reader.snapshot`;
+- runtime seek/progress/pause transitions must emit lightweight playback/cursor/TTS state directly;
+- high-frequency TTS progress must not clone reading HTML, canonical sentence corpus, images, or sentence-anchor maps.
+
+A deterministic test-only heavy-snapshot counter/hook is acceptable.
+
+Required 10,000+ sentence regression must assert **zero full ReaderSnapshot constructions** for:
+
+1. TTS command submission;
+2. worker command application;
+3. first plan build;
+4. at least 100 TTS progress/seek transitions.
+
+#### D. Persistence must not use ReaderSnapshot
+
+Refactor `ReaderHousekeeping` / persistence boundary so a flush receives only the fields it actually persists.
+
+At minimum derive directly from canonical session:
+
+- bookmark/cursor;
+- source path;
+- config/settings fields required by persistence;
+- any existing small persistence metadata.
+
+Do not manufacture a UI snapshot.
+
+Required regression:
+
+- large EPUB-shaped session with 10,000+ sentences / large reading HTML;
+- ReaderCommand/TTS-triggered persistence flush;
+- zero full ReaderSnapshot constructions;
+- correct persisted bookmark/cursor.
+
+Also review whether every TTS progress/control action needs a generic `PersistenceTrigger::ReaderCommand` flush now that the TTS runtime already persists canonical progress. Remove redundant/stale-race-producing flushes if they are no longer semantically required.
+
+#### E. Preserve the good A5 work
+
+A5.1 must preserve and revalidate:
+
+- Arc-backed large catalog state;
+- Arc-backed reader document publication;
+- no leaf `runtime.state_snapshot()` heavyweight re-clone;
+- bounded pretty viewport rendering;
+- sentence-to-block highlight index;
+- off-main egui TTS command submission;
+- optimized `profile.qa`;
+- A3 native EPUB ingestion/cache recovery;
+- A4 bounded lazy normalization;
+- Windows TTS backend behavior.
+
+#### F. Correct the A5 regression suite
+
+The prior large-session TTS test is insufficient by itself.
+
+Add tests that fail if:
+
+- a full ReaderSnapshot is constructed in TTS worker hot paths;
+- persistence constructs a full ReaderSnapshot;
+- normal reader cursor and TTS worker cursor diverge;
+- TTS Play-from-highlight ignores a cursor change made through the normal reader command path.
+
+Keep the existing structural frame/pretty-window tests.
+
+### A5.1 acceptance gates
+
+1. One canonical ReaderSession value is shared by normal reader effects and TTS worker.
+2. TTS runtime does not own a cloned ReaderSession value.
+3. TTS worker Play/plan/progress path constructs zero full ReaderSnapshots in the 10k+ regression.
+4. Persistence flush constructs zero full ReaderSnapshots.
+5. Cursor changes from normal reader commands are immediately authoritative for TTS Play/Play-from-highlight.
+6. TTS cursor changes are immediately authoritative for persistence and normal reader state.
+7. A5 large-catalog Arc-sharing regression remains green.
+8. A5 bounded 1,644-block pretty-window regression remains green.
+9. A5 off-main command-submission regression remains green.
+10. A3/A4 EPUB/materialization/lazy-normalization regressions remain green.
+11. Windows normal workspace check/build/test and Windows TTS probe pass.
+12. `qa.ps1` still defaults to the optimized QA profile.
+13. No main-thread stack-size increase, WebView fallback, Caliberate-specific reader state, or broad unrelated redesign.
+
+### Human QA
+
+**No human QA during A5.1.**
+
+After director acceptance, repeat the same real-desktop large EPUB test. No new manual ceremony.

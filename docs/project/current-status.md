@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-08 after real-desktop Goal 0008 A5 native-frame/TTS crash diagnosis
+Updated: 2026-09-08 after director rejection of first Goal 0008 A5 implementation
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**GOAL 0008 A5 REOPENED — NATIVE READER FRAME BUDGET + TTS MAIN-THREAD CRASH**
+**GOAL 0008 A5.1 REQUIRED — FRAME FIXES GOOD, SESSION/TTS/PERSISTENCE OWNERSHIP STILL WRONG**
 
 Accepted integration:
 
@@ -158,3 +158,8 @@ A3 remains accepted for Caliberate materialization/native EPUB ingestion/cache r
 **HISTORICAL / OBSOLETE AS PRODUCTION TARGET**
 
 It may be consulted for behavioral evidence only.
+
+
+### A5 director review update
+
+The first A5 implementation at `ca91d6ce...` is **not integrated**. Arc-backed frame state, bounded pretty rendering, off-main command submission, and the optimized QA profile are good and must be preserved. Director inspection found that persistence and TTS worker hot paths still construct full `ReaderSnapshot` values, and the app still owns separate effect/TTS `ReaderSession` values synchronized only by source-path changes. A5.1 must collapse to one canonical session handle and use lightweight TTS/persistence projections before another real-desktop run.

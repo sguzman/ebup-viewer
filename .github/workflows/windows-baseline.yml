@@ -34,6 +34,13 @@ jobs:
         shell: pwsh
         run: ./qa.ps1 -SkipDependencyCheck -PrepareOnly
 
+      - name: Verify staged Windows QA config and synthesis
+        shell: pwsh
+        env:
+          LANTERNLEAF_CONFIG_PATH: ${{ github.workspace }}/.qa/windows/conf/config.toml
+          LANTERNLEAF_QA_TTS_BACKEND: windows
+        run: cargo test -p lanternleaf-core --test windows_qa_tts -- --nocapture
+
       - name: Test Codex goal notification workflow
         shell: pwsh
         run: ./scripts/test-codex-goal-notify.ps1

@@ -28,17 +28,19 @@ pub(crate) fn default_window_height() -> f32 {
 }
 
 pub(crate) fn default_tts_model() -> String {
-    #[cfg(unix)]
-    {
-        "/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx".to_string()
-    }
+    // Piper is opt-in on Windows and this portable relative path deliberately does
+    // not encode a developer profile. Users may still provide an absolute path.
+    "models/en_US-amy-medium.onnx".to_string()
+}
+
+pub(crate) fn default_tts_backend() -> crate::config::TtsBackend {
     #[cfg(windows)]
     {
-        "C:\\Users\\Salvador Guzman\\Music\\models\\piper\\en-US\\female\\en_US-hfc_female-medium.onnx".to_string()
+        crate::config::TtsBackend::Windows
     }
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(windows))]
     {
-        "models/en_US-amy-medium.onnx".to_string()
+        crate::config::TtsBackend::Piper
     }
 }
 
@@ -51,18 +53,7 @@ pub(crate) fn default_tts_volume() -> f32 {
 }
 
 pub(crate) fn default_tts_espeak_path() -> String {
-    #[cfg(unix)]
-    {
-        "/usr/share".to_string()
-    }
-    #[cfg(windows)]
-    {
-        "C:\\Program Files\\eSpeak NG".to_string()
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        "espeak-data".to_string()
-    }
+    "espeak-data".to_string()
 }
 
 pub(crate) fn default_tts_threads() -> usize {

@@ -3,7 +3,9 @@ param(
     [switch]$SkipDependencyCheck,
     [switch]$Release,
     [switch]$ResetQaState,
-    [switch]$PrepareOnly
+    [switch]$PrepareOnly,
+    [ValidateSet('Windows', 'Piper')]
+    [string]$TtsBackend = 'Windows'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,12 +63,16 @@ $handoff = Join-Path $handoffRoot $runId
 New-Item -ItemType Directory -Force -Path $runLogs, $handoff | Out-Null
 
 $env:LANTERNLEAF_CONFIG_PATH = Join-Path $configRoot 'config.toml'
+$env:LANTERNLEAF_QA_TTS_BACKEND = $TtsBackend.ToLowerInvariant()
 $env:LANTERNLEAF_NORMALIZER_CONFIG_PATH = Join-Path $configRoot 'normalizer.toml'
 $env:LANTERNLEAF_ABBREVIATIONS_CONFIG_PATH = Join-Path $configRoot 'abbreviations.toml'
 $env:QUACK_CHECK_CONFIG = Join-Path $configRoot 'quack-check.toml'
 $env:CALIBRE_CONFIG_PATH = $calibreConfig
 $env:LANTERNLEAF_LOG_DIR = $runLogs
 $env:LANTERNLEAF_CACHE_DIR = $cacheRoot
+if (-not $env:RUST_LOG) {
+    $env:RUST_LOG = 'info,lanternleaf=debug,lanternleaf_app=debug,lanternleaf_core=debug,lanternleaf_egui=debug,html5ever=info'
+}
 
 Write-Host ''
 Write-Host 'LanternLeaf real-desktop QA'
@@ -74,9 +80,10 @@ Write-Host "Fixtures: $fixtureRoot"
 Write-Host "Checklist: $(Join-Path $repoRoot 'docs\qa\non-pdf-reader-windows-checklist.md')"
 Write-Host "Caliberate config: $calibreConfig"
 Write-Host "Logs: $runLogs"
+Write-Host "Effective QA TTS backend: $TtsBackend $(if ($TtsBackend -eq 'Windows') { '(repo-native default)' } else { '(explicit QA override)' })"
 Write-Host ''
 Write-Host 'Open the four files under .qa\windows\fixtures from LanternLeaf.'
-Write-Host 'Windows TTS is the critical audio path; Piper may still require a configured model.'
+Write-Host 'Windows TTS is the critical audio path; Piper remains available only by explicit -TtsBackend Piper override.'
 Write-Host ''
 
 if ($PrepareOnly) {
@@ -144,7 +151,7 @@ if ($logFiles.Count -gt 0) {
     Get-Content -LiteralPath $latestLog.FullName -Tail 250 -ErrorAction SilentlyContinue |
         Set-Content -LiteralPath (Join-Path $handoff 'latest-log-tail.txt')
 
-    $diagnosticPattern = 'error|warn|failed|failure|timeout|timed out|calibre|caliberate|source[_ -]?open|materializ'
+    $diagnosticPattern = 'error|warn|failed|failure|timeout|timed out|calibre|caliberate|source[_ -]?open|materializ|tts|piper|voice|audio|synth'
     @(Select-String -LiteralPath $latestLog.FullName -Pattern $diagnosticPattern -CaseSensitive:$false -ErrorAction SilentlyContinue |
         Select-Object -Last 250 |
         ForEach-Object { $_.Line }) |

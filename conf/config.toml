@@ -87,8 +87,6 @@ browsr_timeout_ms = 8000
 close_browser_tab_on_recent_delete = true
 
 [tts]
-tts_model_path = "/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx"
-tts_espeak_path = "/usr/share"
 tts_speed = 2.5
 tts_volume = 1.0
 tts_threads = 4

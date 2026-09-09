@@ -26,20 +26,44 @@ pub fn load_config(path: &Path) -> AppConfig {
                 path = %path.display(),
                 "Falling back to default config: {err}"
             );
-            return AppConfig::default();
+            return apply_qa_overrides(AppConfig::default());
         }
     };
 
     match parse_config(&contents) {
         Ok(cfg) => {
             debug!("Parsed configuration from disk");
-            normalize_config(cfg)
+            let cfg = apply_qa_overrides(cfg);
+            info!(backend = ?cfg.tts_backend, "Effective TTS backend");
+            cfg
         }
         Err(err) => {
             warn!(path = %path.display(), "Invalid config TOML: {err}");
-            AppConfig::default()
+            let cfg = apply_qa_overrides(AppConfig::default());
+            info!(backend = ?cfg.tts_backend, "Effective TTS backend");
+            cfg
         }
     }
+}
+
+/// Apply an explicit repo-native QA override after parsing the staged config.
+/// This is intentionally environment-scoped: normal user configuration, including
+/// explicit Piper selection on Windows, remains untouched.
+fn apply_qa_overrides(mut cfg: AppConfig) -> AppConfig {
+    if let Ok(value) = std::env::var("LANTERNLEAF_QA_TTS_BACKEND") {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "windows" => {
+                cfg.tts_backend = super::models::TtsBackend::Windows;
+                debug!(backend = ?cfg.tts_backend, "Applied Windows QA TTS backend override");
+            }
+            "piper" => {
+                cfg.tts_backend = super::models::TtsBackend::Piper;
+                debug!(backend = ?cfg.tts_backend, "Applied Piper QA TTS backend override");
+            }
+            other => warn!(value = other, "Ignoring unknown QA TTS backend override"),
+        }
+    }
+    cfg
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -88,4 +112,32 @@ fn normalize_config(mut cfg: AppConfig) -> AppConfig {
     cfg.pretty.table_border_alpha = cfg.pretty.table_border_alpha.clamp(0.0, 1.0);
     cfg.pretty.table_stripe_alpha = cfg.pretty.table_stripe_alpha.clamp(0.0, 1.0);
     cfg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_config;
+    use crate::config::TtsBackend;
+
+    #[test]
+    fn omitted_tts_backend_uses_platform_default() {
+        let config = parse_config("[tts]\n").expect("minimal table config should parse");
+        let expected = if cfg!(windows) {
+            TtsBackend::Windows
+        } else {
+            TtsBackend::Piper
+        };
+        assert_eq!(config.tts_backend, expected);
+    }
+
+    #[test]
+    fn explicit_tts_backend_is_preserved_across_platforms() {
+        let piper = parse_config("[tts]\ntts_backend = \"piper\"\n")
+            .expect("explicit Piper config should parse");
+        assert_eq!(piper.tts_backend, TtsBackend::Piper);
+
+        let windows = parse_config("[tts]\ntts_backend = \"windows\"\n")
+            .expect("explicit Windows config should parse");
+        assert_eq!(windows.tts_backend, TtsBackend::Windows);
+    }
 }

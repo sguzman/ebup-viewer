@@ -1,5 +1,6 @@
 use lanternleaf_app::contracts::{BridgeError, ReaderPlaybackStateEvent, TtsStateEvent};
 use lanternleaf_app::pipeline::{AppEvent, OperationScope};
+use lanternleaf_core::config::TtsBackend;
 use tracing::{info, trace, warn};
 
 use super::LanternLeafApp;
@@ -19,6 +20,28 @@ fn normalize_for_tts_compare(input: &str) -> String {
         }
     }
     out.trim().to_string()
+}
+
+fn actionable_tts_failure_message(backend: TtsBackend, message: &str) -> String {
+    let lower = message.to_ascii_lowercase();
+    let cause = if lower.contains("voice") {
+        "Windows voice availability"
+    } else if lower.contains("piper")
+        || lower.contains("model")
+        || lower.contains("onnx")
+        || lower.contains("config")
+    {
+        "Piper model/configuration"
+    } else if lower.contains("audio")
+        || lower.contains("output")
+        || lower.contains("rodio")
+        || lower.contains("sink")
+    {
+        "audio output"
+    } else {
+        "TTS synthesis/runtime"
+    };
+    format!("TTS failed (backend={backend:?}; cause={cause}): {message}")
 }
 
 impl LanternLeafApp {
@@ -126,9 +149,17 @@ impl LanternLeafApp {
                     .message
                     .clone()
                     .unwrap_or_else(|| "TTS runtime failed".to_string());
+                let backend = self
+                    .runtime
+                    .state_snapshot()
+                    .reader_ui
+                    .settings
+                    .as_ref()
+                    .map(|settings| settings.tts_backend)
+                    .unwrap_or_default();
                 let error = BridgeError {
                     code: "tts_runtime_failed".to_string(),
-                    message: error_message,
+                    message: actionable_tts_failure_message(backend, &error_message),
                 };
                 self.runtime.apply_event(AppEvent::CommandFailed {
                     request_id: app_request_id,
@@ -139,5 +170,34 @@ impl LanternLeafApp {
 
             self.last_tts_runtime_event = Some(event);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::actionable_tts_failure_message;
+    use lanternleaf_core::config::TtsBackend;
+
+    #[test]
+    fn tts_failure_message_explains_backend_and_configuration_cause() {
+        let message = actionable_tts_failure_message(
+            TtsBackend::Piper,
+            "Piper config not found at models/en_US-amy-medium.onnx.json",
+        );
+        assert!(message.contains("backend=Piper"));
+        assert!(message.contains("Piper model/configuration"));
+        assert!(message.contains("models/en_US-amy-medium.onnx.json"));
+    }
+
+    #[test]
+    fn tts_failure_message_explains_voice_and_audio_causes() {
+        assert!(
+            actionable_tts_failure_message(TtsBackend::Windows, "configured voice not found")
+                .contains("Windows voice availability")
+        );
+        assert!(
+            actionable_tts_failure_message(TtsBackend::Windows, "Opening audio output failed")
+                .contains("audio output")
+        );
     }
 }

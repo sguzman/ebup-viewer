@@ -362,7 +362,7 @@ impl Default for IntegrationConfig {
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
 struct TtsConfig {
-    #[serde(default)]
+    #[serde(default = "defaults::default_tts_backend")]
     tts_backend: TtsBackend,
     #[serde(default)]
     windows_voice_id: Option<String>,
@@ -385,7 +385,7 @@ struct TtsConfig {
 impl Default for TtsConfig {
     fn default() -> Self {
         TtsConfig {
-            tts_backend: TtsBackend::Piper,
+            tts_backend: defaults::default_tts_backend(),
             windows_voice_id: None,
             tts_model_path: defaults::default_tts_model(),
             tts_espeak_path: defaults::default_tts_espeak_path(),

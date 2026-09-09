@@ -20,7 +20,7 @@ pub fn init_tracing(default_level: impl AsRef<str>) -> WorkerGuard {
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
     } else if cfg!(debug_assertions) {
         EnvFilter::new(
-            "info,lanternleaf=debug,lanternleaf_app=debug,lanternleaf_core=debug,lanternleaf_egui=debug",
+            "info,lanternleaf=debug,lanternleaf_app=debug,lanternleaf_core=debug,lanternleaf_egui=debug,html5ever=info",
         )
     } else {
         EnvFilter::try_new(&default_directive).unwrap_or_else(|_| EnvFilter::new("info"))

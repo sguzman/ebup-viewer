@@ -3052,12 +3052,12 @@ mod tests {
     fn auto_scroll_jumps_once_for_a_new_active_sentence() {
         let mut state = AutoScrollState::default();
         assert_eq!(
-            state.decide_scroll(2, AnchorFallback::Exact),
+            state.decide_scroll("book", 2, AnchorFallback::Exact),
             ScrollDecision::Scroll
         );
         state.record("book", 2, AnchorFallback::Exact);
         assert_eq!(
-            state.decide_scroll(2, AnchorFallback::Exact),
+            state.decide_scroll("book", 2, AnchorFallback::Exact),
             ScrollDecision::Blocked(ScrollBlockReason::Duplicate)
         );
         assert_eq!(state.throttle_blocked(), 0);
@@ -3069,13 +3069,13 @@ mod tests {
         state.record("book", 2, AnchorFallback::Exact);
         state.last_jump_at = None;
         assert_eq!(
-            state.decide_scroll(2, AnchorFallback::Nearest),
+            state.decide_scroll("book", 2, AnchorFallback::Nearest),
             ScrollDecision::Scroll
         );
         state.record("book", 2, AnchorFallback::Nearest);
         state.last_jump_at = None;
         assert_eq!(
-            state.decide_scroll(2, AnchorFallback::Nearest),
+            state.decide_scroll("book", 2, AnchorFallback::Nearest),
             ScrollDecision::Blocked(ScrollBlockReason::Duplicate)
         );
     }
@@ -3088,6 +3088,36 @@ mod tests {
         assert!(state.pending_for("book", 1500));
         state.record("book", 1500, AnchorFallback::Exact);
         assert!(!state.pending_for("book", 1500));
+    }
+
+    #[test]
+    fn explicit_jump_rearms_a_previously_committed_target() {
+        let mut state = AutoScrollState::default();
+        state.request_cursor("book", 12);
+        assert_eq!(
+            state.decide_scroll("book", 12, AnchorFallback::Exact),
+            ScrollDecision::Scroll
+        );
+        state.record("book", 12, AnchorFallback::Exact);
+        state.request_jump("book", Some(12));
+        assert!(state.pending_for("book", 12));
+        assert_eq!(
+            state.decide_scroll("book", 12, AnchorFallback::Exact),
+            ScrollDecision::Scroll
+        );
+        state.record("book", 12, AnchorFallback::Exact);
+        assert!(!state.pending_for("book", 12));
+    }
+
+    #[test]
+    fn committed_follow_identity_includes_source_document() {
+        let mut state = AutoScrollState::default();
+        state.record("first-book", 12, AnchorFallback::Exact);
+        state.last_jump_at = None;
+        assert_eq!(
+            state.decide_scroll("second-book", 12, AnchorFallback::Exact),
+            ScrollDecision::Scroll
+        );
     }
 
     #[test]
@@ -4109,9 +4139,16 @@ struct FollowTarget {
     canonical_sentence_idx: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommittedFollow {
+    source_path: String,
+    canonical_sentence_idx: usize,
+    fallback: AnchorFallback,
+}
+
 #[derive(Default)]
 struct AutoScrollState {
-    last_highlighted: Option<(usize, AnchorFallback)>,
+    last_highlighted: Option<CommittedFollow>,
     last_jump_at: Option<Instant>,
     throttle_blocked: usize,
     pending_target: Option<FollowTarget>,
@@ -4120,8 +4157,18 @@ struct AutoScrollState {
 impl AutoScrollState {
     const JUMP_THROTTLE: Duration = Duration::from_millis(150);
 
-    fn decide_scroll(&mut self, idx: usize, fallback: AnchorFallback) -> ScrollDecision {
-        if self.last_highlighted == Some((idx, fallback)) {
+    fn decide_scroll(
+        &mut self,
+        source_path: &str,
+        idx: usize,
+        fallback: AnchorFallback,
+    ) -> ScrollDecision {
+        let committed = CommittedFollow {
+            source_path: source_path.to_string(),
+            canonical_sentence_idx: idx,
+            fallback,
+        };
+        if self.last_highlighted.as_ref() == Some(&committed) {
             return ScrollDecision::Blocked(ScrollBlockReason::Duplicate);
         }
         if let Some(last) = self.last_jump_at {
@@ -4152,17 +4199,26 @@ impl AutoScrollState {
     }
 
     fn record(&mut self, source_path: &str, idx: usize, fallback: AnchorFallback) {
-        self.last_highlighted = Some((idx, fallback));
+        self.last_highlighted = Some(CommittedFollow {
+            source_path: source_path.to_string(),
+            canonical_sentence_idx: idx,
+            fallback,
+        });
         self.last_jump_at = Some(Instant::now());
         if self.pending_for(source_path, idx) {
             self.pending_target = None;
         }
     }
 
-    fn request_jump(&mut self) {
+    fn request_jump(&mut self, source_path: impl Into<String>, idx: Option<usize>) {
         self.last_highlighted = None;
         self.last_jump_at = None;
         self.throttle_blocked = 0;
+        if let Some(idx) = idx {
+            self.request_cursor(source_path, idx);
+        } else {
+            self.pending_target = None;
+        }
     }
 
     fn reset(&mut self) {

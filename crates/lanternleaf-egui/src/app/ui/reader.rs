@@ -513,9 +513,11 @@ impl LanternLeafApp {
                                 {
                                     if let Some(response) = response.as_ref() {
                                         let idx = canonical_highlight_idx.unwrap_or_default();
-                                        let decision = self
-                                            .auto_scroll_state
-                                            .decide_scroll(idx, AnchorFallback::Exact);
+                                        let decision = self.auto_scroll_state.decide_scroll(
+                                            &snapshot.source_path,
+                                            idx,
+                                            AnchorFallback::Exact,
+                                        );
                                         if matches!(decision, crate::app::ScrollDecision::Scroll) {
                                             let align = if snapshot.settings.center_spoken_sentence
                                             {
@@ -661,8 +663,11 @@ impl LanternLeafApp {
                             let (_anchor, fallback) =
                                 LanternLeafApp::resolve_sentence_anchor(snapshot, idx);
                             if matches!(
-                                self.auto_scroll_state
-                                    .decide_scroll(target_canonical_idx.unwrap_or(idx), fallback,),
+                                self.auto_scroll_state.decide_scroll(
+                                    &snapshot.source_path,
+                                    target_canonical_idx.unwrap_or(idx),
+                                    fallback,
+                                ),
                                 crate::app::ScrollDecision::Scroll
                             ) {
                                 let align = if snapshot.settings.center_spoken_sentence {
@@ -860,7 +865,27 @@ impl LanternLeafApp {
                     ));
                 }
                 if ui.button("Jump to highlight").clicked() {
-                    self.auto_scroll_state.request_jump();
+                    let state = self.runtime.state_snapshot();
+                    let local_idx = state
+                        .reader_playback
+                        .highlighted_sentence_idx
+                        .or(snapshot.highlighted_sentence_idx);
+                    let page = state
+                        .reader_playback
+                        .playback
+                        .as_ref()
+                        .map(|playback| playback.current_page)
+                        .unwrap_or(snapshot.current_page);
+                    let canonical_idx = local_idx.map(|idx| {
+                        snapshot
+                            .page_sentence_counts
+                            .iter()
+                            .take(page)
+                            .sum::<usize>()
+                            .saturating_add(idx)
+                    });
+                    self.auto_scroll_state
+                        .request_jump(snapshot.source_path.clone(), canonical_idx);
                 }
             });
         });

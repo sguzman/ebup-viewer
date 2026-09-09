@@ -27,7 +27,7 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - click-to-play;
 - bookmarks/config/search/navigation.
 
-## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A7.1 FOLLOW-STATE CORRECTION
+## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A7.1 ACCEPTED, FINAL HIGHLIGHT/FOLLOW SIGNOFF
 
 - use Caliberate's versioned HTTP/JSON API rather than direct database coupling;
 - default local provider target `http://127.0.0.1:8181`;
@@ -127,3 +127,13 @@ A7.1 correction priority:
 - extract/test the production cursor-transition -> follow-target rule across 100+ advances and Next/Prev/Pause/Resume/Repeat/unchanged voice/settings events;
 - make committed duplicate-follow identity source-aware;
 - no human QA until A7.1 director acceptance.
+
+
+A7/A7.1 accepted:
+- canonical global display-sentence identity now drives native pretty targeting;
+- duplicate text no longer collapses distinct occurrences;
+- unmapped HTML spoken sentences do not use proportional random-jump fallback;
+- follow targets are durable/source-aware and driven by actual cursor transitions;
+- explicit Jump-to-highlight is repaired;
+- 128-transition production-rule coverage plus large alignment/virtualization regressions are green;
+- final requirement: sustained real-desktop audible-sentence highlight and viewport-follow verification on the same large EPUB.

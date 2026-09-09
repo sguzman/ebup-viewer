@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**GOAL 0008 A7.1 — FIRST A7 ARCHITECTURE GOOD, INTEGRATION WITHHELD FOR FOLLOW-STATE CORRECTION**
+**A7.1 ACCEPTED — FINAL REAL-DESKTOP PRETTY HIGHLIGHT/FOLLOW SIGNOFF PENDING**
 
 Accepted integration:
 
@@ -189,3 +189,8 @@ Goal 0008 is still blocked by presentation synchronization. Canonical TTS cursor
 ### A7.1 director review
 
 The first A7 implementation is not integrated. It correctly replaces text-keyed/proportional native-pretty targeting with ordered canonical sentence targets and adds bounded variable-height virtualization, but explicit Jump-to-highlight is currently inert because it clears bookkeeping without creating a pending target. The contract's required 100+ transition/Next/Prev/Pause/Resume/Repeat/unchanged-settings regression coverage is also absent, and committed duplicate suppression is not source-aware. A7.1 is a bounded correction preserving the first A7 architecture. No human QA yet.
+
+
+### A7/A7.1 accepted correction
+
+A7/A7.1 is integrated. Native pretty TTS synchronization now uses ordered canonical display-sentence targets, refuses proportional/distant HTML fallback for unmapped spoken sentences, carries durable source-aware follow targets, derives automatic follow only from canonical cursor transitions, supports explicit Jump-to-highlight re-arming, and retains bounded variable-height virtualization. Windows CI run `34403241270` is green. The remaining Gate 2.5 evidence is one sustained real-desktop highlight/viewport-follow run on the same large EPUB.

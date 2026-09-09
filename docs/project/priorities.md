@@ -27,7 +27,7 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - click-to-play;
 - bookmarks/config/search/navigation.
 
-## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A7 PRETTY HIGHLIGHT/SCROLL SYNCHRONIZATION
+## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A7.1 FOLLOW-STATE CORRECTION
 
 - use Caliberate's versioned HTTP/JSON API rather than direct database coupling;
 - default local provider target `http://127.0.0.1:8181`;
@@ -119,3 +119,11 @@ A7 correction priority:
 - add 10k-sentence / 1.5k-block duplicate/unmapped/100+ transition regressions before another human run.
 
 Deferred, nonblocking: interactive Piper switching/provisioning in the normal Windows QA context should be revisited after Goal 0008; Windows TTS is sufficient for current A7 verification.
+
+
+A7.1 correction priority:
+- preserve first-A7 ordered canonical pretty-target mapping, no proportional TTS fallback, sentence-range highlighting, and variable-height bounded virtualization;
+- repair explicit Jump-to-highlight so it actually re-arms the current canonical target;
+- extract/test the production cursor-transition -> follow-target rule across 100+ advances and Next/Prev/Pause/Resume/Repeat/unchanged voice/settings events;
+- make committed duplicate-follow identity source-aware;
+- no human QA until A7.1 director acceptance.

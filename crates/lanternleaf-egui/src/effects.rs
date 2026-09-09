@@ -1320,11 +1320,24 @@ mod tests {
                 vec![sentences.join(" ")],
                 vec![sentences],
             ));
-        session::reset_snapshot_construction_count();
+        context
+            .session
+            .lock()
+            .expect("session lock")
+            .as_ref()
+            .expect("large persistence session")
+            .reset_snapshot_construction_count();
         handle_persistence_flush(&context, 1, PersistenceTrigger::ReaderCommand)
             .expect("persistence flush should succeed");
+        let snapshot_count = context
+            .session
+            .lock()
+            .expect("session lock")
+            .as_ref()
+            .expect("large persistence session")
+            .snapshot_construction_count();
         assert_eq!(
-            session::snapshot_construction_count(),
+            snapshot_count,
             0,
             "persistence flush constructed a full ReaderSnapshot"
         );

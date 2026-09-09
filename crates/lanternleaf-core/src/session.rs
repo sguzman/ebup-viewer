@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use ts_rs::TS;
@@ -287,6 +287,7 @@ pub struct ReaderSession {
     current_plan_display_start: usize,
     current_plan_display_end: usize,
     current_plan: Option<normalizer::PageNormalization>,
+    snapshot_constructions: Arc<AtomicUsize>,
 }
 
 impl ReaderSession {
@@ -337,6 +338,7 @@ impl ReaderSession {
             current_plan_display_start: 0,
             current_plan_display_end: 0,
             current_plan: None,
+            snapshot_constructions: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -352,6 +354,16 @@ impl ReaderSession {
             stats,
             settings: self.settings_view(),
         }
+    }
+
+    #[doc(hidden)]
+    pub fn reset_snapshot_construction_count(&self) {
+        self.snapshot_constructions.store(0, Ordering::SeqCst);
+    }
+
+    #[doc(hidden)]
+    pub fn snapshot_construction_count(&self) -> usize {
+        self.snapshot_constructions.load(Ordering::SeqCst)
     }
 }
 
@@ -370,17 +382,6 @@ struct MappingTelemetry {
 }
 
 static MAPPING_TELEMETRY: OnceLock<MappingTelemetry> = OnceLock::new();
-static SNAPSHOT_CONSTRUCTIONS: AtomicUsize = AtomicUsize::new(0);
-
-/// Test/diagnostic counter for proving hot paths use lightweight projections.
-pub fn reset_snapshot_construction_count() {
-    SNAPSHOT_CONSTRUCTIONS.store(0, Ordering::SeqCst);
-}
-
-pub fn snapshot_construction_count() -> usize {
-    SNAPSHOT_CONSTRUCTIONS.load(Ordering::SeqCst)
-}
-
 fn mapping_telemetry() -> &'static MappingTelemetry {
     MAPPING_TELEMETRY.get_or_init(|| MappingTelemetry {
         lookups: AtomicUsize::new(0),
@@ -1148,7 +1149,7 @@ impl ReaderSession {
         panels: PanelState,
         normalizer: &normalizer::TextNormalizer,
     ) -> ReaderSnapshot {
-        SNAPSHOT_CONSTRUCTIONS.fetch_add(1, Ordering::SeqCst);
+        self.snapshot_constructions.fetch_add(1, Ordering::SeqCst);
         let snapshot_started = Instant::now();
         let sentences = self.current_sentences(normalizer);
         let canonical_sentences = self
@@ -1997,6 +1998,7 @@ mod tests {
             current_plan_display_start: 0,
             current_plan_display_end: 0,
             current_plan: None,
+            snapshot_constructions: Arc::new(AtomicUsize::new(0)),
         }
     }
 

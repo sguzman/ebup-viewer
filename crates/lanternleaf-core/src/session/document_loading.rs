@@ -122,6 +122,7 @@ impl ReaderSession {
             current_plan_display_start: 0,
             current_plan_display_end: 0,
             current_plan: None,
+            snapshot_constructions: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
 
         if let Some(bookmark) = bookmark.as_ref() {

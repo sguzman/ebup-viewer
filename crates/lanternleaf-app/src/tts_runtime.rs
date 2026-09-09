@@ -280,6 +280,24 @@ impl TtsRuntime {
         }
     }
 
+    #[cfg(test)]
+    fn reset_snapshot_construction_count(&self) {
+        if let Ok(guard) = self.session.lock() {
+            if let Some(reader) = guard.as_ref() {
+                reader.reset_snapshot_construction_count();
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn snapshot_construction_count(&self) -> usize {
+        self.session
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(session::ReaderSession::snapshot_construction_count))
+            .unwrap_or(0)
+    }
+
     pub fn set_panels(&self, panels: session::PanelState) {
         if let Ok(mut guard) = self.panels.lock() {
             *guard = panels;
@@ -1409,7 +1427,6 @@ mod tests {
     #[test]
     fn large_session_tts_submission_is_bounded_and_worker_owned() {
         let normalizer = normalizer::TextNormalizer::default();
-        session::reset_snapshot_construction_count();
         let runtime = TtsRuntime::new_with_mode(normalizer, TtsRuntimeMode::Simulated);
         let sentences: Vec<String> = (0..10_488)
             .map(|idx| format!("Sentence {idx} is deterministic."))
@@ -1421,6 +1438,7 @@ mod tests {
             vec![page],
             vec![sentences],
         )));
+        runtime.reset_snapshot_construction_count();
 
         let started = Instant::now();
         assert!(runtime.submit_command(TtsCommand::Play));
@@ -1453,13 +1471,13 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
             let _ = runtime.collect_events();
-            if session::snapshot_construction_count() != 0 {
+            if runtime.snapshot_construction_count() != 0 {
                 break;
             }
             thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(
-            session::snapshot_construction_count(),
+            runtime.snapshot_construction_count(),
             0,
             "TTS worker constructed a full ReaderSnapshot in its hot path"
         );

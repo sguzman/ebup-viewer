@@ -27,7 +27,7 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - click-to-play;
 - bookmarks/config/search/navigation.
 
-## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A5.1 ACCEPTED, REAL-DESKTOP SIGNOFF PENDING
+## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A6 WINDOWS TTS QA CORRECTION
 
 - use Caliberate's versioned HTTP/JSON API rather than direct database coupling;
 - default local provider target `http://127.0.0.1:8181`;
@@ -93,3 +93,11 @@ A5.1 accepted:
 - TTS/persistence hot paths are structurally snapshot-free on 10k+ sentence regressions;
 - accepted A5 Arc-backed frame state, bounded pretty rendering, off-main TTS submission, and optimized QA profile remain in place;
 - require successful real-desktop large-EPUB responsiveness + Windows TTS Play/seek/pause/resume/stop before Gate 2.5 completion.
+
+
+A6 correction priority:
+- preserve the now-successful A5/A5.1 native large-EPUB responsiveness work;
+- make omitted TTS backend platform-aware (Windows on Windows, Piper elsewhere);
+- make normal `qa.ps1` deterministically stage/verify Windows TTS even with pre-existing QA state;
+- surface backend/config synthesis failures visibly;
+- prove staged Windows QA config through Windows voice synthesis + WAV decode before another human run.

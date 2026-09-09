@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-08 after Goal 0008 A5.1 canonical-session correction acceptance/integration
+Updated: 2026-09-08 after real-desktop Goal 0008 A6 Windows-TTS configuration diagnosis
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**A5.1 ACCEPTED — REAL-DESKTOP LARGE-EPUB RESPONSIVENESS + WINDOWS TTS SIGNOFF PENDING**
+**GOAL 0008 A6 REOPENED — READER RESPONSIVENESS PASSED, WINDOWS QA WAS RUNNING PIPER**
 
 Accepted integration:
 
@@ -168,3 +168,8 @@ The first A5 implementation at `ca91d6ce...` is **not integrated**. Arc-backed f
 ### A5.1 accepted correction
 
 A5.1 is now integrated. Production normal reader effects, TTS runtime, and persistence share one canonical `Arc<Mutex<Option<ReaderSession>>>`. TTS hot paths use lightweight playback/session projections rather than full document snapshots, and persistence derives bookmark/config/playback data directly. Deterministic 10k+ sentence regressions prove zero full `ReaderSnapshot` construction during TTS worker Play/100 seeks and persistence flush. Windows CI run `34280238462` passed. The remaining evidence is one real-desktop large-EPUB responsiveness and Windows TTS run using the optimized default `qa.ps1` profile.
+
+
+### A6 real-desktop diagnosis
+
+A5/A5.1 native performance corrections are now positively observed on the human machine: the previously unusable large EPUB is described as substantially less laggy and “pretty snappy.” TTS Play no longer stack-overflows, but signoff still fails because the repo-native Windows QA configuration resolves an omitted backend to Piper. The runtime attempted the repository's Linux Piper model path and failed before producing audio. A6 corrects the platform default/QA staging contract so normal Windows QA actually exercises Windows TTS without manual backend selection.

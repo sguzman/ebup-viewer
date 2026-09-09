@@ -1075,3 +1075,158 @@ Keep the existing structural frame/pretty-window tests.
 **No human QA during A5.1.**
 
 After director acceptance, repeat the same real-desktop large EPUB test. No new manual ceremony.
+
+
+## Director correction continuation — attempt A6: Windows QA must actually use Windows TTS
+
+### Triggering real-desktop evidence
+
+A5.1 real-desktop verification produced two distinct results:
+
+1. **Native reader responsiveness passed.** The same large EPUB that previously had multi-second hover latency is now described by the human as “waaaaay less lag” and “pretty snappy.”
+2. **Windows TTS signoff failed because Windows TTS was never selected by the QA configuration.**
+
+The runtime log is explicit:
+
+```text
+Starting TTS runtime playback job ...
+Initializing TTS engine backend=Piper
+model=/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx
+...
+tts-worker error: Piper config not found at
+/home/admin/Music/models/piper/en-US/female/en_US-amy-medium.onnx.json
+...
+Failed to prepare TTS audio batch: Worker process closed its stdout
+Prepared TTS batch was empty
+```
+
+This is not a synthesis-layer Windows failure. The Windows backend was bypassed.
+
+### Director localization
+
+The configuration path deterministically explains the failure:
+
+- `conf/config.toml` omits `tts_backend`;
+- `TtsBackend::default()` is `Piper`;
+- `TtsConfig::default()` is `Piper`;
+- `AppConfig::default()` is `Piper`;
+- `qa.ps1` copies `conf/config.toml` into `.qa/windows/conf/config.toml` only when that destination does not already exist;
+- therefore the Windows QA environment defaults to Piper and preserves that choice across runs;
+- the same config also carries a Linux-specific Piper model/eSpeak path, so the resulting failure is guaranteed on a clean Windows QA machine unless the human manually changes the backend.
+
+This violates the explicit QA contract that Windows TTS is the critical audio path.
+
+### A6-A — platform-aware backend default
+
+Make omitted-backend configuration platform-correct:
+
+- on Windows, an omitted `tts_backend` must resolve to `Windows`;
+- on non-Windows platforms, omitted `tts_backend` may continue to resolve to `Piper`;
+- an explicit `tts_backend = "piper"` on Windows must still be respected;
+- an explicit `tts_backend = "windows"` on non-Windows must continue to fail explicitly rather than silently substituting another backend.
+
+Prefer a single `default_tts_backend()` function used consistently by serde defaults, `AppConfig::default`, and table defaults rather than divergent hard-coded defaults.
+
+Add deterministic cfg-aware tests for omitted and explicit backend behavior.
+
+### A6-B — Windows QA must force/verify the intended backend every run
+
+`qa.ps1` must not rely on stale `.qa/windows/conf/config.toml` contents to decide the critical audio path.
+
+Requirements:
+
+- repo-native Windows QA must guarantee the effective backend is Windows on every QA run unless an explicit QA override flag is intentionally supplied;
+- this must work even when `.qa/windows` already exists from earlier runs;
+- do not require the human to manually edit TOML or click a backend selector before the signoff test;
+- prefer a repo-owned Windows-QA config overlay or a small structured config preparation step rather than fragile text substitution;
+- print the effective QA TTS backend before launching LanternLeaf;
+- where possible resolve/log the effective Windows voice ID used for QA.
+
+`.\qa.ps1` remains the only normal human command.
+
+### A6-C — remove machine-specific backend assumptions from portable defaults
+
+Do not bake a particular developer machine into portable config defaults.
+
+At minimum review:
+
+- the Windows default Piper model path that currently names a specific user profile;
+- the repository `conf/config.toml` Linux-specific Piper path.
+
+The correction does not need to provision Piper models on Windows. Piper may remain opt-in and may require a configured model. But a default/QA Windows TTS run must not depend on a developer-specific Piper path.
+
+Preserve explicit user-supplied Piper paths.
+
+### A6-D — TTS failure must be visibly actionable
+
+The current log correctly emits `CommandFailed { scope=reader_tts, code=tts_runtime_failed }`, but the human experienced only silence.
+
+Verify the native egui shell surfaces a persistent/clear visible TTS error when synthesis startup fails.
+
+For backend/config failure, the UI message should include enough context to distinguish at least:
+
+- selected backend;
+- missing Piper model/config;
+- unavailable/missing Windows voice;
+- audio output failure.
+
+Do not dump stack traces or giant logs into the UI.
+
+Add a deterministic egui/app regression that injects a TTS runtime failure and proves a visible error notification/state is produced.
+
+### A6-E — Windows TTS signoff regression
+
+Add/extend Windows CI coverage so the same repo-native QA configuration path used by the human proves the effective backend is Windows.
+
+Required automated evidence:
+
+1. prepare Windows QA state through the repo-native script;
+2. load the staged QA config through the real config parser;
+3. assert effective `tts_backend == Windows`;
+4. resolve an installed Windows voice;
+5. synthesize a deterministic sentence to WAV;
+6. decode the WAV through the shared Rodio path as existing probes do.
+
+Do not claim physical speaker output from CI.
+
+### A6-F — diagnostics cleanup
+
+The real log is flooded by html5ever DEBUG lines, making the useful TTS failure harder to see.
+
+Without reducing useful project diagnostics:
+
+- suppress dependency-internal html5ever tree-builder debug spam at the normal QA debug level, or otherwise configure dependency filters so LanternLeaf debug logs remain useful;
+- ensure `qa.ps1` handoff error extraction includes `tts`, `piper`, `voice`, `audio`, and `synth` terms.
+
+### A6 acceptance gates
+
+1. Omitted TTS backend resolves to Windows on Windows and Piper elsewhere.
+2. Explicit Piper on Windows remains supported.
+3. `qa.ps1` deterministically stages/verifies Windows backend on every normal Windows QA run, including pre-existing QA state.
+4. No manual backend-selection ritual is required for the human signoff.
+5. Windows QA config no longer depends on a Linux-only or developer-profile Piper path for its default critical audio path.
+6. Backend/config TTS failures surface a visible actionable native UI error.
+7. Windows CI proves staged QA config -> Windows backend -> installed voice -> WAV synthesis -> shared decode.
+8. A3/A4/A5/A5.1 EPUB, lazy-normalization, bounded-render, canonical-session, and snapshot-free regressions remain green.
+9. Normal workspace check/build/test and Windows TTS probes pass.
+10. No PDF work, no Caliberate-specific TTS state machine, and no manual payload/dependency ceremony.
+
+### Human QA
+
+**No human QA during A6 implementation.**
+
+After director acceptance:
+
+```powershell
+git pull --ff-only
+.\qa.ps1
+```
+
+Then:
+
+1. open the same large Caliberate/Recent EPUB;
+2. press Play without manually selecting a backend;
+3. confirm actual Windows speech is audible;
+4. verify next/previous/pause/resume/stop.
+
+If audio still fails, the visible error plus focused handoff diagnostics become the next evidence.

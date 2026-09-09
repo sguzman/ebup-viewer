@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-08 after real-desktop Goal 0008 A6 Windows-TTS configuration diagnosis
+Updated: 2026-09-09 after Goal 0008 A6 Windows-TTS QA correction acceptance/integration
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**GOAL 0008 A6 REOPENED — READER RESPONSIVENESS PASSED, WINDOWS QA WAS RUNNING PIPER**
+**A6 ACCEPTED — ONLY REAL-DESKTOP WINDOWS SPEAKER/CONTROL SIGNOFF REMAINS**
 
 Accepted integration:
 
@@ -173,3 +173,7 @@ A5.1 is now integrated. Production normal reader effects, TTS runtime, and persi
 ### A6 real-desktop diagnosis
 
 A5/A5.1 native performance corrections are now positively observed on the human machine: the previously unusable large EPUB is described as substantially less laggy and “pretty snappy.” TTS Play no longer stack-overflows, but signoff still fails because the repo-native Windows QA configuration resolves an omitted backend to Piper. The runtime attempted the repository's Linux Piper model path and failed before producing audio. A6 corrects the platform default/QA staging contract so normal Windows QA actually exercises Windows TTS without manual backend selection.
+
+### A6 accepted correction
+
+A6 is integrated. Omitted TTS backend is platform-aware, normal Windows `qa.ps1` deterministically overrides staged QA state to Windows TTS on every run, portable defaults no longer contain developer/Linux Piper paths, TTS startup failures become visible actionable native notifications, and focused QA handoff diagnostics include TTS/audio terms. Windows CI run `34304570627` passed staged QA config -> Windows backend -> installed voice -> WAV synthesis -> Rodio decode plus normal workspace validation. The large native EPUB responsiveness portion already passed on the human machine; only actual speaker playback and interactive TTS controls remain.

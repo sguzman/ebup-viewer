@@ -27,7 +27,7 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - click-to-play;
 - bookmarks/config/search/navigation.
 
-## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A6 WINDOWS TTS QA CORRECTION
+## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A6 ACCEPTED, FINAL WINDOWS SPEAKER SIGNOFF
 
 - use Caliberate's versioned HTTP/JSON API rather than direct database coupling;
 - default local provider target `http://127.0.0.1:8181`;
@@ -101,3 +101,10 @@ A6 correction priority:
 - make normal `qa.ps1` deterministically stage/verify Windows TTS even with pre-existing QA state;
 - surface backend/config synthesis failures visibly;
 - prove staged Windows QA config through Windows voice synthesis + WAV decode before another human run.
+
+A6 accepted:
+- normal Windows QA now deterministically selects Windows TTS despite stale staged config;
+- platform-aware omitted-backend defaults and portable Piper defaults are integrated;
+- staged Windows QA synthesis/decode coverage and actionable native TTS errors are green;
+- large-EPUB native responsiveness is already positively observed;
+- final requirement: one real-desktop `.\qa.ps1` run with audible Windows speech plus next/previous/pause/resume/stop.

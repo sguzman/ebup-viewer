@@ -10,7 +10,7 @@ use lanternleaf_core::text_utils;
 use tracing::trace;
 
 use crate::app::ui::format::format_duration_secs;
-use crate::app::{AnchorFallback, LanternLeafApp};
+use crate::app::{AnchorFallback, LanternLeafApp, PrettySentenceTarget};
 use crate::pretty::{
     PrettyBlock, PrettyBlockKind, PrettyPageCacheKey, PrettySourceKind, PrettySpan, PrettyStyle,
     clamp_image_size, font_id_for, html_to_blocks, markdown_to_blocks,
@@ -87,29 +87,22 @@ impl LanternLeafApp {
         let render_started = std::time::Instant::now();
         self.refresh_pretty_cache(snapshot);
         let highlight_idx = effective_highlighted_sentence_idx;
-        let highlight_sentence = highlight_idx
-            .and_then(|idx| snapshot.sentences.get(idx))
-            .map(String::as_str);
-        let (highlight_anchor, highlight_fallback) = match highlight_idx {
-            Some(idx) => LanternLeafApp::resolve_sentence_anchor(snapshot, idx),
-            None => (None, AnchorFallback::Missing),
-        };
-        // The sentence_anchor_map for HTML pretty rendering is a proportional heuristic. To avoid
-        // highlighting "random" blocks when the heuristic is off, prefer a direct text match when
-        // we have the highlighted sentence available.
-        let highlight_block_idx_by_text = if snapshot.pretty_kind == PrettyKind::Html {
-            highlight_sentence.and_then(|sentence| {
-                self.pretty_sentence_block_index
-                    .get(&normalize_for_match(sentence))
-                    .copied()
-            })
-        } else {
-            None
-        };
+        let canonical_highlight_idx =
+            highlight_idx.map(|idx| canonical_display_index(snapshot, idx));
+        let highlight_target = canonical_highlight_idx
+            .and_then(|idx| self.pretty_sentence_targets.get(idx))
+            .cloned()
+            .flatten();
+        let highlight_block_idx = highlight_target.as_ref().map(|target| target.block_index);
+        let follow_requested = canonical_highlight_idx.is_some_and(|idx| {
+            self.auto_scroll_state
+                .pending_for(&snapshot.source_path, idx)
+        });
         trace!(
-            highlight_block_idx_by_text,
-            highlight_anchor,
-            highlight_fallback = ?highlight_fallback,
+            canonical_display_idx = ?canonical_highlight_idx,
+            highlight_block_idx,
+            mapping = ?highlight_target,
+            follow_requested,
             "Resolved pretty highlight target"
         );
         trace!(
@@ -121,7 +114,6 @@ impl LanternLeafApp {
             "render_pretty_page configuration"
         );
         let highlight_color = self.resolve_highlight_color(snapshot);
-        let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
         trace!(
             renderer = "pure_egui",
             "Rendering pretty view via pretty blocks"
@@ -171,28 +163,32 @@ impl LanternLeafApp {
                             };
 
                             let total_blocks = self.pretty_page_cache_blocks.len();
-                            let estimated_block_height =
-                                (base_px * 1.8 + pretty_cfg.paragraph_spacing.max(0.0) + 12.0)
-                                    .max(28.0);
                             let overscan = 8usize;
+                            let estimates = self.pretty_block_heights_for(base_px, pretty_cfg);
+                            let prefix = prefix_sums(&estimates);
+                            let total_height = prefix.last().copied().unwrap_or(0.0);
                             let render_window = pretty_render_window(
                                 total_blocks,
                                 viewport.min.y,
                                 viewport.max.y,
-                                estimated_block_height,
+                                &prefix,
                                 overscan,
-                                auto_scroll_requested
-                                    .then_some(highlight_block_idx_by_text)
-                                    .flatten(),
+                                follow_requested.then_some(highlight_block_idx).flatten(),
                             );
                             let render_start = render_window.start;
                             let render_end = render_window.end;
-                            ui.set_min_height(total_blocks as f32 * estimated_block_height);
-                            ui.add_space(render_start as f32 * estimated_block_height);
+                            ui.set_min_height(total_height);
+                            ui.add_space(prefix.get(render_start).copied().unwrap_or(0.0));
+                            let mut measured_heights = estimates.clone();
                             trace!(
                                 total_blocks,
                                 active_blocks = render_end.saturating_sub(render_start),
                                 overscan,
+                                canonical_display_idx = ?canonical_highlight_idx,
+                                target_block = ?highlight_block_idx,
+                                target_in_window = highlight_block_idx
+                                    .is_some_and(|idx| (render_start..render_end).contains(&idx)),
+                                follow_requested,
                                 "Rendering bounded pretty block window"
                             );
 
@@ -215,18 +211,7 @@ impl LanternLeafApp {
                                 }
 
                                 let mut response = None;
-                                let highlight_matched =
-                                    if let Some(target_block) = highlight_block_idx_by_text {
-                                        target_block == block_i
-                                    } else {
-                                        match (highlight_anchor, highlight_sentence) {
-                                            (Some(anchor), _) => anchor == block.anchor_idx,
-                                            (None, Some(sentence)) => {
-                                                block_contains_sentence(block, sentence)
-                                            }
-                                            (None, None) => false,
-                                        }
-                                    };
+                                let highlight_matched = highlight_block_idx == Some(block_i);
                                 let block_highlight_bg = if highlight_matched {
                                     Some(highlight_color)
                                 } else {
@@ -264,19 +249,52 @@ impl LanternLeafApp {
                                             } else {
                                                 ui.visuals().text_color()
                                             };
-                                        let job = spans_to_job_with_base(
-                                            ui,
-                                            &block.spans,
-                                            base_px,
-                                            text_color,
-                                            block_highlight_bg,
-                                            regular_family.clone(),
-                                            bold_family.clone(),
-                                            mono_regular.clone(),
-                                            mono_bold.clone(),
-                                            pretty_cfg,
-                                            snapshot.settings.line_spacing,
-                                        );
+                                        let job = if highlight_matched {
+                                            if let Some(target) = highlight_target.as_ref() {
+                                                spans_to_job_with_sentence_target(
+                                                    ui,
+                                                    &block.spans,
+                                                    base_px,
+                                                    text_color,
+                                                    target,
+                                                    highlight_color,
+                                                    regular_family.clone(),
+                                                    bold_family.clone(),
+                                                    mono_regular.clone(),
+                                                    mono_bold.clone(),
+                                                    pretty_cfg,
+                                                    snapshot.settings.line_spacing,
+                                                )
+                                            } else {
+                                                spans_to_job_with_base(
+                                                    ui,
+                                                    &block.spans,
+                                                    base_px,
+                                                    text_color,
+                                                    block_highlight_bg,
+                                                    regular_family.clone(),
+                                                    bold_family.clone(),
+                                                    mono_regular.clone(),
+                                                    mono_bold.clone(),
+                                                    pretty_cfg,
+                                                    snapshot.settings.line_spacing,
+                                                )
+                                            }
+                                        } else {
+                                            spans_to_job_with_base(
+                                                ui,
+                                                &block.spans,
+                                                base_px,
+                                                text_color,
+                                                block_highlight_bg,
+                                                regular_family.clone(),
+                                                bold_family.clone(),
+                                                mono_regular.clone(),
+                                                mono_bold.clone(),
+                                                pretty_cfg,
+                                                snapshot.settings.line_spacing,
+                                            )
+                                        };
                                         if matches!(block.kind, PrettyBlockKind::BlockQuote) {
                                             let border_color = ui.visuals().widgets.active.bg_fill;
                                             let bg_fill =
@@ -489,18 +507,35 @@ impl LanternLeafApp {
                                     }
                                 }
 
-                                if auto_scroll_requested
+                                if follow_requested
                                     && highlight_matched
-                                    && highlight_idx.is_some()
+                                    && canonical_highlight_idx.is_some()
                                 {
                                     if let Some(response) = response.as_ref() {
-                                        let idx = highlight_idx.unwrap_or_default();
+                                        let idx = canonical_highlight_idx.unwrap_or_default();
                                         let decision = self
                                             .auto_scroll_state
-                                            .decide_scroll(idx, highlight_fallback);
+                                            .decide_scroll(idx, AnchorFallback::Exact);
                                         if matches!(decision, crate::app::ScrollDecision::Scroll) {
-                                            response.scroll_to_me(Some(Align::Center));
-                                            self.auto_scroll_state.record(idx, highlight_fallback);
+                                            let align = if snapshot.settings.center_spoken_sentence
+                                            {
+                                                Align::Center
+                                            } else {
+                                                Align::Min
+                                            };
+                                            response.scroll_to_me(Some(align));
+                                            self.auto_scroll_state.record(
+                                                &snapshot.source_path,
+                                                idx,
+                                                AnchorFallback::Exact,
+                                            );
+                                            trace!(
+                                                source_path = %snapshot.source_path,
+                                                canonical_display_idx = idx,
+                                                target_block = block_i,
+                                                follow_state = "scrolled",
+                                                "Committed canonical pretty follow scroll"
+                                            );
                                         }
                                     }
                                 }
@@ -514,12 +549,17 @@ impl LanternLeafApp {
                                     }
                                     _ => pretty_cfg.block_spacing,
                                 };
+                                if let Some(response) = response.as_ref() {
+                                    measured_heights[block_i] =
+                                        (response.rect.height() + spacing.max(0.0)).max(1.0);
+                                }
                                 ui.add_space(spacing.max(0.0));
                             }
                             ui.add_space(
-                                total_blocks.saturating_sub(render_end) as f32
-                                    * estimated_block_height,
+                                total_height
+                                    - prefix.get(render_end).copied().unwrap_or(total_height),
                             );
+                            self.pretty_block_heights = measured_heights;
                         });
                     });
                 });
@@ -591,8 +631,12 @@ impl LanternLeafApp {
                 ui.label("No sentence data available.");
                 return;
             }
-            let auto_scroll_requested = self.auto_scroll_state.consume_auto_scroll();
             let target_idx = effective_highlighted_sentence_idx;
+            let target_canonical_idx = target_idx.map(|idx| canonical_display_index(snapshot, idx));
+            let auto_scroll_requested = target_canonical_idx.is_some_and(|idx| {
+                self.auto_scroll_state
+                    .pending_for(&snapshot.source_path, idx)
+            });
             ScrollArea::vertical()
                 .id_source("sentence_list")
                 .max_height(240.0)
@@ -608,17 +652,30 @@ impl LanternLeafApp {
                             self.execute_reader_command(ReaderCommand::Session(
                                 SessionCommand::TtsPlayFromHighlight,
                             ));
-                            self.auto_scroll_state.request_jump();
+                            self.auto_scroll_state.request_cursor(
+                                snapshot.source_path.clone(),
+                                canonical_display_index(snapshot, idx),
+                            );
                         }
                         if auto_scroll_requested && target_idx == Some(idx) {
                             let (_anchor, fallback) =
                                 LanternLeafApp::resolve_sentence_anchor(snapshot, idx);
                             if matches!(
-                                self.auto_scroll_state.decide_scroll(idx, fallback),
+                                self.auto_scroll_state
+                                    .decide_scroll(target_canonical_idx.unwrap_or(idx), fallback,),
                                 crate::app::ScrollDecision::Scroll
                             ) {
-                                response.scroll_to_me(Some(Align::Center));
-                                self.auto_scroll_state.record(idx, fallback);
+                                let align = if snapshot.settings.center_spoken_sentence {
+                                    Align::Center
+                                } else {
+                                    Align::Min
+                                };
+                                response.scroll_to_me(Some(align));
+                                self.auto_scroll_state.record(
+                                    &snapshot.source_path,
+                                    target_canonical_idx.unwrap_or(idx),
+                                    fallback,
+                                );
                             }
                         }
                     }
@@ -688,16 +745,28 @@ impl LanternLeafApp {
             return;
         }
         self.pretty_page_cache_blocks = self.build_pretty_blocks(snapshot);
-        self.pretty_sentence_block_index.clear();
-        for (block_idx, block) in self.pretty_page_cache_blocks.iter().enumerate() {
-            let text = block_text(block);
-            for sentence in text_utils::split_sentences(&text) {
-                self.pretty_sentence_block_index
-                    .entry(normalize_for_match(&sentence))
-                    .or_insert(block_idx);
-            }
-        }
+        self.pretty_sentence_targets =
+            aligned_targets_for_snapshot(snapshot, &self.pretty_page_cache_blocks);
+        self.pretty_block_heights.clear();
         self.pretty_page_cache_key = Some(key);
+    }
+
+    fn pretty_block_heights_for(
+        &self,
+        base_px: f32,
+        pretty_cfg: lanternleaf_core::config::PrettyUiConfig,
+    ) -> Vec<f32> {
+        self.pretty_page_cache_blocks
+            .iter()
+            .enumerate()
+            .map(|(idx, block)| {
+                self.pretty_block_heights
+                    .get(idx)
+                    .copied()
+                    .filter(|height| *height > 0.0)
+                    .unwrap_or_else(|| estimated_block_height(block, base_px, pretty_cfg))
+            })
+            .collect()
     }
 
     fn build_pretty_blocks(&self, snapshot: &ReaderSnapshot) -> Vec<PrettyBlock> {
@@ -1038,7 +1107,7 @@ fn pretty_render_window(
     total_blocks: usize,
     viewport_min_y: f32,
     viewport_max_y: f32,
-    estimated_block_height: f32,
+    prefix: &[f32],
     overscan: usize,
     target_block: Option<usize>,
 ) -> std::ops::Range<usize> {
@@ -1049,11 +1118,149 @@ fn pretty_render_window(
         let start = target.saturating_sub(overscan);
         return start..(target + overscan + 1).min(total_blocks);
     }
-    let visible_start = (viewport_min_y / estimated_block_height).floor().max(0.0) as usize;
-    let visible_end = (viewport_max_y / estimated_block_height)
-        .ceil()
-        .max(visible_start as f32) as usize;
+    let visible_start = prefix
+        .partition_point(|offset| *offset <= viewport_min_y)
+        .saturating_sub(1)
+        .min(total_blocks);
+    let visible_end = prefix
+        .partition_point(|offset| *offset < viewport_max_y)
+        .min(total_blocks);
     visible_start.saturating_sub(overscan)..(visible_end + overscan).min(total_blocks)
+}
+
+fn estimated_block_height(
+    block: &PrettyBlock,
+    base_px: f32,
+    pretty_cfg: lanternleaf_core::config::PrettyUiConfig,
+) -> f32 {
+    let content = match block.kind {
+        PrettyBlockKind::Heading { level } => {
+            base_px * heading_size(base_px, level, pretty_cfg) / base_px.max(1.0) * 1.8
+        }
+        PrettyBlockKind::CodeBlock => base_px * pretty_cfg.code_font_scale * 3.0,
+        PrettyBlockKind::Image => pretty_cfg.image_max_height_px.min(320.0),
+        PrettyBlockKind::Table => base_px * 4.0,
+        PrettyBlockKind::ListItem { .. } => base_px * 2.1,
+        PrettyBlockKind::BlockQuote => base_px * 2.6,
+        PrettyBlockKind::Paragraph => base_px * 1.8,
+        PrettyBlockKind::HorizontalRule => pretty_cfg.hr_margin * 2.0 + pretty_cfg.hr_thickness,
+    };
+    (content + pretty_cfg.paragraph_spacing.max(0.0) + 12.0).max(28.0)
+}
+
+fn prefix_sums(heights: &[f32]) -> Vec<f32> {
+    let mut prefix = Vec::with_capacity(heights.len() + 1);
+    prefix.push(0.0);
+    for height in heights {
+        prefix.push(prefix.last().copied().unwrap_or(0.0) + height.max(1.0));
+    }
+    prefix
+}
+
+fn canonical_display_index(snapshot: &ReaderSnapshot, local_idx: usize) -> usize {
+    snapshot
+        .page_sentence_counts
+        .iter()
+        .take(snapshot.current_page)
+        .sum::<usize>()
+        .saturating_add(local_idx)
+}
+
+fn aligned_targets_for_snapshot(
+    snapshot: &ReaderSnapshot,
+    blocks: &[PrettyBlock],
+) -> Vec<Option<PrettySentenceTarget>> {
+    if snapshot.pretty_kind == PrettyKind::Html {
+        return align_canonical_sentences(&snapshot.canonical_sentences, blocks);
+    }
+    let local = align_canonical_sentences(&snapshot.sentences, blocks);
+    let total = snapshot
+        .canonical_sentences
+        .len()
+        .max(snapshot.page_sentence_counts.iter().sum::<usize>());
+    let page_base = snapshot
+        .page_sentence_counts
+        .iter()
+        .take(snapshot.current_page)
+        .sum::<usize>();
+    let mut targets = vec![None; total];
+    for (local_idx, target) in local.into_iter().enumerate() {
+        if let Some(slot) = targets.get_mut(page_base + local_idx) {
+            *slot = target;
+        }
+    }
+    targets
+}
+
+fn align_canonical_sentences(
+    canonical: &[String],
+    blocks: &[PrettyBlock],
+) -> Vec<Option<PrettySentenceTarget>> {
+    let pretty: Vec<(usize, usize, String, Option<usize>, Option<usize>)> = blocks
+        .iter()
+        .enumerate()
+        .flat_map(|(block_index, block)| {
+            let text = block_text(block);
+            sentence_ranges(&text).into_iter().enumerate().map(
+                move |(local_sentence_index, (sentence, start, end))| {
+                    (
+                        block_index,
+                        local_sentence_index,
+                        normalize_for_match(&sentence),
+                        start,
+                        end,
+                    )
+                },
+            )
+        })
+        .collect();
+    let mut targets = vec![None; canonical.len()];
+    let mut pretty_cursor = 0usize;
+    for (canonical_idx, sentence) in canonical.iter().enumerate() {
+        let normalized = normalize_for_match(sentence);
+        if normalized.is_empty() {
+            continue;
+        }
+        let lookahead_end = (pretty_cursor + 12).min(pretty.len());
+        let Some(found) = pretty[pretty_cursor..lookahead_end]
+            .iter()
+            .position(|(_, _, candidate, _, _)| *candidate == normalized)
+            .map(|offset| pretty_cursor + offset)
+        else {
+            continue;
+        };
+        let (block_index, local_sentence_index, _, text_start, text_end) = &pretty[found];
+        targets[canonical_idx] = Some(PrettySentenceTarget {
+            block_index: *block_index,
+            local_sentence_index: *local_sentence_index,
+            text_start: *text_start,
+            text_end: *text_end,
+            source: if found == pretty_cursor {
+                "exact-sequential"
+            } else {
+                "exact-lookahead"
+            },
+        });
+        pretty_cursor = found + 1;
+    }
+    targets
+}
+
+fn sentence_ranges(text: &str) -> Vec<(String, Option<usize>, Option<usize>)> {
+    let sentences = text_utils::split_sentences(text);
+    let mut cursor = 0usize;
+    sentences
+        .into_iter()
+        .map(|sentence| {
+            let trimmed = sentence.trim();
+            let start = text[cursor..].find(trimmed).map(|offset| cursor + offset);
+            let end = start.map(|value| value + trimmed.len());
+            if let Some(end) = end {
+                cursor = end;
+            }
+            (sentence, start, end)
+        })
+        .collect()
 }
 
 fn match_sentence_index(sentences: &[String], target_sentence: &str) -> Option<usize> {
@@ -1166,6 +1373,135 @@ fn spans_to_job_with_base(
     job
 }
 
+fn spans_to_job_with_sentence_target(
+    ui: &Ui,
+    spans: &[PrettySpan],
+    base_px: f32,
+    base_color: Color32,
+    target: &PrettySentenceTarget,
+    highlight: Color32,
+    regular_family: FontFamily,
+    bold_family: FontFamily,
+    mono_regular: FontFamily,
+    mono_bold: FontFamily,
+    pretty_cfg: lanternleaf_core::config::PrettyUiConfig,
+    line_spacing_scale: f32,
+) -> LayoutJob {
+    let Some(start) = target.text_start else {
+        return spans_to_job_with_base(
+            ui,
+            spans,
+            base_px,
+            base_color,
+            Some(highlight),
+            regular_family,
+            bold_family,
+            mono_regular,
+            mono_bold,
+            pretty_cfg,
+            line_spacing_scale,
+        );
+    };
+    let end = target.text_end.unwrap_or(start);
+    let mut job = LayoutJob::default();
+    let mut offset = 0usize;
+    for span in spans {
+        let span_start = offset;
+        let span_end = offset + span.text.len();
+        let mut cuts = vec![0usize, span.text.len()];
+        for cut in [start, end] {
+            if cut > span_start && cut < span_end {
+                cuts.push(cut - span_start);
+            }
+        }
+        cuts.sort_unstable();
+        cuts.dedup();
+        for pair in cuts.windows(2) {
+            let segment = &span.text[pair[0]..pair[1]];
+            if segment.is_empty() {
+                continue;
+            }
+            let segment_start = span_start + pair[0];
+            let background =
+                (segment_start < end && segment_start + segment.len() > start).then_some(highlight);
+            let segment_span = PrettySpan {
+                text: segment.to_string(),
+                style: span.style,
+            };
+            append_span_to_job(
+                ui,
+                &mut job,
+                &segment_span,
+                base_px,
+                base_color,
+                background,
+                regular_family.clone(),
+                bold_family.clone(),
+                mono_regular.clone(),
+                mono_bold.clone(),
+                pretty_cfg,
+                line_spacing_scale,
+            );
+        }
+        offset = span_end;
+    }
+    job
+}
+
+fn append_span_to_job(
+    ui: &Ui,
+    job: &mut LayoutJob,
+    span: &PrettySpan,
+    base_px: f32,
+    base_color: Color32,
+    background: Option<Color32>,
+    regular_family: FontFamily,
+    bold_family: FontFamily,
+    mono_regular: FontFamily,
+    mono_bold: FontFamily,
+    pretty_cfg: lanternleaf_core::config::PrettyUiConfig,
+    line_spacing_scale: f32,
+) {
+    let style = span.style;
+    let font_id = font_id_for(
+        base_px,
+        style,
+        regular_family,
+        bold_family,
+        mono_regular,
+        mono_bold,
+    );
+    let color = style.color.unwrap_or(base_color);
+    let mut format = TextFormat {
+        font_id,
+        color,
+        italics: style.italics,
+        ..Default::default()
+    };
+    if let Some(bg) = background {
+        format.background = bg;
+    } else if style.code {
+        format.background = ui
+            .visuals()
+            .extreme_bg_color
+            .linear_multiply(pretty_cfg.code_bg_alpha.clamp(0.0, 1.0));
+    }
+    if style.underline {
+        format.underline = Stroke::new(1.0, color);
+    }
+    if style.strikethrough {
+        format.strikethrough = Stroke::new(1.0, color);
+    }
+    if style.sup {
+        format.valign = Align::TOP;
+    }
+    if style.sub {
+        format.valign = Align::BOTTOM;
+    }
+    format.line_height = Some(base_px * line_spacing_scale);
+    job.append(&span.text, 0.0, format);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1181,13 +1517,105 @@ mod tests {
 
     #[test]
     fn large_pretty_document_uses_a_bounded_active_window() {
-        let window = pretty_render_window(1_644, 12_000.0, 12_600.0, 32.0, 8, None);
+        let heights = vec![32.0; 1_644];
+        let prefix = prefix_sums(&heights);
+        let window = pretty_render_window(1_644, 12_000.0, 12_600.0, &prefix, 8, None);
         assert!(window.len() <= 40);
         assert!(window.start > 0);
 
-        let jumped = pretty_render_window(1_644, 0.0, 640.0, 32.0, 8, Some(1_500));
+        let jumped = pretty_render_window(1_644, 0.0, 640.0, &prefix, 8, Some(1_500));
         assert!(jumped.contains(&1_500));
         assert!(jumped.len() <= 17);
+    }
+
+    fn test_paragraph(block_index: usize, text: String) -> PrettyBlock {
+        PrettyBlock {
+            kind: PrettyBlockKind::Paragraph,
+            spans: vec![PrettySpan {
+                text,
+                style: PrettyStyle::default(),
+            }],
+            code: None,
+            image: None,
+            table: None,
+            anchor_idx: block_index,
+            source_kind: PrettySourceKind::Html,
+        }
+    }
+
+    #[test]
+    fn canonical_alignment_preserves_duplicate_occurrence_identity_at_scale() {
+        let mut blocks = Vec::with_capacity(1_500);
+        let mut canonical = Vec::with_capacity(10_500);
+        for block_index in 0..1_500 {
+            let mut sentences = Vec::with_capacity(7);
+            for local_index in 0..7 {
+                let sentence = if local_index == 0 && (block_index == 10 || block_index == 1_200) {
+                    "Repeated chapter sentence.".to_string()
+                } else {
+                    format!("Block {block_index} sentence {local_index}.")
+                };
+                canonical.push(sentence.clone());
+                sentences.push(sentence);
+            }
+            blocks.push(test_paragraph(block_index, sentences.join(" ")));
+        }
+
+        let targets = align_canonical_sentences(&canonical, &blocks);
+        assert_eq!(targets.len(), 10_500);
+        let first_duplicate = 10 * 7;
+        let second_duplicate = 1_200 * 7;
+        assert_eq!(targets[first_duplicate].as_ref().unwrap().block_index, 10);
+        assert_eq!(
+            targets[second_duplicate].as_ref().unwrap().block_index,
+            1_200
+        );
+        assert!(targets.windows(2).all(|pair| {
+            pair[0]
+                .as_ref()
+                .zip(pair[1].as_ref())
+                .is_none_or(|(left, right)| left.block_index <= right.block_index)
+        }));
+    }
+
+    #[test]
+    fn canonical_alignment_is_monotonic_and_leaves_unmapped_sentences_unmapped() {
+        let blocks = vec![
+            test_paragraph(0, "First   sentence. Entity & value.".to_string()),
+            test_paragraph(1, "Second sentence. Repeated sentence.".to_string()),
+            test_paragraph(2, "Far repeated sentence.".to_string()),
+        ];
+        let canonical = vec![
+            "First sentence.".to_string(),
+            "Entity & value.".to_string(),
+            "Deliberately missing sentence.".to_string(),
+            "Second sentence.".to_string(),
+            "Repeated sentence.".to_string(),
+            "Far repeated sentence.".to_string(),
+        ];
+        let targets = align_canonical_sentences(&canonical, &blocks);
+        assert_eq!(targets[0].as_ref().unwrap().block_index, 0);
+        assert_eq!(targets[1].as_ref().unwrap().block_index, 0);
+        assert!(targets[2].is_none());
+        assert_eq!(targets[3].as_ref().unwrap().block_index, 1);
+        assert_eq!(targets[5].as_ref().unwrap().block_index, 2);
+        assert!(
+            targets[2].is_none(),
+            "unmapped canonical identity must not use an anchor fallback"
+        );
+    }
+
+    #[test]
+    fn variable_height_prefix_keeps_target_window_bounded() {
+        let heights = vec![28.0, 240.0, 42.0, 640.0, 36.0];
+        let prefix = prefix_sums(&heights);
+        let window = pretty_render_window(heights.len(), 240.0, 500.0, &prefix, 1, None);
+        assert!(window.contains(&1));
+        assert!(window.len() <= 5);
+        assert_eq!(
+            pretty_render_window(heights.len(), 0.0, 40.0, &prefix, 1, Some(3)),
+            2..5
+        );
     }
 }
 

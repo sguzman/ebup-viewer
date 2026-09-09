@@ -345,7 +345,8 @@ struct LanternLeafApp {
     current_pdf_path: Option<PathBuf>,
     pretty_page_cache_key: Option<PrettyPageCacheKey>,
     pretty_page_cache_blocks: Vec<PrettyBlock>,
-    pretty_sentence_block_index: HashMap<String, usize>,
+    pretty_sentence_targets: Vec<Option<PrettySentenceTarget>>,
+    pretty_block_heights: Vec<f32>,
     thumbnail_cache: ThumbnailCache,
     pretty_image_cache: PrettyImageCache,
     sentence_scroll_offset: Option<Vec2>,
@@ -802,7 +803,8 @@ impl LanternLeafApp {
             current_pdf_path: None,
             pretty_page_cache_key: None,
             pretty_page_cache_blocks: Vec::new(),
-            pretty_sentence_block_index: HashMap::new(),
+            pretty_sentence_targets: Vec::new(),
+            pretty_block_heights: Vec::new(),
             thumbnail_cache: ThumbnailCache::new(),
             pretty_image_cache: PrettyImageCache::new(),
             sentence_scroll_offset: None,
@@ -913,7 +915,8 @@ impl LanternLeafApp {
             current_pdf_path: None,
             pretty_page_cache_key: None,
             pretty_page_cache_blocks: Vec::new(),
-            pretty_sentence_block_index: HashMap::new(),
+            pretty_sentence_targets: Vec::new(),
+            pretty_block_heights: Vec::new(),
             thumbnail_cache: ThumbnailCache::new(),
             pretty_image_cache: PrettyImageCache::new(),
             sentence_scroll_offset: None,
@@ -3052,7 +3055,7 @@ mod tests {
             state.decide_scroll(2, AnchorFallback::Exact),
             ScrollDecision::Scroll
         );
-        state.record(2, AnchorFallback::Exact);
+        state.record("book", 2, AnchorFallback::Exact);
         assert_eq!(
             state.decide_scroll(2, AnchorFallback::Exact),
             ScrollDecision::Blocked(ScrollBlockReason::Duplicate)
@@ -3063,18 +3066,37 @@ mod tests {
     #[test]
     fn auto_scroll_treats_mapping_fallback_strength_as_a_new_decision() {
         let mut state = AutoScrollState::default();
-        state.record(2, AnchorFallback::Exact);
+        state.record("book", 2, AnchorFallback::Exact);
         state.last_jump_at = None;
         assert_eq!(
             state.decide_scroll(2, AnchorFallback::Nearest),
             ScrollDecision::Scroll
         );
-        state.record(2, AnchorFallback::Nearest);
+        state.record("book", 2, AnchorFallback::Nearest);
         state.last_jump_at = None;
         assert_eq!(
             state.decide_scroll(2, AnchorFallback::Nearest),
             ScrollDecision::Blocked(ScrollBlockReason::Duplicate)
         );
+    }
+
+    #[test]
+    fn auto_scroll_pending_target_survives_until_successful_commit() {
+        let mut state = AutoScrollState::default();
+        state.request_cursor("book", 1500);
+        assert!(state.pending_for("book", 1500));
+        assert!(state.pending_for("book", 1500));
+        state.record("book", 1500, AnchorFallback::Exact);
+        assert!(!state.pending_for("book", 1500));
+    }
+
+    #[test]
+    fn auto_scroll_newer_cursor_supersedes_unresolved_target() {
+        let mut state = AutoScrollState::default();
+        state.request_cursor("book", 10);
+        state.request_cursor("book", 11);
+        assert!(!state.pending_for("book", 10));
+        assert!(state.pending_for("book", 11));
     }
 }
 
@@ -4072,12 +4094,27 @@ impl PdfConfidenceTier {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PrettySentenceTarget {
+    pub(crate) block_index: usize,
+    pub(crate) local_sentence_index: usize,
+    pub(crate) text_start: Option<usize>,
+    pub(crate) text_end: Option<usize>,
+    pub(crate) source: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FollowTarget {
+    source_path: String,
+    canonical_sentence_idx: usize,
+}
+
 #[derive(Default)]
 struct AutoScrollState {
     last_highlighted: Option<(usize, AnchorFallback)>,
     last_jump_at: Option<Instant>,
     throttle_blocked: usize,
-    pending_auto_scroll: bool,
+    pending_target: Option<FollowTarget>,
 }
 
 impl AutoScrollState {
@@ -4098,23 +4135,31 @@ impl AutoScrollState {
         ScrollDecision::Scroll
     }
 
-    fn note_auto_scroll(&mut self) {
-        self.pending_auto_scroll = true;
+    fn request_cursor(&mut self, source_path: impl Into<String>, idx: usize) {
+        let target = FollowTarget {
+            source_path: source_path.into(),
+            canonical_sentence_idx: idx,
+        };
+        if self.pending_target.as_ref() != Some(&target) {
+            self.pending_target = Some(target);
+        }
     }
 
-    fn consume_auto_scroll(&mut self) -> bool {
-        let triggered = self.pending_auto_scroll;
-        self.pending_auto_scroll = false;
-        triggered
+    fn pending_for(&self, source_path: &str, idx: usize) -> bool {
+        self.pending_target.as_ref().is_some_and(|target| {
+            target.source_path == source_path && target.canonical_sentence_idx == idx
+        })
     }
 
-    fn record(&mut self, idx: usize, fallback: AnchorFallback) {
+    fn record(&mut self, source_path: &str, idx: usize, fallback: AnchorFallback) {
         self.last_highlighted = Some((idx, fallback));
         self.last_jump_at = Some(Instant::now());
+        if self.pending_for(source_path, idx) {
+            self.pending_target = None;
+        }
     }
 
     fn request_jump(&mut self) {
-        self.pending_auto_scroll = true;
         self.last_highlighted = None;
         self.last_jump_at = None;
         self.throttle_blocked = 0;
@@ -4124,7 +4169,7 @@ impl AutoScrollState {
         self.last_highlighted = None;
         self.last_jump_at = None;
         self.throttle_blocked = 0;
-        self.pending_auto_scroll = false;
+        self.pending_target = None;
     }
 
     fn throttle_blocked(&self) -> usize {

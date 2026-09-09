@@ -97,6 +97,45 @@ impl LanternLeafApp {
             }
 
             if let Some(playback) = event.playback.clone() {
+                let previous = self.runtime.state_snapshot();
+                let previous_page = previous
+                    .reader_playback
+                    .playback
+                    .as_ref()
+                    .map(|value| value.current_page);
+                let cursor_changed = previous_page != Some(playback.current_page)
+                    || previous.reader_playback.highlighted_sentence_idx
+                        != playback.highlighted_sentence_idx;
+                let auto_scroll_enabled = previous
+                    .reader_ui
+                    .settings
+                    .as_ref()
+                    .map(|settings| settings.auto_scroll_tts)
+                    .unwrap_or(true);
+                if cursor_changed && auto_scroll_enabled {
+                    if let Some(display_idx) = playback.highlighted_sentence_idx {
+                        let page_base = previous
+                            .reader_document
+                            .snapshot
+                            .as_ref()
+                            .map(|snapshot| {
+                                snapshot
+                                    .page_sentence_counts
+                                    .iter()
+                                    .take(playback.current_page)
+                                    .sum::<usize>()
+                            })
+                            .unwrap_or(0);
+                        let canonical_display_idx = page_base.saturating_add(display_idx);
+                        self.auto_scroll_state
+                            .request_cursor(playback.source_path.clone(), canonical_display_idx);
+                        trace!(
+                            source_path = %playback.source_path,
+                            canonical_display_idx,
+                            "Requested pretty follow for canonical display cursor transition"
+                        );
+                    }
+                }
                 trace!(
                     tts_request_id,
                     app_request_id,
@@ -123,9 +162,6 @@ impl LanternLeafApp {
                 });
             }
             if let Some(tts) = event.tts.clone() {
-                if tts.current_sentence_idx.is_some() {
-                    self.auto_scroll_state.note_auto_scroll();
-                }
                 self.runtime
                     .apply_event(AppEvent::TtsStateUpdated(TtsStateEvent {
                         request_id: app_request_id,

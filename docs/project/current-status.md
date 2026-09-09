@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**GOAL 0008 A7 REOPENED — WINDOWS SPEECH WORKS; PRETTY HIGHLIGHT/SCROLL SYNC IS BROKEN**
+**GOAL 0008 A7.1 — FIRST A7 ARCHITECTURE GOOD, INTEGRATION WITHHELD FOR FOLLOW-STATE CORRECTION**
 
 Accepted integration:
 
@@ -184,3 +184,8 @@ A6 is integrated. Omitted TTS backend is platform-aware, normal Windows `qa.ps1`
 A6's actual Windows-audio objective is now positively verified: repo-native QA selects Windows, physical speech is audible, and installed Windows voices can be changed successfully. Large-EPUB open/UI performance also remains fast/snappy.
 
 Goal 0008 is still blocked by presentation synchronization. Canonical TTS cursor progression is coherent, but the HTML pretty renderer maps canonical sentences through a text-keyed block index and falls back to proportional HTML anchors when that lookup misses; auto-scroll is also a one-shot request consumed before successful target rendering. This allows duplicate/mismatched sentences to jump to unrelated blocks and allows off-screen follow requests to disappear. A7 replaces this with ordered canonical-sentence -> pretty-target alignment, durable follow state, canonical-cursor-driven scrolling, and stable variable-height bounded virtualization.
+
+
+### A7.1 director review
+
+The first A7 implementation is not integrated. It correctly replaces text-keyed/proportional native-pretty targeting with ordered canonical sentence targets and adds bounded variable-height virtualization, but explicit Jump-to-highlight is currently inert because it clears bookkeeping without creating a pending target. The contract's required 100+ transition/Next/Prev/Pause/Resume/Repeat/unchanged-settings regression coverage is also absent, and committed duplicate suppression is not source-aware. A7.1 is a bounded correction preserving the first A7 architecture. No human QA yet.

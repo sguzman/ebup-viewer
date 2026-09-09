@@ -1493,3 +1493,176 @@ After director acceptance only:
 8. change Windows voice while staying on the same sentence and verify that the viewport does not jump merely because voice settings changed.
 
 If one sentence cannot be confidently mapped, the acceptable degraded behavior is to avoid a jump until a trustworthy target exists. Random movement is never an acceptable fallback.
+
+
+## Director correction continuation — attempt A7.1: close follow-state holes before human QA
+
+### Director review of first A7 implementation
+
+The first A7 worker implementation is **not accepted/integrated yet**.
+
+Worker terminal head:
+
+`f54c339930a6a3f08bf64d4412d9b34d783b8005`
+
+Authoritative implementation commit:
+
+`220082d0a2a946c476b1d09586cdaa65e22e3b64`
+
+Windows CI:
+
+`34400084920` — passed `native-workspace` and `hosted-renderer-probe`.
+
+The implementation contains substantial correct work that A7.1 must preserve:
+
+- canonical global display-sentence -> `Vec<Option<PrettySentenceTarget>>` mapping;
+- ordered duplicate occurrence identity;
+- no proportional HTML anchor fallback in native pretty TTS targeting;
+- sentence-range highlighting for representable paragraph/quote targets;
+- source + canonical-index pending follow target;
+- cursor-transition-driven TTS follow requests;
+- retained per-block measurements plus kind-specific virtual height estimates;
+- bounded target-aware render windows;
+- 10,500-sentence / 1,500-block alignment regression;
+- green Windows CI.
+
+However, director inspection found two acceptance-blocking holes and one state-identity weakness.
+
+### A7.1-A — explicit Jump-to-highlight is currently broken
+
+Current production flow still exposes the `Jump to highlight` button.
+
+The button calls:
+
+```rust
+self.auto_scroll_state.request_jump();
+```
+
+But A7 changed `request_jump()` so it only clears duplicate/throttle bookkeeping:
+
+```rust
+fn request_jump(&mut self) {
+    self.last_highlighted = None;
+    self.last_jump_at = None;
+    self.throttle_blocked = 0;
+}
+```
+
+It does **not** create a `FollowTarget`.
+
+The pretty renderer now follows only when:
+
+```rust
+pending_for(source_path, canonical_display_idx)
+```
+
+is true.
+
+Therefore the explicit Jump-to-highlight command has no pending target to consume and cannot force the current highlighted sentence into the target-aware render window. This directly violates A7-C/E.
+
+Required correction:
+
+- explicit Jump-to-highlight must create a source-aware pending target for the **currently authoritative canonical display sentence**;
+- it must work even when the same sentence was previously followed successfully and the human manually scrolled away;
+- explicit Jump-to-highlight should be a deliberate user override and therefore must reset duplicate/throttle state as needed for one immediate follow attempt;
+- it must not invent a target when no canonical highlight exists;
+- add a deterministic regression proving: follow sentence N -> commit -> manually-equivalent state remains at N -> explicit Jump-to-highlight re-arms N -> successful commit clears it.
+
+Do not restore a generic boolean pending flag.
+
+### A7.1-B — required transition-level regression coverage is missing
+
+The A7 contract explicitly required structural tests for:
+
+- 100+ sequential TTS display-cursor advances;
+- Next;
+- Prev;
+- Pause/Resume;
+- Repeat;
+- unchanged-cursor voice/settings event;
+- exactly which of those create/suppress new follow targets.
+
+The first A7 implementation adds strong static alignment tests and small `AutoScrollState` pending/supersession tests, but it does **not** exercise the actual `handle_tts_runtime_events` cursor-transition decision path over 100+ transitions, nor does it prove the unchanged-cursor control/settings cases.
+
+A7.1 must add deterministic transition-level coverage around the production decision logic.
+
+Prefer extracting a small pure helper from the event handler, for example conceptually:
+
+```text
+previous playback projection
++ incoming playback projection
++ auto-scroll setting
+-> Option<CanonicalFollowTarget>
+```
+
+so the rules are testable without constructing a full egui app/runtime.
+
+Required assertions:
+
+1. 100+ monotonically advancing display cursors produce the corresponding canonical follow identities.
+2. A same-cursor queued/state event produces no new target.
+3. Pause at unchanged cursor produces no new target.
+4. Resume at unchanged cursor produces no new target.
+5. Repeat at unchanged cursor produces no new target merely because playback state changed.
+6. Voice/backend/settings changes at unchanged cursor produce no new target.
+7. Next produces exactly one new target.
+8. Prev produces exactly one new target for the previous canonical sentence.
+9. Page transition + local sentence index computes the correct global canonical index from page sentence counts.
+10. `auto_scroll_tts = false` suppresses automatic runtime-follow requests while explicit Jump-to-highlight remains available.
+
+These tests must exercise the same helper/logic used by production `handle_tts_runtime_events`; do not duplicate the rules only in test code.
+
+### A7.1-C — make committed follow identity source-aware
+
+The new pending target is correctly source-aware:
+
+```text
+source_path + canonical_sentence_idx
+```
+
+but `AutoScrollState::last_highlighted` remains only:
+
+```text
+(sentence_idx, fallback)
+```
+
+and `decide_scroll` receives no source identity.
+
+That leaves duplicate suppression dependent on external reset behavior when changing documents. The follow state should be internally coherent.
+
+Required correction:
+
+- make the last committed follow identity source-aware as well;
+- duplicate suppression must compare source/document + canonical index (+ fallback/confidence if retained);
+- opening/switching to another source with the same sentence index must never be blocked as a duplicate because an earlier document happened to commit the same numeric index;
+- add a deterministic cross-source regression.
+
+### A7.1-D — preserve first A7 implementation
+
+Do not discard or rewrite the accepted-looking first-A7 architecture merely because integration is withheld.
+
+Preserve:
+
+- `PrettySentenceTarget` ordered canonical mapping;
+- exact sequential/lookahead occurrence alignment;
+- unmapped -> no random proportional fallback;
+- sentence-range highlight path;
+- target-aware bounded render window;
+- retained block height measurements / prefix-sum virtualization;
+- first A7 scale tests;
+- all A3-A6 behavior;
+- passing Windows QA/TTS configuration.
+
+No human QA during A7.1.
+
+### A7.1 acceptance gates
+
+1. Explicit Jump-to-highlight re-arms the current canonical target and demonstrably works after a prior successful follow.
+2. Production follow-decision logic has 100+ transition regression coverage.
+3. Pause/Resume/Repeat/voice/settings unchanged-cursor cases produce no automatic movement.
+4. Next/Prev/page transitions produce exactly correct canonical follow identities.
+5. `auto_scroll_tts=false` suppresses automatic follow but not explicit user Jump-to-highlight.
+6. Last committed follow identity is source-aware.
+7. First A7 canonical mapping/no-proportional-fallback/virtualization work remains intact.
+8. Windows CI again passes normal workspace tests and existing Windows TTS/QA probes.
+9. No human QA until director acceptance.

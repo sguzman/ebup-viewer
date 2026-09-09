@@ -27,7 +27,7 @@ These priorities are ordered. They may be revised by ChatGPT/director as verifie
 - click-to-play;
 - bookmarks/config/search/navigation.
 
-## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A6 ACCEPTED, FINAL WINDOWS SPEAKER SIGNOFF
+## P2.5 — Connect LanternLeaf to Caliberate as a first-class library service — A7 PRETTY HIGHLIGHT/SCROLL SYNCHRONIZATION
 
 - use Caliberate's versioned HTTP/JSON API rather than direct database coupling;
 - default local provider target `http://127.0.0.1:8181`;
@@ -108,3 +108,14 @@ A6 accepted:
 - staged Windows QA synthesis/decode coverage and actionable native TTS errors are green;
 - large-EPUB native responsiveness is already positively observed;
 - final requirement: one real-desktop `.\qa.ps1` run with audible Windows speech plus next/previous/pause/resume/stop.
+
+
+A7 correction priority:
+- preserve confirmed fast/snappy large-EPUB native performance and working Windows speech/voice selection;
+- replace normalized-text HashMap/proportional-anchor TTS targeting with ordered canonical display-sentence -> pretty target alignment;
+- make auto-scroll target-aware and durable until successful scroll/supersession;
+- drive follow behavior only from canonical display-cursor transitions;
+- stabilize variable-height virtual scrolling without restoring full-document layout;
+- add 10k-sentence / 1.5k-block duplicate/unmapped/100+ transition regressions before another human run.
+
+Deferred, nonblocking: interactive Piper switching/provisioning in the normal Windows QA context should be revisited after Goal 0008; Windows TTS is sufficient for current A7 verification.

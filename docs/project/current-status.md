@@ -1,6 +1,6 @@
 # LanternLeaf Current Status
 
-Updated: 2026-09-09 after Goal 0008 A6 Windows-TTS QA correction acceptance/integration
+Updated: 2026-09-09 after real-desktop Goal 0008 A7 pretty highlight/scroll diagnosis
 
 This file contains verified or explicitly bounded evidence only. Historical roadmap checkboxes are not accepted as current proof.
 
@@ -136,7 +136,7 @@ Gate 3 native PDF visual stability begins only after Gate 2 real-desktop signoff
 
 ## Caliberate / Calibre library integration
 
-**A6 ACCEPTED — ONLY REAL-DESKTOP WINDOWS SPEAKER/CONTROL SIGNOFF REMAINS**
+**GOAL 0008 A7 REOPENED — WINDOWS SPEECH WORKS; PRETTY HIGHLIGHT/SCROLL SYNC IS BROKEN**
 
 Accepted integration:
 
@@ -177,3 +177,10 @@ A5/A5.1 native performance corrections are now positively observed on the human 
 ### A6 accepted correction
 
 A6 is integrated. Omitted TTS backend is platform-aware, normal Windows `qa.ps1` deterministically overrides staged QA state to Windows TTS on every run, portable defaults no longer contain developer/Linux Piper paths, TTS startup failures become visible actionable native notifications, and focused QA handoff diagnostics include TTS/audio terms. Windows CI run `34304570627` passed staged QA config -> Windows backend -> installed voice -> WAV synthesis -> Rodio decode plus normal workspace validation. The large native EPUB responsiveness portion already passed on the human machine; only actual speaker playback and interactive TTS controls remain.
+
+
+### A7 real-desktop diagnosis
+
+A6's actual Windows-audio objective is now positively verified: repo-native QA selects Windows, physical speech is audible, and installed Windows voices can be changed successfully. Large-EPUB open/UI performance also remains fast/snappy.
+
+Goal 0008 is still blocked by presentation synchronization. Canonical TTS cursor progression is coherent, but the HTML pretty renderer maps canonical sentences through a text-keyed block index and falls back to proportional HTML anchors when that lookup misses; auto-scroll is also a one-shot request consumed before successful target rendering. This allows duplicate/mismatched sentences to jump to unrelated blocks and allows off-screen follow requests to disappear. A7 replaces this with ordered canonical-sentence -> pretty-target alignment, durable follow state, canonical-cursor-driven scrolling, and stable variable-height bounded virtualization.

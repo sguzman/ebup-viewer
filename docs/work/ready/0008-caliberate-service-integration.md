@@ -1230,3 +1230,266 @@ Then:
 4. verify next/previous/pause/resume/stop.
 
 If audio still fails, the visible error plus focused handoff diagnostics become the next evidence.
+
+
+## Director correction continuation — attempt A7: deterministic pretty-sentence highlight and scroll synchronization
+
+### Triggering real-desktop evidence
+
+A6 real-desktop verification closes the Windows synthesis uncertainty:
+
+- normal `qa.ps1` reports `Effective QA TTS backend: Windows (repo-native default)`;
+- the human hears Windows speech;
+- installed Windows voices can be selected and the audible voice changes;
+- the same large Caliberate EPUB now opens quickly and the native egui shell is described as fast/snappy.
+
+Goal 0008 nevertheless remains blocked because the pretty reader's spoken-sentence highlighting and viewport following are severely incorrect during real TTS playback.
+
+Human observation:
+
+- the highlight sometimes appears on the actually spoken sentence;
+- other transitions jump to a wildly inaccurate/unrelated location;
+- while speech continues the viewport can alternate between the correct highlight and another location;
+- sometimes the window fails to update to the active sentence at all.
+
+This is a synchronization/canonical-identity failure, not a TTS synthesis failure and not a general egui frame-performance failure.
+
+The real runtime log supports that distinction. The canonical TTS cursor itself progresses coherently: the accepted large book prepares a bounded plan window for display sentences 8..72, begins with `highlighted_audio_idx=9 highlighted_display_idx=16`, and later advances to `highlighted_audio_idx=10 highlighted_display_idx=17` while Windows TTS continues normally.
+
+### Director localization
+
+The current pretty synchronization path has multiple structurally unsafe identity/fallback mechanisms.
+
+#### 1. Pretty sentence identity is text-keyed, not canonical-index keyed
+
+`refresh_pretty_cache` builds:
+
+```rust
+HashMap<String, usize> // normalized sentence text -> block index
+```
+
+by splitting each pretty block into sentences and inserting the first block seen for each normalized string.
+
+That is not a sentence identity.
+
+It fails when:
+
+- the same sentence text appears multiple times;
+- headings, captions, quotations, repeated UI-like prose, chapter titles, or boilerplate repeat;
+- HTML-to-text and canonical EPUB extraction differ in whitespace/punctuation/entity normalization;
+- a canonical sentence spans rich-text boundaries differently from the pretty parser.
+
+A repeated string can only point to one block even when multiple distinct canonical sentence occurrences exist.
+
+#### 2. HTML fallback is explicitly proportional rather than semantic
+
+When direct text lookup misses, `render_pretty_page` falls back to `sentence_anchor_map`.
+
+For native HTML, `ReaderSession::build_sentence_anchor_map_for_page` creates that map with `proportional_html_anchor_map(...)`: canonical sentence position is projected proportionally across HTML anchors.
+
+That may be useful as weak coarse navigation metadata, but it must not be treated as authoritative spoken-sentence identity. A missed exact-text lookup can therefore send TTS highlighting to a structurally unrelated anchor.
+
+#### 3. Auto-scroll is a one-shot boolean consumed before successful resolution
+
+`TtsRuntimeEvent` handling calls `auto_scroll_state.note_auto_scroll()` whenever an event contains a current TTS audio sentence.
+
+`render_pretty_page` immediately consumes that boolean before it knows whether:
+
+- the canonical display sentence mapped to a pretty target;
+- the target block is in the virtual render window;
+- a concrete response/rect exists to scroll to;
+- `scroll_to_me` was actually issued.
+
+An unresolved/off-screen transition can therefore lose its only follow request.
+
+#### 4. Scroll triggering uses TTS event presence instead of canonical display-cursor transition
+
+The runtime already publishes the authoritative canonical display highlight through `ReaderPlaybackState.highlighted_sentence_idx`. Pretty auto-scroll should follow changes in that canonical display index.
+
+Using `tts.current_sentence_idx.is_some()` as the trigger mixes the bounded-window audio index with UI-follow intent and can retrigger on queued/state events that did not change the visible canonical sentence.
+
+#### 5. Virtual layout still uses one global estimated block height
+
+A5 correctly bounded the number of rendered blocks, but the virtual stream currently represents all off-screen content using:
+
+```text
+block_index * one estimated_block_height
+```
+
+even though headings, paragraphs, lists, quotes, code, tables, and images have very different measured heights.
+
+This can make viewport-y -> block-index projection drift as rendered windows change. A7 must preserve bounded rendering while making the virtual scroll coordinate stable enough that a successful sentence target does not bounce away on the next frame.
+
+### A7-A — canonical display sentence -> pretty target map
+
+Replace text-keyed identity with an explicit ordered alignment owned by the pretty cache.
+
+Required conceptual shape:
+
+```text
+canonical display sentence index
+        |
+        v
+Vec<Option<PrettySentenceTarget>>
+        |
+        +-- block_index
+        +-- local_sentence_index
+        +-- text/rich-span range when available
+        +-- mapping confidence/source
+```
+
+Requirements:
+
+- the authoritative key is canonical **display sentence index**, not audio-window index and not sentence text;
+- enumerate pretty sentences in document order with stable occurrence identity;
+- align the canonical display sentence stream to the pretty sentence stream monotonically;
+- exact normalized matches should be preferred;
+- bounded local lookahead/sequence alignment may handle small HTML/canonical normalization differences;
+- duplicate sentence strings must map to their distinct occurrences in order rather than all resolving to one block;
+- alignment may record `None` when confidence is insufficient;
+- for HTML TTS highlight/follow, do **not** fall back from an unmapped canonical sentence to the proportional HTML anchor map;
+- an unmapped sentence must never cause a remote/random jump. Keep the last stable viewport/highlight or use only a clearly adjacent, monotonic, confidently mapped target according to an explicit policy.
+
+The old proportional anchor map may remain for other coarse-navigation semantics if still useful, but it is not TTS spoken-sentence identity.
+
+### A7-B — sentence-level pretty highlighting
+
+When a canonical sentence has a confident pretty target:
+
+- highlight the targeted sentence occurrence, not merely whichever block shares its normalized string;
+- preserve existing rich formatting;
+- when technically practical, apply the highlight background to the sentence's text/rich-span range rather than coloring the entire paragraph/block;
+- if sentence-range geometry cannot be represented for a specific block kind, use an explicit bounded block-level fallback for that target rather than selecting a different sentence.
+
+The highlighted visual sentence must correspond to `ReaderPlaybackState.highlighted_sentence_idx`.
+
+### A7-C — durable auto-scroll target state
+
+Replace the one-shot `pending_auto_scroll: bool` semantics with a target-aware follow request.
+
+Requirements:
+
+- pending follow state identifies at least source/document identity and canonical display sentence index;
+- a request is cleared only after the target is successfully resolved and a real scroll operation has been committed, or when a newer authoritative cursor supersedes it;
+- if the target is temporarily outside the current virtual render window, force a bounded render window around that target and retain the request until the target response/rect exists;
+- a failed/unmapped target does not consume into a random fallback;
+- repeated events for the same canonical sentence do not produce repeated jumps;
+- a newer sentence supersedes an older unresolved request rather than queueing stale jumps;
+- pause/resume with an unchanged cursor does not move the viewport;
+- Next/Prev produce exactly one new canonical follow target;
+- voice/backend/settings events that do not change the display cursor do not move the viewport;
+- honor `auto_scroll_tts` and `center_spoken_sentence` settings explicitly.
+
+### A7-D — stabilize virtual pretty scroll geometry without restoring full-document layout
+
+Preserve A5's bounded active block window.
+
+Replace the single global block-height approximation with a stable virtual-layout strategy, for example per-block measured heights plus prefix sums / retained estimates, or an equivalent bounded design.
+
+Requirements:
+
+- rendered/measured block heights feed future virtual offsets;
+- unmeasured blocks may use estimates, but refining measurements must not cause uncontrolled viewport oscillation;
+- a sentence target that was successfully centered must remain in/near the active window on the following frame;
+- manual scrolling must remain continuous enough for normal reading;
+- headings, long paragraphs, lists, quotes, code blocks, tables, and images must not all be modeled permanently as one identical height;
+- ordinary frames remain bounded; do not solve synchronization by rendering all 1,644 blocks again.
+
+### A7-E — canonical event source for UI following
+
+Drive pretty highlight/follow from the shared canonical reader playback state.
+
+- `ReaderPlaybackState.highlighted_sentence_idx` / the canonical display cursor is the UI identity.
+- TTS audio-window indices remain synthesis/navigation implementation details.
+- `handle_tts_runtime_events` should request auto-scroll only when the authoritative display cursor changes (or an explicit Jump-to-highlight command is issued).
+- Queued/state/latency events with no display-cursor change must not trigger scrolling.
+- Keep one canonical ReaderSession authority from A5.1.
+
+### A7-F — deterministic regressions that reproduce the hard cases
+
+Add project-owned regressions that are structural, not timing-flaky.
+
+At minimum:
+
+1. Generate a large HTML/EPUB-shaped pretty stream with 1,500+ blocks and 10,000+ canonical display sentences.
+2. Include repeated identical sentence strings at widely separated positions. Assert each canonical occurrence maps to the correct ordered pretty occurrence.
+3. Include whitespace/entity/rich-span differences that normalize equivalently. Assert bounded monotonic alignment preserves occurrence identity.
+4. Include deliberately unmappable canonical sentences. Assert they do not resolve through a proportional/distant HTML anchor and do not request a random jump.
+5. Simulate 100+ sequential TTS display-cursor advances. Assert mapped target block progression is monotonic for the generated forward-reading fixture and never jumps backward to an earlier duplicate.
+6. Exercise Next, Prev, Pause/Resume, Repeat, and an unchanged-cursor voice/settings event. Assert only real canonical cursor transitions create new follow targets.
+7. Prove a pending off-screen follow request survives until the target block enters the bounded render window and clears only after successful scroll commitment.
+8. Exercise strongly variable block heights and measurement refinement. Assert the target remains in/near the virtual window after the follow frame rather than oscillating to an unrelated range.
+9. Preserve the A5 bounded-render invariant: thousands of blocks exist, but only a bounded active window is laid out.
+10. Where sentence-range highlighting is supported, assert the selected canonical sentence range—not another identical occurrence—is marked.
+
+### A7-G — transition-focused diagnostics
+
+Add diagnostics that make identity failures observable without per-frame spam.
+
+On canonical highlight transitions, record at debug/trace as appropriate:
+
+- source identity;
+- canonical display sentence index;
+- current audio index when useful;
+- resolved pretty block/local sentence target;
+- mapping confidence/source;
+- previous -> new target;
+- follow state: requested / waiting-for-window / scrolled / deliberately-unmapped / superseded;
+- virtual window start/end and target inclusion when a follow occurs.
+
+Aggregate/warn if unmapped or low-confidence transitions become frequent. Do not emit the same mapping line every egui frame.
+
+### A7-H — preserve accepted work and scope boundaries
+
+Preserve:
+
+- A3 Caliberate/native EPUB ingestion and cache recovery;
+- A4 bounded lazy normalization;
+- A5/A5.1 Arc-backed state, bounded rendering, off-main TTS, canonical shared ReaderSession, snapshot-free hot paths;
+- A6 Windows backend/voice/synthesis behavior and QA configuration;
+- legacy Calibre provider behavior.
+
+Do not:
+
+- reintroduce full-book render/layout;
+- build a Caliberate-specific highlight state machine;
+- use WebView/Tauri;
+- change PDF synchronization as part of this correction;
+- treat a larger scroll throttle as the fix;
+- use proportional HTML anchors as the authoritative TTS target.
+
+### Piper note — nonblocking for A7
+
+The normal Windows QA process intentionally starts with a QA-scoped Windows backend override. The human observed that changing the in-app dropdown to Piper during this QA session does not appear to take effect reliably.
+
+Do **not** mix Piper provisioning/backend-switch polish into A7. Record it as a separate follow-up after Goal 0008 unless implementation inspection reveals a tiny direct regression caused by A6. Windows voices and physical Windows speech are now verified.
+
+### A7 acceptance gates
+
+1. Canonical display sentence index has a first-class ordered pretty target map.
+2. Duplicate sentence text is not used as global identity.
+3. HTML TTS highlighting never falls back to proportional/distant anchors when canonical->pretty alignment is missing.
+4. Auto-scroll follows canonical display-cursor changes, not generic TTS event presence.
+5. Pending follow requests survive until success/supersession rather than being consumed blindly.
+6. Unmapped sentences do not cause remote/random viewport jumps.
+7. Variable-height virtual geometry remains stable while active rendering stays bounded.
+8. 10k+/1.5k+ generated alignment/follow regressions cover duplicates, normalization differences, unmapped sentences, and 100+ transitions.
+9. Windows TTS, voice selection, A3-A6 regressions, workspace tests, and Windows CI remain green.
+10. No PDF redesign, WebView fallback, or full-document layout regression.
+
+### Human QA contract for A7
+
+**No human QA during A7 implementation/correction.**
+
+After director acceptance only:
+
+1. `git pull --ff-only`;
+2. `.\qa.ps1` with normal Windows backend;
+3. open the same large Recent/Caliberate EPUB;
+4. play through enough consecutive sentences to observe sustained tracking, not just one jump;
+5. verify the visible highlight corresponds to the currently audible sentence;
+6. verify the viewport follows forward without random remote/backward jumps or oscillation;
+7. exercise Next/Prev and Pause/Resume;
+8. change Windows voice while staying on the same sentence and verify that the viewport does not jump merely because voice settings changed.
+
+If one sentence cannot be confidently mapped, the acceptable degraded behavior is to avoid a jump until a trustworthy target exists. Random movement is never an acceptable fallback.
